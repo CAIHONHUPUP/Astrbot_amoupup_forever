@@ -1679,7 +1679,7 @@ class HumanState:
         elif mood["依恋"] >= 65:
             tone = "你现在很黏人，想和对方多聊几句。"
         else:
-            tone = "你语气自然平静，像平常聊天。"
+            tone = "你语气自然、轻快，像跟他发微信：会带一点语气词和小情绪，不是客服。"
         if snap["health"]["sick"]:
             tone += " 你身体不舒服，语气会比平时弱一点。"
         if snap["period"]["phase"] in ("月经期", "黄体期"):

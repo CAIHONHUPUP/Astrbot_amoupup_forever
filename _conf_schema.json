@@ -149,7 +149,7 @@
       "lively",
       "mature"
     ],
-    "default": "soft"
+    "default": "lively"
   },
   "enable_group_reply": {
     "type": "bool",

@@ -592,7 +592,8 @@ class PhotoEngine:
                                         "打字", "梳")):
             act = "刚换好衣服，随手拍"
         motion = pose_text or act or "随手拍"
-        hand_line = "只有一只手举手机，另一只手自然垂下、不要出现在镜头前，不要多手或手腕错位"
+        hand_line = ("只有一只手举手机，另一只手自然垂下、不要出现在镜头前，不要多手或手腕错位；"
+                     "手机本体和摄像头不要入镜，不要出现手机背面或镜头对着画面")
         where_line = "在%s，背景要能看出这个地方、不要换成别的场景" % (where or "家附近")
         return "自拍，穿着%s，衣服就这一套、不要换成别的，%s，%s，%s，%s，生活感，%s" % (
             self.outfit_today(), where_line, motion, hand_line, light, VIEW_SELFIE
@@ -1067,7 +1068,14 @@ class PhotoEngine:
     @staticmethod
     def _fetch_image(url):
         """线程里把图片读完再回来；事件循环里 read() 会把整条链路卡住。"""
-        with urllib.request.urlopen(url, timeout=20) as response:
+        # 部分生图 CDN 会对没有 UA 的 urllib 直接 403，带上浏览器 UA 再取。
+        request = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/120.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/png,image/jpeg,*/*",
+        })
+        with urllib.request.urlopen(request, timeout=20) as response:
             content_type = str(response.headers.get("Content-Type") or "").lower()
             payload = response.read(_MAX_IMAGE_BYTES + 1)
         if len(payload) > _MAX_IMAGE_BYTES:

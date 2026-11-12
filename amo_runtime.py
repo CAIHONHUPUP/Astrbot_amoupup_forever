@@ -824,6 +824,17 @@ class RuntimeMixin(_MixinBase):
                         logger.debug("[amo] 去掉赶人的话: %s" % brush)
                 except Exception as _amo_exc:
                     _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
+            try:
+                recent = self._recent(event.unified_msg_origin, 8)
+                bot_line = ""
+                for row in reversed(recent or []):
+                    if str((row or {}).get("role") or "") == "bot":
+                        bot_line = str((row or {}).get("content") or "")
+                        break
+                text = self._strip_repeated_food_question(
+                    text, event.message_str or "", bot_line)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
             text = self._trim_reply(text)
             result.chain = [Comp.Plain(text)]
 

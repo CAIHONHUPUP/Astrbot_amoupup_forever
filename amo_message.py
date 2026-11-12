@@ -48,7 +48,57 @@ except ImportError:  # 直接按文件加载时
             return str(text or "")
 
 
+_FOOD_WORDS = ("汤", "面", "饭", "菜", "粉", "粥", "火锅", "汉堡", "披萨",
+               "外卖", "饺子", "包子", "便当", "寿司", "烧烤", "麻辣烫", "米线")
+
+
+def strip_repeated_food_question(reply, user_text, bot_text):
+    """他刚回答「中午吃什么」，就别再问「你点了吗 / 吃了吗」。
+
+    2026-11-12 线上：她问「今天中午吃啥呀」→ 他答「番茄蘑菇汤」→ 她回
+    「番茄蘑菇汤挺好的…我就吃常吃的那家，你点了吗？」。答都答了，再问就是没接住。
+    """
+    reply = str(reply or "")
+    user_text = str(user_text or "")
+    bot_text = str(bot_text or "")
+    if not reply or not user_text or not bot_text:
+        return reply
+    if not re.search(r"(吃啥|吃什么|吃点什么|中午吃|午饭吃|晚饭吃)", bot_text):
+        return reply
+    if len(user_text) > 20 or not any(word in user_text for word in _FOOD_WORDS):
+        return reply
+    question = re.compile(r"(点了吗|点没|点了没|吃了吗|吃了没|点了没呀)")
+    parts = re.split(r"(?<=[。！？!?~～\n])", reply)
+    kept = []
+    for part in parts:
+        if question.search(part):
+            # 只删问句那半句，别把她刚说的「我就吃常吃的那家」也删掉
+            clauses = re.split(r"(?<=[，,])", part)
+            part = "".join(clause for clause in clauses if not question.search(clause))
+        if part.strip():
+            kept.append(part)
+    out = "".join(kept).strip()
+    out = re.sub(r"[，,]+$", "。", out)
+    return out or "听着就香。"
+
+
 class MessageMixin(_MixinBase):
+    def _strip_repeated_food_question(self, reply, user_text, bot_text):
+        """他刚回答「中午吃什么」，就别再问「你点了吗 / 吃了吗」。"""
+        reply = str(reply or "")
+        user_text = str(user_text or "")
+        bot_text = str(bot_text or "")
+        if not reply or not user_text or not bot_text:
+            return reply
+        if not re.search(r"(吃啥|吃什么|吃点什么|中午吃|午饭吃|晚饭吃)", bot_text):
+            return reply
+        if len(user_text) > 20 or not any(word in user_text for word in _FOOD_WORDS):
+            return reply
+        parts = re.split(r"(?<=[。！？!?~～\n])", reply)
+        kept = [part for part in parts
+                if not re.search(r"(点了吗|点没|点了没|吃了吗|吃了没|点了没呀)", part)]
+        out = "".join(kept).strip()
+        return out or "听着就香。"
     def _recent(self, umo, limit=10):
         """近聊上下文钩子：能力层缓冲优先，没有再读本地缓存表。"""
         size = max(1, int(limit or 10))

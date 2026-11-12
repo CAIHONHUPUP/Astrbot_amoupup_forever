@@ -565,7 +565,7 @@
       <section class="card" style="margin-top:14px">
         <div class="row between">
           <div>
-            <div class="label">今天泳装（游泳 / 海边 / 水上乐园）</div>
+            <div class="label">泳装搭配（游泳 / 海边 / 水上乐园）</div>
             <div class="sub">只有去游泳馆、海边、水上乐园才会穿；只穿上衣（泳衣）和裤子（泳裤），没有鞋子</div>
           </div>
         </div>
@@ -2224,6 +2224,9 @@
         todayBox.innerHTML = "";
         if (data.enabled === false) {
           todayBox.appendChild(wardrobeRow("穿搭衣柜没加载", "看日志有没有 wardrobe 初始化失败"));
+        } else if (data.current && data.current.wearing_swim) {
+          todayBox.appendChild(wardrobeRow("正在穿泳装",
+            (data.current.set || data.current.text || "泳装整套")));
         } else {
           const skirtName = names.skirt || "";
           const skirtIsDress = /连衣裙|长裙|连身裙|睡裙/.test(skirtName);
@@ -2248,7 +2251,7 @@
               : (daySeed ? "（手工）" : ""))
             + " · 白天已锁定";
           if (data.current && data.current.sleep) meta.textContent += " · 现在在家已换睡衣";
-          if (data.current && data.current.swim) meta.textContent += " · 现在在玩水，已换泳装";
+          if (data.current && (data.current.wearing_swim || data.current.swim)) meta.textContent += " · 现在在玩水，已换泳装";
         }
       }
       const nightBox = document.getElementById("wardrobeNight");
@@ -2288,7 +2291,7 @@
         if (data.enabled === false) {
           swimBox.appendChild(wardrobeRow("泳装还没加载", ""));
         } else if (swim.pending) {
-          swimBox.appendChild(wardrobeRow("泳装", "还没有整套泳装"));
+          swimBox.appendChild(wardrobeRow("泳装", swim.text || "游泳 / 海边 / 水上乐园 自动生成"));
         } else {
           if (swim.set) swimBox.appendChild(wardrobeRow("整套", swim.set));
           swimBox.appendChild(wardrobeRow("上衣（泳衣）", swim.top || "—"));

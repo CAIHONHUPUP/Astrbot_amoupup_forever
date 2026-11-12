@@ -26,6 +26,7 @@ from schedule_engine import ScheduleEngine  # noqa: E402
 from wardrobe import SWIM_PLACE_WORDS, Wardrobe  # noqa: E402
 import outfit_refs  # noqa: E402
 import photo_scene  # noqa: E402
+from photo_engine import PhotoEngine  # noqa: E402
 
 
 class FakeDB:
@@ -340,6 +341,49 @@ class SwimSegmentsTests(unittest.TestCase):
         self.assertGreaterEqual(len(swim_segs), 3)
         self.assertTrue(all("海边" in str(seg.get("place") or "") for seg in swim_segs))
         self.assertTrue(any("玩水" in str(seg.get("activity") or "") for seg in swim_segs))
+
+    def test_swim_card_pending_when_not_swimming(self):
+        wardrobe, _ = make_wardrobe()
+        data = wardrobe.snapshot()
+        self.assertTrue(data["swim"].get("pending"))
+        self.assertIn("游泳", data["swim"].get("text") or "")
+        self.assertFalse((data.get("current") or {}).get("wearing_swim"))
+
+    def test_swim_card_ready_and_day_card_marked_when_swimming(self):
+        wardrobe, _ = make_wardrobe(place="游泳馆", activity="游泳")
+        data = wardrobe.snapshot()
+        self.assertFalse(data["swim"].get("pending"))
+        self.assertTrue(data["swim"].get("swim"))
+        self.assertTrue((data.get("current") or {}).get("wearing_swim"))
+        self.assertIn("泳衣", (data["current"] or {}).get("text") or "")
+
+    def test_after_swim_goes_home_day_then_night(self):
+        # 玩水结束、回家：17 点还是白天那套；20 点后在家换睡衣
+        wardrobe, _ = make_wardrobe(place="家", activity="回家洗澡")
+        day = wardrobe.current(hour=17)
+        self.assertFalse(day.get("swim"))
+        self.assertFalse(day.get("sleep"))
+        night = wardrobe.current(hour=20)
+        self.assertTrue(night.get("sleep"))
+
+    def test_after_swim_on_the_road_keeps_day_outfit(self):
+        # 20 点还在路上（游玩回家途中）先别换睡衣，到家再换
+        wardrobe, _ = make_wardrobe(place="路上", activity="回家")
+        on_road = wardrobe.current(hour=20)
+        self.assertTrue(on_road.get("sleep") is not True)
+
+    def test_photo_outfit_uses_swim_outfit(self):
+        class FakeWardrobe:
+            def current(self, day=""):
+                return {"text": "粉色蝴蝶结泳衣上衣，粉色蝴蝶结泳裤", "swim": True}
+
+        plugin = type("P", (), {})()
+        plugin.wardrobe = FakeWardrobe()
+        engine = object.__new__(PhotoEngine)
+        engine.plugin = plugin
+        engine._outfit_day = ""
+        engine._outfit_text = ""
+        self.assertEqual(engine.outfit_today(), "粉色蝴蝶结泳衣上衣，粉色蝴蝶结泳裤")
 
 
 if __name__ == "__main__":

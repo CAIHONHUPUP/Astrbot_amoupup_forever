@@ -375,7 +375,7 @@ class SnapshotTests(StateTestCase):
     def test_tone_text_branches(self) -> None:
         snap = self.state.snapshot()
         snap["mood"] = {key: 50.0 for key in MOOD_KEYS}
-        self.assertIn("自然平静", self.state.tone_text(snap))
+        self.assertIn("自然、轻快", self.state.tone_text(snap))
         snap["mood"]["暴躁"] = 80.0
         self.assertIn("暴躁", self.state.tone_text(snap))
         self.assertIn("恋人", self.state.tone_text(snap, relation="相恋"))

@@ -1207,6 +1207,45 @@ class Wardrobe:
     def at_swim(self):
         return self._at_swim()
 
+    def _swim_window(self, day):
+        """今天的泳装时段：返回 {state: now/later/none, start, end}。"""
+        try:
+            items = self.plugin.state.schedule.get(str(day)) or []
+        except Exception as _amo_exc:
+            _note_swallowed("wardrobe.Wardrobe._swim_window", _amo_exc)
+            items = []
+        try:
+            now = _clock_now()
+            now_min = now.hour * 60 + now.minute
+        except Exception:
+            now_min = 0
+
+        def minutes(text):
+            try:
+                hour, minute = str(text or "").split(":")[:2]
+                return int(hour) * 60 + int(minute)
+            except Exception:
+                return None
+
+        later = None
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("place") or "") + " " + str(item.get("activity") or "")
+            if not any(word in text for word in SWIM_PLACE_WORDS):
+                continue
+            start = minutes(item.get("start"))
+            end = minutes(item.get("end"))
+            if start is None:
+                continue
+            if end is None or end <= start:
+                end = 24 * 60
+            if start <= now_min < end:
+                return {"state": "now", "start": start, "end": end}
+            if now_min < start and later is None:
+                later = {"state": "later", "start": start, "end": end}
+        return later or {"state": "none", "start": 0, "end": 0}
+
     def _describe_swim(self, data, outfit, day):
         result = self._describe(data, outfit)
         result["day"] = day
@@ -1752,6 +1791,12 @@ class Wardrobe:
         return result
 
     # ---------- 面板 / 万象画卷 ----------
+    def _current_snapshot(self):
+        current = self.current()
+        if current.get("swim"):
+            current["wearing_swim"] = True
+        return current
+
     def snapshot(self):
         data = self._load()
         today = self.today()
@@ -1791,10 +1836,18 @@ class Wardrobe:
             # 泳装只有上衣（泳衣）和裤子（泳裤），鞋是横线
             "swim_categories": category_list(False, False, True),
             "swim_sets": self.swim_sets(data),
-            "swim": self.swim_outfit(),
+            "swim": self.swim_outfit() if self._at_swim() else {
+                "pending": True,
+                "swim": True,
+                "state": self._swim_window(today).get("state") or "none",
+                "text": ("%02d:%02d 游泳 / 海边 / 水上乐园，到点自动换上"
+                         % divmod(int(self._swim_window(today).get("start") or 0), 60))
+                        if self._swim_window(today).get("state") == "later"
+                        else "游泳 / 海边 / 水上乐园 自动生成",
+            },
             "at_swim": self._at_swim(),
             "today": today,
-            "current": self.current(),
+            "current": self._current_snapshot(),
             "night": self.night() if night_ready else {"pending": True},
             "hour": hour,
             "outfit_count": len([outfit for outfit in data.get("outfits", [])
