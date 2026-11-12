@@ -5,7 +5,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from schedule_change import detect_schedule_change, should_switch_to_pajamas  # noqa: E402
+import datetime  # noqa: E402
+from schedule_change import apply_change, detect_schedule_change, should_switch_to_pajamas  # noqa: E402
 
 
 class ScheduleChangeTests(unittest.TestCase):
@@ -51,6 +52,43 @@ class ScheduleChangeTests(unittest.TestCase):
 
     def test_other_day_ignored(self):
         self.assertIsNone(detect_schedule_change("明天去医院"))
+
+    def test_hurry_home_after_off_work(self):
+        change = detect_schedule_change("那赶快回家吧")
+        self.assertTrue(change)
+        self.assertEqual(change.get("category"), "commute")
+        self.assertEqual(change.get("place"), "路上")
+        self.assertEqual(change.get("anchor"), "off_work_now")
+
+    def test_hurry_home_variants(self):
+        for text in ("赶紧回家", "快回家吧", "回家吧", "马上回家"):
+            self.assertTrue(detect_schedule_change(text), text)
+
+    def test_negated_hurry_home_ignored(self):
+        self.assertIsNone(detect_schedule_change("别赶快回家"))
+
+    def test_no_work_today(self):
+        change = detect_schedule_change("今天不上班了，在家休息")
+        self.assertTrue(change)
+        self.assertEqual(change.get("category"), "health")
+
+    def test_hurry_home_changes_work_segment(self):
+        items = [
+            {"start": "17:00", "end": "18:00", "activity": "上班", "place": "公司", "category": "work"},
+            {"start": "18:00", "end": "19:00", "activity": "下班回家", "place": "路上", "category": "commute"},
+        ]
+        change = detect_schedule_change("那赶快回家吧")
+        new = apply_change(items, change, datetime.datetime(2026, 11, 12, 17, 50))
+        self.assertEqual(new[0]["category"], "commute")
+        self.assertIn("回家", new[0]["activity"])
+
+    def test_hurry_home_keeps_rest_at_home(self):
+        items = [
+            {"start": "20:00", "end": "21:00", "activity": "休息", "place": "家", "category": "rest"},
+        ]
+        change = detect_schedule_change("赶快回家")
+        new = apply_change(items, change, datetime.datetime(2026, 11, 12, 20, 10))
+        self.assertEqual(new[0]["category"], "rest")
 
 
 if __name__ == "__main__":

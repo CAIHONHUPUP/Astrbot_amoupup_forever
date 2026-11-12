@@ -119,6 +119,26 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         )
 
 
+def slot_has_ended(day, start, end, now=None):
+    """这一小时是否已经过完（到 end 之后才允许生成小日记）。"""
+    try:
+        now = now or _now()
+        day_text = str(day or "")
+        today_text = now.strftime("%Y-%m-%d")
+        if day_text < today_text:
+            return True
+        if day_text > today_text:
+            return False
+        end_text = str(end or "").strip()[:5]
+        if end_text in ("24:00", "0:00"):
+            end_min = 24 * 60
+        else:
+            end_min = parse_hhmm(end_text)
+        return now.hour * 60 + now.minute >= end_min
+    except Exception:
+        return True
+
+
 def slot_is_future(day, start, now=None):
     """这一小时还没到（包括明天/以后的日程），小日记先不生成。"""
     try:
@@ -1426,8 +1446,8 @@ class HumanState:
         start = item.get("start") or ""
         if not start:
             return {"diary": "", "mood": "平静", "place": "", "activity": ""}
-        # 小日记只写已经过完的时间点：今天的未来时段、明天/以后都先不生成。
-        if slot_is_future(day, start):
+        # 小日记只写已经过完的时间段：这一小时还没结束就返回 pending，不能提前生成。
+        if not slot_has_ended(day, start, item.get("end")):
             return {"diary": "", "mood": item.get("mood") or "平静",
                     "place": item.get("place") or "",
                     "activity": item.get("activity") or "",

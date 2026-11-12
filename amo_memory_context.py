@@ -191,7 +191,7 @@ class RecallContextMixin(_MixinBase):
             )
         return "\n".join(lines)
     async def _recall(self, uid, text, event=None):
-        """记忆只来自「记忆终端」（Astr_Amo_data）；没装才退回外挂记忆插件。
+        """记忆只来自「记忆终端」（Astrbot_amoupup_data）；没装才退回外挂记忆插件。
 
         陪伴自己不存记忆：读也只读记忆终端，读不到再退旧的插件库。
         """

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""「我能永远记住你」(Astr_Amo_data) 的桥：读写记忆、同步画像/关系、缓存。"""
+"""「我能永远记住你」(Astrbot_amoupup_data) 的桥：读写记忆、同步画像/关系、缓存。"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -376,7 +376,7 @@ class DataSyncMixin(_MixinBase):
             logger.warning(message)
             if failed >= len(local) and local:
                 logger.warning(
-                    "[amo] 画像一条都没写进去：先确认 Astr_Amo_data 已启用且版本 >= 2.0.4"
+                    "[amo] 画像一条都没写进去：先确认 Astrbot_amoupup_data 已启用且版本 >= 2.0.4"
                 )
         elif pushed or not getattr(self, "_profile_sync_logged", False):
             self._profile_sync_logged = True
@@ -457,7 +457,7 @@ class DataSyncMixin(_MixinBase):
             return
         if not self._data_found_logged:
             self._data_found_logged = True
-            logger.info("[amo] 已连接数据插件 Astr_Amo_data，开始同步")
+            logger.info("[amo] 已连接数据插件 Astrbot_amoupup_data，开始同步")
         bot_id = self._data_bot_id()
         marker = "data_plugin_migrated_" + bot_id
         migrated = bool(self.db.kv_get(marker, False))

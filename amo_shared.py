@@ -601,7 +601,7 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
                 logger.error("[amo] 日程引擎加载失败: %s" % _schedule_exc)
 
 
-PLUGIN_NAME = "Astrbot_Amo_forever"
+PLUGIN_NAME = "Astrbot_amoupup_forever"
 PLUGIN_VERSION = "6.6.8"
 DEFAULT_ADMIN = ""
 LEGACY_DEFAULT_ADMIN = "3261748099"

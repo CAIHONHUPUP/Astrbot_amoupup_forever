@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""记忆入口（facade）：只适配「想记」(Astr_Amo_data)。
+"""记忆入口（facade）：只适配「想记」(Astrbot_amoupup_data)。
 
     amo_memory_data.py     DataSyncMixin：想记桥 / 同步 / 画像 / 列表 / 读写
     amo_memory_bridge.py   BridgeMixin：MemoryHub 与写入入口

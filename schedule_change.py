@@ -48,6 +48,26 @@ _RULES: list[Rule] = [
         "negatable": True,
     },
     {
+        # 「下班了，赶快回家吧」：让她尽快回家；只在人还在上班/路上时改当前这段，
+        # 已经在家/在睡就不动（否则会把「休息」改成「在路上」）。
+        "keys": ("赶快回家", "快回家", "赶紧回家", "快点回家", "马上回家",
+                 "现在就回家", "快回去", "赶紧回去", "回家吧"),
+        "activity": "下班回家，路上",
+        "place": "路上",
+        "category": "commute",
+        "anchor": "off_work_now",
+        "negatable": True,
+    },
+    {
+        # 生病请假类：主人直接说「别去上班 / 今天不上班」
+        "keys": ("别去上班", "不去上班", "今天不上班", "别上班了", "不用上班"),
+        "activity": "请假在家休息",
+        "place": "家",
+        "category": "health",
+        "anchor": "now",
+        "negatable": False,
+    },
+    {
         "keys": ("早点回家", "提前回家", "先回去了", "想回家", "早点回去"),
         "activity": "提前收拾东西回家",
         "place": "家",
@@ -204,6 +224,10 @@ def _pick_target(items: list[dict[str, Any]], anchor: str, now_min: int) -> dict
         if start <= now_min < end:
             current = item
             break
+    if anchor == "off_work_now":
+        if current is not None and str(current.get("category") or "") in ("work", "commute"):
+            return current
+        anchor = "off_work"
     if anchor in ("off_work", "meal"):
         wanted = "commute" if anchor == "off_work" else "meal"
         for item in items:

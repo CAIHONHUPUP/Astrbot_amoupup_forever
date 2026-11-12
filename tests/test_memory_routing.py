@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""记忆只走「想记」(Astr_Amo_data)：读取、写入、召回、面板来源。
+"""记忆只走「想记」(Astrbot_amoupup_data)：读取、写入、召回、面板来源。
 
 旧记忆源（牢记 / 天使之魂 / livingmemory / companion）的适配已经删掉；
 这里保证"没装想记就老实返回空"，而不是悄悄去读别的插件的库。
@@ -172,7 +172,7 @@ class CandidatesTests(unittest.TestCase):
         result = asyncio.run(ApiMixin.api_memory_candidates(plugin))
         items = result["data"]["items"]
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["name"], "Astr_Amo_data")
+        self.assertEqual(items[0]["name"], "Astrbot_amoupup_data")
 
     def test_candidates_empty_without_plugin(self) -> None:
         plugin = FakePlugin(None)

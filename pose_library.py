@@ -4,8 +4,8 @@
 她发自拍时从姿势库里随机挑一个姿势（托腮、比耶、撩头发…），不再每次都「随手拍」。
 面板「姿势库」可以加/删姿势、保存，并能逐张生成「姿势参考图」给生图当参考。
 
-数据：``plugin_data/Astrbot_Amo_forever/poses.json``
-参考图：``plugin_data/Astrbot_Amo_forever/outfit_refs/姿势库/<姿势名>.png``
+数据：``plugin_data/Astrbot_amoupup_forever/poses.json``
+参考图：``plugin_data/Astrbot_amoupup_forever/outfit_refs/姿势库/<姿势名>.png``
 （和衣服参考图放在一起，备份 plugin_data 时统一带走。）
 """
 

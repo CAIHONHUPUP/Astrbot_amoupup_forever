@@ -4,7 +4,14 @@
 
 > GitHub：https://github.com/CAIHONHUPUP/Astrbot_amoupup_forever
 
+## 6.8.44 短回复人设 + 赶快回家 + 小日记过点才写
+
+- 短回复也带她的语气和称呼，不再只回「好」「嗯」；
+- 「赶快回家 / 快回家 / 回家吧」会让她下班回家，她自己说「我下班了」也会同步日程；
+- 日程小日记等这一小时过完才生成；日记只在 22:00-22:30 生成。
+
 ## 6.8.42 独立仓库 + 更名「我能永远陪伴你」
+
 
 - 仓库从 fork 改为独立仓库 `CAIHONHUPUP/Astrbot_amoupup_forever`，只发自己的正式版；
 - README 更名「我能永远陪伴你」，GitHub 地址改成本仓库。

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 
 
-PLUGIN_VERSION = "6.8.42"
+PLUGIN_VERSION = "6.8.44"
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -650,7 +650,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         self._init_lock = asyncio.Lock()
         self._running = True
         self._tasks: set[Any] = set()
-        # 数据插件（Astr_Amo_data）可能比 amo 后加载：用这几个标记做一次性补同步，不轮询
+        # 数据插件（Astrbot_amoupup_data）可能比 amo 后加载：用这几个标记做一次性补同步，不轮询
         self._data_synced = False
         self._data_sync_lock = asyncio.Lock()
         self._last_data_sync_try = 0.0
@@ -887,8 +887,8 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
 
 
 
-    # ---------- 配套数据插件（Astr_Amo_data / 我能永远记住你） ----------
-    DATA_PLUGIN_NAMES = ("Astr_Amo_data", "astrbot_plugin_amo_data", "AstrAmoData")
+    # ---------- 配套数据插件（Astrbot_amoupup_data / 我能永远记住你） ----------
+    DATA_PLUGIN_NAMES = ("Astrbot_amoupup_data", "Astr_Amo_data", "astrbot_plugin_amo_data", "AstrAmoData")
 
 
     # ---------- 记忆能力层（memory_hooks）：陪伴只判定，数据交给挂载插件 ----------
@@ -923,7 +923,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         """第一次没找到数据插件：记一次日志，并在 60 秒后再确认一次（只提醒一次）。"""
         if not self._data_missing_logged:
             self._data_missing_logged = True
-            logger.info("[amo] 未检测到数据插件 Astr_Amo_data，继续用本地库（装好后面板数据为空是正常的）")
+            logger.info("[amo] 未检测到数据插件 Astrbot_amoupup_data，继续用本地库（装好后面板数据为空是正常的）")
         if not self._data_warn_scheduled:
             self._data_warn_scheduled = True
             self._spawn(self._warn_data_missing_later())
@@ -937,7 +937,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         if not self._running or self._data_synced or self._data_connected():
             return
         logger.warning(
-            "[amo] 数据插件未连接：去「插件」页看 Astr_Amo_data 是不是被停用/加载报错；"
+            "[amo] 数据插件未连接：去「插件」页看 Astrbot_amoupup_data 是不是被停用/加载报错；"
             "装好后 5 分钟内会自动接上，不用重启"
         )
 
@@ -1223,7 +1223,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         # 写接口只收 POST：面板的 WRITE_ACTIONS 已经强制带 body 走 POST，
         # 老版本面板桥接没有 apiPost 时会收到 405/403，然后自动退回 fetch POST（前端有兜底）。
         # 读接口不套守卫，避免给状态轮询加额外开销。
-        # 注意：route 带插件名前缀（/Astrbot_Amo_forever/...），WRITE_ROUTES 里存的是不带前缀的
+        # 注意：route 带插件名前缀（/Astrbot_amoupup_forever/...），WRITE_ROUTES 里存的是不带前缀的
         # 路径，所以要拿 desc（注册时传的 path）来判定，否则所有写路由都会被漏掉。
         is_write = str(desc or "") in WRITE_ROUTES
         if is_write:

@@ -80,6 +80,7 @@ class ApiMixin(_MixinBase):
             getattr(self, "name", None),
             PLUGIN_NAME,
             os.path.basename(self.plugin_dir),
+            "astrbot_plugin_Astrbot_amoupup_forever",
             "astrbot_plugin_Astrbot_Amo_forever",
             "astrbot_plugin_amo_forever",
         ])
@@ -464,14 +465,14 @@ class ApiMixin(_MixinBase):
         }
 
     async def api_memory_candidates(self):
-        """记忆来源只有「想记」(Astr_Amo_data)；这里只报告它在不在。"""
+        """记忆来源只有「想记」(Astrbot_amoupup_data)；这里只报告它在不在。"""
         await self._ensure_ready()
         plugin = self._data_plugin()
-        name = "Astr_Amo_data"
+        name = "Astrbot_amoupup_data"
         return {
             "code": 0,
             "data": {
-                "items": ([{"name": name, "title": "想记（Astr_Amo_data）", "activated": True}]
+                "items": ([{"name": name, "title": "想记（Astrbot_amoupup_data）", "activated": True}]
                           if plugin is not None else []),
                 "selected": name if plugin is not None else "",
                 "detected": name if plugin is not None else "",

@@ -2,7 +2,7 @@
 """能力层（MemoryHub）与「想记」写入：amo 自己的记忆入口只走这一条。
 
 不存任何本地记忆，也不再有"退回外挂记忆插件"的分支——记忆只有两个去处：
-能力层（MemoryHub，内部就是 Astr_Amo_data）和它的 mem 门面。
+能力层（MemoryHub，内部就是 Astrbot_amoupup_data）和它的 mem 门面。
 """
 from __future__ import annotations
 

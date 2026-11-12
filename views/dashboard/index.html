@@ -717,7 +717,7 @@
           每天从搭配模板里随机一套（按天气筛掉太厚或太薄的），当天所有照片、自拍都锁这一套；<br>
           去游泳馆 / 海边 / 水上乐园时自动换泳装（只有上衣和泳裤，不穿鞋）；<br>
           他送的衣服（衬衫、外套、裤子、鞋）会自动进到对应分类，并和现有的衣服配成新模板；<br>
-          衣服参考图保存文件夹：<code style="font-size:11px">D:\dafeiyu\astrbot\data\plugin_data\Astrbot_Amo_forever\outfit_refs\</code><br>
+          衣服参考图保存文件夹：<code style="font-size:11px">D:\dafeiyu\astrbot\data\plugin_data\Astrbot_amoupup_forever\outfit_refs\</code><br>
           白天搭配 / 晚上搭配 / 酒店睡衣 / 泳装 / 姿势库 5 个文件夹；衣服那四个里面再分上衣（外套）/ 裤子 / 裙子 / 鞋子，
           衣服按衣服名字保存（如「米色雪纺衬衫.png」），姿势直接按姿势名字保存在「姿势库」里（如「托腮.png」），备份会一起带走
         </div>
@@ -993,7 +993,7 @@
   <div class="toast" id="toast"></div>
 
   <script>
-    const PLUGIN_NAME = "Astrbot_Amo_forever";
+    const PLUGIN_NAME = "Astrbot_amoupup_forever";
     const MOOD_KEYS = ["开心", "平静", "郁闷", "生气", "暴躁", "委屈", "疲惫", "焦虑", "兴奋", "依恋"];
     const MOOD_COLORS = {
       "开心": "#0ea5e9", "平静": "#0ea5e9", "郁闷": "#0ea5e9", "生气": "#0ea5e9",
@@ -1174,9 +1174,11 @@
       } catch (error) {}
       const bases = [
         "/api/v1/plugins/extensions/" + PLUGIN_NAME,
-        "/api/v1/plugins/extensions/astrbot_plugin_Astrbot_Amo_forever",
+        "/api/v1/plugins/extensions/astrbot_plugin_Astrbot_amoupup_forever",
+      "/api/v1/plugins/extensions/astrbot_plugin_Astrbot_Amo_forever",
         "/api/plug/" + PLUGIN_NAME,
-        "/api/plug/astrbot_plugin_Astrbot_Amo_forever",
+        "/api/plug/astrbot_plugin_Astrbot_amoupup_forever",
+      "/api/plug/astrbot_plugin_Astrbot_Amo_forever",
       ];
       for (const base of bases) {
         for (const route of routeCandidates(action)) {

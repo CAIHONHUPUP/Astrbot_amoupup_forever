@@ -90,6 +90,14 @@ def diary_end_day(now, hh, mm):
     return (now - timedelta(days=1)).date()
 
 
+def diary_in_window(now, hh, mm, window_minutes=30):
+    """现在是否还在「日记时间 + 窗口」内（默认 22:00-22:30）。"""
+    try:
+        return now.hour * 60 + now.minute <= int(hh) * 60 + int(mm) + max(0, int(window_minutes))
+    except Exception:
+        return False
+
+
 def diary_manual_target(now, requested):
     """面板手动写日记能写哪一天：只允许昨天及以前，当天和未来交给 22:00 自动写。
 
@@ -201,18 +209,66 @@ class ScheduleMixin(_MixinBase):
                 self.db.kv_set("home_early:" + key, True)
             elif travel:
                 self.db.kv_set("home_early:" + key, False)
-            # 日程突然变了：今天当前小时及以后的小日记全部作废，重新生成当前小时
+            # 日程突然变了：今天当前小时及以后的小日记全部作废；当前这段还没过完，
+            # 不提前生成，等这一小时结束再由面板/日记收尾生成。
             try:
                 hour = _now().strftime("%H")
                 self.db.clear_diaries_from(key, hour)
-                current = self.state.current_activity()
-                if current:
-                    self._spawn(self.state.expand_hour(key, current, force=True))
             except Exception as _amo_exc:
                 _note_swallowed("amo_schedule._apply_user_schedule_change", _amo_exc)
             logger.info("[amo] 按用户的话改了日程: %s" % change.get("activity"))
         except Exception as _amo_exc:
             _note_swallowed("amo_schedule._apply_user_schedule_change", _amo_exc)
+
+    def _maybe_own_offwork_sync(self, text):
+        """她自己说「我下班了」时，把当前这段从上班改成下班回家。
+
+        只在 17:00 之后、当前还是 work 时才改；已经在家/在睡/在吃饭都不动。
+        """
+        raw = str(text or "")
+        if not re.search(r"(我|刚|刚刚|已经)?(下班|收工)(了|啦|咯|喽)", raw):
+            return
+        if re.search(r"(还没|没|不|未|别)(下班|收工)", raw):
+            return
+        # 她说的是别人（他/她/你）下班了，不算她自己下班
+        if re.search(r"(他|她|你|别人)(刚|刚刚|已经)?(下班|收工)", raw):
+            return
+        if _now().hour < 17:
+            return
+        day = today_str()
+        guard = "own_offwork:" + day
+        try:
+            if self.db.kv_get(guard, False):
+                return
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.ScheduleMixin._maybe_own_offwork_sync", _amo_exc)
+            return
+        current = self.state.current_activity()
+        if str(current.get("category") or "") != "work":
+            return
+        items = self.state.schedule.get(day) or self.db.get_schedule(day) or []
+        start = str(current.get("start") or "")
+        changed = False
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("start") or "") == start:
+                item["activity"] = "下班回家，路上"
+                item["place"] = "路上"
+                item["zone"] = "road"
+                item["category"] = "commute"
+                changed = True
+                break
+        if not changed:
+            return
+        try:
+            self.state.schedule[day] = items
+            self.db.kv_set("schedule", self.state.schedule)
+            self.db.save_schedule(day, items)
+            self.db.kv_set(guard, True)
+            logger.info("[amo] 她说下班了：当前日程改成下班回家")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.ScheduleMixin._maybe_own_offwork_sync", _amo_exc)
 
     def _migrate_schedule_defaults(self):
         """5.1.1：位置/资产改为“人格优先、缺失随机”，清掉 5.1.0 自动写入的固定默认值。"""
@@ -334,6 +390,9 @@ class ScheduleMixin(_MixinBase):
         hh, mm = self._diary_clock()
         end_day = diary_end_day(now, hh, mm)
         if end_day is None:
+            return
+        window = max(0, self.cfg_int("diary_window_minutes", 30))
+        if not diary_in_window(now, hh, mm, window):
             return
         if getattr(self, "_diary_writing", False):
             return

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """穿搭衣柜：每日一套、面板增删、礼物自动入库。
 
-数据落在 ``plugin_data/Astrbot_Amo_forever/wardrobe.json``：
+数据落在 ``plugin_data/Astrbot_amoupup_forever/wardrobe.json``：
 
 - ``items``   每件衣服，分三类：``top``（上衣（外套））/ ``bottom``（裤子）/ ``shoes``（鞋子）；
 - ``outfits`` 搭配模板（至少 30 套），每套记 top / bottom / shoes 三个 item id；

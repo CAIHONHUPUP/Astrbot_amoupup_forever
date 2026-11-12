@@ -273,7 +273,7 @@ class AmoDataProvider(MemoryProvider):
 
     name = "amo_data"
     priority = 10
-    PLUGIN_NAMES = ("Astr_Amo_data", "astrbot_plugin_amo_data", "AstrAmoData")
+    PLUGIN_NAMES = ("Astrbot_amoupup_data", "Astr_Amo_data", "astrbot_plugin_amo_data", "AstrAmoData")
 
     @property
     def caps(self):

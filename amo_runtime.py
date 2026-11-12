@@ -720,6 +720,11 @@ class RuntimeMixin(_MixinBase):
                 comp.text for comp in result.chain if isinstance(comp, Comp.Plain)
             ))
             try:
+                if event.is_private_chat():
+                    self._maybe_own_offwork_sync(text)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
+            try:
                 text = self._guard_self_location(text, self.state.current_activity().get("place"))
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)

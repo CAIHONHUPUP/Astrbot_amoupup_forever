@@ -44,7 +44,7 @@ class SegmentEngine:
         """初始化分段引擎，解析并校验所有配置项。"""
         self.context = context
         self.plugin = plugin
-        self.name = getattr(plugin, "name", "Astrbot_Amo_forever")
+        self.name = getattr(plugin, "name", "Astrbot_amoupup_forever")
         self.config = config or {}
         # 后台分段任务引用，防止被 GC 回收导致剩余段发送中断
         self._tasks: set = set()

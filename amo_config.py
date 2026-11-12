@@ -106,7 +106,7 @@ class ConfigMixin(_MixinBase):
         }
 
     def _migrate_legacy_config(self):
-        """把旧版 amo_forever_config.json 合并到 Astrbot_Amo_forever_config.json。"""
+        """把旧版 amo_forever_config.json 合并到当前插件的配置文件。"""
         path = str(getattr(self.config, "config_path", "") or "")
         if not path:
             return
@@ -152,7 +152,7 @@ class ConfigMixin(_MixinBase):
                 "[amo] 已迁移旧版 amo_forever 配置: %s（%d 项）"
                 % (legacy, len(merged))
             )
-            logger.info("[amo] 升级提示：插件标识保持 Astrbot_Amo_forever；旧 amo_forever 配置/数据已自动迁移。")
+            logger.info("[amo] 升级提示：插件标识现为 Astrbot_amoupup_forever；旧 amo_forever 配置/数据已自动迁移。")
         except Exception as exc:
             logger.warning("[amo] 旧版 amo_forever 配置迁移失败: %s" % exc)
 

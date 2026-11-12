@@ -58,7 +58,7 @@ class AmoDB:
             _note_swallowed("amo_db.AmoDB.__init__", _amo_exc)
             data_dir = plugin_dir
         self.path = os.path.join(data_dir, "amo_forever.db")
-        # 4.0.0 起插件标识为 Astrbot_Amo_forever。
+        # 4.0.0 起插件标识为 Astrbot_Amo_forever（2026-11-12 起改为 Astrbot_amoupup_forever）。
         # 4.0.6 保持新标识，并把 3.x 的 amo_forever 旧数据迁移到新目录。
         try:
             import shutil as _shutil
@@ -87,7 +87,7 @@ class AmoDB:
                         if os.path.exists(source):
                             _shutil.copy2(source, self.path + suffix)
                     logger.info("[amo] 已迁移旧版 amo_forever 数据: %s -> %s" % (legacy_path, self.path))
-                    logger.info("[amo] 升级提示：插件标识保持 Astrbot_Amo_forever；旧 amo_forever 数据已迁移到新目录，配置文件也会自动合并。")
+                    logger.info("[amo] 升级提示：插件标识现为 Astrbot_amoupup_forever；旧 amo_forever 数据已迁移到新目录，配置文件也会自动合并。")
                     break
         except Exception as exc:
             logger.warning("[amo] 旧版 amo_forever 数据迁移失败: %s" % exc)

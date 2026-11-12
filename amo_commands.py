@@ -174,7 +174,7 @@ class CommandMixin(_MixinBase):
                 "companion_memory_available": self._data_connected(),
             },
             "data_plugin": {
-                "name": "Astr_Amo_data",
+                "name": "Astrbot_amoupup_data",
                 "connected": self._data_connected(),
                 "synced": bool(self._data_synced),
             },
