@@ -1,0 +1,96 @@
+# -*- coding: utf-8 -*-
+"""跨 mixin 的公共接口（只服务类型检查，运行时用 object 顶替，不参与 MRO）。
+
+13 个 mixin 由 HumanCorePlugin 组合成插件，方法之间大量互相调用（`self.db`、
+`self._ensure_ready()` …）。单独看某个 mixin，这些成员并不在它自己的类上，mypy 会
+报 attr-defined。这里用 Protocol 把"组合后的接口"声明出来，每个 mixin：
+
+    if TYPE_CHECKING:
+        from .amo_types import PluginLike as _MixinBase
+    else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉别的 mixin 的真实实现
+        _MixinBase = object
+
+    class CommandMixin(_MixinBase):
+
+方法签名由 tools/gen_types.py 从真实实现抓取，改了实现要同步这里（CI 的 mypy 会检查）。
+"""
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+
+class PluginLike(Protocol):
+    """HumanCorePlugin 组合完成后的公共接口。"""
+
+    # ---- 组合后的共享状态 ----
+    db: Any
+    state: Any
+    llm: Any
+    gift: Any
+    draw: Any
+    photo: Any
+    heartflow: Any
+    segment_engine: Any
+    _ready: bool
+    _last_reply_at: dict[str, float]
+
+    # ---- 跨 mixin 调用的方法（签名与真实实现一致）----
+    def _core_decor_flags(self, umo=""):
+        ...
+    async def _ensure_ready(self):
+        ...
+    def _canonical_uid(self, event):
+        ...
+    def cfg_str(self, key, default=""):
+        ...
+    def cfg_bool(self, key, default=False):
+        ...
+    def cfg_list(self, key, default=None):
+        ...
+    async def _apply_user_schedule_change(self, event, user_text):
+        ...
+    def _schedule_change_allowed(self, event):
+        ...
+    def _remember_sent_reply(self, event, text):
+        ...
+    def _trim_reply(self, text):
+        ...
+    def _tone_with_continuity(self, umo, tone):
+        ...
+    async def _send_now(self, event, text, quote_id=None):
+        ...
+    def _quote_allowed(self, umo, group=None):
+        ...
+    def _looks_like_command(self, text):
+        ...
+    def _is_talking_to_me(self, event):
+        ...
+    def _is_admin(self, event):
+        ...
+    async def _handle_message(self, event):
+        ...
+    def _guard_self_location(self, text, place):
+        ...
+    def _external_memory_write(self, uid, content, kind="fact", tier=1,
+                               scope="private", group_id=""):
+        ...
+    async def _all_memories(self, uid, keyword="", limit=50):
+        ...
+    async def _write_memory_checked(self, uid, content, kind="fact", tier=1,
+                                    scope="private", group_id=""):
+        ...
+    async def _data_memory_write(self, uid, content, kind="fact", tier=1,
+                                 scope="private", group_id=""):
+        ...
+    async def _data_mem_list(self, uid, keyword="", limit=50):
+        ...
+    def _data_connected(self):
+        ...
+    def _data_bot_id(self):
+        ...
+    def _normalize_memories(self, rows):
+        ...
+    def _plugin_by_names(self, names):
+        ...
+    async def _dynamic_context(self, event):
+        ...

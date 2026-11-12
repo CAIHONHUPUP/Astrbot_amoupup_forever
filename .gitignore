@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# 运行时数据（上架规范：持久化只能写 data/plugin_data/<plugin_name>）
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+.DS_Store
+Thumbs.db
+.test-tmp/
+pytest-cache-files-*/
+.coverage
+.coverage.json
+htmlcov/

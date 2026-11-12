@@ -1,0 +1,15 @@
+[run]
+source = .
+omit =
+    tests/*
+    tools/*
+    __pycache__/*
+    .test-tmp/*
+    pytest-cache-files-*
+
+[report]
+# 只许往上调：第三轮把 30% 抬到 40%；2026-11-12 补 api/日程/分段/消息层测试后实测 57%，
+# 底线抬到 52%（留 5 个点抖动余量，Windows 上还会跳过 7 项平台相关的用例）。
+fail_under = 52
+show_missing = True
+skip_covered = True

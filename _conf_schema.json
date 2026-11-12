@@ -1,0 +1,1725 @@
+{
+  "timezone": {
+    "type": "string",
+    "description": "时区",
+    "default": "Asia/Shanghai",
+    "hint": "问候时段、日记、天气、「现在几点」都按这个时区算。服务器跑在 UTC 时务必保持 Asia/Shanghai，否则会把早上算成凌晨（会出现「大晚上的」这类错话）。填 auto 表示跟随系统。"
+  },
+  "weather_city_name": {
+    "type": "string",
+    "description": "城市显示名",
+    "default": "",
+    "hint": "天气里显示的城市名；填数字 ID 时用它显示中文（填 101281601、这里填东莞）。用中文城市名设置时会自动填好。"
+  },
+  "city_follow_enabled": {
+    "type": "bool",
+    "description": "他换城市时她跟着换（只认「我在X / 我到X / 我回X」）",
+    "default": true,
+    "hint": "私聊里他说「我在清远 / 我到广州了 / 我回东莞」这类明确说法时，把她所在的城市改成那里；只是聊天提到城市不算，重名要写清楚（深圳南山）。"
+  },
+  "city_follow_weather": {
+    "type": "bool",
+    "description": "跟着换城市时同时换天气城市",
+    "default": true,
+    "hint": "开启后换城会改 weather_city 并立刻刷一次天气（每次真正换城才请求一次和风）；关掉则只改说话，天气还留在面板设的城市。"
+  },
+  "city_travel_schedule": {
+    "type": "bool",
+    "description": "去别的城市时按「出行」改今天的日程",
+    "default": true,
+    "hint": "他说「我在清远/我到广州了」时，把今天剩下的日程换成到了、找吃的、逛、住酒店（不上班），日记也按这个写；说「我回东莞」恢复。关掉就只跟随说话，不动日程。"
+  },
+  "wander_enabled": {
+    "type": "bool",
+    "description": "她会自己提出想出去玩（心情/劳累判定）",
+    "default": true,
+    "hint": "他问「你最近想出去玩吗」时，按心情和劳累程度决定：低落/累大概率想去（报一个真实景点城市）；心情好不累就说想留在他身边。他同意后，22 点前当天出发，22 点后第二天出发；第二天日程变成该城市旅游，日记和记忆跟着写。"
+  },
+  "wander_prob_low": {
+    "type": "float",
+    "description": "低落/累时答应出去玩的概率（0-1）",
+    "default": 0.85,
+    "hint": "问「你最近想出去玩吗」时：心情低落或很累，她想去玩的概率。填 0.85 就是大概率想去；0 表示永远不想去。"
+  },
+  "wander_prob_good": {
+    "type": "float",
+    "description": "心情好时答应出去玩的概率（0-1）",
+    "default": 0.15,
+    "hint": "心情好、不累时，她想去玩的概率。默认 0.15（小概率），其余会说想留在你身边。"
+  },
+  "wander_ask_three_times": {
+    "type": "bool",
+    "description": "一天可以问三次想不想旅游（关=一天一次）",
+    "default": false,
+    "hint": "打开：同一天最多问 3 次「想不想出去玩」，每次都会重新判定；关闭：一天只生效 1 次。"
+  },
+  "weather_alert_enabled": {
+    "type": "bool",
+    "description": "明晚天气变坏时提醒一次",
+    "default": false,
+    "hint": "每晚 weather_alert_time 之后检查一次明天的预报；下雨/下雪/打雷或明显降温时主动发一条"
+  },
+  "weather_alert_time": {
+    "type": "string",
+    "description": "提醒时间（HH:MM）",
+    "default": "20:00"
+  },
+  "weather_alert_morning_time": {
+    "type": "string",
+    "description": "早上的判断时间（HH:MM，留空就不做早上那次判断）",
+    "hint": "一天只在早上和晚上各判断一次：早上只判断、不发消息；晚上 weather_alert_time 到了才真的发预报（跳过缓存用最新一份）。",
+    "default": "08:00"
+  },
+  "weather_alert_temp_drop": {
+    "type": "int",
+    "description": "降温多少度算变坏",
+    "default": 8
+  },
+  "weather_alert_dry_run": {
+    "type": "bool",
+    "description": "天气提醒只写日志不发送（调试用）",
+    "default": false
+  },
+  "weather_query_enabled": {
+    "type": "bool",
+    "description": "他问天气时如实读天气",
+    "hint": "开：他问“现在天气/明天要带伞吗/降温没”时，用缓存里的现在天气（30 分钟）和明天预报（3 小时）答，不会额外浪费和风额度。",
+    "default": true
+  },
+  "hefeng_key": {
+    "type": "string",
+    "description": "和风天气 Key",
+    "hint": "留空则使用本地模拟天气；在 console.qweather.com 申请",
+    "default": ""
+  },
+  "weather_city": {
+    "type": "string",
+    "description": "天气城市",
+    "hint": "可直接填中文城市名（如：东莞、北京朝阳），保存后会自动换算成 LocationID 回填；也可直接填数字 ID。留空则跟随日程城市。",
+    "default": ""
+  },
+  "weather_host": {
+    "type": "string",
+    "description": "和风天气 API Host",
+    "hint": "和风控制台的 API Host，可只填域名（如 pa6vhjdfwm.re.qweatherapi.com），会自动补 https://；也可填完整 URL。",
+    "default": "https://devapi.qweather.com"
+  },
+  "weather_geo_host": {
+    "type": "string",
+    "description": "和风天气 GeoAPI Host",
+    "hint": "留空则用 API Host + /geo/v2；也可只填域名，会自动补 https://。",
+    "default": ""
+  },
+  "bot_name": {
+    "type": "string",
+    "description": "角色名",
+    "hint": "留空则优先使用 AstrBot 当前人格名；人格不可用时回退为“陪伴”。",
+    "default": ""
+  },
+  "use_persona_name": {
+    "type": "bool",
+    "description": "使用 AstrBot 人格名",
+    "hint": "开启后从当前会话人格读取名字，覆盖 bot_name；人格名是 default 时从人格提示词里提取。关闭则只用 bot_name。",
+    "default": true
+  },
+  "bot_aliases": {
+    "type": "string",
+    "description": "角色别名",
+    "hint": "可选，逗号分隔。只填人格名之外的昵称；留空则只按人格名识别。",
+    "default": ""
+  },
+  "admin_uids": {
+    "type": "string",
+    "description": "管理员 QQ",
+    "hint": "逗号分隔；留空则只认 AstrBot 全局 admins_id。不再内置默认管理员。",
+    "default": ""
+  },
+  "persona_extra": {
+    "type": "text",
+    "description": "人格补充设定",
+    "hint": "会追加到 AstrBot 人格提示词后面，可留空",
+    "default": ""
+  },
+  "reply_style": {
+    "type": "string",
+    "description": "整体语气倾向",
+    "options": [
+      "soft",
+      "cool",
+      "lively",
+      "mature"
+    ],
+    "default": "soft"
+  },
+  "enable_group_reply": {
+    "type": "bool",
+    "description": "启用群聊",
+    "default": true
+  },
+  "enable_private_reply": {
+    "type": "bool",
+    "description": "启用私聊",
+    "default": true
+  },
+  "enable_period_simulate": {
+    "type": "bool",
+    "description": "生理期状态模拟",
+    "default": true
+  },
+  "period_start": {
+    "type": "string",
+    "description": "生理期起始日",
+    "hint": "YYYY-MM-DD；留空自动从 10 天前开始；也可 /amo period set 修改",
+    "default": ""
+  },
+  "period_cycle_days": {
+    "type": "int",
+    "description": "生理周期天数",
+    "default": 28
+  },
+  "period_days": {
+    "type": "int",
+    "description": "经期持续天数",
+    "default": 5
+  },
+  "period_ovulation_day": {
+    "type": "int",
+    "description": "排卵日（周期第几天）",
+    "default": 14
+  },
+  "period_ovulation_window": {
+    "type": "int",
+    "description": "排卵期窗口（天）",
+    "default": 3
+  },
+  "period_menstrual_tone": {
+    "type": "string",
+    "description": "月经期身体感受",
+    "hint": "提示词里描述她经期的身体和情绪",
+    "default": "身体沉沉的，容易累，也更容易委屈"
+  },
+  "period_follicular_tone": {
+    "type": "string",
+    "description": "卵泡期身体感受",
+    "default": "身体轻快，心情慢慢变好"
+  },
+  "period_ovulatory_tone": {
+    "type": "string",
+    "description": "排卵期身体感受",
+    "default": "精力最好，也更想和人说话"
+  },
+  "period_luteal_tone": {
+    "type": "string",
+    "description": "黄体期身体感受",
+    "hint": "黄体期通常在周期第 16-28 天，容易烦躁、敏感",
+    "default": "容易烦躁、敏感，想要被哄"
+  },
+  "enable_sick_random": {
+    "type": "bool",
+    "description": "随机生病",
+    "default": true
+  },
+  "sick_prob": {
+    "type": "float",
+    "description": "每日生病基础概率",
+    "hint": "下雨、低温、月经期、过度疲惫会额外增加",
+    "default": 0.02
+  },
+  "local_chat_cache": {
+    "type": "bool",
+    "description": "在陪伴本地缓存聊天记录",
+    "hint": "默认关闭：原始聊天只写进「我想永远记住你」，陪伴用内存缓冲 + 记忆终端钩子取上下文，不再占本地库；关掉后重启会自动从终端把最近 30 条捞回来。",
+    "default": false
+  },
+  "auto_relation": {
+    "type": "bool",
+    "description": "自动记关系网",
+    "hint": "打开后，他说「小明是我同事」这类话会自动记一条关系边（只认明确陈述，且要能在画像里唯一定位到人）；管理员手动设过的不覆盖。",
+    "default": true
+  },
+  "context_style": {
+    "type": "string",
+    "description": "上下文风格",
+    "hint": "lean：合并重复禁令，省 30% 左右 token；full：保留原文（出问题切回这个对比）。",
+    "default": "lean"
+  },
+  "memory_provider": {
+    "type": "string",
+    "description": "记忆能力来源",
+    "hint": "auto：自动选可用的（现在就是「我想永远记住你」）；也可以填 amo_data 强制指定。",
+    "default": "auto"
+  },
+  "ctx_window": {
+    "type": "int",
+    "description": "近聊上下文缓冲条数",
+    "hint": "只在内存里，不落盘；默认 48。太小会让群聊人数、连环消息判定算不准。",
+    "default": 48
+  },
+  "recall_sample_every": {
+    "type": "int",
+    "description": "群聊里每几轮召回一次记忆",
+    "hint": "私聊每轮都召回；群聊按这个间隔抽样，1 表示每轮都召回。",
+    "default": 8
+  },
+  "memory_recall_limit": {
+    "type": "int",
+    "description": "每次最多注入几条记忆",
+    "default": 6
+  },
+  "memory_item_max_chars": {
+    "type": "int",
+    "description": "【注入】单条记忆最多多少字",
+    "hint": "一条 4000 字的长摘要会吃光整块注入预算（默认 1200 字），后面的记忆一条都进不去；默认每条截到 240 字，超出用「…」收尾。",
+    "default": 240
+  },
+  "memory_bridge_timeout_seconds": {
+    "type": "float",
+    "description": "外挂记忆插件检索超时（秒）",
+    "hint": "调用牢记等插件的检索接口时的上限；超时自动退回旧的库内检索，不会卡住回复。",
+    "default": 3
+  },
+  "chat_log_days": {
+    "type": "int",
+    "description": "原始聊天记录保留天数",
+    "default": 14
+  },
+  "enable_auto_learn": {
+    "type": "bool",
+    "description": "定时用模型提炼长期记忆",
+    "default": true
+  },
+  "familiar_msg_count": {
+    "type": "int",
+    "description": "自动升为「熟识」所需消息数",
+    "hint": "相恋只能由管理员设置",
+    "default": 30
+  },
+  "quiet_hours": {
+    "type": "string",
+    "description": "免打扰时段",
+    "hint": "例如 23:30-07:30",
+    "default": "23:30-07:30"
+  },
+  "ritual_enabled": {
+    "type": "bool",
+    "description": "每日恋人问候",
+    "hint": "对关系为“相恋”的用户发送晚安、早安、午饭问候",
+    "default": true
+  },
+  "ritual_goodnight": {
+    "type": "bool",
+    "description": "睡前晚安",
+    "default": true
+  },
+  "ritual_goodnight_window": {
+    "type": "string",
+    "description": "晚安时间段",
+    "hint": "例如 22:00-02:00",
+    "default": "22:00-02:00"
+  },
+  "ritual_morning": {
+    "type": "bool",
+    "description": "起床早安",
+    "default": true
+  },
+  "ritual_morning_window": {
+    "type": "string",
+    "description": "早安时间段",
+    "hint": "例如 06:30-10:00",
+    "default": "06:30-10:00"
+  },
+  "ritual_lunch": {
+    "type": "bool",
+    "description": "午饭问候",
+    "default": true
+  },
+  "ritual_lunch_window": {
+    "type": "string",
+    "description": "午饭时间段",
+    "hint": "例如 11:00-13:30",
+    "default": "11:00-13:30"
+  },
+  "ritual_skip_recent_minutes": {
+    "type": "int",
+    "description": "问候前多少分钟聊过就跳过",
+    "hint": "避免她刚和你聊完又发模板问候；默认 45 分钟",
+    "default": 45
+  },
+  "ritual_skip_if_greeted": {
+    "type": "bool",
+    "description": "已经互相问候就跳过",
+    "hint": "例如你 6 点已经说过早安，她起床后不再重复“还没起来吗”",
+    "default": true
+  },
+  "ritual_random_platform": {
+    "type": "bool",
+    "description": "问候随机挑一个平台",
+    "hint": "QQ 和飞书都有会话时，每次随机选一处发；关掉就只发主页会话（旧行为）",
+    "default": true
+  },
+  "ritual_min_gap_minutes": {
+    "type": "int",
+    "description": "两次问候最短间隔（分钟）",
+    "hint": "时段配置重叠时，刚发过问候就不再发第二条；默认 30",
+    "default": 30
+  },
+  "proactive_after_greeting_minutes": {
+    "type": "int",
+    "description": "问候后多久不再主动搭话（分钟）",
+    "hint": "防止早安刚在一头发完，另一头又来一句；默认 60",
+    "default": 60
+  },
+  "proactive_check_seconds": {
+    "type": "int",
+    "description": "主动私聊检查间隔（秒）",
+    "default": 300
+  },
+  "proactive_interval_min": {
+    "type": "int",
+    "description": "同一用户最短主动私聊间隔（分钟）",
+    "default": 90
+  },
+  "proactive_daily_max": {
+    "type": "int",
+    "description": "每人每日主动私聊上限",
+    "default": 3
+  },
+  "proactive_prob": {
+    "type": "float",
+    "description": "每次检查触发主动私聊的概率",
+    "default": 0.25
+  },
+  "proactive_daily_guarantee": {
+    "type": "bool",
+    "description": "相恋每天至少主动一次",
+    "hint": "开启后，关系为“相恋”且当天还没主动私聊过，会在 08:00-24:00 之间至少发一条；免打扰时段也允许这一次",
+    "default": true
+  },
+  "proactive_comfort": {
+    "type": "bool",
+    "description": "难受时找相恋的人求安慰",
+    "default": true
+  },
+  "proactive_share_prob": {
+    "type": "float",
+    "description": "遇到有趣的事主动分享的概率",
+    "default": 0.35
+  },
+  "delay_reply": {
+    "type": "bool",
+    "description": "忙时延迟回复",
+    "hint": "私聊判定为不回时，过一会儿补一句",
+    "default": true
+  },
+  "delay_min_minutes": {
+    "type": "int",
+    "description": "延迟回复最短分钟",
+    "default": 4
+  },
+  "delay_max_minutes": {
+    "type": "int",
+    "description": "延迟回复最长分钟",
+    "default": 18
+  },
+  "typing_simulate": {
+    "type": "bool",
+    "description": "模拟打字延迟",
+    "default": true
+  },
+  "typing_base_ms": {
+    "type": "int",
+    "description": "打字基础延迟（毫秒）",
+    "default": 700
+  },
+  "typing_per_char_ms": {
+    "type": "int",
+    "description": "每字追加延迟（毫秒）",
+    "default": 400,
+    "hint": "每字追加毫秒。默认 400ms/字：18 个字约 7.9 秒；可按角色语速调整。"
+  },
+  "typing_max_ms": {
+    "type": "int",
+    "description": "打字延迟上限（毫秒）",
+    "default": 20000,
+    "hint": "单次打字延迟上限；默认 20000ms，避免长回复被截成 4.5 秒。"
+  },
+  "quote_group_speaker_threshold": {
+    "type": "int",
+    "description": "群聊多少人聊天时引用原消息",
+    "hint": "最近 10 分钟不同发言人数达到这个数，回复时才会引用原消息；填 0 表示从不引用。",
+    "default": 3
+  },
+  "max_reply_chars": {
+    "type": "int",
+    "description": "回复最大字数",
+    "default": 220
+  },
+  "reply_max_sentences": {
+    "type": "int",
+    "description": "回复最多几句话",
+    "hint": "默认 3；能一句说清就不说第二句",
+    "default": 3
+  },
+  "enable_polish": {
+    "type": "bool",
+    "description": "AI 润色",
+    "default": true
+  },
+  "polish_native": {
+    "type": "bool",
+    "description": "也润色 AstrBot 原生回复",
+    "hint": "会多一次模型调用，默认关闭",
+    "default": false
+  },
+  "blocked_words": {
+    "type": "string",
+    "description": "屏蔽词",
+    "hint": "逗号分隔，命中后显著降低插话分",
+    "default": ""
+  },
+  "debug_log": {
+    "type": "bool",
+    "description": "输出判定调试日志",
+    "default": false
+  },
+  "loop_interval_seconds": {
+    "type": "int",
+    "description": "后台循环间隔（秒）",
+    "default": 30
+  },
+  "hf_enable_heartflow": {
+    "description": "【心流】启用心流主动回复",
+    "type": "bool",
+    "default": true,
+    "hint": "启用后，机器人将智能判断群聊消息并主动回复"
+  },
+  "hf_judge_provider_name": {
+    "description": "【心流】判断模型提供商",
+    "type": "string",
+    "default": "",
+    "hint": "留空自动选择：优先挑便宜小模型判定（flash/mini/lite/turbo），避开主对话模型；也可下拉选择。面板设置里可直接下拉。",
+    "_special": "select_provider"
+  },
+  "hf_reply_threshold": {
+    "description": "【心流】基础回复阈值",
+    "type": "float",
+    "default": 0.6,
+    "slider": {
+      "min": 0,
+      "max": 1,
+      "step": 0.05
+    },
+    "hint": "综合评分达到此阈值才会主动回复（开启动态阈值后作为基准值）"
+  },
+  "hf_enable_dynamic_threshold": {
+    "description": "【心流】启用动态阈值",
+    "type": "bool",
+    "default": true,
+    "hint": "启用后，回复阈值会根据群聊活跃度自动调整。活跃时阈值升高（少说话），冷淡时阈值降低（多说话）"
+  },
+  "hf_dynamic_threshold_max": {
+    "description": "【心流】动态阈值上限",
+    "type": "float",
+    "default": 0.85,
+    "slider": {
+      "min": 0.1,
+      "max": 1,
+      "step": 0.05
+    },
+    "hint": "群聊非常活跃时阈值上限，越高等于越不想说话"
+  },
+  "hf_dynamic_threshold_min": {
+    "description": "【心流】动态阈值下限",
+    "type": "float",
+    "default": 0.35,
+    "slider": {
+      "min": 0,
+      "max": 1,
+      "step": 0.05
+    },
+    "hint": "群聊冷清时阈值下限，越低等于越想说话"
+  },
+  "hf_dynamic_activity_window": {
+    "description": "【心流】活跃度计算窗口（秒）",
+    "type": "int",
+    "default": 300,
+    "slider": {
+      "min": 60,
+      "max": 600,
+      "step": 60
+    },
+    "hint": "计算群聊活跃度时统计最近多长时间的消息（建议 1~10 分钟）"
+  },
+  "hf_dynamic_activity_weights": {
+    "description": "【心流】活跃度计算权重",
+    "type": "string",
+    "default": "0.4,0.3,0.3",
+    "hint": "消息频率、消息间隔、参与人数的权重，用逗号分隔"
+  },
+  "hf_group_threshold_configs": {
+    "type": "template_list",
+    "description": "【心流】群聊独立阈值配置",
+    "hint": "为特定群聊配置独立的固定阈值和动态阈值上下限，优先级高于全局设置。chat_id 可填完整 unified_msg_origin 或纯群号",
+    "templates": {
+      "group_config": {
+        "name": "群聊阈值配置",
+        "display_item": "chat_id",
+        "items": {
+          "chat_id": {
+            "description": "群聊标识",
+            "type": "string",
+            "default": "",
+            "hint": "填写 unified_msg_origin 或纯群号"
+          },
+          "reply_threshold": {
+            "description": "基础回复阈值",
+            "type": "float",
+            "default": 0.6,
+            "slider": {
+              "min": 0,
+              "max": 1,
+              "step": 0.05
+            }
+          },
+          "dynamic_threshold_max": {
+            "description": "动态阈值上限",
+            "type": "float",
+            "default": 0.85,
+            "slider": {
+              "min": 0.1,
+              "max": 1,
+              "step": 0.05
+            }
+          },
+          "dynamic_threshold_min": {
+            "description": "动态阈值下限",
+            "type": "float",
+            "default": 0.35,
+            "slider": {
+              "min": 0,
+              "max": 1,
+              "step": 0.05
+            }
+          }
+        }
+      }
+    }
+  },
+  "hf_context_messages_count": {
+    "description": "【心流】对话流分析消息数",
+    "type": "int",
+    "default": 5,
+    "slider": {
+      "min": 1,
+      "max": 50,
+      "step": 1
+    },
+    "hint": "小模型分析对话流（话题提取、连续性判断）时读取的最近消息条数"
+  },
+  "hf_judge_context_count": {
+    "description": "【心流】判断模型上下文条数",
+    "type": "int",
+    "default": 10,
+    "slider": {
+      "min": 1,
+      "max": 50,
+      "step": 1
+    },
+    "hint": "传给小模型评分的历史对话条数"
+  },
+  "hf_whitelist_enabled": {
+    "description": "【心流】启用群聊白名单",
+    "type": "bool",
+    "default": false,
+    "hint": "启用后只有白名单中的群聊才会触发心流回复"
+  },
+  "hf_chat_whitelist": {
+    "description": "【心流】群聊白名单列表",
+    "type": "list",
+    "default": [],
+    "hint": "允许心流回复的群聊，可直接填 QQ 群号，也兼容完整 unified_msg_origin"
+  },
+  "hf_judge_rules": {
+    "type": "template_list",
+    "description": "【心流】评分规则配置",
+    "hint": "分别为 5 个评分维度设置低分情况和高分情况的汉字描述，生成评判提示词时使用",
+    "default": [
+      {
+        "__template_key": "rule",
+        "dimension_name": "relevance",
+        "dimension_display": "内容相关度",
+        "weight": 0.25,
+        "low_desc": "表情包、语气词、哈哈、嗯、完全无关的私人话题、群内专属梗",
+        "high_desc": "涉及机器人能回答的话题、提问句、有信息价值"
+      },
+      {
+        "__template_key": "rule",
+        "dimension_name": "willingness",
+        "dimension_display": "回复意愿",
+        "weight": 0.2,
+        "low_desc": "负面情绪宣泄、两人私密对话、机器人刚回复过",
+        "high_desc": "消息有趣或有深度、求助类、机器人较久未回复"
+      },
+      {
+        "__template_key": "rule",
+        "dimension_name": "social",
+        "dimension_display": "社交适宜性",
+        "weight": 0.2,
+        "low_desc": "严肃讨论、管理员发言、两人正在对话强行插入",
+        "high_desc": "氛围活跃多人参与、对群体说的、能活跃气氛"
+      },
+      {
+        "__template_key": "rule",
+        "dimension_name": "timing",
+        "dimension_display": "时机恰当性",
+        "weight": 0.15,
+        "low_desc": "距上次回复不足1分钟、发送者可能还有后续、多人快速聊天",
+        "high_desc": "距上次已过3分钟以上、消息刚发出、长时间无人回复"
+      },
+      {
+        "__template_key": "rule",
+        "dimension_name": "continuity",
+        "dimension_display": "对话连贯性",
+        "weight": 0.2,
+        "low_desc": "突然转换话题、已收尾的对话、明显是对其他群友回复",
+        "high_desc": "对机器人回复的回应/追问/反驳、延续机器人话题、提及机器人说过的内容"
+      }
+    ],
+    "templates": {
+      "rule": {
+        "name": "评分规则",
+        "display_item": "dimension_display",
+        "items": {
+          "dimension_name": {
+            "description": "维度标识（英文）",
+            "type": "string",
+            "default": "",
+            "hint": "必填，与代码中逻辑对应，一般不需修改",
+            "invisible": true
+          },
+          "dimension_display": {
+            "description": "维度中文名",
+            "type": "string",
+            "default": "",
+            "hint": "在提示词中显示的维度名称"
+          },
+          "weight": {
+            "description": "权重 (0-1)",
+            "type": "float",
+            "default": 0.2,
+            "slider": {
+              "min": 0,
+              "max": 1,
+              "step": 0.05
+            },
+            "hint": "此维度在综合评分中的占比"
+          },
+          "low_desc": {
+            "description": "低分情况描述",
+            "type": "text",
+            "default": "",
+            "hint": "描述哪些情况应该给低分（输入汉字，如：表情包、语气词）"
+          },
+          "high_desc": {
+            "description": "高分情况描述",
+            "type": "text",
+            "default": "",
+            "hint": "描述哪些情况应该给高分（输入汉字，如：提问句、有信息价值）"
+          }
+        }
+      }
+    }
+  },
+  "hf_judge_include_reasoning": {
+    "description": "【心流】返回判断理由",
+    "type": "bool",
+    "default": true,
+    "hint": "让判断模型返回详细理由，便于调试"
+  },
+  "hf_enable_detailed_log": {
+    "description": "【心流】启用详细日志",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后输出每次小模型判断的完整日志"
+  },
+  "hf_judge_max_retries": {
+    "description": "【心流】JSON解析失败重试次数",
+    "type": "int",
+    "default": 3,
+    "slider": {
+      "min": 0,
+      "max": 5,
+      "step": 1
+    },
+    "hint": "当判断模型返回无效JSON时的重试次数（建议不超过5次，以免浪费API额度）"
+  },
+  "hf_immersive_mode_duration": {
+    "description": "【心流】沉浸模式持续时间",
+    "type": "int",
+    "default": 30,
+    "slider": {
+      "min": 0,
+      "max": 300,
+      "step": 10
+    },
+    "hint": "Bot回复后进入沉浸模式的持续时间（秒）。设为0禁用"
+  },
+  "hf_judgment_paused_timeout": {
+    "description": "【心流】判断暂停超时时间",
+    "type": "int",
+    "default": 60,
+    "slider": {
+      "min": 15,
+      "max": 300,
+      "step": 15
+    },
+    "hint": "Bot判定要回复后暂停小模型判断的超时时间，防止永久暂停"
+  },
+  "hf_enable_debounce": {
+    "description": "【心流】启用回复防抖延迟",
+    "type": "bool",
+    "default": true,
+    "hint": "启用后，Bot判定需要回复时会延迟N秒，防止用户话没说完就插嘴"
+  },
+  "hf_debounce_delay": {
+    "description": "【心流】基础防抖延迟（秒）",
+    "type": "float",
+    "default": 2,
+    "slider": {
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5
+    },
+    "hint": "判定需要回复后，等待多少秒再实际触发"
+  },
+  "hf_max_debounce_wait": {
+    "description": "【心流】最大防抖等待（秒）",
+    "type": "float",
+    "default": 5,
+    "slider": {
+      "min": 1,
+      "max": 15,
+      "step": 0.5
+    },
+    "hint": "即使用户一直连续发消息，最多等待多少秒后也必须触发回复"
+  },
+  "seg_enable": {
+    "type": "bool",
+    "description": "【分段】启用本地完整分段引擎",
+    "default": true
+  },
+  "seg_force_split_symbols": {
+    "description": "【分段】绝对硬性分隔符列表",
+    "type": "list",
+    "default": [
+      "\\n\\n",
+      "\\n"
+    ],
+    "hint": "遇到列表中的符号时会直接强制分段，不受字数限制。分段后再对每段分别应用常规断句规则。"
+  },
+  "seg_min_length": {
+    "description": "【分段】单段最小字数",
+    "type": "int",
+    "default": 20,
+    "hint": "触发断句的最小字数限制。例如设为20，则在20字内尽量不断句。"
+  },
+  "seg_max_length": {
+    "description": "【分段】常规最大字数",
+    "type": "int",
+    "default": 50,
+    "hint": "单条消息的常规最大长度。程序优先在 [最小字数, 最大字数] 范围内寻找标点断句。"
+  },
+  "seg_allow_exceed_max": {
+    "description": "【分段】允许超出最大字数寻找断点",
+    "type": "bool",
+    "default": true,
+    "hint": "若开启：在 [最小, 最大] 范围内没找到标点时，会继续往后找，直到遇到第一个标点。\n若关闭：直接在最大字数处强制生硬截断或往前寻找。"
+  },
+  "seg_hard_max_limit": {
+    "description": "【分段】绝对硬性截断字数",
+    "type": "int",
+    "default": 100,
+    "hint": "配合上一项使用。如果允许超出最大字数，为防止无限长，当达到此字数时无论如何都会强制截断。建议设置为100-200。"
+  },
+  "seg_merge_short_tail": {
+    "description": "【分段】合并过短的尾部残余",
+    "type": "bool",
+    "default": true,
+    "hint": "断句到最后如果只剩下几个字（如“好的。”），单独发一段会很怪。开启此项会将其与上一段合并。"
+  },
+  "seg_short_tail_threshold": {
+    "description": "【分段】短尾合并字数阈值",
+    "type": "int",
+    "default": 8,
+    "hint": "最后一段剩余字数少于等于此值时，将触发短尾合并。"
+  },
+  "seg_split_symbols": {
+    "description": "【分段】断句符号/关键词列表(按优先级排列)",
+    "type": "list",
+    "default": [
+      "\\n\\n",
+      "\\n",
+      "。",
+      "！",
+      "？",
+      "；",
+      "……",
+      ".",
+      "!",
+      "?",
+      ";",
+      "”",
+      "、",
+      "，",
+      ","
+    ],
+    "hint": "程序会优先寻找靠前的符号进行切割。越强的停顿符（如换行、句号）建议放越前面。"
+  },
+  "seg_keep_symbol": {
+    "description": "【分段】分段是否保留标点符号",
+    "type": "bool",
+    "default": true,
+    "hint": "开启则断句后保留该标点（推荐）；关闭则断句后直接丢弃该标点。"
+  },
+  "seg_extend_to_trailing_symbols": {
+    "description": "【分段】分段符后顺延连续符号",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后，命中分段符时会继续顺延至最后的连续符号（如“？……”）直到遇到文字；关闭则仅命中的分段符本身。"
+  },
+  "seg_protect_paired_symbols": {
+    "description": "【分段】成对符号内部不分段",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后，括号/书名号/引号等配对符号内部不进行常规分段（如（...）、《...》、“...”）；到闭合符号后再允许断句。"
+  },
+  "seg_exclude_keywords": {
+    "description": "【分段】无需分段的关键词列表",
+    "type": "list",
+    "default": [
+      "模型列表",
+      "帮助",
+      "help",
+      "指令列表",
+      "菜单",
+      "功能列表",
+      "已加载的插件"
+    ],
+    "hint": "包含以下关键词时，将跳过整段处理（不区分大小写）。"
+  },
+  "seg_skip_longer_than": {
+    "description": "【分段】超长跳过阈值（字数），0=禁用",
+    "type": "int",
+    "default": 0,
+    "hint": "当 LLM 回复总字数超过此值时，直接原样发送不分段。设为 0 则禁用此功能。适合代码块等不适合拆分的场景。建议值：200-300。"
+  },
+  "seg_delay_type": {
+    "description": "【分段】延迟类型",
+    "type": "string",
+    "default": "dynamic",
+    "hint": "dynamic=按当前回复分段字数动态计算（推荐）；smart=动态+标点/问号修正；per_char=按字数；random=区间随机；fixed=旧的固定间隔。",
+    "options": [
+      "dynamic",
+      "smart",
+      "per_char",
+      "random",
+      "fixed"
+    ]
+  },
+  "seg_fixed_delay_seconds": {
+    "description": "【分段】固定延迟秒数",
+    "type": "float",
+    "default": 1,
+    "hint": "仅在 delay_type=fixed 时生效。每条分段发送前固定等待该秒数。"
+  },
+  "seg_random_delay_range": {
+    "description": "【分段】随机延迟时间范围（秒）",
+    "type": "list",
+    "default": [
+      1,
+      3
+    ],
+    "hint": "仅在 delay_type=random 时生效。格式为 [最小值, 最大值]，随机方式为正态分布并限制在区间内。"
+  },
+  "seg_per_char_delay_seconds": {
+    "description": "【分段】动态延迟每字秒数",
+    "type": "float",
+    "default": 0.4,
+    "hint": "dynamic / per_char 模式使用：延迟≈该值×当前分段字数。默认 0.4 秒/字；18 字约 7.2 秒。"
+  },
+  "disturb_reply_enabled": {
+    "type": "bool",
+    "description": "被打扰时强制回复",
+    "hint": "睡眠/上班期间消息过多时不再装死不回，而是回复但心情变差",
+    "default": true
+  },
+  "disturb_reply_threshold": {
+    "type": "int",
+    "description": "打扰强制回复阈值",
+    "hint": "最近窗口内同一个人发多少条消息（群聊也包括叫机器人名字的次数）后强制回复",
+    "default": 3
+  },
+  "disturb_window_minutes": {
+    "type": "int",
+    "description": "打扰统计窗口（分钟）",
+    "default": 10
+  },
+  "disturb_mood_penalty": {
+    "type": "int",
+    "description": "被打扰心情惩罚",
+    "hint": "每次强制回复降低的生气/郁闷/疲惫幅度",
+    "default": 6
+  },
+  "disturb_tone_seconds": {
+    "type": "int",
+    "description": "被打扰语气持续（秒）",
+    "hint": "强制回复后，接下来这段时间说话会不耐烦",
+    "default": 900
+  },
+  "proactive_require_friend": {
+    "type": "bool",
+    "description": "只对好友主动私聊",
+    "hint": "好友指关系为“熟识/相恋”的用户；没有好友就不主动私聊",
+    "default": true
+  },
+  "proactive_schedule_only": {
+    "type": "bool",
+    "description": "按日程场景主动私聊",
+    "hint": "主要在吃饭、休息、摸鱼、下班通勤时主动找对方",
+    "default": true
+  },
+  "proactive_followup_minutes": {
+    "type": "int",
+    "description": "未回复追问间隔（分钟）",
+    "hint": "主动私聊后多久没回复就追问一次；默认 5 分钟",
+    "default": 5
+  },
+  "proactive_no_reply_minutes": {
+    "type": "int",
+    "description": "未回复心情变差间隔（分钟）",
+    "hint": "追问后仍没回复，多久开始心情变差；默认 30 分钟",
+    "default": 30
+  },
+  "proactive_depressed_count": {
+    "type": "int",
+    "description": "多次未回复后抑郁阈值",
+    "hint": "累计多少次未及时回复后进入抑郁状态，需要哄",
+    "default": 3
+  },
+  "proactive_depressed_hours": {
+    "type": "int",
+    "description": "抑郁持续小时",
+    "default": 24
+  },
+  "dialect_style": {
+    "type": "string",
+    "description": "语种 / 方言",
+    "hint": "留空 = 跟随城市；填「普通话」= 关闭方言；填方言名（贵州话、广东话…）启用对应方言参考",
+    "default": ""
+  },
+  "dialect_enabled": {
+    "type": "bool",
+    "description": "启用方言风格",
+    "hint": "只在提示词里给模型一个方言参考，由模型自己决定用不用，不会强行替换字词",
+    "default": true
+  },
+  "create_dialect_kb": {
+    "type": "bool",
+    "description": "自动创建方言知识库",
+    "hint": "启动后把方言库同步到 AstrBot 知识库；需要先配置 Embedding 供应商",
+    "default": true
+  },
+  "create_scenic_kb": {
+    "type": "bool",
+    "description": "自动创建景区知识库",
+    "hint": "把内置的 3A+ 景区与游玩项目同步到 AstrBot 知识库",
+    "default": true
+  },
+  "scenic_kb_name": {
+    "type": "string",
+    "description": "景区知识库名称",
+    "default": "中国景区知识库"
+  },
+  "dialect_kb_name": {
+    "type": "string",
+    "description": "方言知识库名称",
+    "hint": "默认“陪伴方言库”；改名会创建新库，旧库不会自动删除",
+    "default": "陪伴方言库"
+  },
+  "proactive_user_idle_minutes": {
+    "type": "int",
+    "description": "对方刚说过话的静默期（分钟）",
+    "hint": "最近这么多分钟内有你的消息，就不发主动消息，避免你在聊天时插话。0 = 关闭。",
+    "default": 10
+  },
+  "proactive_forced_gap_minutes": {
+    "type": "int",
+    "description": "「日常关心」两条之间的最小间隔（分钟）",
+    "hint": "重启不会重置这个间隔（按数据库里的上次主动时间算），避免重启后立刻又发一条。",
+    "default": 30
+  },
+  "proactive_unanswered_window_minutes": {
+    "type": "int",
+    "description": "「他最后一句你还没回」的有效窗口（分钟）",
+    "hint": "只有这个时间内的未回消息，主动消息才会去接话；更早的当作旧话题，不再翻。0 = 不接话。",
+    "default": 30
+  },
+  "proactive_dedupe_enabled": {
+    "type": "bool",
+    "description": "主动消息别重复自己说过的话",
+    "hint": "开启后，生成的主动消息如果和最近几句太像，会换个说法重写一次；还像就不发。",
+    "default": true
+  },
+  "proactive_dedupe_threshold": {
+    "type": "float",
+    "description": "判定「重复」的相似度阈值",
+    "hint": "0.5~0.95，越大越宽松。默认 0.62。",
+    "default": 0.62
+  },
+  "usage_stats_enabled": {
+    "type": "bool",
+    "description": "面板显示对话用量（token / 缓存命中 / 花费）",
+    "hint": "数据来自 AstrBot 的 provider_stats，只读，不额外调用模型。",
+    "default": true
+  },
+  "deepseek_balance_enabled": {
+    "type": "bool",
+    "description": "面板显示 DeepSeek 余额",
+    "hint": "开启后用量页会调用一次 DeepSeek 余额接口（/user/balance）。",
+    "default": true
+  },
+  "deepseek_api_key": {
+    "type": "string",
+    "description": "DeepSeek API Key（查余额用）",
+    "hint": "留空则读环境变量 DEEPSEEK_API_KEY / COMPANION_V2_BALANCE_API_KEY。只用于查余额，不会写日志。",
+    "default": ""
+  },
+  "usage_price_hit_peak": {
+    "type": "float",
+    "description": "缓存命中输入单价（高峰，元/百万 token）",
+    "default": 0.04
+  },
+  "usage_price_hit_idle": {
+    "type": "float",
+    "description": "缓存命中输入单价（空闲，元/百万 token）",
+    "default": 0.02
+  },
+  "usage_price_miss_peak": {
+    "type": "float",
+    "description": "缓存未命中输入单价（高峰）",
+    "default": 2
+  },
+  "usage_price_miss_idle": {
+    "type": "float",
+    "description": "缓存未命中输入单价（空闲）",
+    "default": 1
+  },
+  "usage_price_out_peak": {
+    "type": "float",
+    "description": "输出单价（高峰）",
+    "default": 8
+  },
+  "usage_price_out_idle": {
+    "type": "float",
+    "description": "输出单价（空闲）",
+    "default": 4
+  },
+  "uid_merge_enabled": {
+    "type": "bool",
+    "description": "跨平台账号合并（飞书/QQ 认成同一个人）",
+    "hint": "开启后按 uid_alias_map / uid_map.json 把其它平台账号并到主 uid；开启瞬间会把旧档案、记忆、关系、称呼一次性并过来。关掉即恢复原生行为。",
+    "default": true
+  },
+  "uid_alias_map": {
+    "type": "string",
+    "description": "跨平台账号映射（JSON）",
+    "hint": "例如 {\"ou_cec66ea605ad17f62632fb044bc5f6ac\": \"302578963\"}；留空则读数据目录下的 uid_map.json。改完即时生效，无需重启。",
+    "default": ""
+  },
+  "proactive_rotate_enabled": {
+    "type": "bool",
+    "description": "主动消息跨平台轮换",
+    "hint": "开启后按最近说话的平台选边，都冷了就轮流；发送失败会自动改发另一个平台。关掉则只发最后说话的那个平台。",
+    "default": true
+  },
+  "proactive_recent_minutes": {
+    "type": "int",
+    "description": "主动消息选边窗口（分钟）",
+    "hint": "最近这么多分钟内在哪个平台说过话就发哪边，默认 30。",
+    "default": 30
+  },
+  "schedule_city": {
+    "type": "string",
+    "description": "日程所在城市",
+    "hint": "留空则优先从人格提示词/世界观获取城市；都没有时自动随机生成。",
+    "default": ""
+  },
+  "schedule_home": {
+    "type": "string",
+    "description": "角色住址",
+    "hint": "留空则从人格提示词提取住址；没有就按城市自动生成（如 观山湖区·小窝）。",
+    "default": ""
+  },
+  "schedule_workplace": {
+    "type": "string",
+    "description": "角色公司",
+    "hint": "留空则从人格提示词/世界观提取公司；没有就自动生成。",
+    "default": ""
+  },
+  "schedule_car": {
+    "type": "string",
+    "description": "角色资产",
+    "hint": "车/房/奢侈品都能写（可留空）：留空就从人格提示词里提取，没有就自动随机一辆车；送礼系统收到的大件也会自动替换这里。",
+    "default": ""
+  },
+  "schedule_event_prob": {
+    "type": "float",
+    "description": "突发事件概率",
+    "hint": "0~0.9；按日期种子决定，同一天不会反复变。休息日：加班/聚餐；工作日：外派。",
+    "default": 0.28
+  },
+  "schedule_llm_backbone": {
+    "type": "bool",
+    "description": "用大模型润色主干文案",
+    "hint": "只改写每小时 activity，不改时间/地点/类别；关闭后使用内置真人化文案。",
+    "default": true
+  },
+  "private_debounce_enabled": {
+    "type": "bool",
+    "description": "【私聊】连发合并",
+    "hint": "同一个人几秒内连发几条时，合并成一句再回复，避免一条一条各答一遍。默认开。",
+    "default": true
+  },
+  "private_debounce_seconds": {
+    "type": "float",
+    "description": "【私聊】合并等待秒数",
+    "hint": "最后一条消息之后，等这么久没有新消息才回复。默认 6（实测连发间隔 3~5.4s）。",
+    "default": 6
+  },
+  "private_debounce_max_wait": {
+    "type": "float",
+    "description": "【私聊】合并最长等待秒数",
+    "hint": "对方一直不停发的时候，最多憋这么久就先答一次。默认 14。",
+    "default": 14
+  },
+  "usage_balance_enabled": {
+    "type": "bool",
+    "description": "用量页显示各模型余额",
+    "hint": "检测 AstrBot 已配置的模型供应商（密钥自动读取），尽力查询余额：DeepSeek / SiliconFlow / OpenAI 兼容中转；查不到的只显示 token 用量。",
+    "default": true
+  },
+  "gift_enable": {
+    "type": "bool",
+    "description": "【礼物】收礼物",
+    "default": false,
+    "hint": "她在聊天里说「好想要/好喜欢」的东西会被记下来；主人说「送给你/买给你」她就真的收下，之后一直记得。默认关，要用再打开。"
+  },
+  "gift_owner_ids": {
+    "type": "string",
+    "description": "【礼物】谁能送她礼物",
+    "default": "",
+    "hint": "逗号分隔的 UID/QQ/飞书 open_id；留空则管理员和关系为「相恋」的人都能送。"
+  },
+  "gift_allow_group": {
+    "type": "bool",
+    "description": "【礼物】群里也能送",
+    "default": false,
+    "hint": "默认只在私聊里收；开了之后群里主人说送也会收下。"
+  },
+  "gift_big_keywords": {
+    "type": "string",
+    "description": "【礼物】哪些算大件（她不会开口要）",
+    "default": "车,汽车,轿车,跑车,越野,SUV,摩托,保时捷,奔驰,宝马,奥迪,法拉利,兰博基尼,特斯拉,比亚迪,路虎,凯迪拉克,沃尔沃,丰田,本田,大众,蔚来,理想,小鹏,问界,极氪,领克,红旗,玛莎拉蒂,宾利,劳斯莱斯,迈巴赫,房,房子,别墅,公寓,住宅,大平层,洋房,楼,古董,字画,名画,书画,瓷器,青花,玉器,翡翠,黄金,金条,珠宝,钻戒,钻石,皮草,戒指,项链,手镯,手链,手表,电脑,手机,相机,钢琴,游艇,飞机,店铺,铺面",
+    "hint": "逗号分隔。命中这些词的东西不会进她的心愿单，只能主人主动送；送车会换掉她日程里的车、送房会换掉她日程里的家。"
+  },
+  "gift_allow_big": {
+    "type": "bool",
+    "description": "【礼物】允许送车/房这类太贵的",
+    "default": false,
+    "hint": "默认关：车、房这种她不会收，会劝主人别乱花钱；打开后才会收下并改写日程。手表/首饰/电脑这类贵重小件不受这个开关影响。"
+  },
+  "gift_capture_wishes": {
+    "type": "bool",
+    "description": "【礼物】记住她随口说想要的东西",
+    "default": true,
+    "hint": "她说「好想要」「好喜欢」时记进心愿单，主人只说「送给你」也能知道送什么。"
+  },
+  "gift_capture_private_only": {
+    "type": "bool",
+    "description": "【礼物】只从私聊里记心愿",
+    "default": true,
+    "hint": "关掉后群聊里她说想要也会记。"
+  },
+  "gift_only_shopping": {
+    "type": "bool",
+    "description": "【礼物】只在逛街时记心愿",
+    "default": true,
+    "hint": "默认开：只有日程里在逛街/商场时，她看到喜欢的小东西才会记；平时不会凭空想要东西。"
+  },
+  "gift_wish_ttl_hours": {
+    "type": "int",
+    "description": "【礼物】心愿有效期（小时）",
+    "default": 72,
+    "hint": "超过这个时间没送，就不再拿它当「她最近想要的」。"
+  },
+  "gift_extract_with_llm": {
+    "type": "bool",
+    "description": "【礼物】用模型抽取心愿",
+    "default": true,
+    "hint": "开着她说完话后台会多一次很短的小模型调用；关掉就只用关键词规则，容易抽歪。"
+  },
+  "gift_inject_wall": {
+    "type": "bool",
+    "description": "【礼物】聊天时让她记得收到的礼物",
+    "default": true,
+    "hint": "聊到礼物/逛街/生日或提到那件东西时，会把她收过的东西简短告诉她。"
+  },
+  "gift_max_wall_items": {
+    "type": "int",
+    "description": "【礼物】每次最多提醒几件",
+    "default": 8,
+    "hint": "太多会让她每句话都想提礼物，建议 5-8。"
+  },
+  "gift_shop_hint_chance": {
+    "type": "float",
+    "description": "【礼物】逛街时提一句的概率",
+    "hint": "0~1，默认 0.35：不是每次逛街都会想到小东西，抽中了才提一句。",
+    "default": 0.35
+  },
+  "gift_shop_hint_gap_hours": {
+    "type": "int",
+    "description": "【礼物】逛街提示最短间隔（小时）",
+    "default": 6
+  },
+  "gift_shop_hint_max_per_day": {
+    "type": "int",
+    "description": "【礼物】逛街提示每天最多几次",
+    "default": 1
+  },
+  "time_recall_enabled": {
+    "type": "bool",
+    "description": "【时间回看】按时间问就回看当时的聊天",
+    "hint": "他问「昨天下午/前天/上周三」时，去记忆终端（我想永远记住你）取那段时间的聊天再回答；只带内容，不给每条消息打时间戳。",
+    "default": true
+  },
+  "time_recall_limit": {
+    "type": "int",
+    "description": "【时间回看】最多带几条",
+    "default": 6
+  },
+  "daily_digest_enabled": {
+    "type": "bool",
+    "description": "【阶段记忆】每天把昨天聊天压成一条长期记忆",
+    "hint": "上午（默认 6 点后）用模型把昨天聊到的事、约定、他的状态总结成 2-4 句写进记忆终端，供以后召回。",
+    "default": true
+  },
+  "daily_digest_hour": {
+    "type": "int",
+    "description": "【阶段记忆】几点之后总结昨天",
+    "default": 6
+  },
+  "auto_learn_minutes": {
+    "type": "int",
+    "description": "【长期记忆】自动提炼间隔（分钟）",
+    "hint": "从最近私聊里抽事实的间隔，默认 15 分钟（原来是写死 30 分钟）。",
+    "default": 15
+  },
+  "memory_inject_max_chars": {
+    "type": "int",
+    "description": "【注入】每轮记忆最多多少个字",
+    "hint": "防止一次塞太多记忆挤占对话；按行截断，默认 1200 字。",
+    "default": 1200
+  },
+  "milestone_enabled": {
+    "type": "bool",
+    "description": "【里程碑】每 N 轮私聊压成一条长期记忆",
+    "hint": "攒够 N 轮（他说的话）就让模型把这段聊到的事压成 2-4 句写进记忆终端；原始聊天不删。",
+    "default": true
+  },
+  "milestone_every_turns": {
+    "type": "int",
+    "description": "【里程碑】每多少轮归档一次",
+    "default": 20
+  },
+  "milestone_min_messages": {
+    "type": "int",
+    "description": "【里程碑】至少多少条消息才归档",
+    "default": 12
+  },
+  "milestone_idle_minutes": {
+    "type": "int",
+    "description": "【里程碑】话少时的时间兜底（分钟）",
+    "hint": "不够 20 轮、但距上次归档超过这么久，又攒够下面的条数，也压一条；避免话少的那天一条摘要都没有。",
+    "default": 120
+  },
+  "milestone_idle_min_messages": {
+    "type": "int",
+    "description": "【里程碑】时间兜底至少多少条",
+    "default": 6
+  },
+  "diary_enabled": {
+    "type": "bool",
+    "description": "写日记",
+    "default": true,
+    "hint": "每天 10 点前后用昨天的聊天和日程小日记写一篇，保存成 txt。"
+  },
+  "diary_dir": {
+    "type": "string",
+    "description": "日记保存文件夹（留空即可）",
+    "default": "",
+    "hint": "留空 = 插件数据目录下的 diary 子目录（data/plugin_data/Astrbot_Amo_forever/diary）。按 年/月/日 自动建子文件夹，文件名是「我的日记YYYY年MM月DD日.txt」。上架规范要求数据写在插件数据目录内，因此填相对路径会挂在该目录下，填目录外的绝对路径会被忽略并回退默认目录。"
+  },
+  "diary_time": {
+    "type": "string",
+    "description": "日记时间",
+    "default": "22:00",
+    "hint": "HH:MM，默认 22:00：傍晚以后（18:00 起）写「当天」，白天写「昨天」。错过不自动补；面板「写昨天」只能补昨天及以前，当天这篇到点自动写。"
+  },
+  "quote_group_probability": {
+    "type": "float",
+    "description": "群聊引用原消息的概率",
+    "hint": "不同发言人数达到阈值后，按这个概率引用；1.0=每次都引用（旧行为），0=从不引用。",
+    "default": 0.4
+  },
+  "schedule_mood_gain": {
+    "type": "float",
+    "description": "日程活动影响心情的强度",
+    "hint": "每小时按日程类别（上班/吃饭/休息/逛街/通勤）给真实心情加/减一点，0=关掉；默认 3，越大越明显。",
+    "default": 3.0
+  },
+  "enable_auto_relation": {
+    "type": "bool",
+    "description": "自动记关系网",
+    "default": true,
+    "hint": "关掉后不再按聊天自动给别人建边/调关系；面板手动改的关系不受影响。"
+  },
+  "relation_stranger_edges": {
+    "type": "bool",
+    "description": "给没聊过的人也建关系边",
+    "default": true,
+    "hint": "关掉后只给真正聊过的人建「陌生人」边。"
+  },
+  "relation_sediment_days": {
+    "type": "int",
+    "description": "关系沉淀回看天数",
+    "default": 30,
+    "hint": "每次沉淀回看最近多少天的聊天来决定关系。"
+  },
+  "relation_infer_per_user": {
+    "type": "int",
+    "description": "每人最多推断几条关系",
+    "default": 20,
+    "hint": "防止关系网被一个人撑爆。"
+  },
+  "data_call_timeout_seconds": {
+    "type": "float",
+    "description": "调用记忆终端的超时（秒）",
+    "default": 3.0,
+    "hint": "超过这个时间就不等记忆终端，避免一句话卡住。"
+  },
+  "draw_enable": {
+    "type": "bool",
+    "description": "【照片】聊天里自动画图",
+    "default": false,
+    "hint": "他聊到吃的/在干嘛，或直接说「拍给我看看」时，让她用万象画卷生一张发过来。需要先装好万象画卷。"
+  },
+  "draw_trigger_mode": {
+    "type": "string",
+    "description": "【照片】画图触发方式",
+    "default": "both",
+    "options": [
+      "topic",
+      "explicit",
+      "both"
+    ],
+    "hint": "topic=话题触发；explicit=明确要图；both=都要。"
+  },
+  "draw_topic_keywords": {
+    "type": "string",
+    "description": "【照片】话题触发词",
+    "default": "吃什么,吃啥,吃点什么,想吃什么,在干嘛,在做什么,做什么,好饿,饿了,想喝,喝什么,喝啥",
+    "hint": "逗号分隔；命中后拿她刚才的回复当画面描述。"
+  },
+  "draw_explicit_keywords": {
+    "type": "string",
+    "description": "【照片】明确要图触发词",
+    "default": "画一张,画个,画一下,给我画,帮我画,来一张,来张,发张图,发个图,发一张,拍张,拍照给我看看,拍给我看,照片给我看看,自拍",
+    "hint": "逗号分隔；命中后用他这句话（或她上一条）当画面描述。"
+  },
+  "draw_prompt_max_chars": {
+    "type": "int",
+    "description": "【照片】画图描述最长字数",
+    "default": 80
+  },
+  "draw_cooldown_minutes": {
+    "type": "int",
+    "description": "【照片】画图冷却（分钟）",
+    "default": 30
+  },
+  "draw_max_per_hour": {
+    "type": "int",
+    "description": "【照片】每小时最多画几张",
+    "default": 3
+  },
+  "draw_max_per_day": {
+    "type": "int",
+    "description": "【照片】每天最多画几张",
+    "default": 10
+  },
+  "draw_delay_seconds": {
+    "type": "float",
+    "description": "【照片】画图前等待（秒）",
+    "default": 1.5,
+    "hint": "先让她的文字发出去，再开始画。"
+  },
+  "draw_cache_minutes": {
+    "type": "int",
+    "description": "【照片】同一画面复用时长（分钟）",
+    "default": 1440,
+    "hint": "同一句话/同一个画面在这段时间内复用同一张图：他在 QQ 问过、又到飞书问，发的是同一张，不重复花钱。0=每次都重新生成。"
+  },
+  "draw_scene_keywords": {
+    "type": "string",
+    "description": "【照片】额外场景/地点识别词",
+    "default": "",
+    "hint": "逗号分隔，追加到内置词表（公园/商场/咖啡/学校…）。聊天画图用它判断同一场景并复用缓存；面板「按提示词生成」也用它自动识别地点，两处共用，不用各填一份。"
+  },
+  "draw_owner_ids": {
+    "type": "string",
+    "description": "【照片】谁能触发画图",
+    "default": "",
+    "hint": "逗号分隔；留空则管理员和「相恋」关系可以。"
+  },
+  "draw_private_only": {
+    "type": "bool",
+    "description": "【照片】只在私聊画",
+    "default": true
+  },
+  "draw_dry_run": {
+    "type": "bool",
+    "description": "【照片】画图演练模式",
+    "default": false,
+    "hint": "只记日志、不调用模型；用来测触发逻辑不花钱。"
+  },
+  "draw_debug": {
+    "type": "bool",
+    "description": "【照片】画图调试日志",
+    "default": false
+  },
+  "photo_enable": {
+    "type": "bool",
+    "description": "【照片】按日程分享照片",
+    "default": false,
+    "hint": "旅游/逛街/周末/日常按概率发街景或自拍；工作日早上出门分享穿搭自拍。"
+  },
+  "photo_outfit_prob": {
+    "type": "int",
+    "description": "【照片】早起出门分享穿搭概率（%）",
+    "default": 70
+  },
+  "photo_travel_prob": {
+    "type": "int",
+    "description": "【照片】旅游时分享照片概率（%）",
+    "default": 60
+  },
+  "photo_shopping_prob": {
+    "type": "int",
+    "description": "【照片】逛街时分享照片概率（%）",
+    "default": 40
+  },
+  "photo_weekend_prob": {
+    "type": "int",
+    "description": "【照片】周末分享照片概率（%）",
+    "default": 50
+  },
+  "photo_daily_prob": {
+    "type": "int",
+    "description": "【照片】日常分享照片概率（%）",
+    "default": 25
+  },
+  "photo_selfie_ratio": {
+    "type": "int",
+    "description": "【照片】街景/自拍里的自拍占比（%）",
+    "default": 50,
+    "hint": "旅游、逛街、周末、日常按这个比例决定发自拍还是街景；穿搭永远是自拍。"
+  },
+  "photo_daily_cap": {
+    "type": "int",
+    "description": "【照片】每天最多分享几张",
+    "default": 4
+  },
+  "photo_quiet_hours": {
+    "type": "string",
+    "description": "【照片】免打扰时段",
+    "default": "23:00-07:00"
+  },
+  "photo_prompt_prefix": {
+    "type": "string",
+    "description": "【照片】照片提示词前缀",
+    "default": "手机随手拍，真实自然，生活感，"
+  },
+  "photo_owner_ids": {
+    "type": "string",
+    "description": "【照片】分享给谁",
+    "default": "",
+    "hint": "逗号分隔；留空则管理员和「相恋」关系。"
+  },
+  "photo_dry_run": {
+    "type": "bool",
+    "description": "【照片】分享演练模式",
+    "default": false,
+    "hint": "只记日志、不调用模型。"
+  },
+  "photo_persona_ref": {
+    "type": "string",
+    "description": "【照片】角色模板图路径",
+    "default": "",
+    "hint": "在「角色三视图」里选一张后自动写入；以后按提示词生图和自拍都会带这张模板。"
+  },
+  "photo_persona_refs": {
+    "type": "string",
+    "description": "【照片】三视图模板映射",
+    "default": "",
+    "hint": "自动维护：正面/侧面/全身各自的模板路径，不用手改。"
+  },
+  "photo_persona_enabled": {
+    "type": "string",
+    "description": "【照片】三视图启用状态",
+    "default": "",
+    "hint": "自动维护：哪些视角的模板参与生图，不用手改。"
+  },
+  "photo_cache_days": {
+    "type": "int",
+    "description": "【照片】生图缓存保留天数",
+    "default": 7,
+    "hint": "只清理 photo_cache 里的旧生成图；模板文件和聊天记录里的图片不受影响。0 = 不自动删。"
+  },
+  "photo_template_dir": {
+    "type": "string",
+    "description": "【照片】角色模板保存文件夹",
+    "default": "",
+    "hint": "留空 = 插件目录下 templates（会跟插件一起备份）；填绝对路径可换位置，插件目录外不随插件备份。"
+  },
+  "photo_debug": {
+    "type": "bool",
+    "description": "【照片】照片调试日志",
+    "default": false
+  },
+  "schedule_day_types": {
+    "type": "template_list",
+    "description": "日子类型：每天先按权重抽一种，再按类型生成日程",
+    "hint": "同一天用日期当种子，结果稳定；scope 填 weekday / weekend / any。guide 会写进日程文案的提示词。",
+    "templates": {
+      "day_type": {
+        "name": "日子类型",
+        "display_item": "name",
+        "items": {
+          "id": {
+            "description": "唯一标识",
+            "type": "string",
+            "default": ""
+          },
+          "name": {
+            "description": "类型名",
+            "type": "string",
+            "default": ""
+          },
+          "enabled": {
+            "description": "是否启用",
+            "type": "bool",
+            "default": true
+          },
+          "weight": {
+            "description": "抽取权重",
+            "type": "float",
+            "default": 1.0
+          },
+          "scope": {
+            "description": "weekday / weekend / any",
+            "type": "string",
+            "default": "any"
+          },
+          "guide": {
+            "description": "给模型的指引",
+            "type": "string",
+            "default": ""
+          }
+        }
+      }
+    },
+    "default": [
+      {
+        "__template_key": "day_type",
+        "id": "workday",
+        "name": "上班日",
+        "enabled": true,
+        "weight": 5,
+        "scope": "weekday",
+        "guide": "常规上班日，两点一线：起床、通勤、上班、下班回家、睡觉。"
+      },
+      {
+        "__template_key": "day_type",
+        "id": "restday",
+        "name": "休息日",
+        "enabled": true,
+        "weight": 4,
+        "scope": "weekend",
+        "guide": "不上班，以待在家里为主：睡懒觉、收拾、散步、出去吃一顿。"
+      },
+      {
+        "__template_key": "day_type",
+        "id": "outing",
+        "name": "外出日",
+        "enabled": true,
+        "weight": 3,
+        "scope": "weekend",
+        "guide": "出门玩一整天：逛街、看展、去公园或海边，傍晚或晚上才回家。"
+      },
+      {
+        "__template_key": "day_type",
+        "id": "homebody",
+        "name": "宅家日",
+        "enabled": true,
+        "weight": 1,
+        "scope": "any",
+        "guide": "哪儿也不去，窝在家：睡到中午、点外卖、看剧看书。"
+      },
+      {
+        "__template_key": "day_type",
+        "id": "overtime",
+        "name": "加班日",
+        "enabled": true,
+        "weight": 1,
+        "scope": "weekday",
+        "guide": "活多的一天：一直忙到很晚，回家倒头就睡。"
+      },
+      {
+        "__template_key": "day_type",
+        "id": "slacking",
+        "name": "摸鱼日",
+        "enabled": true,
+        "weight": 1,
+        "scope": "weekday",
+        "guide": "名义上在上班，实际上一直找机会摸鱼。"
+      }
+    ]
+  },
+  "schedule_change_enabled": {
+    "type": "bool",
+    "description": "按主人说的话改日程",
+    "default": true,
+    "hint": "「来接我 / 早点回家 / 一起睡」这类明确的行程安排会改写当前日程；只认主人私聊。"
+  },
+  "schedule_change_owner_ids": {
+    "type": "string",
+    "description": "允许改日程的主人 UID",
+    "default": "",
+    "hint": "逗号分隔；留空时沿用礼物引擎的主人判定（gift_owner_ids / 恋人关系 / 管理员）。"
+  },
+  "birthday_greet_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "生日祝福",
+    "hint": "打开后，他到生日那天她会用自己的人设语气发一句生日祝福；关闭则完全不发。"
+  }
+}
