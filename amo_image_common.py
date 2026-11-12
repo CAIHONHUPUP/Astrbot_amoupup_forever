@@ -114,6 +114,20 @@ def find_omni(plugin, holder, scope="amo_image_common.find_omni", ttl=OMNI_CACHE
     这样缓存跟着引擎走，热重载后不会留着一个指向旧实例的引用。
     """
     now = time.monotonic()
+    # 停用 ≠ 卸载：AstrBot 停用插件只把 activated 置 False，实例还挂在内存里。
+    # 不看这个标记，停用万象画卷后照样能出图（用户以为已经关了）。
+    try:
+        context = getattr(plugin, "context", None)
+        getter = getattr(context, "get_registered_star", None) if context else None
+        meta = getter(OMNI_PLUGIN_NAME) if getter else None
+    except Exception as exc:
+        _note_swallowed(scope, exc)
+        meta = None
+        getter = None
+    if meta is not None and getattr(meta, "activated", True) is False:
+        holder._omni = None
+        holder._omni_checked = now
+        return None
     checked = getattr(holder, "_omni_checked", 0.0)
     cached = getattr(holder, "_omni", None)
     if not force and now - checked < ttl:
@@ -122,12 +136,9 @@ def find_omni(plugin, holder, scope="amo_image_common.find_omni", ttl=OMNI_CACHE
             return cached
     holder._omni_checked = now
     holder._omni = None
+    if getter is None:
+        return None
     try:
-        context = getattr(plugin, "context", None)
-        getter = getattr(context, "get_registered_star", None) if context else None
-        if getter is None:
-            return None
-        meta = getter(OMNI_PLUGIN_NAME)
         instance = getattr(meta, "star_cls", None) if meta else None
         if instance is not None and hasattr(instance, "generate_images_for_plugin"):
             holder._omni = instance

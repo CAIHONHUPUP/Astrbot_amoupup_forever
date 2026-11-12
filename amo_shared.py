@@ -923,6 +923,11 @@ def clamp(value: Any, low: float = 0.0, high: float = 100.0) -> float:
 
 
 def to_int(value: Any, default: int = 0) -> int:
+    # 空值不是异常：记忆行里没有 tier、配置没填，都该安静地用默认值。
+    # 以前 None 会走 float(None) 抛 TypeError，被吞异常计数器记一笔，
+    # 用户发一次 /amo memories 就在日志里看到一条「to_int 失败」的警告。
+    if value is None or value == "":
+        return default
     try:
         return int(float(value))
     except Exception as _amo_exc:
@@ -931,6 +936,8 @@ def to_int(value: Any, default: int = 0) -> int:
 
 
 def to_float(value: Any, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
     try:
         return float(value)
     except Exception as _amo_exc:

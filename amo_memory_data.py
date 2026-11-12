@@ -56,16 +56,25 @@ class DataSyncMixin(_MixinBase):
                 return value
         return None
     def _data_plugin(self):
-        """找「我能永远记住你」插件实例；没装就返回 None。"""
+        """找「我能永远记住你」插件实例；没装**或已被停用**就返回 None。
+
+        停用插件时 AstrBot 只把 `activated` 置 False，实例还留在内存里，
+        所以光看实例会误判「还连着」：`/amo status` 写「已连接」，记忆却写不进去。
+        """
         try:
             for name in self.DATA_PLUGIN_NAMES:
-                star = self._star_instance(self.context.get_registered_star(name))
+                meta = self.context.get_registered_star(name)
+                if getattr(meta, "activated", True) is False:
+                    continue
+                star = self._star_instance(meta)
                 if star is not None:
                     return star
         except Exception as _amo_exc:
             _note_swallowed("amo_memory.HumanCorePlugin._data_plugin", _amo_exc)
         try:
             for meta in self.context.get_all_stars():
+                if getattr(meta, "activated", True) is False:
+                    continue
                 marker = (getattr(meta, "name", "") or "") + " " + (getattr(meta, "module_path", "") or "")
                 star = self._star_instance(meta)
                 if star is not None and "amo_data" in marker.lower():

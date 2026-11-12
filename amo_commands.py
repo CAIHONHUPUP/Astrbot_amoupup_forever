@@ -59,6 +59,20 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
     _MixinBase = object
 
 
+#: 记忆后端（Astrbot_amoupup_data）连没连上，指令里要说人话。
+#: 没装它的时候聊天照常、记忆却是空的，用户只会以为「记忆坏了」。
+MEMORY_BACKEND_MISSING = (
+    "🧠 记忆后端：未连接 —— 缺「我能永远记住你」(Astrbot_amoupup_data)，"
+    "记忆写不进去；装好并启用它，几十秒内会自动接上，不用重启"
+)
+MEMORY_BACKEND_OK = "🧠 记忆后端：已连接 Astrbot_amoupup_data"
+
+
+def memory_backend_line(connected):
+    """`/amo status`、`/amo memories` 共用的一句话：记忆后端到底连上没有。"""
+    return MEMORY_BACKEND_OK if connected else MEMORY_BACKEND_MISSING
+
+
 class CommandMixin(_MixinBase):
     def _args(self, event):
         raw = (event.message_str or "").strip()
@@ -184,7 +198,7 @@ class CommandMixin(_MixinBase):
         mood = data["mood"]
         mood_line = " ".join([key + str(int(value)) for key, value in mood.items()])
         threshold = data["threshold"]
-        return "\n".join([
+        lines = [
             "🌙 陪伴 · 当前状态",
             "🕒 " + str(data["time"]),
             "💛 心情：" + str(data["dominant"]) + "（" + mood_line + "）",
@@ -194,7 +208,11 @@ class CommandMixin(_MixinBase):
             "📅 正在：" + str(data["activity"].get("activity", "休息")) + "（" + str(data["activity"].get("place", "")) + "）",
             "🎚 心流阈值：" + str(threshold["value"]) + "（基础 " + str(threshold["base"]) + "，活跃度 " + str(data["activity_rate"]) + "%）",
             "📚 档案 " + str(data["counts"]["profiles"]) + " · 记忆 " + str(data["counts"]["memories"]) + " · 消息 " + str(data["counts"]["messages"]),
-        ])
+        ]
+        # 记忆后端连没连上要写在状态里：没装想记的人只会看到「记忆 0」，然后以为功能坏了。
+        plugin_state = data.get("data_plugin") or {}
+        lines.append(memory_backend_line(bool(plugin_state.get("connected"))))
+        return "\n".join(lines)
 
     async def _handle_command(self, event):
         args = self._args(event)
@@ -289,10 +307,14 @@ class CommandMixin(_MixinBase):
                 return "只有管理员才能查看别人的记忆。"
             items = await self._all_memories(target, "", 20)
             if not items:
-                return "暂时没有记忆。"
+                # 空列表有两种原因：真的没记过，或者记忆后端压根没连上。
+                # 不分清楚，用户会一直以为「她记不住我」是插件坏了。
+                if self._data_connected():
+                    return "暂时没有记忆。"
+                return "暂时没有记忆。\n" + memory_backend_line(False)
             lines = ["📖 记忆 · " + target]
             for item in items:
-                tier = to_int(item.get("tier"))
+                tier = to_int(item.get("tier"), 0)
                 label = "珍贵" if tier >= 2 else ("重要" if tier == 1 else "普通")
                 expires = item.get("expires_at")
                 if not expires:

@@ -310,13 +310,15 @@ class RunTests(unittest.TestCase):
         asyncio.run(plugin.tasks[0])
         self.assertEqual(event.sent, [])
 
-    def test_missing_omni_does_not_raise(self):
+    def test_missing_omni_explains_instead_of_silence(self):
         engine, plugin = engine_for({}, None)
         plugin.context.omni = None
         event = FakeEvent("给我画一碗面")
         engine.maybe_after_reply(event, "好呀")
         asyncio.run(plugin.tasks[0])
-        self.assertEqual(event.sent, [])
+        # 没装万象画卷：不画图，但要回一句说明，不能一声不吭
+        self.assertEqual(len(event.sent), 1)
+        self.assertEqual(len(event.sent[0].chain), 1)
 
     def test_wants_photo_for_explicit_request(self):
         engine, _ = engine_for()

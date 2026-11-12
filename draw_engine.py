@@ -184,6 +184,7 @@ class DrawEngine:
         self._omni_checked = 0.0
         self._stats = {"scheduled": 0, "sent": 0, "failed": 0, "skipped": 0, "cached": 0}
         self._last_error = ""
+        self._missing_notice_at = {}   # umo -> monotonic：缺万象画卷时多久提醒一次
 
     # ---------- 配置 ----------
 
@@ -622,9 +623,56 @@ class DrawEngine:
         plan = self.decide(event, reply_text)
         if not plan:
             return None
+        # 明确要图、但本机根本没装万象画卷：别一声不吭（用户只会以为她不理人），
+        # 回一句人话说明缺什么；同一会话 10 分钟只提醒一次。
+        notice = self.missing_omni_notice(event)
+        if notice:
+            self._spawn(self._send_text(event, notice))
+            return None
         self._schedule(event, plan["prompt"], plan["reason"], plan.get("cached"),
                        plan.get("cache_key", ""), plan.get("selfie", False))
         return plan
+
+    def missing_omni_notice(self, event):
+        """这一轮该不该解释「没装画图插件」。返回要说的话，或空字符串。"""
+        try:
+            if not self.wants_photo(event):
+                return ""
+            if self._find_omni() is not None:
+                return ""
+            umo = str(getattr(event, "unified_msg_origin", "") or "")
+            store = getattr(self, "_missing_notice_at", None)
+            if not isinstance(store, dict):
+                store = {}
+                self._missing_notice_at = store
+            now = time.monotonic()
+            if now - store.get(umo, 0.0) < 600:
+                return ""
+            store[umo] = now
+            logger.info("[amo] 他这轮要照片，但本机没装万象画卷：已回复说明")
+            return "我这台还没装画图插件（万象画卷），装了才能给你拍照片；等我弄好再给你拍。"
+        except Exception as _amo_exc:
+            _note_swallowed("draw_engine.DrawEngine.missing_omni_notice", _amo_exc)
+            return ""
+
+    async def _send_text(self, event, text):
+        """补一句纯文字（缺插件时用；发送失败只记日志，不影响正常回复）。"""
+        if MessageChain is None or not text:
+            return False
+        try:
+            try:
+                from astrbot.api.message_components import Plain
+            except Exception:
+                from astrbot.api.event.components import Plain
+        except Exception as exc:
+            logger.warning("[amo] 缺画图插件提示发不出去（拿不到 Plain）: %s" % exc)
+            return False
+        try:
+            await event.send(MessageChain([Plain(text)]))
+            return True
+        except Exception as exc:
+            logger.warning("[amo] 缺画图插件提示发送失败: %s" % exc)
+            return False
 
     def manual(self, event, text):
         """``/amo draw 描述``：跳过触发词，直接画（给测试用）。"""

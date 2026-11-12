@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import hashlib
 import json
 import os
 import inspect
@@ -18,16 +19,16 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger,
+        DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger, now_ts, to_float,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger,
+            DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger, now_ts, to_float,
         )
     except ImportError:  # 直接按文件加载时
         from amo_shared import (
-            DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger,
+            DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger, now_ts, to_float,
         )
 
 
@@ -91,6 +92,12 @@ class KbMixin(_MixinBase):
             )
         return lines
 
+    @staticmethod
+    def _scenic_fingerprint(name, lines):
+        """景区库内容指纹：内容没变就不重传，省掉每次启动的 470 条切分 + embedding。"""
+        body = str(name) + "|" + "\n".join(str(item) for item in lines or [])
+        return hashlib.sha1(body.encode("utf-8")).hexdigest()
+
     async def _ensure_scenic_kb(self):
         if not self.cfg_bool("create_scenic_kb", True):
             return None
@@ -103,6 +110,7 @@ class KbMixin(_MixinBase):
                 manager = manager()
             name = self._scenic_kb_name()
             kb = await manager.get_kb_by_name(name)
+            created_now = False
             if kb is None:
                 providers = list(self.context.get_all_embedding_providers() or [])
                 if not providers:
@@ -125,25 +133,88 @@ class KbMixin(_MixinBase):
                     embedding_provider_id=provider_id,
                 )
                 kb = await created if inspect.isawaitable(created) else created
+                created_now = True
             lines = self._scenic_text_lines()
-            if lines:
+            fingerprint = self._scenic_fingerprint(name, lines)
+            key = "scenic_kb_synced:" + name
+            retry_key = "scenic_kb_retry_after:" + name
+            synced = ""
+            retry_after = 0.0
+            try:
+                synced = str(self.db.kv_get(key, "") or "")
+                retry_after = to_float(self.db.kv_get(retry_key, 0), 0)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_kb.HumanCorePlugin._ensure_scenic_kb", _amo_exc)
+            if lines and synced != fingerprint and (created_now or now_ts() >= retry_after):
+                doc_ids = []
                 try:
-                    docs = await kb.list_documents(search="amo_scenic")
+                    try:
+                        docs = await kb.list_documents()
+                    except TypeError:
+                        docs = await kb.list_documents(search="amo_scenic")
                     for doc in docs or []:
+                        label = str(getattr(doc, "name", "") or getattr(doc, "doc_name", "") or "")
                         doc_id = getattr(doc, "doc_id", "") or getattr(doc, "id", "")
-                        if doc_id:
-                            await kb.delete_document(doc_id)
+                        if doc_id and (not label or "amo_scenic" in label):
+                            doc_ids.append(doc_id)
                 except Exception as _amo_exc:
                     _note_swallowed("amo_kb.HumanCorePlugin._ensure_scenic_kb", _amo_exc)
-                try:
-                    await kb.upload_document(
-                        "amo_scenic_spots.txt",
-                        "\n\n".join(lines).encode("utf-8"),
-                        "txt",
+                # 升级到这一版之前没有指纹：库里已经有文档就先认下来，不重传。
+                adopted = bool(doc_ids) and not created_now and not synced
+                uploaded = False
+                if adopted:
+                    logger.info(
+                        "[amo] 景区知识库 %s 已存在（%d 个景区），本次跳过重传" % (name, len(lines))
                     )
-                except Exception as exc:
-                    logger.warning("[amo] 景区知识库上传失败: %s" % exc)
-            logger.info("[amo] 景区知识库 %s 已同步，共 %d 个景区" % (name, len(lines)))
+                else:
+                    for doc_id in doc_ids:
+                        try:
+                            await kb.delete_document(doc_id)
+                        except Exception as _amo_exc:
+                            _note_swallowed("amo_kb.HumanCorePlugin._ensure_scenic_kb", _amo_exc)
+                    # 一次传 470 个景区会失败：AstrBot 那边把全部文本块塞进一次
+                    # insert_batch，几十个块就写不进索引（实测 150 个景区/11 块可以，
+                    # 400 个景区就报「写入知识库索引时出错」）。这里按批切成小文档。
+                    batch = max(20, int(getattr(self, "SCENIC_KB_BATCH_LINES", 120)))
+                    parts = [lines[index:index + batch] for index in range(0, len(lines), batch)]
+                    ok_parts = 0
+                    for index, part in enumerate(parts, 1):
+                        try:
+                            await kb.upload_document(
+                                "amo_scenic_%02d.txt" % index,
+                                "\n\n".join(part).encode("utf-8"),
+                                "txt",
+                            )
+                            ok_parts += 1
+                        except Exception as exc:
+                            logger.warning(
+                                "[amo] 景区知识库第 %d/%d 批上传失败（%s）" % (index, len(parts), exc)
+                            )
+                    uploaded = bool(parts) and ok_parts == len(parts)
+                    if uploaded:
+                        logger.info(
+                            "[amo] 景区知识库 %s 已同步，共 %d 个景区（分 %d 批）"
+                            % (name, len(lines), len(parts))
+                        )
+                    else:
+                        logger.warning(
+                            "[amo] 景区知识库只成功 %d/%d 批：先沿用已有内容，6 小时内不再重试，"
+                            "不会每次启动都刷这条" % (ok_parts, len(parts))
+                        )
+                        try:
+                            self.db.kv_set(retry_key, now_ts() + 6 * 3600)
+                        except Exception as _amo_exc:
+                            _note_swallowed("amo_kb.HumanCorePlugin._ensure_scenic_kb", _amo_exc)
+                if adopted or uploaded:
+                    try:
+                        self.db.kv_set(key, fingerprint)
+                        self.db.kv_set(retry_key, 0)
+                    except Exception as _amo_exc:
+                        _note_swallowed("amo_kb.HumanCorePlugin._ensure_scenic_kb", _amo_exc)
+            elif lines and synced == fingerprint:
+                logger.debug("[amo] 景区知识库 %s 内容没变，跳过重传" % name)
+            elif lines:
+                logger.debug("[amo] 景区知识库 %s 上次上传失败，6 小时内不再重试" % name)
             return kb
         except Exception as exc:
             logger.warning("[amo] 景区知识库创建失败: %s" % exc)

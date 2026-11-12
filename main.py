@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 
 
-PLUGIN_VERSION = "6.9.1"
+PLUGIN_VERSION = "6.9.2"
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -818,7 +818,10 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                     break
                 await asyncio.sleep(2)
             if omni is None:
-                logger.info("[amo] 暂未发现万象画卷插件，生图时会自动重试握手")
+                logger.info(
+                    "[amo] 没装「万象画卷」(astrbot_plugin_omnidraw)：照片/画图暂时用不了，"
+                    "用户要图时会回一句说明；装好并启用后会自动接上，不用重启"
+                )
                 return
             cfg = getattr(omni, "plugin_config", None)
             nodes = list(getattr(cfg, "providers", []) or [])
@@ -895,19 +898,27 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
 
 
     def _plugin_by_names(self, names):
-        """按插件名找实例；不缓存，reload 之后拿到的是新实例。"""
+        """按插件名找实例；不缓存，reload 之后拿到的是新实例。
+
+        停用的插件还挂在内存里（`activated=False`），这里必须当它不存在：
+        否则停用「想记」之后，记忆仍会往它身上写，用户却看不到任何数据。
+        """
         for name in names:
             try:
                 meta = self.context.get_registered_star(name)
             except Exception as _amo_exc:
                 _note_swallowed("main.HumanCorePlugin._plugin_by_names", _amo_exc)
                 meta = None
+            if getattr(meta, "activated", True) is False:
+                continue
             star = self._star_instance(meta)
             if star is not None:
                 return star
         try:
             wanted = [str(item).lower() for item in names]
             for meta in self.context.get_all_stars():
+                if getattr(meta, "activated", True) is False:
+                    continue
                 module = str(getattr(meta, "module_path", "") or "").lower()
                 label = str(getattr(meta, "name", "") or "").lower()
                 if any(word in module or word in label for word in wanted):
@@ -923,13 +934,15 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         """第一次没找到数据插件：记一次日志，并在 60 秒后再确认一次（只提醒一次）。"""
         if not self._data_missing_logged:
             self._data_missing_logged = True
-            logger.info("[amo] 未检测到数据插件 Astrbot_amoupup_data，继续用本地库（装好后面板数据为空是正常的）")
+            logger.info(
+                "[amo] 未检测到数据插件 Astrbot_amoupup_data（没装或已停用）："
+                "这期间聊天正常，但记忆不会写入，面板记忆页是空的；装好并启用后一分钟内会自动接上"
+            )
         if not self._data_warn_scheduled:
             self._data_warn_scheduled = True
             self._spawn(self._warn_data_missing_later())
 
     async def _warn_data_missing_later(self, delay=60.0):
-        """启动 60 秒后还没连上数据插件，才升级成一条 warning；连上就不打。"""
         try:
             await asyncio.sleep(max(1.0, float(delay)))
         except asyncio.CancelledError:
@@ -938,7 +951,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             return
         logger.warning(
             "[amo] 数据插件未连接：去「插件」页看 Astrbot_amoupup_data 是不是被停用/加载报错；"
-            "装好后 5 分钟内会自动接上，不用重启"
+            "装好并启用后一分钟内会自动接上，不用重启"
         )
 
 

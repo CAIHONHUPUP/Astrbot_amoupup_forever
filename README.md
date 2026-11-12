@@ -4,7 +4,7 @@
 
 > GitHub：https://github.com/CAIHONHUPUP/Astrbot_amoupup_forever
 
-## 6.9.1 医院日程修正
+## 6.9.2 记忆 / 知识库 / 生图 / 日程修复
 
 - 医院日程改整点切段，中途吊水会占满完整 3 小时，不再让当天日程错位。
 
@@ -456,30 +456,25 @@
 
 ## 5.0.2 升级公告（重要）
 
-4.0.0 起插件标识就是 **`Astrbot_Amo_forever`**，5.0.2 继续保持这个标识，不再改回 `amo_forever`。
+插件标识（也就是插件目录名）自 2026-11-12 起统一为 **`Astrbot_amoupup_forever`**：
 
-这样安装 5.0.2 会覆盖 4.0.x，而不是变成另一个插件。
-
-同时，3.x 的旧标识 `amo_forever` 数据会自动迁移到新标识：
-
-- 旧数据：`data/plugin_data/amo_forever/amo_forever.db`
-- 新数据：`data/plugin_data/Astrbot_Amo_forever/amo_forever.db`
-- 旧配置：`data/config/amo_forever_config.json`
-- 新配置：`data/config/Astrbot_Amo_forever_config.json`
+- 4.0.0–6.8.x 用过 `Astrbot_Amo_forever`，3.x 用过 `amo_forever`，这两个名字**只作为迁移来源**，不再使用；
+- 新数据：`data/plugin_data/Astrbot_amoupup_forever/amo_forever.db`
+- 新配置：`data/config/Astrbot_amoupup_forever_config.json`
 
 **插件目录必须是：**
 
 ```
-data/plugins/Astrbot_Amo_forever/
+data/plugins/Astrbot_amoupup_forever/
 ```
 
-不要再用 `amo_forever` 作为插件目录；旧目录只作为迁移来源，迁移完成后可以删除旧代码目录，但不要提前删除旧数据目录。
+不要再用 `Astrbot_Amo_forever` 或 `amo_forever` 作为插件目录；旧目录只作为迁移来源，迁移完成后可以删除旧代码目录，但不要提前删除旧数据目录。
 
 5.0.2：景区知识库改名为“旅游知识库-风景区”，旧名称自动迁移；重建景区会创建/更新新名称知识库。
 
 <span style="color:red">**重要：如需更换语种，请不要在人格提示词中提及具体语种，否则会和这里的选择冲突。**</span>
 
-记忆来源支持 **天使之魂（astrbot_plugin_angel_memory）** 和 **我会牢牢记住你（astrbot_plugin_memory_companion）**，用户画像页会自动列出并读取。
+记忆由配套插件 **`Astrbot_amoupup_data`（我能永远记住你）** 负责；天使之魂、牢记、livingmemory 这些旧记忆源的支持已经移除，面板也不再读取它们。
 
 ---
 
@@ -569,32 +564,25 @@ data/plugins/Astrbot_Amo_forever/
 
 > 分段是**符号列表**方案，不是正则。需要调断句符就改 `seg_split_symbols`；成对符号保护默认开启。
 
-## 挂载记忆插件
+## 记忆插件
 
-本插件不带记忆库，记忆来自你装的其他插件。市面上记忆类插件很多，**面板会直接列出你已安装的所有插件**，
-选哪个就用哪个的记忆和画像，不用改代码：
+本插件不带记忆库，记忆全部交给配套插件 **`Astrbot_amoupup_data`（我能永远记住你）**：
+
+- 陪伴写入记忆时，调的是数据插件实例上的 `mem` 接口（`remember` / `recall` / 画像 / 关系网）；
+- 陪伴自己不存记忆，也不会去翻数据插件的数据库文件；
+- 数据插件没装、被停用或加载报错时：聊天、日程、分段都照常，**但记忆写不进去、记忆页是空的**。
+
+配置里只有下面几个键和记忆有关（没有“挂载哪个记忆插件”这种选项）：
 
 | 配置 | 说明 |
 |---|---|
-| `companion_memory_plugin_name` | 挂载的记忆插件；留 `auto` 自动检测，面板下拉列出已安装插件 |
-| `companion_memory_include_profile` | 读取挂载插件的画像（强记忆、边界、表达习惯、偏好、兴趣） |
-| `companion_memory_include_important` | 读取挂载插件的长期记忆（不限条数） |
-| `companion_profile_sync` | 从挂载插件自动补全用户画像（只补名字/生日/关系） |
+| `memory_provider` | 记忆来源，默认 `auto`，即自动找 `Astrbot_amoupup_data` |
+| `memory_recall_limit` | 每次注入几条记忆 |
+| `memory_inject_max_chars` | 记忆注入的总字数预算 |
+| `memory_item_max_chars` | 单条记忆最多截到多少字 |
+| `memory_bridge_timeout_seconds` | 调数据接口的超时 |
 
-**检索是按 `uid` 查的**（QQ 号 / 平台用户 ID）：召回时带着当前说话人的 uid 去插件里查，
-查不到再按名字/称呼兜底；画像也以 uid 为主键（同名不同号不会串）。
-
-能自动读取的结构（有哪个读哪个，都不限制条数）：
-
-- `users[uid]["companion_memory"]["items"]` 的 `text` / `weight`；
-- `companion_memory["profile"]` 里的 `strong_memories`、`boundaries`、`speaking_style`、`weak_preferences`、`interests`；
-- `users[uid]["important_memories"]`；
-- `worldbook_member_profiles[uid]["important_memories"]`；
-- 实现了 `search_for_event` / `recall_for_event` / `search_memory` 等检索接口的插件（直接调用它的检索）。
-
-只读，不修改挂载插件的数据；没有可用的记忆插件时就不注入记忆（本插件不再自带记忆库）。
-
-> 注意：陪伴插件本身也会回复消息。如果两个插件同时接管聊天，可能出现双回复；建议只保留一个负责回复，另一个作为记忆源。
+天使之魂、牢记（memory_companion）、livingmemory 这些旧记忆源的适配已经移除，面板不再读取它们。
 
 ## 用户画像与设置
 
@@ -627,25 +615,45 @@ data/plugins/Astrbot_Amo_forever/
 - minor 也满 10 进 major：6.9.9 → 7.0.0（6.10.0 只是中间态，上传前归一成 7.0.0）；
 - 示例：6.8.8 → 6.8.9 → 6.9.0 → … → 6.9.9 → 7.0.0。
 
+## 快速开始（最小配置，5 步）
+
+1. 把 `Astrbot_amoupup_data` 和 `Astrbot_amoupup_forever` 两个目录放进 `data/plugins/`
+   （WebUI 上传 zip 也行，zip 顶层目录名要和插件名一致）；
+2. 在 AstrBot「配置」里选好一个对话模型，并建好你要用的人格；
+3. 重启 AstrBot（只重载插件不够，旧 Web API 路由会残留）；
+4. 私聊机器人发 `/amo status`：最后两行应该是「🧠 记忆后端：已连接 Astrbot_amoupup_data」，
+   上面一行能看到心情/日程/记忆数；
+5. 正常聊天即可。想让她记事，多聊几句——每 15 分钟会自动提炼一次长期事实；
+   想立刻记：`/amo memo 内容 1`。
+
+可选：装「万象画卷」才能发照片/画图；装本机 embedding 服务（Ollama + bge-m3）才开语义召回。
+
 ## 安装
 
-1. **先卸载/停用**单独的心流插件和本地分段插件，避免重复触发：
+> **这个插件必须和「我能永远记住你」(`Astrbot_amoupup_data`) 一起用。**
+> 只装本插件也能聊天、发照片、看日程，但**记忆写不进去**：她会说“不记得”，`/amo memories` 永远是空的。
+> 两个插件谁先装都行，装好以后互相会在几十秒内自动接上，不用改配置。
+
+1. **先装记忆后端**：装好并启用 `Astrbot_amoupup_data`（仓库见下），确认插件页里它是启用状态；
+   它的数据和本插件分开存，路径见各自 README 的「数据 / 存储位置」。
+2. **卸载/停用**单独的心流插件和本地分段插件，避免重复触发：
    - `astrbot_plugin_xinliuchenjinban`
    - `astrbot_plugin_custome_segment_reply`
-2. **先备份插件数据**（见下方“数据”），再删除旧插件**代码**目录：
-   - `data/plugins/Astrbot_Amo_forever`（旧 4.x 代码）
-   - `data/plugins/amo_forever`（旧 3.x 代码）
+3. **先备份插件数据**（见下方“数据”），再删除旧插件的**代码**目录（只删代码，不删数据）：
+   - `data/plugins/Astrbot_Amo_forever`（4.0–6.8 用过的旧目录名）
+   - `data/plugins/amo_forever`（3.x 用过的旧目录名）
    - `data/plugins/astrbot_plugin_amo_forever`（如果有）
    
-   **不要删除** `data/plugin_data/amo_forever`、`data/plugin_data/Astrbot_Amo_forever` 和两个 config，迁移要用；
-3. 把本插件目录以 **`Astrbot_Amo_forever`** 这个名字放进 `data/plugins/`，或在 WebUI 上传 zip；
-4. **重启 AstrBot**（只重载插件不够，旧 Web API 路由会残留）；
-5. 打开插件配置，确认：
+   **不要删除** `data/plugin_data/Astrbot_amoupup_forever`、`data/plugin_data/Astrbot_Amo_forever`、`data/plugin_data/amo_forever` 以及它们对应的 config，迁移要用；
+4. 把插件目录以 **`Astrbot_amoupup_forever`** 这个名字放进 `data/plugins/`；用 WebUI 上传 zip 时，zip 解出来的顶层目录名也必须是 `Astrbot_amoupup_forever`；
+5. **重启 AstrBot**（只重载插件不够，旧 Web API 路由会残留）；
+6. 打开插件配置，确认：
    - `hf_enable_heartflow` 开
    - `hf_judge_provider_name`（可选）
    - `seg_enable` 开
    - 天气 Key（可选）
-6. 群聊发几条消息测试；私聊发 `/amo status` 测试。
+7. 群聊发几条消息测试；私聊发 `/amo status` 测试：最后一行应该是
+   「🧠 记忆后端：已连接 Astrbot_amoupup_data」。如果显示「未连接」，说明第 1 步没做好。
 
 ## 指令
 
@@ -690,32 +698,46 @@ data/plugins/Astrbot_Amo_forever/
 
 ## 数据
 
-- 配置：`data/config/Astrbot_Amo_forever_config.json`
-- 数据：`data/plugin_data/Astrbot_Amo_forever/amo_forever.db`
-- 3.x 旧配置：`data/config/amo_forever_config.json`
-- 3.x 旧数据：`data/plugin_data/amo_forever/amo_forever.db`
+- 配置：`data/config/Astrbot_amoupup_forever_config.json`
+- 数据：`data/plugin_data/Astrbot_amoupup_forever/amo_forever.db`
+- 衣柜/姿势/礼物：`data/plugin_data/Astrbot_amoupup_forever/`（`wardrobe.json` / `poses.json` / `gifts.json`）
+- 衣服和姿势参考图：`data/plugin_data/Astrbot_amoupup_forever/outfit_refs/`
+- 日记：`data/plugin_data/Astrbot_amoupup_forever/diary/`
 - 面板：`views/dashboard/index.html`
+- 旧名字（只作为迁移来源，不会再写入）：
+  - 4.0–6.8：`data/plugin_data/Astrbot_Amo_forever/`、`data/config/Astrbot_Amo_forever_config.json`
+  - 3.x：`data/plugin_data/amo_forever/`、`data/config/amo_forever_config.json`
 
-记忆完全由外挂记忆插件负责；本插件的数据库只存画像、消息、日程等运行数据。
+本插件的数据库只存画像、聊天、日程、日记、衣柜这些运行数据；**记忆不在这里**，记忆在 `Astrbot_amoupup_data`。
 
-升级前同时备份：
+升级前同时备份（有哪个备份哪个）：
 
 ```
-data/plugin_data/amo_forever/amo_forever.db
-data/plugin_data/Astrbot_Amo_forever/amo_forever.db
-data/config/amo_forever_config.json
+data/plugin_data/Astrbot_amoupup_forever/
+data/plugin_data/Astrbot_Amo_forever/
+data/plugin_data/amo_forever/
+data/config/Astrbot_amoupup_forever_config.json
 data/config/Astrbot_Amo_forever_config.json
+data/config/amo_forever_config.json
 ```
 
-5.0.2 第一次启动会自动迁移 3.x 旧标识数据，并在日志里打印：
+启动时会自动把旧名字的数据/配置搬到新名字，并在日志里打印：
 
 ```
 [amo] 已迁移旧版 amo_forever 数据: ... -> ...
-[amo] 已迁移旧版 amo_forever 配置: ...（N 项）
-[amo] 升级提示：插件标识保持 Astrbot_Amo_forever；旧 amo_forever 配置/数据已自动迁移。
+[amo] 升级提示：插件标识现为 Astrbot_amoupup_forever；旧 amo_forever 数据已迁移到新目录，配置文件也会自动合并。
 ```
 
-迁移完成后，确认面板画像/记忆都在，再手动删除旧的 `data/plugin_data/amo_forever` 备份目录。
+迁移完成后，确认面板画像/聊天都在，再手动删除旧的 `data/plugin_data/amo_forever` 备份目录。
+
+## 已知限制
+
+- **照片 / 画图依赖「万象画卷」**：没装会明确回一句说明，不会出图。
+- **语义召回默认关**（想记 2.9.2 起）：要开需要本机 embedding 服务，否则只有关键词匹配。
+- **群聊不写记忆**：群聊只进聊天记录；记忆只从私聊提炼（跨平台合并依赖已有的渠道记录）。
+- **景区知识库首次同步要 60-90 秒**（470 个景区分 4 批）；失败后 6 小时才重试。
+- **需要 AstrBot ≥ 4.5.7**；不建议再装单独的心流/分段插件（会重复触发）。
+- 官方"分段回复"和流式输出建议关掉，避免和本插件分段叠加。
 
 ## 说明
 

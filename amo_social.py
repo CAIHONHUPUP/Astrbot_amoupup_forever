@@ -879,32 +879,55 @@ class SocialMixin(_MixinBase):
             logger.debug("[amo] 仇恨关系衰减失败: %s" % exc)
 
     async def _auto_learn(self):
-        """定时提炼长期事实，写进外挂记忆插件；本插件不再存记忆。"""
+        """定时提炼长期事实，写进外挂记忆插件；本插件不再存记忆。
+
+        候选用户以前取本地 messages 表；可聊天记录从 5.9.4 起就不落本地库了，
+        那张表从 2026-11-09 起一直冻着，于是自动学习一个用户都挑不出来，
+        用户说什么都不会变成记忆（只剩里程碑摘要在写）。
+        现在按「画像里有私聊会话 + 数据插件里最近一小时确实说过话」挑人。
+        """
+        cutoff = now_ts() - 3600
+        handled = 0
         try:
-            users = self.db.active_users(now_ts() - 3600, limit=2)
+            profiles = self.db.list_profiles("", 20)
         except Exception as _amo_exc:
             _note_swallowed("amo_social.HumanCorePlugin._auto_learn", _amo_exc)
             return
-        for user in users:
-            uid = str(user.get("uid", ""))
+        for profile_row in profiles:
+            if handled >= 2:
+                break
+            uid = str(profile_row.get("uid") or "").strip()
             if not uid:
+                continue
+            # QQ、飞书都算同一个人：只认 private_umo 会漏掉“他最近在另一个平台说话”
+            umos = [str(item) for item in (self._ritual_umos(profile_row) or []) if item][:3]
+            if not umos:
+                # 还没私聊过：不要退到全局会话，否则群聊的话会被当成他说的
                 continue
             key = "auto_learn_" + uid
             last = to_float(self.db.kv_get(key, 0))
             interval = max(5, self.cfg_int("auto_learn_minutes", 15)) * 60
             if now_ts() - last < interval:
                 continue
+            rows = []
+            for one_umo in umos:
+                try:
+                    rows.extend(await self._recent_by_uid(uid, 20, umo=one_umo) or [])
+                except Exception as exc:
+                    logger.debug("[amo] 自动学习取近聊失败(%s): %s" % (one_umo, exc))
+            rows.sort(key=lambda item: to_float(item.get("created_at"), 0))
+            rows = rows[-20:]
+            newest = 0.0
+            for row in rows:
+                newest = max(newest, to_float(row.get("created_at"), 0))
+            if newest < cutoff:
+                continue
+            handled += 1
             try:
-                profile_row = self.db.get_profile(uid) or {}
-                home_umo = str(profile_row.get("private_umo") or "").strip()
-                if not home_umo:
-                    # 还没私聊过：不要退到全局会话，否则群聊的话会被当成他说的
-                    continue
-                rows = await self._recent_by_uid(uid, 20, umo=home_umo)
                 lines = []
                 for row in rows:
                     row_umo = str(row.get("umo") or "").strip()
-                    if row_umo and row_umo != home_umo:
+                    if row_umo and row_umo not in umos:
                         continue
                     role = str(row.get("role") or "")
                     if role == "summary":
@@ -914,7 +937,7 @@ class SocialMixin(_MixinBase):
                 if not lines:
                     continue
                 facts = await self.llm.extract_facts(
-                    home_umo, user.get("name", "") or uid, lines
+                    umos[0], str(profile_row.get("name") or "") or uid, lines
                 )
                 ok_any = False
                 for fact in facts:

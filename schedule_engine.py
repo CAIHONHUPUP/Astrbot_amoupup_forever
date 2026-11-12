@@ -1733,6 +1733,62 @@ class ScheduleEngine:
                     first["detail"] = (str(first.get("detail") or "") + "；自己开车来的，停车位找了很久").strip("；")
         return items
 
+    #: 文案里出现这些词 = 人在路上，区域必须是 road
+    TRAVEL_WORDS = (
+        "地铁", "公交", "车厢", "车上", "车站", "站台", "打车", "出租车", "开车",
+        "骑车", "骑行", "路上", "通勤", "换乘", "高铁", "火车", "飞机", "赶去", "赶往",
+    )
+    #: 「到家 / 在家」这类不是“在路上”，别误判
+    AT_HOME_WORDS = ("到家", "在家", "家里", "进门", "躺沙发", "被窝")
+
+    @staticmethod
+    def _guess_transit(text):
+        body = str(text or "")
+        if "地铁" in body:
+            return "subway"
+        if "公交" in body:
+            return "bus"
+        if "打车" in body or "出租车" in body:
+            return "taxi"
+        if "开车" in body:
+            return "drive"
+        if "高铁" in body or "火车" in body:
+            return "train"
+        if "飞机" in body:
+            return "plane"
+        return "walk"
+
+    @classmethod
+    def _align_zone_with_activity(cls, items):
+        """文案和区域对齐：她说“在地铁上”，生图取景就必须是车厢/路面，不能是办公室。
+
+        LLM 只被允许改 activity（骨架的 zone/place 不让它动），所以它写出
+        「地铁上听着歌晃回家」时 zone 还停在 office —— 照片就成了办公室。
+        """
+        for item in items or []:
+            zone = str(item.get("zone") or "")
+            place = str(item.get("place") or "")
+            act = str(item.get("activity") or "")
+            if zone == "road":
+                # 区域是“路上”，地点也统一成“路上”，别出现“地铁上 / 写字楼”并存
+                if place and place != "路上":
+                    item["place"] = "路上"
+                if not item.get("transit"):
+                    item["transit"] = cls._guess_transit(act)
+                continue
+            if zone in ("home", "hospital"):
+                continue
+            if not any(word in act for word in cls.TRAVEL_WORDS):
+                continue
+            if any(word in act for word in cls.AT_HOME_WORDS):
+                continue
+            item["place"] = "路上"
+            item["zone"] = "road"
+            item["transit"] = item.get("transit") or cls._guess_transit(act)
+            item["vehicle"] = item.get("vehicle") or ("地铁" if item["transit"] == "subway" else "")
+            item["effects"] = {}
+        return items
+
     # ------------------------------------------------------------------
     # 7. 让模型只改写 activity，不改物理骨架
     # ------------------------------------------------------------------
@@ -1805,6 +1861,7 @@ class ScheduleEngine:
             if detail and len(detail) <= 40:
                 item["detail"] = detail
         # activity 被改写过，detail 可能已经和它对不上，统一按新活动重新挑。
+        self._align_zone_with_activity(items)
         return self._repair_details(items, ctx)
 
     # ------------------------------------------------------------------
