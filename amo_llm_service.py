@@ -336,6 +336,11 @@ class LLMService:
             _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
 
         def build_task(duplicate_hint=""):
+            if kind == "unwell":
+                health = snap.get("health") or {}
+                detail = str(health.get("note") or health.get("status") or "不太舒服")
+                return ("你现在确实生病了（" + detail + "），主动跟" + name
+                        + "说你不太舒服，可以撒个娇、让他关心你；不要装没事，也别夸张成重病。")
             if kind == "birthday":
                 return ("今天是他生日，用你平时对他的称呼自然地祝他生日快乐，"
                         "语气符合你的人设，不要提 AI/模型/日程。")

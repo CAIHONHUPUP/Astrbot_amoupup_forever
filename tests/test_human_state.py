@@ -226,6 +226,41 @@ class HealthTests(StateTestCase):
         self.assertEqual(self.state.last_health_roll, today_str())
 
 
+    def test_minor_illness_doctor_one_to_two_days(self):
+        self.state.set_health("感冒", hours=36, treatment="看医生")
+        info = self.state.health_info()
+        self.assertTrue(info["doctor"])
+        self.assertGreaterEqual(info["until"] - info["since"], 35 * 3600)
+        self.assertLessEqual(info["until"] - info["since"], 37 * 3600)
+
+    def test_no_doctor_doubles_recovery(self):
+        self.state.set_health("感冒", hours=36, treatment="")
+        info = self.state.health_info()
+        self.assertFalse(info["doctor"])
+        self.assertGreaterEqual(info["until"] - info["since"], 71 * 3600)
+
+    def test_serious_illness_doctor_three_to_four_days(self):
+        self.state.set_health("发烧", hours=84, treatment="看医生")
+        info = self.state.health_info()
+        self.assertEqual(info["severity"], "serious")
+        self.assertGreaterEqual(info["until"] - info["since"], 83 * 3600)
+
+    def test_fatal_illness_names_are_mapped_to_common_ones(self):
+        self.state.set_health("肺炎")
+        self.assertEqual(self.state.health_info()["status"], "重感冒")
+        self.state.set_health("癌症")
+        self.assertEqual(self.state.health_info()["status"], "不舒服")
+
+    def test_seeing_doctor_shortens_without_resetting_start(self):
+        self.state.set_health("感冒", hours=36, treatment="")
+        since = self.state.health_info()["since"]
+        self.state.set_treatment("看医生")
+        info = self.state.health_info()
+        self.assertEqual(info["since"], since)
+        self.assertTrue(info["doctor"])
+        self.assertLessEqual(info["until"] - since, 37 * 3600)
+
+
 class WeatherTests(StateTestCase):
     def test_base_url(self) -> None:
         self.assertEqual(HumanState._weather_base_url("m56hf38tfd.re.qweatherapi.com"),

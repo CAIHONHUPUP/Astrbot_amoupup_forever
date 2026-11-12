@@ -96,5 +96,50 @@ class ActivityBankTests(unittest.TestCase):
             self.assertIn(activity, se.OFFICE_WORK_BANK, activity)
 
 
+class SickTreatmentTests(unittest.TestCase):
+    def test_sick_day_with_iv_has_hospital_time(self):
+        engine = _engine()
+        segments = engine._sick_rest_segments(_ctx(
+            health={"sick": True, "status": "发烧", "treatment": "打吊水"}))
+        drip = [seg for seg in segments if "打吊水" in str(seg.get("activity"))]
+        self.assertTrue(drip)
+        self.assertEqual(drip[0]["start"], "10:00")
+        self.assertEqual(drip[0]["end"], "13:00")
+        self.assertEqual(drip[0]["place"], "医院")
+
+    def test_sick_day_without_doctor_stays_home(self):
+        engine = _engine()
+        segments = engine._sick_rest_segments(_ctx(
+            health={"sick": True, "status": "感冒", "treatment": ""}))
+        self.assertFalse(any(seg.get("place") == "医院" for seg in segments))
+
+    def test_iv_change_splits_current_segment(self):
+        from schedule_change import apply_change, detect_schedule_change
+        change = detect_schedule_change("你发烧了，去打吊水")
+        self.assertIsNotNone(change)
+        self.assertTrue(change.get("split"))
+        items = [
+            {"start": "09:00", "end": "10:00", "activity": "在家休息", "place": "家", "zone": "home", "category": "rest"},
+            {"start": "10:00", "end": "11:00", "activity": "在家休息", "place": "家", "zone": "home", "category": "rest"},
+            {"start": "11:00", "end": "12:00", "activity": "在家休息", "place": "家", "zone": "home", "category": "rest"},
+            {"start": "12:00", "end": "13:00", "activity": "在家休息", "place": "家", "zone": "home", "category": "rest"},
+            {"start": "13:00", "end": "14:00", "activity": "在家休息", "place": "家", "zone": "home", "category": "rest"},
+        ]
+        out = apply_change(items, change, __import__("datetime").datetime(2026, 11, 12, 10, 0))
+        self.assertEqual([(seg["start"], seg["end"]) for seg in out],
+                         [("09:00", "10:00"), ("10:00", "13:00"), ("13:00", "14:00")])
+        self.assertIn("打吊水", out[1]["activity"])
+        self.assertEqual(out[1]["place"], "医院")
+
+    def test_hospital_schedule_survives_expand_and_validate(self):
+        engine = _engine()
+        segments = engine._sick_rest_segments(_ctx(
+            health={"sick": True, "status": "发烧", "treatment": "打吊水"}))
+        items = engine._validate(engine._expand(segments, _ctx()), _ctx())
+        drip = [seg for seg in items if "打吊水" in str(seg.get("activity"))]
+        self.assertTrue(drip)
+        self.assertEqual([seg["start"] for seg in drip], ["10:00", "11:00", "12:00"])
+        self.assertEqual(drip[-1]["end"], "13:00")
+
 if __name__ == "__main__":
     unittest.main()

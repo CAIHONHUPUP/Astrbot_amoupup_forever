@@ -3,8 +3,8 @@
 """发版校验：metadata.yaml / CHANGELOG.md / README.md / main.py 四处版本号必须一致。
 
 还检查仓库自己定的版本号规则（见 README「版本号规则」）：
-- 尾号取偶数 0/2/4/6/8；
-- 版本号里不出现数字 1 和 7。
+- 三段都只能是 0-9；
+- patch 满 10 进 minor，minor 满 10 进 major（6.8.9 → 6.9.0，6.9.9 → 7.0.0）。
 
 用法：
     python tools/check_version.py
@@ -59,11 +59,9 @@ def check_rules(version):
     parts = version.split(".")
     if len(parts) != 3:
         return ["版本号应该是 x.y.z"]
-    tail = int(parts[2])
-    if tail % 2 != 0:
-        problems.append("尾号 %d 是奇数，按规则只能取 0/2/4/6/8" % tail)
-    if "1" in version or "7" in version:
-        problems.append("版本号 %s 里出现了数字 1 或 7，按规则要避开" % version)
+    for label, part in zip(("major", "minor", "patch"), parts):
+        if not part.isdigit() or not 0 <= int(part) <= 9:
+            problems.append("%s=%s 不是 0-9 的单段数字" % (label, part))
     return problems
 
 

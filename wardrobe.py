@@ -1829,6 +1829,9 @@ class Wardrobe:
         # 晚上穿搭（睡衣）只在 20:00 之后生成：白天面板只提示「20:00 后自动生成」，
         # 免得早上就看到今晚穿哪套。真正换上同样在 20:00（current() 里判断）。
         night_ready = hour >= SLEEP_HOUR_FROM or hour < SLEEP_HOUR_TO
+        # 这几项面板每次刷新都要用：只算一次，别在 dict 里反复查日程/数据库
+        swim_now = self._at_swim()
+        swim_window = self._swim_window(today)
         return {
             "categories": category_list(False, False, False),
             "sleep_categories": category_list(True, False, False),
@@ -1836,16 +1839,16 @@ class Wardrobe:
             # 泳装只有上衣（泳衣）和裤子（泳裤），鞋是横线
             "swim_categories": category_list(False, False, True),
             "swim_sets": self.swim_sets(data),
-            "swim": self.swim_outfit() if self._at_swim() else {
+            "swim": self.swim_outfit() if swim_now else {
                 "pending": True,
                 "swim": True,
-                "state": self._swim_window(today).get("state") or "none",
+                "state": swim_window.get("state") or "none",
                 "text": ("%02d:%02d 游泳 / 海边 / 水上乐园，到点自动换上"
-                         % divmod(int(self._swim_window(today).get("start") or 0), 60))
-                        if self._swim_window(today).get("state") == "later"
+                         % divmod(int(swim_window.get("start") or 0), 60))
+                        if swim_window.get("state") == "later"
                         else "游泳 / 海边 / 水上乐园 自动生成",
             },
-            "at_swim": self._at_swim(),
+            "at_swim": swim_now,
             "today": today,
             "current": self._current_snapshot(),
             "night": self.night() if night_ready else {"pending": True},

@@ -460,6 +460,11 @@ class ProactiveMixin(_MixinBase):
             or mood["委屈"] >= 60
             or mood["郁闷"] >= 65
         )
+        health = snap.get("health") or {}
+        if (relation == "相恋" and health.get("sick")
+                and self.cfg_bool("proactive_comfort", True)
+                and not self.db.kv_get("unwell_announced:" + today_str(), False)):
+            return "unwell"
         if relation == "相恋" and painful and self.cfg_bool("proactive_comfort", True):
             return "comfort"
         activity = str((snap.get("activity") or {}).get("activity") or "")
@@ -631,6 +636,8 @@ class ProactiveMixin(_MixinBase):
             ok = bool(sent_umo)
             if ok:
                 target_umo = sent_umo
+                if kind == "unwell":
+                    self.db.kv_set("unwell_announced:" + today_str(), True)
                 self._mark_bot_initiated(target_umo)
                 self.db.kv_set("last_channel:%s" % profile.get("uid"), target_umo)
                 self.db.bump_proactive(profile["uid"])

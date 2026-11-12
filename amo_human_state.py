@@ -37,6 +37,7 @@ if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
         MOOD_BASE,
         MOOD_KEYS,
         SCHEDULE_VERSION,
+        SICK_DURATIONS,
         SICK_STATUSES,
         ScheduleEngine,
         _CITY_DEFAULT,
@@ -66,7 +67,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             MOOD_BASE,
             MOOD_KEYS,
             SCHEDULE_VERSION,
-            SICK_STATUSES,
+            SICK_DURATIONS,
+        SICK_STATUSES,
             ScheduleEngine,
             _CITY_DEFAULT,
             _city_pick_spots,
@@ -94,7 +96,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             MOOD_BASE,
             MOOD_KEYS,
             SCHEDULE_VERSION,
-            SICK_STATUSES,
+            SICK_DURATIONS,
+        SICK_STATUSES,
             ScheduleEngine,
             _CITY_DEFAULT,
             _city_pick_spots,
@@ -333,15 +336,34 @@ class HumanState:
         return True
 
     # ---------- 健康 ----------
+    @staticmethod
+    def _severity_of(status):
+        return "serious" if str(status) in ("发烧", "重感冒") else "minor"
+
     def health_info(self):
         status = self.health.get("status", "健康")
+        # 老数据里如果留着肺炎/重症之类，读出来时也降级，绝不带进提示词
+        fatal_map = {"肺炎": "重感冒", "重症肺炎": "重感冒", "癌症": "不舒服",
+                     "肿瘤": "不舒服", "心梗": "不舒服", "脑梗": "不舒服",
+                     "白血病": "不舒服"}
+        if status in fatal_map:
+            status = fatal_map[status]
+            self.health["status"] = status
+            self.db.kv_set("health", self.health)
         until = to_float(self.health.get("until", 0))
         if status != "健康" and until and now_ts() >= until:
-            self.health = {"status": "健康", "since": now_ts(), "until": 0, "note": ""}
+            self.health = {"status": "健康", "since": now_ts(), "until": 0,
+                           "note": "", "kind": "", "treatment": "",
+                           "severity": "", "base_hours": 0, "doctor": False}
             self.db.kv_set("health", self.health)
             status = "健康"
         return {
             "status": status,
+            "kind": self.health.get("kind", ""),
+            "severity": self.health.get("severity", ""),
+            "treatment": self.health.get("treatment", ""),
+            "doctor": bool(self.health.get("doctor", False)),
+            "base_hours": to_float(self.health.get("base_hours", 0)),
             "since": to_float(self.health.get("since", 0)),
             "until": to_float(self.health.get("until", 0)),
             "note": self.health.get("note", ""),
@@ -350,14 +372,60 @@ class HumanState:
             "sick": status in SICK_STATUSES,
         }
 
-    def set_health(self, status, hours=24, note=""):
+    def set_health(self, status, hours=None, note="", treatment="", kind="", severity=""):
+        """生病/康复。
+
+        小病看医生 1-2 天、大病 3-4 天；不看医生恢复时间翻倍。
+        ``hours`` 是「看医生时的基准小时数」，不传则按病种/严重程度随机。
+        """
+        status = str(status or "").strip()
+        # 只保留日常小病/普通发烧；不做任何危及生命的病症
+        fatal_map = {
+            "肺炎": "重感冒", "重症肺炎": "重感冒", "癌症": "不舒服", "肿瘤": "不舒服",
+            "心梗": "不舒服", "脑梗": "不舒服", "白血病": "不舒服",
+        }
+        status = fatal_map.get(status, status)
+        if status not in set(SICK_STATUSES) | {"疲惫", "健康"}:
+            status = "不舒服"
         if status == "健康":
-            self.health = {"status": "健康", "since": now_ts(), "until": 0, "note": ""}
+            self.health = {"status": "健康", "since": now_ts(), "until": 0,
+                           "note": "", "kind": "", "treatment": "",
+                           "severity": "", "base_hours": 0, "doctor": False}
         else:
+            severity = severity or self._severity_of(status)
+            if hours is None:
+                if severity == "serious":
+                    hours = random.uniform(72, 96)
+                else:
+                    hours = random.uniform(24, 48)
+            base = max(1.0, float(hours))
+            doctor = bool(str(treatment or "").strip())
+            total = base * (1 if doctor else 2)
             self.health = {
-                "status": status, "since": now_ts(),
-                "until": now_ts() + max(1, hours) * 3600, "note": note,
+                "status": status, "kind": kind or str(status), "since": now_ts(),
+                "until": now_ts() + total * 3600, "note": note,
+                "treatment": str(treatment or ""), "severity": severity,
+                "base_hours": base, "doctor": doctor,
             }
+        self.db.kv_set("health", self.health)
+
+    def set_treatment(self, treatment):
+        """她决定去看医生 / 不去：不重置生病起点，只按新方案重算恢复时间。"""
+        if self.health.get("status") == "健康":
+            return
+        treatment = str(treatment or "").strip()
+        doctor = bool(treatment)
+        base = max(1.0, to_float(self.health.get("base_hours", 0), 0) or 0)
+        if not base:
+            severity = str(self.health.get("severity") or self._severity_of(self.health.get("status")))
+            base = random.uniform(72, 96) if severity == "serious" else random.uniform(24, 48)
+        since = to_float(self.health.get("since", 0), 0) or now_ts()
+        total = base * (1 if doctor else 2)
+        until = max(now_ts() + 3600, since + total * 3600)
+        self.health.update({
+            "treatment": treatment, "doctor": doctor,
+            "base_hours": base, "until": until,
+        })
         self.db.kv_set("health", self.health)
 
     def roll_health(self):
@@ -385,16 +453,29 @@ class HumanState:
             prob += 0.02
         if random.random() >= prob:
             return
-        status = random.choice(["轻微不适", "感冒", "低烧", "疲惫"])
-        hours = {"轻微不适": 12, "感冒": 48, "低烧": 24, "疲惫": 10}[status]
+        status = random.choices(
+            ["轻微不适", "感冒", "低烧", "发烧", "肠胃炎", "疲惫"],
+            weights=[3, 4, 2, 1, 1, 2],
+        )[0]
+        if status == "疲惫":
+            self.health = {"status": "疲惫", "kind": "疲惫", "since": now,
+                           "until": now + 10 * 3600, "note": "没由来的累，只想躺着",
+                           "treatment": "", "severity": "minor",
+                           "base_hours": 10, "doctor": False}
+            self.db.kv_set("health", self.health)
+            return
         note = {
             "轻微不适": "有点不舒服，说不上哪里难受",
             "感冒": "鼻子堵堵的，头有点沉",
             "低烧": "身上发烫，没什么力气",
-            "疲惫": "没由来的累，只想躺着",
+            "发烧": "烧得头昏昏的，浑身没劲",
+            "肠胃炎": "肚子一阵阵疼，还犯恶心",
         }[status]
-        self.health = {"status": status, "since": now, "until": now + hours * 3600, "note": note}
-        self.db.kv_set("health", self.health)
+        severity = self._severity_of(status)
+        # 她自己去不去医院：小病多半先扛着，大病更可能去看
+        doctor = random.random() < (0.65 if severity == "serious" else 0.35)
+        treatment = "看医生" if doctor else ""
+        self.set_health(status, note=note, treatment=treatment, severity=severity)
 
     # ---------- 天气 ----------
     @staticmethod
@@ -1640,9 +1721,11 @@ class HumanState:
             "生理期：%s第%d天，%s。" % (
                 snap["period"]["phase"], snap["period"]["day"], snap["period"]["tone"]
             ),
-            "身体：%s%s。" % (
+            "身体：%s%s%s。" % (
                 snap["health"]["status"],
                 ("（" + snap["health"]["note"] + "）") if snap["health"].get("note") else "",
+                ("，正在" + str(snap["health"].get("treatment")))
+                if snap["health"].get("treatment") else "",
             ),
             "天气：%s。" % snap["weather_text"],
         ]

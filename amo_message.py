@@ -576,6 +576,25 @@ class MessageMixin(_MixinBase):
         except Exception as exc:
             logger.debug("[amo] 记录自己的回复失败: %s" % exc)
 
+    async def _remember_bot_media(self, umo, text):
+        """记下她自己发过的照片/语音：聊天记录里留一条，私聊再写进长期记忆。"""
+        marker = str(text or "").strip()
+        if not marker:
+            return
+        try:
+            self._remember_bot_message(umo, marker)
+        except Exception as exc:
+            logger.debug("[amo] 记录媒体消息失败: %s" % exc)
+        if ":FriendMessage:" not in str(umo):
+            return
+        uid = str(umo).rsplit(":", 1)[-1].strip()
+        if not uid or uid == "bot":
+            return
+        try:
+            await self._data_memory_write(uid, marker, kind="event", tier=0, scope="private")
+        except Exception as exc:
+            logger.debug("[amo] 媒体记忆写入失败: %s" % exc)
+
     async def _send_now(self, event, text, quote_id=None):
         """跳过分段引擎直接发一条（seg 关闭时，用来绕开 AstrBot 核心的引用/@）。"""
         if Comp is None or MessageChain is None:

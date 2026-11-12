@@ -768,6 +768,19 @@ class PhotoEngine:
             return False
         self._bump_count()
         self._stats["sent"] += 1
+        try:
+            remember = getattr(self.plugin, "_remember_bot_media", None)
+            if callable(remember):
+                scene_text = ""
+                if isinstance(scene, dict):
+                    scene_text = str(scene.get("place") or scene.get("zone") or "")
+                marker = "[我发的照片] %s%s" % (
+                    "自拍" if selfie else "随手拍",
+                    ("，背景：" + scene_text) if scene_text else "",
+                )
+                await remember(umo, marker)
+        except Exception as exc:
+            logger.debug("[amo] 记录照片失败: %s" % exc)
         logger.info("[amo] 照片已分享（%s/%s）：%s" % (kind, "自拍" if selfie else "街景", prompt))
         return True
 

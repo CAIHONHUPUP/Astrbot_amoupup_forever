@@ -1241,6 +1241,44 @@ class ScheduleEngine:
 
     def _sick_rest_segments(self, ctx):
         home = ctx["home"]
+        health = ctx.get("health") or {}
+        treatment = str(health.get("treatment") or "")
+        if "打吊水" in treatment or "看医生" in treatment:
+            # 去医院的日子：把挂号/看诊/吊水写成明确时段，而不是笼统「吃药量体温」。
+            # 必须整点切段：_expand 按小时展开、_validate 再把第 i 段钉成 i:00，
+            # 09:30 这种半小时边界会让后面整天的日程错位一小时。
+            hospital = "医院"
+            drip = "打吊水" in treatment
+            if drip:
+                return [
+                    self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
+                    self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
+                    self._seg("09:00", "10:00", "收拾一下去医院", home, "home", "life"),
+                    self._seg("10:00", "13:00", "在医院挂号、排队、打吊水",
+                              hospital, "hospital", "health", detail="吊水约 3 小时"),
+                    self._seg("13:00", "14:00", "回家吃午饭", home, "home", "meal"),
+                    self._seg("14:00", "17:00", "卧床休息、捂汗", home, "home", "rest"),
+                    self._seg("17:00", "18:00", "吃药、量体温", home, "home", "life"),
+                    self._seg("18:00", "19:00", "喝点粥当晚饭", home, "home", "meal"),
+                    self._seg("19:00", "22:00", "早早躺着刷手机", home, "home", "rest"),
+                    self._seg("22:00", "23:00", "洗漱", home, "home", "life"),
+                    self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
+                ]
+            return [
+                self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
+                self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
+                self._seg("09:00", "10:00", "收拾一下去医院", home, "home", "life"),
+                self._seg("10:00", "12:00", "在诊室看医生、拿药",
+                          hospital, "hospital", "health", detail="看诊拿药"),
+                self._seg("12:00", "13:00", "回家吃午饭", home, "home", "meal"),
+                self._seg("13:00", "16:00", "卧床休息、捂汗", home, "home", "rest"),
+                self._seg("16:00", "17:00", "吃药、量体温", home, "home", "life"),
+                self._seg("17:00", "18:00", "靠在沙发上发呆", home, "home", "rest"),
+                self._seg("18:00", "19:00", "喝点粥当晚饭", home, "home", "meal"),
+                self._seg("19:00", "22:00", "早早躺着刷手机", home, "home", "rest"),
+                self._seg("22:00", "23:00", "洗漱", home, "home", "life"),
+                self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
+            ]
         return [
             self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
             self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
@@ -1657,6 +1695,7 @@ class ScheduleEngine:
             ("scenic", "restaurant"), ("restaurant", "scenic"),
             ("restaurant", "hotel"), ("hotel", "restaurant"),
             ("restaurant", "home"), ("home", "restaurant"),
+            ("home", "hospital"), ("hospital", "home"), ("hospital", "hospital"),
             ("mall", "restaurant"), ("restaurant", "mall"),
             ("station", "restaurant"), ("restaurant", "station"),
             ("home", "home"), ("office", "office"), ("scenic", "scenic"),

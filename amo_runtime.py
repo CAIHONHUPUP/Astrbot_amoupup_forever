@@ -773,6 +773,21 @@ class RuntimeMixin(_MixinBase):
                     self.draw.maybe_after_reply(event, text)
                 except Exception as exc:
                     logger.warning("[amo] 画图判断失败: %s" % exc)
+            record_cls = getattr(Comp, "Record", None)
+            if record_cls is not None and any(
+                isinstance(comp, record_cls) for comp in result.chain
+            ):
+                # Record.text 是 TTS 念的那句原文（别的语音插件也这么读），有就记内容
+                voice_text = " ".join(
+                    str(getattr(comp, "text", "") or "").strip()
+                    for comp in result.chain
+                    if isinstance(comp, record_cls)
+                ).strip()
+                marker = "[我发的语音] " + (voice_text or text.strip() or "一段语音")
+                remember = getattr(self, "_remember_bot_media", None)
+                if callable(remember):
+                    self._spawn(remember(event.unified_msg_origin, marker))
+                return
             if not text.strip():
                 return
             group = not event.is_private_chat()

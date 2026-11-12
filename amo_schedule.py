@@ -200,9 +200,32 @@ class ScheduleMixin(_MixinBase):
             self.db.save_schedule(key, new_items)
             # 生病/请假长期呆家才换睡衣；旅游/出差直接出发不换
             if str(change.get("category") or "") == "health":
-                status = "发烧" if "发烧" in str(user_text) else ("感冒" if "感冒" in str(user_text) else "生病")
+                text_raw = str(user_text)
+                if "肠胃炎" in text_raw or "拉肚子" in text_raw:
+                    status = "肠胃炎"
+                elif "发烧" in text_raw:
+                    status = "发烧"
+                elif "感冒" in text_raw:
+                    status = "感冒"
+                elif "咳嗽" in text_raw:
+                    status = "咳嗽"
+                else:
+                    status = "生病"
+                current = self.state.health_info()
+                if current.get("sick") and status == "生病":
+                    status = str(current.get("status") or "生病")
+                treatment = ""
+                if any(word in text_raw for word in ("打吊水", "输液", "挂水")):
+                    treatment = "打吊水"
+                elif any(word in text_raw for word in ("看医生", "看病", "去医院", "挂号")):
+                    treatment = "看医生"
                 try:
-                    self.state.set_health(status, hours=24, note="按主人的话生病请假")
+                    if current.get("sick") and status == str(current.get("status") or ""):
+                        # 已经病着，主人只是让她去看医生/不去：别把生病起点重置
+                        self.state.set_treatment(treatment)
+                    else:
+                        self.state.set_health(
+                            status, note="按主人的话生病请假", treatment=treatment)
                 except Exception as _amo_exc:
                     _note_swallowed("amo_schedule._apply_user_schedule_change", _amo_exc)
             if should_switch_to_pajamas is not None and should_switch_to_pajamas(change, user_text):

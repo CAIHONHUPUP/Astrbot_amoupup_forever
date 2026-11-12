@@ -25,6 +25,8 @@ class Rule(TypedDict, total=False):
     category: str
     anchor: str
     negatable: bool
+    split: bool
+    duration: int
 
 # (触发词, 新的活动, 地点, 分类, 锚点, 是否受否定词保护)
 _RULES: list[Rule] = [
@@ -57,6 +59,17 @@ _RULES: list[Rule] = [
         "category": "commute",
         "anchor": "off_work_now",
         "negatable": True,
+    },
+    {
+        # 打吊水/输液：把当前这段拆出一段医院吊水（默认 3 小时），日程上能看到具体时间
+        "keys": ("打吊水", "输液", "挂水", "去打吊水", "去输液"),
+        "activity": "在医院打吊水",
+        "place": "医院",
+        "category": "health",
+        "anchor": "now",
+        "negatable": True,
+        "split": True,
+        "duration": 180,
     },
     {
         # 生病请假类：主人直接说「别去上班 / 今天不上班」
@@ -95,11 +108,13 @@ _RULES: list[Rule] = [
     },
     {
         "keys": ("去医院", "去看病", "看病", "挂号", "看医生", "去诊所"),
-        "activity": "去医院看病",
+        "activity": "在医院排队看诊",
         "place": "医院",
         "category": "health",
         "anchor": "now",
         "negatable": True,
+        "split": True,
+        "duration": 120,
     },
     {
         "keys": ("请个假", "请假", "请假在家", "在家休息一天"),
@@ -194,12 +209,16 @@ def detect_schedule_change(text: str) -> dict[str, Any] | None:
                 continue
             if rule.get("negatable", True) and _negated(raw, pos):
                 continue
-            return {
+            change = {
                 "activity": rule["activity"],
                 "place": rule["place"],
                 "category": rule["category"],
                 "anchor": rule.get("anchor") or "now",
             }
+            if rule.get("split"):
+                change["split"] = True
+                change["duration"] = int(rule.get("duration") or 0)
+            return change
     return None
 
 
@@ -266,14 +285,69 @@ def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
     if not activity or str(target.get("activity") or "") == activity:
         return items
     sleeping = category == "sleep"
+    split = bool(change.get("split"))
+    duration = int(change.get("duration") or 0)
+    target_start = _minutes(target.get("start"))
+    target_end = _minutes(target.get("end"))
+    split_start = split_end = None
+    if split and duration > 0 and target_start is not None and target_end is not None:
+        split_start = max(now_min, target_start)
+        split_end = min(24 * 60, split_start + duration)
+        if split_end <= split_start:
+            split_start = split_end = None
+
+    def _hhmm(value):
+        return "%02d:%02d" % divmod(int(value), 60)
+
     out: list[dict[str, Any]] = []
     hit = False
+    absorb_until = None
     for item in items:
         if not isinstance(item, dict):
             out.append(item)
             continue
+        if hit and absorb_until:
+            start = _minutes(item.get("start"))
+            end = _minutes(item.get("end"))
+            if start is None or end is None:
+                out.append(item)
+                continue
+            if end <= absorb_until:
+                continue
+            if start < absorb_until:
+                piece = dict(item)
+                piece["start"] = _hhmm(absorb_until)
+                out.append(piece)
+                absorb_until = None
+                continue
+            absorb_until = None
         if not hit and item is target:
             hit = True
+            if split_start is not None:
+                if split_start > target_start:
+                    before = dict(item)
+                    before["end"] = _hhmm(split_start)
+                    out.append(before)
+                visit = dict(item)
+                visit["start"] = _hhmm(split_start)
+                visit["end"] = _hhmm(split_end)
+                visit["activity"] = activity
+                if place:
+                    visit["place"] = place
+                if category:
+                    visit["category"] = category
+                visit["detail"] = (
+                    "打吊水，约%d分钟" % (split_end - split_start)
+                    if "打吊水" in activity else "看诊拿药，约%d分钟" % (split_end - split_start)
+                )
+                out.append(visit)
+                if split_end < target_end:
+                    after = dict(item)
+                    after["start"] = _hhmm(split_end)
+                    out.append(after)
+                else:
+                    absorb_until = split_end
+                continue
             new_item = dict(item)
             new_item["activity"] = activity
             if place:
