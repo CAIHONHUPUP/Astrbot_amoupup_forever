@@ -253,7 +253,9 @@ class ProactiveMixin(_MixinBase):
             if kind == "morning":
                 return True
             if kind == "lunch" and any(word in text for word in
-                                       ("吃", "饭", "饿", "外卖", "食堂", "早餐", "午饭", "午饭")):
+                                       ("吃", "饭", "饿", "外卖", "食堂", "早餐", "午饭", "汤", "面", "粉",
+                 "粥", "菜", "火锅", "汉堡", "披萨", "便当", "寿司", "烧烤", "米线",
+                 "饺子", "包子", "零食", "喝了")):
                 return True
             if kind == "goodnight" and any(word in text for word in ("睡", "晚安", "困", "熬夜")):
                 return True
@@ -613,6 +615,9 @@ class ProactiveMixin(_MixinBase):
             if not guaranteed and self.cfg_bool("proactive_schedule_only", True) and category not in ("meal", "rest", "play", "commute"):
                 continue
             kind = self._choose_proactive_kind(profile, snap, category)
+            # 他今天已经说过吃了什么（哪怕是在另一个平台），就别再发「到饭点了，别随便对付」。
+            if kind == "meal" and await self._user_spoke_today(uid, "lunch"):
+                continue
             text = await self.llm.gen_proactive(
                 target_umo, profile, snap, kind
             )

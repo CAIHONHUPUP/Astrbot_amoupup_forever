@@ -153,6 +153,8 @@ class RecallContextMixin(_MixinBase):
             lines.append(
                 "【跨平台】这个人在 " + "、".join(labels) + " 也是同一个人；"
                 "不管他在哪个平台说话，都是同一个人在跟你聊。"
+                "【跨平台·别重复问】下面他在另一个平台已经回答过的事（吃了什么/在哪/在干嘛）"
+                "就是已经说过，不要再问一遍；要接住，别问「你那边呢 / 中午吃了吗 / 又随便对付了」。"
             )
         other_lines = []
         my_lines = []
@@ -170,7 +172,10 @@ class RecallContextMixin(_MixinBase):
             if not text:
                 continue
             label = item.get("label") or item.get("platform") or "别的平台"
-            line = "· [%s] %s" % (label, text[:120])
+            # 必须标出「他 / 她」：只写「· [飞书] 番茄蘑菇汤」模型分不清是谁说的，
+            # 就会当成闲聊而不是「他已经回答过」。
+            who = "她" if str(item.get("role") or "") == "bot" else "他"
+            line = "· [%s] %s：%s" % (label, who, text[:120])
             if str(item.get("role") or "") == "bot":
                 # 她自己说的：只留最近两句，够判断「另一边已经改口了」
                 my_lines.append(line)
