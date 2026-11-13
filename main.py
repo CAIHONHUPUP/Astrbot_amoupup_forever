@@ -157,7 +157,8 @@ if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_db import AmoDB
     from .amo_human_state import HumanState
     from .amo_llm_service import LLMService
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    from .amo_wallet import Wallet
+else:  # 运行时：包模式优先，按文件直接导入时退回绝对导入
     try:
         from .amo_db import AmoDB
         from .amo_human_state import HumanState
