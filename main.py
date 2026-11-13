@@ -802,6 +802,25 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         task.add_done_callback(_report)
         return task
 
+    def _omnidraw_self_use_hint(self):
+        """提醒：万象画卷要装作者仓库的「能陪自用版」，上游版一次自拍可能发两张。"""
+        try:
+            ctx = getattr(self, "context", None)
+            getter = getattr(ctx, "get_registered_star", None) if ctx else None
+            meta = getter("astrbot_plugin_omnidraw") if callable(getter) else None
+            if meta is None:
+                return
+            version = str(getattr(meta, "version", "") or "")
+            name = str(getattr(meta, "display_name", "") or "")
+            if version.startswith("3.4.2") or "自用" in name:
+                return
+            logger.warning(
+                "[amo] 提醒：万象画卷不是「能陪自用版」（当前 %s）。上游版一次自拍可能发两张；"
+                "请安装作者仓库 CAIHONHUPUP/astrbot_plugin_omnidraw 的 v3.4.2-amoupup。",
+                version or "未知版本")
+        except Exception as _amo_exc:
+            _note_swallowed("amo.main.omnidraw_hint", _amo_exc)
+
     async def _ensure_ready(self):
         if self._ready:
             return
@@ -830,6 +849,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             except Exception as exc:
                 logger.debug("[amo] 与数据插件同步失败: %s" % exc)
             self._ready = True
+            self._omnidraw_self_use_hint()
             try:
                 retry = getattr(self, "_retry_web_api_routes", None)
                 if callable(retry):

@@ -1,5 +1,8 @@
 ## 7.0.3（2026-11-13 自拍去重：共用冷却 + 面板改城市同步）
 
+- **安装提醒**：需同时安装作者仓库的自用版万象画卷（CAIHONHUPUP/astrbot_plugin_omnidraw，v3.4.2-amoupup）；
+  启动时若不是自用版会打一条 warning 提醒。
+
 - 重复发图根因：模型用 generate_selfie 发图后，draw_engine 的自动补图又发一张；照片引擎定时分享也可能补一张。
 - 新增统一冷却 note_sent/sent_recently：任何一条链路发过图，5 分钟内自动补图和定时分享都不再发。
 - draw_engine 决定补图时先占位（note_sent），生成几十秒期间定时分享不会插队。
