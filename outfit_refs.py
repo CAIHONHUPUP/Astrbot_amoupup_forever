@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover
     try:
         from amo_image_common import find_omni
     except Exception:
-        find_omni = None
+        find_omni = None  # type: ignore[assignment]
 
 REF_DIR_NAME = "outfit_refs"
 SCOPE_FOLDERS = (
@@ -174,7 +174,7 @@ async def ensure_item_ref(plugin, item, session=None, force=False):
             except Exception:
                 return existing
         return path
-    omni = find_omni(plugin, plugin, "outfit_refs.ensure_item_ref") if find_omni else None
+    omni = find_omni(plugin, plugin, "outfit_refs.ensure_item_ref") if find_omni is not None else None
     if omni is None:
         return ""
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -229,11 +229,11 @@ async def ensure_ref(plugin, name, session=None, force=False):
         from .wardrobe import classify_item, classify_sleep_item
     except Exception:
         classify_item = classify_sleep_item = None
-    if classify_sleep_item:
+    if classify_sleep_item is not None:
         sleep_category = classify_sleep_item(name)
         if sleep_category:
             category = sleep_category
-        elif classify_item:
+        elif classify_item is not None:
             category = classify_item(name) or "top"
     item = {"name": name, "category": category}
     return await ensure_item_ref(plugin, item, session=session, force=force)

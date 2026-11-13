@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover
     try:
         from outfit_refs import _as_png, _decode_item
     except Exception:
-        _as_png = _decode_item = None
+        _as_png = _decode_item = None  # type: ignore[assignment]
 
 try:
     from .amo_image_common import find_omni
@@ -35,7 +35,7 @@ except Exception:  # pragma: no cover
     try:
         from amo_image_common import find_omni
     except Exception:
-        find_omni = None
+        find_omni = None  # type: ignore[assignment]
 
 OUTFIT_REF_DIR_NAME = "outfit_refs"
 REF_DIR_NAME = "姿势库"
@@ -364,7 +364,7 @@ async def ensure_pose_ref(plugin, pose, force=False):
     path = library.ref_path(pose)
     if os.path.isfile(path) and os.path.getsize(path) > 0 and not force:
         return path
-    omni = find_omni(plugin, plugin, "pose_library.ensure_pose_ref") if find_omni else None
+    omni = find_omni(plugin, plugin, "pose_library.ensure_pose_ref") if find_omni is not None else None
     if omni is None:
         logger.warning("[amo] 姿势参考图：没找到万象画卷")
         return ""
@@ -397,7 +397,7 @@ async def ensure_pose_ref(plugin, pose, force=False):
     images = result.get("images") if isinstance(result, dict) else None
     if not images:
         return ""
-    data = _decode_item(images[0]) if _decode_item else b""
+    data = _decode_item(images[0]) if _decode_item is not None else b""
     if not data:
         url = str(images[0].get("url") or images[0].get("image_url") or "")
         if url:
@@ -410,7 +410,7 @@ async def ensure_pose_ref(plugin, pose, force=False):
                             data = await resp.read()
             except Exception:
                 data = b""
-    data = _as_png(data) if _as_png else data
+    data = _as_png(data) if _as_png is not None else data
     if not data:
         logger.warning("[amo] 姿势参考图内容为空（%s）" % name)
         return ""

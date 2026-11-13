@@ -67,10 +67,10 @@ except ImportError:  # 直接按文件加载时
     try:
         from amo_voice import clean_voice_text, voice_requested
     except Exception:  # pragma: no cover
-        def voice_requested(text):
+        def voice_requested(text):  # type: ignore[misc]
             return False
 
-        def clean_voice_text(text, limit=600):
+        def clean_voice_text(text, limit=600):  # type: ignore[misc]
             return str(text or "")
 
 

@@ -13,5 +13,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Version
         run: python tools/check_version.py
+      - name: Type check
+        run: python tools/mypy_check.py
       - name: Run tests
         run: python -m unittest discover -s tests -t tests

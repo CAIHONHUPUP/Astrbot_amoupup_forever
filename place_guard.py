@@ -74,7 +74,7 @@ _NOISE = ("大家", "人家", "国家", "专家", "画家", "科学家", "商家
 _SOFT_MARKERS = ("明天", "下次", "周末", "待会", "等会", "以后", "要不要", "去不去",
                  "想不想", "陪我", "带我", "一起去", "打算", "准备", "以后")
 
-_WORD_GROUP = {}
+_WORD_GROUP: dict[str, str] = {}
 for _group, _words in GROUPS:
     for _word in _words:
         _WORD_GROUP.setdefault(_word, _group)

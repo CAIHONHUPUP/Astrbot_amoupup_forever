@@ -10,6 +10,10 @@
   重放同一条 `message_id` 时会把缺的群名补上。
 - **日志**：新增 `[IDENTITY_DEBUG] platform=… raw_id=… person_id=… bound=…`。
 - 测试 1465 项全过（新增语音记忆解析 6 项）。
+- **新增 GitHub Actions CI**：版本号校验 + mypy 类型检查 + 1465 项单测；
+  顺手清掉 126 个既有 mypy 报错（98 个是「按包/按文件双导入」的 no-redef，用
+  `disable_error_code = no-redef` 明确关掉，其余 28 个逐个修：Optional 运算、
+  条件定义的兜底函数签名、协议里缺的跨 mixin 方法声明等）。
 
 ## 6.9.4（2026-11-13 群聊识别 P0/P1 修复 + P2）
 - **P0 误伤真人**：默认机器人关键词去掉「小爱 / 小冰 / 小微 / 助手」这类像真人昵称的词，只留

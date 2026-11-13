@@ -30,7 +30,7 @@ except Exception:  # pragma: no cover - 直接按文件加载时
     try:
         from outfit_refs import item_ref_path as _item_ref_path
     except Exception:
-        _item_ref_path = None
+        _item_ref_path = None  # type: ignore[assignment]
 
 from typing import TYPE_CHECKING
 
@@ -48,7 +48,7 @@ except Exception:  # pragma: no cover - 直接按文件加载时
     try:
         from amo_shared import today_str
     except Exception:
-        def today_str():
+        def today_str():  # type: ignore[misc]
             import datetime
             return datetime.date.today().isoformat()
 
@@ -60,7 +60,7 @@ except Exception:  # pragma: no cover
     except Exception:
         from datetime import datetime as _dt
 
-        def _clock_now(*args, **kwargs):
+        def _clock_now(*args, **kwargs):  # type: ignore[misc]
             return _dt.now()
 
 

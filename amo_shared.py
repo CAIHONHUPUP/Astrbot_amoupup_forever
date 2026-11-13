@@ -823,7 +823,7 @@ SOLAR_TERMS = {
 #:   {"2028-01-01": {"name": "元旦", "rest": true},
 #:    "2028-01-08": {"name": "调休补班", "rest": false}}
 #: 也可以是简写 {"2028-01-01": "元旦"}。文件优先于内置 CN_HOLIDAYS。
-_HOLIDAY_CALENDAR_CACHE = {"path": "", "mtime": None, "data": {}}
+_HOLIDAY_CALENDAR_CACHE: dict[str, Any] = {"path": "", "mtime": None, "data": {}}
 
 
 def _holiday_calendar():

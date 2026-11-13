@@ -252,7 +252,7 @@ def detect_schedule_change(text: str) -> dict[str, Any] | None:
                 continue
             if rule.get("negatable", True) and _negated(raw, pos):
                 continue
-            change = {
+            change: dict[str, Any] = {
                 "activity": rule["activity"],
                 "place": rule["place"],
                 "category": rule["category"],
@@ -428,7 +428,8 @@ def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
             absorb_until = None
         if not hit and item is target:
             hit = True
-            if split_start is not None:
+            if (split_start is not None and split_end is not None
+                    and target_start is not None and target_end is not None):
                 if split_start > target_start:
                     before = dict(item)
                     before["end"] = _hhmm(split_start)
