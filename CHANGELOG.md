@@ -1,3 +1,8 @@
+## 7.0.4（2026-11-13 自拍提醒改指独立仓库 + 修复 3.4.2 无图）
+
+- 安装提醒改指向独立仓库 `CAIHONHUPUP/astrbot_plugin_omnidraw-amoupup`（自用版 v3.4.3）；
+- 3.4.2 因装饰器错位导致 `generate_selfie` 报错、出不了图，已在 3.4.3 修复；启动提醒会把上游/旧版清晰指出来。
+
 ## 7.0.3（2026-11-13 自拍去重：共用冷却 + 面板改城市同步）
 
 - **安装提醒**：需同时安装作者仓库的自用版万象画卷（CAIHONHUPUP/astrbot_plugin_omnidraw，v3.4.2-amoupup）；

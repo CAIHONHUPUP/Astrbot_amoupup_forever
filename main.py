@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 
 
-PLUGIN_VERSION = "7.0.3"
+PLUGIN_VERSION = "7.0.4"
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -812,11 +812,11 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                 return
             version = str(getattr(meta, "version", "") or "")
             name = str(getattr(meta, "display_name", "") or "")
-            if version.startswith("3.4.2") or "自用" in name:
+            if version.startswith(("3.4.3", "3.4.4")) or "自用" in name:
                 return
             logger.warning(
                 "[amo] 提醒：万象画卷不是「能陪自用版」（当前 %s）。上游版一次自拍可能发两张；"
-                "请安装作者仓库 CAIHONHUPUP/astrbot_plugin_omnidraw 的 v3.4.2-amoupup。",
+                "请安装作者仓库 CAIHONHUPUP/astrbot_plugin_omnidraw-amoupup 的 v3.4.3-amoupup。",
                 version or "未知版本")
         except Exception as _amo_exc:
             _note_swallowed("amo.main.omnidraw_hint", _amo_exc)
