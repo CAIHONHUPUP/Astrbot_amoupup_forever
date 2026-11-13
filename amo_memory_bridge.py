@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""能力层（MemoryHub）与「想记」写入：amo 自己的记忆入口只走这一条。
+"""能力层（MemoryHub）与「能记」写入：amo 自己的记忆入口只走这一条。
 
 不存任何本地记忆，也不再有"退回外挂记忆插件"的分支——记忆只有两个去处：
 能力层（MemoryHub，内部就是 Astrbot_amoupup_data）和它的 mem 门面。
@@ -128,7 +128,7 @@ class BridgeMixin(_MixinBase):
 
     def _external_memory_write(self, uid, content, kind="fact", tier=1,
                                scope="private", group_id="", subject="user", platform=""):
-        """把一条记忆交给「想记」；subject=user/bot 区分主体。
+        """把一条记忆交给「能记」；subject=user/bot 区分主体。
 
         陪伴自己不存记忆，只负责把要记的东西丢过去；写不进去就返回 False，
         调用方（命令/面板）会如实告诉用户。

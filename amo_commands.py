@@ -222,7 +222,7 @@ class CommandMixin(_MixinBase):
             "🎚 心流阈值：" + str(threshold["value"]) + "（基础 " + str(threshold["base"]) + "，活跃度 " + str(data["activity_rate"]) + "%）",
             "📚 档案 " + str(data["counts"]["profiles"]) + " · 记忆 " + str(data["counts"]["memories"]) + " · 消息 " + str(data["counts"]["messages"]),
         ]
-        # 记忆后端连没连上要写在状态里：没装想记的人只会看到「记忆 0」，然后以为功能坏了。
+        # 记忆后端连没连上要写在状态里：没装能记的人只会看到「记忆 0」，然后以为功能坏了。
         plugin_state = data.get("data_plugin") or {}
         lines.append(memory_backend_line(bool(plugin_state.get("connected"))))
         if not city_or_empty(self):

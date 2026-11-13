@@ -442,9 +442,9 @@ class DataSyncMixin(_MixinBase):
         return [dict(row) for row in (rows or []) if isinstance(row, dict)]
 
     async def _all_memories(self, uid, keyword="", limit=50):
-        """面板/命令统一的记忆读取入口：只读「想记」(Astr_Amo_data)。
+        """面板/命令统一的记忆读取入口：只读「能记」(Astr_Amo_data)。
 
-        以前各走各的：记忆页读想记，画像页和命令只读旧适配器 → 只装想记时会显示 0 条。
+        以前各走各的：记忆页读能记，画像页和命令只读旧适配器 → 只装能记时会显示 0 条。
         """
         return await self._data_mem_list(uid, keyword, limit)
 

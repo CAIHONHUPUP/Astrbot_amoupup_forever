@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""记忆只走「想记」(Astrbot_amoupup_data)：读取、写入、召回、面板来源。
+"""记忆只走「能记」(Astrbot_amoupup_data)：读取、写入、召回、面板来源。
 
 旧记忆源（牢记 / 天使之魂 / livingmemory / companion）的适配已经删掉；
-这里保证"没装想记就老实返回空"，而不是悄悄去读别的插件的库。
+这里保证"没装能记就老实返回空"，而不是悄悄去读别的插件的库。
 """
 from __future__ import annotations
 

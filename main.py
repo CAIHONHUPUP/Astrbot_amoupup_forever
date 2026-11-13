@@ -1017,7 +1017,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         """按插件名找实例；不缓存，reload 之后拿到的是新实例。
 
         停用的插件还挂在内存里（`activated=False`），这里必须当它不存在：
-        否则停用「想记」之后，记忆仍会往它身上写，用户却看不到任何数据。
+        否则停用「能记」之后，记忆仍会往它身上写，用户却看不到任何数据。
         """
         for name in names:
             try:

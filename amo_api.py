@@ -414,14 +414,14 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
         }
 
     async def api_memory_candidates(self):
-        """记忆来源只有「想记」(Astrbot_amoupup_data)；这里只报告它在不在。"""
+        """记忆来源只有「能记」(Astrbot_amoupup_data)；这里只报告它在不在。"""
         await self._ensure_ready()
         plugin = self._data_plugin()
         name = "Astrbot_amoupup_data"
         return {
             "code": 0,
             "data": {
-                "items": ([{"name": name, "title": "想记（Astrbot_amoupup_data）", "activated": True}]
+                "items": ([{"name": name, "title": "能记（Astrbot_amoupup_data）", "activated": True}]
                           if plugin is not None else []),
                 "selected": name if plugin is not None else "",
                 "detected": name if plugin is not None else "",
@@ -562,7 +562,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
                     cache.pop(umo, None)
         except Exception as _amo_exc:
             _note_swallowed("amo_api.ApiMixin.api_profile_delete", _amo_exc)
-        # 面板的画像列表读的是数据插件（想记），只删本地等于没删：
+        # 面板的画像列表读的是数据插件（能记），只删本地等于没删：
         # 数据侧还在，刷新就「删不掉」。这里把数据侧也删掉。
         try:
             data_counts = await self._data_call("delete_profile", self._data_bot_id(), uid)
