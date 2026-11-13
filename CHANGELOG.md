@@ -17,6 +17,9 @@
 - **严格类型检查（--check-untyped-defs）已全绿**：620 → 0。做法：`PluginLike` 补齐 144 个跨 mixin
   成员、4 个 API mixin 补上协议基类、空容器加显式类型、Optional 加守卫、平台相关的
   `time.tzset` 加 hasattr 判断；CI 增加阻塞式 `Type check (strict)`，mypy 版本钉在 2.4.1。
+- **覆盖率底线 52% → 58%**：当前实测 60%，CI 里跑 `coverage run + report`。
+- **安装包和源码包分开**：安装包只带运行时文件（不含 tests/tools/.github 和开发配置），
+  源码包保留全部内容，两个包大小不再相同。
 - **质量门加 pyflakes**：`tools/quality_gate.py` 增加 pyflakes 检查（未使用导入/未定义名），
   顺手清掉 16 个既有告警（amo_api 批量未用导入、amo_events/amo_ports 的 `field`、
   draw_engine 的 `has_place_hint`、wardrobe 的未用局部变量等）；CI 增加 `Quality gate --fast`。

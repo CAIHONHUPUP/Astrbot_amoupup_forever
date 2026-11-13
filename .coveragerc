@@ -9,7 +9,7 @@ omit =
 
 [report]
 # 只许往上调：第三轮把 30% 抬到 40%；2026-11-12 补 api/日程/分段/消息层测试后实测 57%，
-# 底线抬到 52%（留 5 个点抖动余量，Windows 上还会跳过 7 项平台相关的用例）。
-fail_under = 52
+# 7.0.0 加了类型注解与守卫后实测 60%，底线 52% → 58%（留 2 个点抖动余量）。
+fail_under = 58
 show_missing = True
 skip_covered = True

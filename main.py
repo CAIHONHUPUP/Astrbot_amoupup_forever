@@ -162,10 +162,12 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         from .amo_db import AmoDB
         from .amo_human_state import HumanState
         from .amo_llm_service import LLMService
+        from .amo_wallet import Wallet
     except ImportError:  # 直接按文件加载时
         from amo_db import AmoDB
         from amo_human_state import HumanState
         from amo_llm_service import LLMService
+        from amo_wallet import Wallet
 
 # ---- 画图 / 照片分享（本地功能，接万象画卷 OmniDraw）----
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -611,6 +613,8 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             if item.strip():
                 self.admin_uids.add(item.strip())
         self.db = AmoDB(self.plugin_dir)
+        # 钱包：amo 是资产权威，金融插件只读余额 / 调 credit、debit（不做 UI）
+        self.wallet = Wallet(self.db)
         self.wardrobe = None
         if Wardrobe is not None:
             try:
@@ -807,6 +811,10 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                 await asyncio.to_thread(self.db.init)
             except Exception as exc:
                 logger.error("[amo] 数据库初始化失败: %s" % exc)
+            try:
+                await asyncio.to_thread(self.wallet.ensure_schema)
+            except Exception as exc:
+                logger.error("[amo] 钱包初始化失败: %s" % exc)
             self._migrate_delay_default()
             self._migrate_proactive_timing()
             self._migrate_typing_defaults()

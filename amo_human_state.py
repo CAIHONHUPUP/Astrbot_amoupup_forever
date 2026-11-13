@@ -229,6 +229,24 @@ class HumanState:
         self.mood_ts = now_ts()
         self.save_mood()
 
+    def nudge_once(self, idem, **deltas):
+        """带幂等的心情调整：同一 idem 只生效一次（金融事件用）。"""
+        if not idem:
+            self.nudge(**deltas)
+            return True
+        key = "mood_applied:" + str(idem)
+        try:
+            if bool(self.db.kv_get(key, False)):
+                return False
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.HumanState.nudge_once", _amo_exc)
+        self.nudge(**deltas)
+        try:
+            self.db.kv_set(key, True)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.HumanState.nudge_once", _amo_exc)
+        return True
+
     def decay_mood(self):
         now = now_ts()
         hours = max(0.0, (now - self.mood_ts) / 3600.0)
@@ -251,8 +269,26 @@ class HumanState:
         return clamp(50 + (positive - negative) * 0.8)
 
     def mood_text(self):
+        """调试/面板用：带数值。对外回复、日记、提示词一律用 mood_words()。"""
         parts = [key + str(int(round(value))) for key, value in self.mood.items()]
         return " ".join(parts) + "（整体偏" + self.dominant_mood() + "）"
+
+    def mood_words(self):
+        """对外只给自然语言情绪词，不暴露数值（金融联动也会用到）。"""
+        score = self.mood_score()
+        if score >= 85:
+            return "狂喜、超级开心，开心到转圈"
+        if score >= 70:
+            return "很开心、心情不错"
+        if score >= 58:
+            return "还算轻快"
+        if score >= 45:
+            return "平静、没什么波动"
+        if score >= 35:
+            return "有点低落、不太开心"
+        if score >= 20:
+            return "难过、委屈"
+        return "崩溃、伤心，呜呜呜"
 
     def observe(self, text):
         senti = sentiment(text)
@@ -953,6 +989,31 @@ class HumanState:
             return self._commit_schedule_change_locked(
                 day, new_items, old_items=old_items, source=source,
                 reason=reason, invalidate_from=invalidate_from,
+            )
+
+    def add_schedule_item(self, day, item, source="finance", reason=""):
+        """在当天日程里追加一条（锁内读改写）；整天覆盖仍走 commit_schedule_change。"""
+        day = str(day or "")
+        empty = {"changed": False, "version": 0, "changed_hours": [], "cancelled": []}
+        if not day or not isinstance(item, dict):
+            return empty
+        start = str(item.get("start") or "").strip()
+        if not re.match(r"^\d{1,2}:\d{2}$", start):
+            return empty
+
+        def _minute(text):
+            try:
+                hh, mm = str(text).split(":", 1)
+                return int(hh) * 60 + int(mm)
+            except Exception:
+                return 24 * 60
+
+        with self._schedule_commit_lock:
+            current = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
+            merged = current + [dict(item)]
+            merged.sort(key=lambda row: _minute(str((row or {}).get("start") or "")))
+            return self._commit_schedule_change_locked(
+                day, merged, old_items=current, source=source, reason=reason,
             )
 
     def _commit_schedule_change_locked(self, day, new_items, old_items=None, source="",
@@ -2137,7 +2198,7 @@ class HumanState:
         activity = snap["activity"]
         lines = [
             "现在是 %s。" % snap["datetime_text"],
-            "心情：%s" % self.mood_text(),
+            "心情：%s" % self.mood_words(),
             "生理期：%s第%d天，%s。" % (
                 snap["period"]["phase"], snap["period"]["day"], snap["period"]["tone"]
             ),

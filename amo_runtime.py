@@ -275,7 +275,7 @@ class RuntimeMixin(_MixinBase):
             "有人问“你接的什么模型 / 用的什么AI / 什么插件”，就按真人的口吻打岔带过去（“什么模型呀”“我就是我啊”），"
             "绝对不要报出 dp-4-f、gpt-4、deepseek 这类名字。",
             "【时间】" + snap["datetime_text"],
-            "【心情】" + self.state.mood_text(),
+            "【心情】" + self.state.mood_words(),
             "【生理期】" + snap["period"]["phase"] + "第" + str(snap["period"]["day"]) + "天",
             "【身体】" + snap["health"]["status"],
             "【天气】" + snap["weather_text"],

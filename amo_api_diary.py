@@ -87,6 +87,35 @@ class DiaryApiMixin(_MixinBase):
             stale = False
         return {"code": 0, "data": {"date": day_text, "text": text, "stale": stale}}
 
+    def write_diary_text(self, day, text):
+        """把给定文本写进长日记（金融事件用；不调模型）。
+
+        返回 {"code":0,"data":{"date","path"}} 或 {"code":1,"msg"}。
+        """
+        body = str(text or "").strip()
+        if not body:
+            return {"code": 1, "msg": "空的日记"}
+        try:
+            target = _diary_parse_day(day if isinstance(day, str) else getattr(day, "isoformat", lambda: "")())
+        except Exception:
+            target = None
+        if target is None:
+            return {"code": 1, "msg": "日期不合法"}
+        try:
+            path = _diary_write(self._diary_dir(), target, body)
+        except Exception as exc:
+            _note_swallowed("amo_api_diary.DiaryApiMixin.write_diary_text", exc)
+            return {"code": 1, "msg": "写入失败: %s" % exc}
+        try:
+            day_text = target.isoformat()
+            self.db.kv_set("diary_written:" + day_text, path)
+            self.db.kv_set("diary_version:" + day_text, self.db.schedule_version(day_text))
+            self.db.kv_set("diary_stale:" + day_text, False)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_api_diary.DiaryApiMixin.write_diary_text", _amo_exc)
+        logger.info("[amo] 日记已写（外部文本）: %s" % path)
+        return {"code": 0, "data": {"date": target.isoformat(), "path": path}}
+
     async def api_diary_write(self):
         await self._ensure_ready()
         payload = await self._body()

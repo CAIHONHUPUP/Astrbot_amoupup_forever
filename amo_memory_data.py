@@ -556,6 +556,42 @@ class DataSyncMixin(_MixinBase):
         # 到这里才算这次启动真的同步完了：以后不再探测、不再重复推
         self._data_synced = True
         self._data_missing_logged = False
+    def finance_memory_uid(self):
+        """金融事件的记忆挂到谁身上：优先管理员 uid，其次最近会话的 uid。"""
+        try:
+            for item in sorted(getattr(self, "admin_uids", set()) or []):
+                if str(item).strip():
+                    return str(item).strip()
+        except Exception as _amo_exc:
+            _note_swallowed("amo_memory_data.finance_memory_uid", _amo_exc)
+        umo = str(getattr(self, "_last_umo", "") or "")
+        return umo.split(":")[-1] if umo else ""
+
+    async def finance_remember(self, content, kind="finance", tier=2, idem_key=""):
+        """金融记忆写入（长期、subject=bot）；返回 bool。"""
+        uid = self.finance_memory_uid()
+        if not uid:
+            return False
+        try:
+            return bool(await self._data_memory_write(
+                uid, content, kind=str(kind or "finance"), tier=int(tier),
+                subject="bot", idem_key=str(idem_key or ""),
+            ))
+        except Exception as exc:
+            logger.debug("[amo] 金融记忆写入失败: %s" % exc)
+            return False
+
+    async def finance_recall(self, query, limit=6):
+        """金融记忆检索（返回 list[dict]）；失败返回空列表。"""
+        uid = self.finance_memory_uid()
+        if not uid:
+            return []
+        try:
+            return await self._data_memory_recall(uid, str(query or ""), limit=int(limit))
+        except Exception as exc:
+            logger.debug("[amo] 金融记忆检索失败: %s" % exc)
+            return []
+
     async def _data_memory_recall(self, uid, text, limit=6, event=None):
         """从「记忆终端」（Astr_Amo_data）取回这个人的记忆。
 
@@ -624,7 +660,8 @@ class DataSyncMixin(_MixinBase):
             })
         return items
     async def _data_memory_write(self, uid, content, kind="fact", tier=1,
-                                 scope="private", group_id="", subject="user", platform=""):
+                                 scope="private", group_id="", subject="user", platform="",
+                                 idem_key=""):
         """把一条记忆交给「记忆终端」写入；subject=user/bot 区分主体。"""
         mem = self._data_mem()
         if mem is None or not uid:
@@ -652,10 +689,11 @@ class DataSyncMixin(_MixinBase):
             # 新版记忆终端认 platform：写进去才知道这条是飞书还是 QQ 说的
             variants.append({"kind": str(kind or "fact"), "importance": importance,
                              "scope": scope, "group_id": group_id, "subject": subject,
-                             "platform": platform})
+                             "platform": platform, "idem_key": str(idem_key or "")})
         variants.extend([
             {"kind": str(kind or "fact"), "importance": importance,
-             "scope": scope, "group_id": group_id, "subject": subject},
+             "scope": scope, "group_id": group_id, "subject": subject,
+             "idem_key": str(idem_key or "")},
             {"kind": str(kind or "fact"), "importance": importance,
              "scope": scope, "group_id": group_id},
             {"kind": str(kind or "fact"), "importance": importance},
