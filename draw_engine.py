@@ -93,9 +93,9 @@ except ImportError:  # 直接按文件加载时
     from photo_view import SCENERY_ONLY, looks_like_her, view_suffix
 
 try:  # 场景：日程地点 → 背景（在家=家里、逛街=商场、旅游=景区）
-    from .photo_scene import PLACE_HINTS, has_place_hint, scene_for
+    from .photo_scene import PLACE_HINTS, scene_for
 except ImportError:  # 直接按文件加载时
-    from photo_scene import PLACE_HINTS, has_place_hint, scene_for
+    from photo_scene import PLACE_HINTS, scene_for
 
 try:  # 自拍姿势库：随机挑一个姿势
     from .pose_library import pose_line

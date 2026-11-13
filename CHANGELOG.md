@@ -14,6 +14,9 @@
   顺手清掉 126 个既有 mypy 报错（98 个是「按包/按文件双导入」的 no-redef，用
   `disable_error_code = no-redef` 明确关掉，其余 28 个逐个修：Optional 运算、
   条件定义的兜底函数签名、协议里缺的跨 mixin 方法声明等）。
+- **质量门加 pyflakes**：`tools/quality_gate.py` 增加 pyflakes 检查（未使用导入/未定义名），
+  顺手清掉 16 个既有告警（amo_api 批量未用导入、amo_events/amo_ports 的 `field`、
+  draw_engine 的 `has_place_hint`、wardrobe 的未用局部变量等）；CI 增加 `Quality gate --fast`。
 
 ## 6.9.4（2026-11-13 群聊识别 P0/P1 修复 + P2）
 - **P0 误伤真人**：默认机器人关键词去掉「小爱 / 小冰 / 小微 / 助手」这类像真人昵称的词，只留

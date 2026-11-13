@@ -559,8 +559,6 @@ class Wardrobe:
         items = data.setdefault("items", [])
         outfits = data.setdefault("outfits", [])
         by_id = {item["id"]: item for item in items}
-        by_key = {(item.get("category"), item.get("name")): item
-                  for item in items if is_day_item(item)}
         seed_names = {frozenset(name for name in (top, bottom, shoes) if name)
                       for top, bottom, shoes in SEED_OUTFITS}
         keys = ("coat", "top", "bottom", "skirt", "shoes")

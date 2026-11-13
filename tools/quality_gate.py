@@ -69,6 +69,17 @@ def check_dashboard_js():
     return "dashboard js ok"
 
 
+def check_pyflakes():
+    """pyflakes：未使用导入 / 未定义名之类的静态问题。"""
+    files = sorted(name for name in os.listdir(ROOT) if name.endswith(".py"))
+    result = subprocess.run([sys.executable, "-m", "pyflakes"] + files,
+                            cwd=ROOT, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stdout.strip())
+        raise AssertionError("pyflakes 有告警")
+    return "pyflakes clean (%d files)" % len(files)
+
+
 def check_tests():
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-q"]
     subprocess.run(cmd, cwd=ROOT, check=True)
@@ -79,7 +90,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fast", action="store_true", help="跳过全量单测")
     args = parser.parse_args()
-    checks = [check_schema, check_compile, check_routes, check_dashboard_js]
+    checks = [check_schema, check_compile, check_routes, check_dashboard_js, check_pyflakes]
     if not args.fast:
         checks.append(check_tests)
     for check in checks:

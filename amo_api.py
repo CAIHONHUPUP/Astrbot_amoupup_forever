@@ -27,8 +27,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 import asyncio
 import os
 import re
-import uuid
-from datetime import timedelta
 
 # 画像关系（RELATIONS）和关系网（NETWORK_RELATIONS）是两套词表
 PROFILE_TO_NETWORK = {
@@ -40,16 +38,16 @@ PROFILE_TO_NETWORK = {
 }
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        DIALECT_REGIONS, MOOD_KEYS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, _diary_import_folder, _diary_parse_day, _diary_read, _diary_tree, _diary_write, _now, clamp, day_meta, logger, now_ts, summarize_token_usage, to_float, to_int, today_str, uniq, usage_cost, web_request,
+        DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            DIALECT_REGIONS, MOOD_KEYS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, _diary_import_folder, _diary_parse_day, _diary_read, _diary_tree, _diary_write, _now, clamp, day_meta, logger, now_ts, summarize_token_usage, to_float, to_int, today_str, uniq, usage_cost, web_request,
+            DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
         )
     except ImportError:  # 直接按文件加载时
         from amo_shared import (
-            DIALECT_REGIONS, MOOD_KEYS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, _diary_import_folder, _diary_parse_day, _diary_read, _diary_tree, _diary_write, _now, clamp, day_meta, logger, now_ts, summarize_token_usage, to_float, to_int, today_str, uniq, usage_cost, web_request,
+            DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
         )
 
 
