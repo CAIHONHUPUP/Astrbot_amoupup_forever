@@ -4,6 +4,8 @@
 
 > GitHub：https://github.com/CAIHONHUPUP/Astrbot_amoupup_forever
 
+> 发版流程、安装包/源码包区别、CI 检查项：见 [docs/RELEASING.md](docs/RELEASING.md)
+
 ## 7.0.0 记忆可追溯 + 按关系回复 + 语音入记忆
 
 - 记忆读写全链路带平台来源，注入时标注；私聊回复概率按关系分档（恋人必回）；用户语音内容当场进长期记忆；聊天记录采集群名。
