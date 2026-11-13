@@ -34,6 +34,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             apply_sched_change = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .diary_engine import ensure_private_ending as _diary_ensure_ending
+else:
+    try:
+        from .diary_engine import ensure_private_ending as _diary_ensure_ending
+    except ImportError:  # 直接按文件加载时
+        try:
+            from diary_engine import ensure_private_ending as _diary_ensure_ending
+        except ImportError:
+            _diary_ensure_ending = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
@@ -58,16 +69,16 @@ import time
 from datetime import date, datetime, timedelta
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        PLUGIN_NAME, _DIARY_DEFAULT_DIR, _diary_build_prompt, _diary_resolve_dir, _diary_write, _now, evaluate_weather_alert, forecast_brief, logger, next_check_slot, now_ts, parse_clock, slot_key, to_float, today_str,
+        PLUGIN_NAME, _DIARY_DEFAULT_DIR, _diary_build_prompt, _diary_resolve_dir, _diary_write, _now, evaluate_weather_alert, forecast_brief, logger, next_check_slot, now_ts, parse_clock, slot_key, city_or_empty, to_float, today_str,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            PLUGIN_NAME, _DIARY_DEFAULT_DIR, _diary_build_prompt, _diary_resolve_dir, _diary_write, _now, evaluate_weather_alert, forecast_brief, logger, next_check_slot, now_ts, parse_clock, slot_key, to_float, today_str,
+            PLUGIN_NAME, _DIARY_DEFAULT_DIR, _diary_build_prompt, _diary_resolve_dir, _diary_write, _now, evaluate_weather_alert, forecast_brief, logger, next_check_slot, now_ts, parse_clock, slot_key, city_or_empty, to_float, today_str,
         )
     except ImportError:  # 直接按文件加载时
         from amo_shared import (
-            PLUGIN_NAME, _DIARY_DEFAULT_DIR, _diary_build_prompt, _diary_resolve_dir, _diary_write, _now, evaluate_weather_alert, forecast_brief, logger, next_check_slot, now_ts, parse_clock, slot_key, to_float, today_str,
+            PLUGIN_NAME, _DIARY_DEFAULT_DIR, _diary_build_prompt, _diary_resolve_dir, _diary_write, _now, evaluate_weather_alert, forecast_brief, logger, next_check_slot, now_ts, parse_clock, slot_key, city_or_empty, to_float, today_str,
         )
 
 
@@ -169,6 +180,7 @@ class ScheduleMixin(_MixinBase):
     async def _apply_user_schedule_change(self, event, user_text: str) -> None:
         """用户明确安排了行程（来接我 / 一起睡 / 出去吃），把那一段日程改掉。"""
         if detect_schedule_change is None or apply_sched_change is None:
+            logger.debug("[SCHED_CHANGE] skip reason=helper_missing")
             return
         try:
             # 先做便宜的关键词识别，命中再查主人（is_owner 会读一次画像库，
@@ -181,6 +193,8 @@ class ScheduleMixin(_MixinBase):
                     self.db.kv_set("home_early:" + today_str(), False)
                 return
             if not self._schedule_change_allowed(event):
+                logger.debug("[SCHED_CHANGE] skip reason=not_allowed text=%s",
+                             str(user_text or "")[:40])
                 return
             key = today_str()
             # 当天第一句话还没生成日程时，先把骨架补出来，否则「我回家了」会被直接忽略
@@ -191,13 +205,18 @@ class ScheduleMixin(_MixinBase):
             # schedule 挂在 HumanState 上（self.state.schedule），插件本身没有这个属性
             items = self.state.schedule.get(key) or self.db.get_schedule(key) or []
             if not items:
+                logger.debug("[SCHED_CHANGE] skip reason=no_schedule text=%s",
+                             str(user_text or "")[:40])
                 return
             new_items = apply_sched_change(items, change, _now())
             if new_items == items:
+                logger.debug("[SCHED_CHANGE] skip reason=no_change change=%s",
+                             str(change.get("activity") or "")[:40])
                 return
-            self.state.schedule[key] = new_items
-            self.db.kv_set("schedule", self.state.schedule)
-            self.db.save_schedule(key, new_items)
+            self.state.commit_schedule_change(
+                key, new_items, old_items=items,
+                source="chat", reason=str(change.get("activity") or ""),
+            )
             # 生病/请假长期呆家才换睡衣；旅游/出差直接出发不换
             if str(change.get("category") or "") == "health":
                 text_raw = str(user_text)
@@ -232,13 +251,6 @@ class ScheduleMixin(_MixinBase):
                 self.db.kv_set("home_early:" + key, True)
             elif travel:
                 self.db.kv_set("home_early:" + key, False)
-            # 日程突然变了：今天当前小时及以后的小日记全部作废；当前这段还没过完，
-            # 不提前生成，等这一小时结束再由面板/日记收尾生成。
-            try:
-                hour = _now().strftime("%H")
-                self.db.clear_diaries_from(key, hour)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_schedule._apply_user_schedule_change", _amo_exc)
             logger.info("[amo] 按用户的话改了日程: %s" % change.get("activity"))
         except Exception as _amo_exc:
             _note_swallowed("amo_schedule._apply_user_schedule_change", _amo_exc)
@@ -269,7 +281,8 @@ class ScheduleMixin(_MixinBase):
         current = self.state.current_activity()
         if str(current.get("category") or "") != "work":
             return
-        items = self.state.schedule.get(day) or self.db.get_schedule(day) or []
+        old_items = self.state.schedule.get(day) or self.db.get_schedule(day) or []
+        items = [dict(item) if isinstance(item, dict) else item for item in old_items]
         start = str(current.get("start") or "")
         changed = False
         for item in items:
@@ -285,13 +298,155 @@ class ScheduleMixin(_MixinBase):
         if not changed:
             return
         try:
-            self.state.schedule[day] = items
-            self.db.kv_set("schedule", self.state.schedule)
-            self.db.save_schedule(day, items)
+            self.state.commit_schedule_change(
+                day, items, old_items=old_items,
+                source="self_offwork", reason="她自己说下班了",
+            )
             self.db.kv_set(guard, True)
             logger.info("[amo] 她说下班了：当前日程改成下班回家")
         except Exception as _amo_exc:
             _note_swallowed("amo_schedule.ScheduleMixin._maybe_own_offwork_sync", _amo_exc)
+
+    # ---------- 小日记调度（统一 tick，不建 per-hour timer） ----------
+    def _diary_lock(self, day, start):
+        """同一个 (day, start) 的生成锁，防止双击/调度器重复调用模型。"""
+        locks = getattr(self, "_diary_locks", None)
+        if locks is None:
+            locks = {}
+            self._diary_locks = locks
+        key = (str(day), str(start))
+        lock = locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            locks[key] = lock
+        return lock
+
+    def _cancel_diary_tasks(self, day, from_hour):
+        """取消某天 from_hour 及以后还在跑的小日记任务，返回取消列表。"""
+        tasks = getattr(self, "_diary_tasks", None)
+        if not tasks:
+            return []
+        day = str(day)
+        try:
+            start_hour = int(from_hour)
+        except (TypeError, ValueError):
+            start_hour = 0
+        cancelled = []
+        for key, task in list(tasks.items()):
+            if key[0] != day:
+                continue
+            try:
+                hour = int(str(key[1])[:2])
+            except (TypeError, ValueError):
+                hour = 0
+            if hour < start_hour:
+                continue
+            tasks.pop(key, None)
+            try:
+                task.cancel()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_schedule._cancel_diary_tasks", _amo_exc)
+            cancelled.append("%s:task-%s" % (key[1], id(task)))
+            logger.info(
+                "[DIARY_DEBUG] hour=%s timer_cancel=task-%s next_run=- reason=schedule_changed version=%s",
+                key[1], id(task), self.db.schedule_version(day),
+            )
+        return cancelled
+
+    def _spawn_diary_task(self, day, item, items, version, reason="slot_ended"):
+        """启动一个后台小日记任务，并按 (day, start) 去重。"""
+        tasks = getattr(self, "_diary_tasks", None)
+        if tasks is None:
+            tasks = {}
+            self._diary_tasks = tasks
+        start = str(item.get("start") or "")
+        key = (str(day), start)
+        running = tasks.get(key)
+        if running is not None and not running.done():
+            return running
+        task = self._spawn(self.state.expand_hour(day, item, items, force=False))
+        if task is None:
+            return None
+        tasks[key] = task
+
+        def _done(done):
+            if tasks.get(key) is done:
+                tasks.pop(key, None)
+
+        task.add_done_callback(_done)
+        logger.info(
+            "[DIARY_DEBUG] hour=%s timer_cancel=none next_run=- reason=%s version=%s",
+            start, reason, version,
+        )
+        return task
+
+    async def _diary_scheduler_tick(self):
+        """统一调度：补生成已经过完、但仍没有当前版本小日记的小时。
+
+        没有 per-hour timer；进程重启后靠这个 tick 继续补，最多每轮 2 条。
+        """
+        if getattr(self, "_diary_scheduler_running", False):
+            return
+        self._diary_scheduler_running = True
+        try:
+            try:
+                if not self.cfg_bool("diary_enabled", True):
+                    logger.debug("[DIARY] scheduler skip reason=diary_disabled")
+                    return
+            except Exception as exc:
+                logger.debug("[DIARY] scheduler config failed: %s", exc)
+            try:
+                from .amo_human_state import slot_has_ended
+            except ImportError:
+                from amo_human_state import slot_has_ended
+
+            tasks = getattr(self, "_diary_tasks", None)
+            if tasks is None:
+                tasks = {}
+                self._diary_tasks = tasks
+            generated = 0
+            now = _now()
+            day = today_str()
+            items = self.state.schedule.get(day) or self.db.get_schedule(day) or []
+            if items:
+                version = self.db.schedule_version(day)
+                hourly = self.state._hourly_schedule(items)
+                check = getattr(self.db, "diary_is_valid", None)
+                # 从最近结束的小时往前补：14:00 先补 13 点，再补更早的。
+                for item in reversed(hourly):
+                    if generated >= 2:
+                        break
+                    start = str(item.get("start") or "")
+                    if not start or not slot_has_ended(day, start, item.get("end")):
+                        continue
+                    if callable(check) and check(day, start, version):
+                        continue
+                    if (day, start) in tasks:
+                        continue
+                    self._spawn_diary_task(day, item, hourly, version, reason="slot_ended")
+                    generated += 1
+            # 跨日补昨天 23 点：0 点后 scheduler 只看今天，昨天最后一小时会漏。
+            if now.hour == 0:
+                yesterday = (now.date() - timedelta(days=1)).isoformat()
+                yitems = self.state.schedule.get(yesterday) or self.db.get_schedule(yesterday) or []
+                if yitems:
+                    yhourly = self.state._hourly_schedule(yitems)
+                    yversion = self.db.schedule_version(yesterday)
+                    check = getattr(self.db, "diary_is_valid", None)
+                    for item in yhourly:
+                        if str(item.get("start") or "") != "23:00":
+                            continue
+                        if callable(check) and check(yesterday, "23:00", yversion):
+                            break
+                        if (yesterday, "23:00") not in tasks:
+                            self._spawn_diary_task(
+                                yesterday, item, yhourly, yversion, reason="day_rollover",
+                            )
+                        break
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule._diary_scheduler_tick", _amo_exc)
+        finally:
+            self._diary_scheduler_running = False
 
     def _migrate_schedule_defaults(self):
         """5.1.1：位置/资产改为“人格优先、缺失随机”，清掉 5.1.0 自动写入的固定默认值。"""
@@ -301,6 +456,9 @@ class ScheduleMixin(_MixinBase):
             auto_filled = bool(self.db.kv_get("schedule_defaults_510", False))
             changed = False
             cleared_city = False
+            # 这些是旧版 5.1.0 自动写进去的固定默认值，只用来“清理”老配置，不是现在的默认值。
+            # 现在 schedule_city / schedule_home / schedule_workplace 的默认值是空
+            # （_conf_schema.json default 都是 ""），城市为空时日程走「不写具体城市」的分支。
             old_defaults = {
                 "schedule_city": "贵阳",
                 "schedule_home": "观山湖区·小窝",
@@ -401,46 +559,97 @@ class ScheduleMixin(_MixinBase):
         except (TypeError, ValueError):
             return 22, 0
 
-    async def _maybe_daily_diary(self):
-        """到 diary_time 写一篇日记。
+    def _mark_daily_diary_stale(self, day, version=0):
+        """日程变更时把已经写好的每日日记标 stale；不物理删文件。"""
+        day = str(day or "")
+        if not day:
+            return False
+        try:
+            written = str(self.db.kv_get("diary_written:" + day, "") or "")
+            if not written:
+                return False
+            self.db.kv_set("diary_stale:" + day, True)
+            logger.info(
+                "[DIARY_DEBUG] day=%s daily_stale=1 version=%s reason=schedule_changed",
+                day, version,
+            )
+            if day == today_str() and getattr(self, "_ready", False):
+                self._spawn(self._maybe_daily_diary())
+            return True
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule._mark_daily_diary_stale", _amo_exc)
+            return False
 
-        - ``diary_time >= 18:00``（默认 22:00）：写**当天**的日记，当天内容到点为止；
-        - 早上（``< 18:00``）：写**昨天**的，保留旧的「次日早上收尾」用法。
+    def _stale_daily_day(self, now):
+        """今天已经写过、但被日程变更标 stale 的每日日记。"""
+        try:
+            day = now.date().isoformat()
+            if self.db.kv_get("diary_stale:" + day, False):
+                return now.date()
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule._stale_daily_day", _amo_exc)
+        return None
+
+    async def _maybe_daily_diary(self):
+        """到 diary_time 写一篇日记；已经写过但被日程改 stale 的当天日记会重写。
+
+        - ``diary_time >= 18:00``（默认 22:00）：写**当天**的日记；
+        - 早上（``< 18:00``）：写**昨天**的；
+        - 当天日记被日程变更标 stale 时，不受 22:00-22:30 窗口限制，下一次 tick 就重写。
         """
         if not self.cfg_bool("diary_enabled", True) or not callable(_diary_write):
             return
         now = _now()
         hh, mm = self._diary_clock()
-        end_day = diary_end_day(now, hh, mm)
-        if end_day is None:
-            return
         window = max(0, self.cfg_int("diary_window_minutes", 30))
-        if not diary_in_window(now, hh, mm, window):
+        in_window = diary_in_window(now, hh, mm, window)
+        stale_day = self._stale_daily_day(now)
+        if not in_window and stale_day is None:
+            logger.debug("[DIARY] daily skip reason=outside_window time=%02d:%02d",
+                         now.hour, now.minute)
             return
         if getattr(self, "_diary_writing", False):
             return
-        try:
-            last_written = str(self.db.kv_get("diary_last_day", "") or "")
-            start_day = (date.fromisoformat(last_written) + timedelta(days=1)) if last_written else end_day
-        except Exception as _amo_exc:
-            _note_swallowed("amo_schedule.ScheduleMixin._maybe_daily_diary", _amo_exc)
-            start_day = end_day
-        if start_day > end_day:
-            return
-        if (end_day - start_day).days > 6:
-            start_day = end_day - timedelta(days=6)
-        days = []
-        cursor = start_day
-        while cursor <= end_day:
-            days.append(cursor)
-            cursor += timedelta(days=1)
+        if stale_day is not None:
+            # 每日日记是「一天的总结」：白天就算旧文件被标 stale，也等 diary_time
+            # 之后再做最终重写；22:00 后/窗口外则立即重写。
+            if (now.hour, now.minute) < (int(hh), int(mm)):
+                return
+            days = [stale_day]
+        else:
+            end_day = diary_end_day(now, hh, mm)
+            if end_day is None:
+                return
+            try:
+                last_written = str(self.db.kv_get("diary_last_day", "") or "")
+                start_day = (
+                    (date.fromisoformat(last_written) + timedelta(days=1))
+                    if last_written else end_day
+                )
+            except Exception as _amo_exc:
+                _note_swallowed("amo_schedule.ScheduleMixin._maybe_daily_diary", _amo_exc)
+                start_day = end_day
+            if start_day > end_day:
+                return
+            if (end_day - start_day).days > 6:
+                start_day = end_day - timedelta(days=6)
+            days = []
+            cursor = start_day
+            while cursor <= end_day:
+                days.append(cursor)
+                cursor += timedelta(days=1)
         self._diary_writing = True
         try:
             for day in days:
-                guard = "diary_written:" + day.isoformat()
-                attempt_key = "diary_attempt:" + day.isoformat()
+                day_text = day.isoformat()
+                guard = "diary_written:" + day_text
+                stale_key = "diary_stale:" + day_text
+                attempt_key = "diary_attempt:" + day_text
+                version = self.db.schedule_version(day_text)
                 try:
-                    if self.db.kv_get(guard, ""):
+                    written = self.db.kv_get(guard, "")
+                    stale = bool(self.db.kv_get(stale_key, False))
+                    if written and not stale:
                         continue
                     last = to_float(self.db.kv_get(attempt_key, 0), 0)
                     if last and now_ts() - last < 1800:
@@ -455,13 +664,50 @@ class ScheduleMixin(_MixinBase):
                         except Exception as _amo_exc:
                             _note_swallowed("amo_schedule.ScheduleMixin._maybe_daily_diary", _amo_exc)
                         continue
+                    current_version = self.db.schedule_version(day_text)
+                    if current_version != version:
+                        self.db.kv_set(stale_key, True)
+                        logger.info(
+                            "[DIARY_DEBUG] day=%s daily_stale=1 reason=version_changed_discard "
+                            "version=%s->%s",
+                            day_text, version, current_version,
+                        )
+                        continue
                     path = _diary_write(self._diary_dir(), day, text)
+                    # 写文件期间日程又改了：保留 stale，下一轮按新版本重写。
+                    latest_version = self.db.schedule_version(day_text)
+                    if latest_version != current_version:
+                        self.db.kv_set(stale_key, True)
+                        logger.info(
+                            "[DIARY_DEBUG] day=%s daily_stale=1 reason=version_changed_after_write "
+                            "version=%s->%s",
+                            day_text, current_version, latest_version,
+                        )
+                        continue
                     try:
                         self.db.kv_set(guard, path)
-                        self.db.kv_set("diary_last_day", day.isoformat())
+                        self.db.kv_set("diary_last_day", day_text)
+                        self.db.kv_set("diary_version:" + day_text, current_version)
+                        self.db.kv_set(stale_key, False)
+                        # kv 写完后最后再看一眼版本：写文件/写 kv 之间又改日程，
+                        # 不能把 stale 清掉，下一轮必须重写。
+                        final_version = self.db.schedule_version(day_text)
+                        if final_version != current_version:
+                            self.db.kv_set(stale_key, True)
+                            logger.info(
+                                "[DIARY_DEBUG] day=%s daily_stale=1 reason=version_changed_after_kv "
+                                "version=%s->%s",
+                                day_text, current_version, final_version,
+                            )
                     except Exception as _amo_exc:
                         _note_swallowed("amo_schedule.ScheduleMixin._maybe_daily_diary", _amo_exc)
                     logger.info("[amo] 日记已写: %s" % path)
+                    logger.info(
+                        "[DIARY_DEBUG] day=%s daily_stale=%s version=%s reason=daily_regenerated",
+                        day_text,
+                        "1" if self.db.kv_get(stale_key, False) else "0",
+                        current_version,
+                    )
                 except Exception as exc:
                     logger.warning("[amo] 写日记失败: %s" % exc)
                     try:
@@ -567,6 +813,7 @@ class ScheduleMixin(_MixinBase):
             (persona or "你是一个生活在中国城市的普通女孩，说话自然口语化。") +
             "\n\n你现在要保持这个人格，用自己的口吻写日记：第一人称、像真人写给自己的，"
             "不是助手汇报，也不要提 AI、模型、插件、日程表这些词。"
+            "文中的“我”指你自己（bot），用户是“他”；不要把“我”写成用户。"
         )
         prompt = _diary_build_prompt(day, chat_lines, hourly_lines)
         try:
@@ -588,6 +835,8 @@ class ScheduleMixin(_MixinBase):
         text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
         text = re.sub(r"\s*```$", "", text).strip()
         text = re.sub(r"^我的日记[^\n]*\n+", "", text)
+        if callable(_diary_ensure_ending):
+            text = _diary_ensure_ending(day, text)
         return text if len(text) >= 10 else ""
 
     def _weather_alert_umos(self):
@@ -691,11 +940,10 @@ class ScheduleMixin(_MixinBase):
         所以连着问十遍通常一次都不多请。
         """
         key = self.cfg_str("hefeng_key", "")
-        city = (
-            self.cfg_str("weather_city", "").strip()
-            or str((getattr(self.state, "schedule_profile", {}) or {}).get("city") or "").strip()
-            or "贵阳"
-        )
+        city = city_or_empty(self)
+        if not city:
+            logger.info("[amo] 天气查询：还没设置城市")
+            return "【天气查询】还没设置城市，这会儿取不到天气；别编温度，直接说看不太准。"
         now_data = {}
         try:
             now_data = await self.state.refresh_weather()
@@ -750,11 +998,11 @@ class ScheduleMixin(_MixinBase):
         if not slot:
             return
         label = "早上" if slot == "morning" else "晚上"
-        city = (
-            self.cfg_str("weather_city", "").strip()
-            or str((getattr(self.state, "schedule_profile", {}) or {}).get("city") or "").strip()
-            or "贵阳"
-        )
+        city = city_or_empty(self)
+        if not city:
+            # 没设置城市就别每 30 秒重试，今天不提醒
+            self.db.kv_set("weather_alert_checked", slot_key(today, slot))
+            return
         # 晚上要发预警，必须用最新预报：跳过 3 小时缓存。
         items = await self.state._fetch_qweather_daily(
             key, city, 3, fresh=(slot == "evening")

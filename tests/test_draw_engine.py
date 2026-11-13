@@ -249,14 +249,26 @@ class DecideTests(unittest.TestCase):
         self.assertIn("新裙子", plan["prompt"])
         self.assertTrue(plan["prompt"].startswith("自拍"))
 
-    def test_selfie_takes_a_random_pose_from_library(self):
+    def test_selfie_uses_library_pose_only_at_home(self):
         engine, plugin = engine_for()
         plugin.pose = type("PoseLib", (), {
-            "random_pose": lambda self: {"name": "比耶", "note": "脸颊旁边比耶"},
+            "random_pose": lambda self, zone=None: {"name": "比耶", "note": "脸颊旁边比耶"},
         })()
+        plugin.state = FakeState(place="家", activity="窝在沙发上", zone="home")
         plan = engine.decide(FakeEvent("发张自拍"), "好呀")
         self.assertIsNotNone(plan)
         self.assertIn("姿势：比耶", plan["prompt"])
+
+    def test_outdoor_selfie_ignores_bed_pose_library(self):
+        engine, plugin = engine_for()
+        plugin.pose = type("PoseLib", (), {
+            "random_pose": lambda self, zone=None: {"name": "跪坐", "note": "跪坐在床上"},
+        })()
+        plugin.state = FakeState(place="路上", activity="挤地铁", zone="road")
+        plan = engine.decide(FakeEvent("发张自拍"), "好呀")
+        self.assertIsNotNone(plan)
+        self.assertNotIn("姿势：跪坐", plan["prompt"])
+        self.assertIn("扶", plan["prompt"])
 
     def test_same_question_cross_platform_uses_shared_last_line(self):
         engine, plugin = engine_for()
@@ -303,12 +315,15 @@ class RunTests(unittest.TestCase):
         self.assertEqual(len(event.sent), 1)
         self.assertEqual(len(event.sent[0].chain), 1)
 
-    def test_failure_does_not_raise(self):
+    def test_failure_sends_one_fallback_notice(self):
         engine, plugin = engine_for({}, FakeOmni(fail=True))
         event = FakeEvent("给我画一碗面")
         engine.maybe_after_reply(event, "好呀")
         asyncio.run(plugin.tasks[0])
-        self.assertEqual(event.sent, [])
+        # 明确要图但生成失败：不能一声不吭，补一句人话。
+        self.assertEqual(len(event.sent), 1)
+        self.assertEqual(len(event.sent[0].chain), 1)
+        self.assertIn("没拍成", event.sent[0].chain[0].text)
 
     def test_missing_omni_explains_instead_of_silence(self):
         engine, plugin = engine_for({}, None)

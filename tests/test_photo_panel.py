@@ -21,6 +21,39 @@ class PhotoPanelTests(unittest.TestCase):
         self.assertIn('call("photo/test"', self.html)
         self.assertIn('renderPhoto', self.html)
 
+    def test_photo_function_submenu(self):
+        self.assertEqual(self.html.count('id="photoNav"'), 1)
+        for pane in ("share", "generate", "persona", "advanced"):
+            self.assertIn('data-photo-pane="%s"' % pane, self.html)
+        self.assertEqual(self.html.count('data-photo-pane="persona"'), 3)  # nav + 2 cards
+        self.assertIn("function showPhotoPane", self.html)
+        self.assertIn('showPhotoPane("share")', self.html)
+
+    def test_skyblue_theme(self):
+        self.assertIn('id="amo-skyblue-theme"', self.html)
+        self.assertIn("--bg1: #eaf8ff", self.html)
+        self.assertIn("background-attachment: fixed", self.html)
+        self.assertGreaterEqual(self.html.count('class="tab-ico"'), 16)
+        self.assertIn('data-group="语音"', self.html)
+        self.assertIn('data-group="心流"', self.html)
+        self.assertLess(self.html.find('data-group="语音"'), self.html.find('data-group="心流"'))
+        self.assertIn("function settingsCategory", self.html)
+        self.assertIn('className = "settings-group"', self.html)
+        self.assertIn('className = "settings-count"', self.html)
+        self.assertIn(".settings-count", self.html)
+        self.assertIn("font-size: 13px", self.html)
+
+    def test_world_document_compact_layout(self):
+        self.assertIn('id="worldExpandAll"', self.html)
+        self.assertIn("world-hero", self.html)
+        self.assertIn("world-facts", self.html)
+        self.assertIn("worldSection", self.html)
+        self.assertIn("details.world-section", self.html)
+        self.assertIn("world-section-title", self.html)
+        self.assertIn("word-break: keep-all", self.html)
+        self.assertIn('[["简介", summaryText], ["日常", daily], ["世界", rules]]', self.html)
+        self.assertIn("flex: 0 0 3em", self.html)
+
     def test_no_duplicate_ids(self):
         ids = re.findall(r'id="([^"]+)"', self.html)
         duplicates = {item for item in ids if ids.count(item) > 1}

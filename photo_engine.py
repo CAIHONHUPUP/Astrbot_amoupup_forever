@@ -103,6 +103,176 @@ try:  # 视角后缀：她出镜=自拍视角，她拍环境=她的拍摄视角�
 except ImportError:  # 直接按文件加载时
     from photo_view import SCENERY_ONLY, VIEW_POV, VIEW_SELFIE
 
+try:  # 场景规则表（照片严格跟随日程的唯一真值）
+    from .photo_rules import (
+        locks_for_plan,
+        pick_pose_for_plan,
+        resolve_plan,
+    )
+except ImportError:  # 直接按文件加载时
+    from photo_rules import (
+        locks_for_plan,
+        pick_pose_for_plan,
+        resolve_plan,
+    )
+
+
+def _light_text(engine, plan=None):
+    """按场景取光线描述：室外夜景不能写“室内暖灯”（测试桩只收 self 时回退）。"""
+    outdoor = False
+    if plan is not None:
+        outdoor = not str(plan.zone or "").startswith(
+            ("home_", "office", "restaurant", "mall", "hotel", "station", "hospital", "unknown")
+        )
+    getter = getattr(engine, "_time_light", None)
+    if not callable(getter):
+        return "自然光"
+    try:
+        return getter(outdoor=outdoor)
+    except TypeError:
+        try:
+            return getter()
+        except Exception:
+            return "自然光"
+    except Exception:
+        return "自然光"
+
+
+def _log_photo_debug(engine, activity, plan, final_prompt, pose_text=""):
+    """生图链路调试日志（模块级：测试里的假引擎也能用）。"""
+    try:
+        enabled = bool(getattr(engine, "debug_prompt", False))
+    except Exception:
+        enabled = False
+    if not enabled:
+        return
+    data = activity if isinstance(activity, dict) else {}
+    act_text = " | ".join(filter(None, [
+        str(data.get("activity") or ""),
+        str(data.get("place") or ""),
+        str(data.get("category") or ""),
+        str(data.get("transit") or ""),
+        str(data.get("vehicle") or ""),
+    ]))
+    logger.info(
+        "[PHOTO_DEBUG] 日程=%s zone=%s pose_rule=%s guard=%s final_prompt=%s"
+        % (act_text or "-", plan.zone, plan.pose_rule or pose_text or "-",
+           plan.guard, final_prompt)
+    )
+    if plan.source not in ("schedule",) or plan.explicit_conflict or plan.repairs:
+        logger.info(
+            "[PHOTO_DEBUG] source=%s reason=%s explicit_place=%s conflict=%s repairs=%s"
+            % (plan.source, plan.reason or "-", plan.explicit_place or "-",
+               plan.explicit_conflict, plan.repairs or [])
+        )
+    scene_en, pose_en = locks_for_plan(plan)
+    if scene_en or pose_en:
+        logger.info(
+            "[PHOTO_DEBUG] locks scene_lock=%s pose_lock=%s"
+            % (scene_en or "-", pose_en or "-")
+        )
+
+
+#: 户外/非居家场景的兜底姿势（姿势库那 9 个都是床上的，出门照搬会穿帮）
+OUTDOOR_POSES = {
+    "road": "站在车厢里，一只手扶着头顶的扶手或吊环，身体微微侧着看镜头",
+    "street": "站在路边，身体侧一点，回头看向镜头",
+    "mall": "站在橱窗前，一只手自然垂着，微微侧身",
+    "office": "站在工位旁，一只手搭在椅背上，微微侧身",
+    "scenic": "站在景点前，抬手挡了一下阳光，头发被风吹起",
+    "restaurant": "坐在餐桌旁，双手放在桌上，正对镜头",
+    "station": "站在候车厅里，一只手扶着行李箱拉杆",
+    "hospital": "坐在候诊椅上，双手放在腿上，正对镜头",
+    "hotel": "坐在床边，一只手撑在身侧，身体微微后仰看镜头",
+}
+
+
+def outdoor_pose_line(zone):
+    """不在家时用的姿势句子。"""
+    return OUTDOOR_POSES.get(str(zone or ""), "站着，身体微微侧向镜头")
+
+
+#: 场景限制（结构化）：提示词和测试都从这里取，别去断言提示词字符串。
+SCENE_POLICY = {
+    "road": {
+        "poses": ["standing", "hold_strap"],
+        "banned_postures": ["kneel", "sit_on_seat", "cross_leg"],
+        "banned_props": ["bedding", "instant_noodles", "thermos", "tableware", "food"],
+        "seat": "hard_bench",
+    },
+    "default": {
+        "poses": ["standing", "sit"],
+        "banned_postures": [],
+        "banned_props": ["bedding", "tableware"],
+        "seat": "",
+    },
+}
+
+_PROP_WORDS = {"bedding": "床铺被褥", "instant_noodles": "泡面", "thermos": "保温杯",
+               "tableware": "餐具", "food": "食物"}
+_POSTURE_WORDS = {"kneel": "跪坐", "sit_on_seat": "坐在座位上", "cross_leg": "盘腿坐"}
+
+
+
+# ---- 2026-11-12：路上再细分（地铁/公交/私家车），姿势跟着交通工具走 ----
+_RIDE_WORDS = {
+    "car": ("开车", "打车", "taxi", "网约", "车里", "驾驶", "副驾", "车上"),
+    "bus": ("公交", "大巴", "巴士"),
+    "subway": ("地铁", "subway", "metro", "车厢"),
+}
+
+
+def road_ride(activity):
+    """这一小时在路上是坐什么：car / bus / subway / ''。"""
+    data = activity if isinstance(activity, dict) else {}
+    act = str(data.get("activity") or "")
+    transit = str(data.get("transit") or "")
+    vehicle = str(data.get("vehicle") or "")
+    text = act + transit + vehicle
+    for kind, words in _RIDE_WORDS.items():
+        if any(word in text for word in words):
+            return kind
+    return ""
+
+
+def pose_line_for(zone, activity):
+    """不靠姿势库时的姿势句：酒店坐床边、私家车系安全带、地铁扶杆、其余站立。"""
+    zone = str(zone or "")
+    if zone == "road":
+        ride = road_ride(activity)
+        if ride == "car":
+            return "坐在座位上系好安全带，一只手举手机自拍，不要站起来"
+        if ride == "bus":
+            return "坐在公交车硬质座椅上，一只手扶着前座靠背，身体微微侧向镜头"
+        return "站在车厢里，一只手扶着头顶的扶手或吊环，身体微微侧着看镜头"
+    return OUTDOOR_POSES.get(zone, "站着，身体微微侧向镜头")
+
+def scene_policy(zone):
+    """这个场景允许/禁止什么（结构化；测试断言字段，不测提示词）。"""
+    return SCENE_POLICY.get(str(zone or ""), SCENE_POLICY["default"])
+
+
+def scene_guard(zone):
+    """把 scene_policy 翻成提示词里的限制。
+
+    2026-11-12：路上不再写“不要X”——万象画卷的副脑只收正向描述、会重写提示词，
+    “不要泡面”容易被它理解成“有泡面”。改成把环境写死（只存在什么），让它没得发挥。
+    """
+    if str(zone or "") == "road":
+        return (
+            "画面里只有车厢或路面上本来就有的东西：座椅、扶手、吊环、车窗、街景、乘客；"
+            "地面和座椅干净，只有这些东西，没有别的物件"
+        )
+    policy = scene_policy(zone)
+    parts = []
+    for key in policy.get("banned_postures") or []:
+        parts.append("不要" + _POSTURE_WORDS.get(key, key))
+    for key in policy.get("banned_props") or []:
+        parts.append("不要出现" + _PROP_WORDS.get(key, key))
+    if not parts:
+        return "画面里只出现这个地点本来就有的东西"
+    return "；".join(parts) + "；画面里只出现这个地点本来就有的东西"
+
 try:  # 场景：日程地点 → 背景（在家=家里、逛街=商场、旅游=景区）
     from .photo_scene import (
         OUTFIT_CATEGORY,
@@ -110,6 +280,7 @@ try:  # 场景：日程地点 → 背景（在家=家里、逛街=商场、旅�
         TRAVEL_WORDS,
         matches_kind,
         scene_for,
+        zone_of,
     )
 except ImportError:  # 直接按文件加载时
     from photo_scene import (
@@ -118,6 +289,7 @@ except ImportError:  # 直接按文件加载时
         TRAVEL_WORDS,
         matches_kind,
         scene_for,
+        zone_of,
     )
 
 try:  # 自拍姿势库：随机挑一个姿势进提示词
@@ -202,6 +374,36 @@ class PhotoEngine:
     @property
     def debug(self):
         return self._cfg_bool("photo_debug", False)
+
+    @property
+    def debug_prompt(self):
+        """生图链路调试开关：debug_prompt 或旧 photo_debug 任一打开都打 [PHOTO_DEBUG]。"""
+        if self._cfg_bool("debug_prompt", False):
+            return True
+        return bool(self.debug)
+
+    def _debug_log(self, activity, plan, final_prompt, pose_text=""):
+        if not self.debug_prompt:
+            return
+        data = activity if isinstance(activity, dict) else {}
+        act_text = " | ".join(filter(None, [
+            str(data.get("activity") or ""),
+            str(data.get("place") or ""),
+            str(data.get("category") or ""),
+            str(data.get("transit") or ""),
+            str(data.get("vehicle") or ""),
+        ]))
+        logger.info(
+            "[PHOTO_DEBUG] 日程=%s zone=%s pose_rule=%s guard=%s final_prompt=%s"
+            % (act_text or "-", plan.zone, plan.pose_rule or pose_text or "-",
+               plan.guard, final_prompt)
+        )
+        if plan.source not in ("schedule",) or plan.explicit_conflict or plan.repairs:
+            logger.info(
+                "[PHOTO_DEBUG] source=%s reason=%s explicit_place=%s conflict=%s repairs=%s"
+                % (plan.source, plan.reason or "-", plan.explicit_place or "-",
+                   plan.explicit_conflict, plan.repairs or [])
+            )
 
     def _prob(self, key, default):
         return _int_in(self._cfg_int(key, default), 0, 100, default)
@@ -304,7 +506,8 @@ class PhotoEngine:
         activity = self._activity()
         act = str(activity.get("activity") or "")
         place = str(activity.get("place") or "")
-        zone = str(activity.get("zone") or "")
+        # 用 zone_of 而不是裸 zone：0 点/兜底 dict 没 zone 时也能靠地点反推
+        zone = zone_of(activity)
         category = str(activity.get("category") or "")
         weekday, minutes = self._now_parts()
         blob = act + place + zone
@@ -379,12 +582,19 @@ class PhotoEngine:
             logger.info("[amo] 清理旧生图缓存 %d 张（保留 %d 天）" % (removed, days))
         return removed
 
+    def on_schedule_changed(self, day="", version=0, reason="schedule_changed"):
+        """日程变更事件：生图下一次会重新读 current_activity；这里留可验收日志。"""
+        logger.info("[PHOTO_DEBUG] reason=schedule_changed day=%s version=%s source=%s",
+                    day or "-", version or "-", reason or "-")
+
     async def tick(self):
         try:
             self.cleanup_cache()
         except Exception as _amo_exc:
             _note_swallowed("photo_engine.PhotoEngine.tick", _amo_exc)
         if not self.enabled or self._busy:
+            logger.debug("[PHOTO] tick skip reason=%s",
+                         "busy" if self._busy else "photo_enable=false")
             return
         now = time.monotonic()
         if now - self._last_check < 20:
@@ -392,12 +602,15 @@ class PhotoEngine:
         self._last_check = now
         try:
             if quiet_now(self._cfg_str("photo_quiet_hours", "23:00-07:00")):
+                logger.debug("[PHOTO] tick skip reason=quiet_hours")
                 return
             cap = max(0, self._cfg_int("photo_daily_cap", 4))
             if self.today_count() >= cap:
+                logger.debug("[PHOTO] tick skip reason=daily_cap count=%s", cap)
                 return
             profiles = self._profiles()
             if not profiles:
+                logger.debug("[PHOTO] tick skip reason=no_owner_profile")
                 return
             for kind, scene, prob, key in self._candidates():
                 roll_key = self._roll_key(kind, key)
@@ -429,9 +642,36 @@ class PhotoEngine:
             cap = max(0, self._cfg_int("photo_daily_cap", 4))
             if self.today_count() >= cap:
                 return
-            await self._share(kind, scene, profile)
+            ok = await self._share(kind, scene, profile)
+            if not ok:
+                await self._notify_failure(self._target_umo(profile), "share_failed")
         finally:
             self._busy = False
+
+    async def _notify_failure(self, umo, reason=""):
+        """按日程分享失败时补一句；同一会话 10 分钟只提醒一次。"""
+        if not umo or MessageChain is None:
+            return
+        try:
+            store = getattr(self, "_failure_notice_at", None)
+            if not isinstance(store, dict):
+                store = {}
+                self._failure_notice_at = store
+            now = time.monotonic()
+            last = store.get(umo)
+            if last is not None and now - last < 600:
+                return
+            store[umo] = now
+            logger.warning("[PHOTO] failure_notice=1 reason=%s", str(reason or "")[:80])
+            try:
+                from astrbot.api.message_components import Plain
+            except Exception:
+                from astrbot.api.event.components import Plain
+            await self.plugin.context.send_message(
+                umo, MessageChain([Plain(text="这次照片没拍成，等会儿再给你拍。")])
+            )
+        except Exception as exc:
+            logger.warning("[PHOTO] failure_notice send failed: %s", exc)
 
     # ---------- 生成 / 发送 ----------
 
@@ -489,9 +729,12 @@ class PhotoEngine:
         self._outfit_text = text
         return text
 
+    #: 这些场景在室内，晚上用室内灯光；其余（路上/街/景区）用夜景光
+    INDOOR_ZONES = ("home", "office", "restaurant", "mall", "hotel", "station", "hospital", "unknown")
+
     @staticmethod
-    def _light_for_hour(hour):
-        """按当前时间给生图光线，别晚上拍出白天。"""
+    def _light_for_hour(hour, outdoor=False):
+        """按当前时间给生图光线，别晚上拍出白天；室外场景不写“室内暖灯”。"""
         try:
             hour = int(hour) % 24
         except (TypeError, ValueError):
@@ -507,16 +750,26 @@ class PhotoEngine:
         if 17 <= hour < 19:
             return "傍晚黄昏，暖橙色夕阳、光线正在变暗"
         if 19 <= hour < 22:
+            if outdoor:
+                return "晚上，路灯和车灯亮着，夜色，不要白天阳光"
             return "晚上，室内暖色灯光，窗外是夜色，不要白天阳光"
+        if outdoor:
+            return "深夜，只有路灯和零星车灯，夜色很深，不要白天阳光"
         return "深夜，室内只开暖黄小灯，窗外漆黑，不要白天阳光"
 
-    def _time_light(self):
+    def _outdoor_light(self, plan):
+        if plan is None:
+            return False
+        return not str(plan.zone or "").startswith(("home_", "office", "restaurant", "mall",
+                                                    "hotel", "station", "hospital", "unknown"))
+
+    def _time_light(self, outdoor=False):
         try:
             hour = int(_clock_now().hour)
         except Exception as _amo_exc:
             _note_swallowed("photo_engine.PhotoEngine._time_light", _amo_exc)
             hour = 12
-        return "现在是%02d点，%s" % (hour, self._light_for_hour(hour))
+        return "现在是%02d点，%s" % (hour, self._light_for_hour(hour, outdoor=outdoor))
 
     def _prompt_for(self, kind, scene, activity):
         """非自拍：她拍的环境。一律空镜 + 她的拍摄视角，画面里不出现她本人。
@@ -527,10 +780,17 @@ class PhotoEngine:
 
         地点统一走 ``scene_for()``：日程说在家就出家里的陈设，说逛街就出商场，
         旅游就出景区（带景点名），不再拿「他桌面上」这种词去糊。
+        2026-11-12：守卫词也进空镜提示词（以前只有自拍带，空镜完全没约束）。
         """
         prefix = self._cfg_str("photo_prompt_prefix", "手机随手拍，真实自然，生活感，")
         activity = dict(activity or {})
+        try:
+            plan = resolve_plan(activity, kind=kind, mode="photo", scene_hint=str(scene or ""))
+        except Exception:  # 规则表异常也不能让照片链路挂掉
+            plan = None
         where = str(scene or "").strip() or scene_for(activity, kind)
+        if not where and plan is not None:
+            where = plan.scene
         if kind == "travel":
             head = prefix + (where or "风景区") + "，风景照，背景就是这个地点"
         elif kind == "shopping":
@@ -543,17 +803,30 @@ class PhotoEngine:
         else:
             # 日常：只留地点，不带「她在做什么」（否则和空镜打架）
             head = prefix + (where or "日常") + "，生活空镜，生活感，背景就是这个地点"
-        light = self._time_light() if hasattr(self, "_time_light") else "自然光"
+        light = _light_text(self, plan)
         # 她拍的空镜里她本人不出镜，但最多露出的手/袖口仍要跟今天的穿搭一致
         outfit_line = "她今天穿的是%s，画面边缘露出的手或袖口必须和这套一致" % self.outfit_today()
-        return (head + "，" + light + "，" + outfit_line + "，" + SCENERY_ONLY + "，" + VIEW_POV).strip("，")
+        extras = [head, light, outfit_line]
+        if plan is not None:
+            extras.append(plan.guard)
+        extras.extend([SCENERY_ONLY, VIEW_POV])
+        prompt = "，".join(part for part in extras if part).strip("，")
+        if plan is not None:
+            _log_photo_debug(self, activity, plan, prompt)
+        return prompt
 
-    def _pick_pose(self):
-        """从姿势库随机挑一个自拍姿势；没有姿势库/条目就返回 None。"""
+    def _pick_pose(self, zone=None):
+        """从姿势库随机挑一个自拍姿势；没有姿势库/条目就返回 None。
+
+        兼容旧调用；新链路（照片严格跟随日程）请用 ``pick_pose_for_plan()``，
+        姿势由场景规则决定，公共场合不会随机到床姿。
+        """
         library = getattr(getattr(self, "plugin", None), "pose", None)
         if library is None:
             return None
         try:
+            return library.random_pose(zone)
+        except TypeError:   # 老姿势库/测试桩只收 self
             return library.random_pose()
         except Exception as _amo_exc:
             _note_swallowed("photo_engine.PhotoEngine._pick_pose", _amo_exc)
@@ -570,22 +843,31 @@ class PhotoEngine:
             _note_swallowed("photo_engine.PhotoEngine._pose_ref", _amo_exc)
             return ""
 
-    def _selfie_prompt_for(self, kind, scene, activity, pose=None):
+    def _selfie_prompt_for(self, kind, scene, activity, pose=None, plan=None, pose_text=""):
         activity = dict(activity or {})
+        if plan is None:
+            try:
+                plan = resolve_plan(activity, kind=kind, mode="photo", scene_hint=str(scene or ""))
+            except Exception:  # noqa: BLE001
+                plan = None
         # 地点跟着日程走：在家=家里的客厅/卧室，逛街=商场，旅游=景区（带景点名）
-        where = str(scene or "").strip() or scene_for(activity, kind)
+        where = str(scene or "").strip() or scene_for(activity, kind) or (plan.scene if plan else "")
         act = str(activity.get("activity") or "")
-        # 姿势：优先从姿势库随机挑一个，避免每张都是「随手拍」
-        if pose is None:
-            picker = getattr(self, "_pick_pose", None)
-            if callable(picker):
-                try:
-                    pose = picker()
-                except Exception:
-                    pose = None
-        pose_text = pose_line(pose) if pose else ""
+        # 姿势：只能由场景规则决定（居家才允许用姿势库）
+        library = getattr(getattr(self, "plugin", None), "pose", None)
+        if not pose_text:
+            if pose is not None:
+                pose_text = pose_line(pose)
+            elif plan is not None:
+                used_pose, line = pick_pose_for_plan(plan, library)
+                if used_pose is not None:
+                    pose = used_pose
+                pose_text = line or ""
+        if not pose_text and plan is None and activity.get("zone"):
+            # 规则表意外不可用时的最小兜底（仍按 zone，不回随机床姿）
+            pose_text = pose_line_for(activity.get("zone"), activity)
         # 视角：她本人出镜 → 自拍视角（前置摄像头、手臂伸出、人物占主体）
-        light = self._time_light() if hasattr(self, "_time_light") else "自然光"
+        light = _light_text(self, plan)
         # 自拍最容易出的问题是两只手都入镜、手腕错位；动作里要用手时也让另一只手自然放好
         if any(word in act for word in ("扎", "摸", "揉", "拿", "吃", "喝", "抱", "捧", "举",
                                         "抓", "捏", "擦", "洗", "穿", "脱", "整理", "拨", "翻",
@@ -594,10 +876,19 @@ class PhotoEngine:
         motion = pose_text or act or "随手拍"
         hand_line = ("只有一只手举手机，另一只手自然垂下、不要出现在镜头前，不要多手或手腕错位；"
                      "手机本体和摄像头不要入镜，不要出现手机背面或镜头对着画面")
-        where_line = "在%s，背景要能看出这个地方、不要换成别的场景" % (where or "家附近")
-        return "自拍，穿着%s，衣服就这一套、不要换成别的，%s，%s，%s，%s，生活感，%s" % (
-            self.outfit_today(), where_line, motion, hand_line, light, VIEW_SELFIE
+        where_line = "在%s，背景要能看出这个地方、不要换成别的场景" % (where or "不指定具体地点")
+        extras = [where_line, motion, hand_line, light]
+        if plan is not None:
+            extras.append(plan.guard)
+        else:
+            extras.append(scene_guard(activity.get("zone")))
+        extras.append(VIEW_SELFIE)
+        prompt = "自拍，穿着%s，衣服就这一套、不要换成别的，%s，生活感" % (
+            self.outfit_today(), "，".join(part for part in extras if part)
         )
+        if plan is not None:
+            _log_photo_debug(self, activity, plan, prompt, pose_text)
+        return prompt
 
     def _find_omni(self):
         return find_omni(self.plugin, self, "photo_engine.PhotoEngine._find_omni")
@@ -660,7 +951,7 @@ class PhotoEngine:
         ratio = self._prob("photo_selfie_ratio", 50)
         return random.random() * 100 < ratio
 
-    async def _generate(self, omni, prompt, selfie, pose=None):
+    async def _generate(self, omni, prompt, selfie, pose=None, plan=None):
         refs = []
         pose_ref = ""
         if selfie:
@@ -698,9 +989,31 @@ class PhotoEngine:
             args["prompt"] = prompt + "\n" + hint + "）"
         if selfie:
             args["mode"] = "selfie"
+        # 场景/姿势锁：交给万象画卷副脑，解析后强制回填，避免它把日程场景改写掉
+        scene_lock = pose_lock = ""
+        if plan is not None:
+            try:
+                scene_lock, pose_lock = locks_for_plan(plan)
+            except Exception as _amo_exc:
+                _note_swallowed("photo_engine.PhotoEngine._generate.locks", _amo_exc)
+                scene_lock = pose_lock = ""
+        if scene_lock:
+            args["scene_lock"] = scene_lock
+        if pose_lock:
+            args["pose_lock"] = pose_lock
         try:
             result = await asyncio.wait_for(
                 omni.generate_images_for_plugin(**args), timeout=GENERATE_TIMEOUT_SECONDS)
+        except TypeError as exc:
+            # 旧版万象画卷没有 scene_lock/pose_lock：去掉锁参数重试一次，别让照片直接失败
+            had_scene = args.pop("scene_lock", None) is not None
+            had_pose = args.pop("pose_lock", None) is not None
+            if had_scene or had_pose:
+                logger.warning("[amo] 万象画卷不支持场景锁，已退回普通提示词: %s" % exc)
+                result = await asyncio.wait_for(
+                    omni.generate_images_for_plugin(**args), timeout=GENERATE_TIMEOUT_SECONDS)
+            else:
+                raise
         except asyncio.TimeoutError:
             logger.warning("[amo] 照片生成超时（%d 秒）" % GENERATE_TIMEOUT_SECONDS)
             return None
@@ -732,24 +1045,36 @@ class PhotoEngine:
             logger.warning("[amo] 照片发送失败: %s" % exc)
             return False
 
-    async def _share(self, kind, scene, profile, target_umo=""):
+    async def _share(self, kind, scene, profile, target_umo="", lock_scene=True):
         activity = self._activity()
         omni = self._find_omni()
         if omni is None:
             logger.warning("[amo] 没有万象画卷，照片发不出去。")
             return False
+        # 一次生图先把“日程 → zone → 姿势/守卫”定型，提示词和姿势参考图共用同一份计划
+        try:
+            plan = resolve_plan(activity, kind=kind, mode="photo", scene_hint=str(scene or ""))
+        except Exception as _amo_exc:
+            _note_swallowed("photo_engine.PhotoEngine._share.plan", _amo_exc)
+            plan = None
         selfie = self._pick_selfie(kind)
         if selfie and not self._selfie_ready(omni):
             selfie = False
-        # 自拍：这一次用哪个姿势先定下来，提示词和参考图用同一个姿势
-        pose = self._pick_pose() if selfie else None
-        prompt = (self._selfie_prompt_for(kind, scene, activity, pose=pose) if selfie
+        # 自拍：姿势由场景规则决定（居家才可能用姿势库），公共场合不会随机到床姿
+        pose = None
+        pose_text = ""
+        if selfie and plan is not None:
+            library = getattr(getattr(self, "plugin", None), "pose", None)
+            pose, pose_text = pick_pose_for_plan(plan, library)
+        prompt = (self._selfie_prompt_for(kind, scene, activity, pose=pose, plan=plan,
+                                          pose_text=pose_text) if selfie
                   else self._prompt_for(kind, scene, activity))
         if self._cfg_bool("photo_dry_run", False):
             logger.info("[amo] 照片（dry-run）%s：%s" % ("自拍" if selfie else "街景", prompt))
             return False
         started = time.monotonic()
-        item = await self._generate(omni, prompt, selfie, pose=pose)
+        item = await self._generate(omni, prompt, selfie, pose=pose,
+                                    plan=plan if lock_scene else None)
         if not item and selfie:
             # 自拍链路失败（没参考图/节点不支持）→ 退回空镜，别让这一次白掷；
             # 注意不能退回 selfie 提示词，那样会画出一张「没有她的自拍」
@@ -820,7 +1145,12 @@ class PhotoEngine:
             return "🧪 dry-run：%s" % prompt
         self._busy = True
         try:
-            ok = await self._share(kind, scene, random.choice(profiles), target_umo=umo)
+            # 手动「发一张旅游照/逛街照」且和当前日程对不上时，是刻意覆盖场景，别再用日程锁
+            lock_scene = True
+            if kind in ("travel", "shopping", "weekend"):
+                lock_scene = bool(matches_kind(kind, activity))
+            ok = await self._share(kind, scene, random.choice(profiles), target_umo=umo,
+                                   lock_scene=lock_scene)
         finally:
             self._busy = False
         return "✅ 发了一张（%s）" % kind if ok else "❌ 没发出去，看日志"
@@ -1179,7 +1509,11 @@ class PhotoEngine:
         return scene_for(activity)
 
     def smart_prompt(self, text):
-        """面板输入像「拍照给我看看」时，自动补上她此刻的地点 + 今天的穿搭。"""
+        """面板输入像「拍照给我看看」时，自动补上她此刻的地点 + 姿势 + 今天的穿搭。
+
+        照片语义下日程是唯一真值：他输入里写的地点不再覆盖日程（冲突会记日志）；
+        只有日程完全不明（0 点空窗且没有昨天可沿用）才用他说的地点兜底。
+        """
         raw = str(text or "").strip()
         if not any(word in raw for word in PHOTO_INTENT_WORDS):
             return raw
@@ -1189,20 +1523,39 @@ class PhotoEngine:
             concrete = concrete.replace(word, "")
         concrete = concrete.strip()
         if len(concrete) >= 4:
-            # 已经描述了具体画面（如「在公园和狗狗玩」），保留原样
+            # 已经描述了具体画面（如「在公园和狗狗玩」）→ 当成自定义画图，不套日程
             return raw
-        place = self._place_from_text(raw) or self._recent_place() or self._scene_place() or "家里"
+        try:
+            activity = self.plugin.state.current_activity() or {}
+        except Exception:
+            activity = {}
+        explicit = self._place_from_text(raw)
+        plan = resolve_plan(activity, mode="photo", explicit_place=explicit)
+        where = scene_for(activity)
+        if not where and plan.source == "explicit_place":
+            where = explicit
+        if not where and plan.source in ("no_schedule", "unknown_zone"):
+            # 日程不明时才看他最近说过的地方（不是覆盖日程，只是兜底）
+            where = self._recent_place() or ""
+        where = where or plan.scene
+        library = getattr(getattr(self, "plugin", None), "pose", None)
+        _pose, pose_text = pick_pose_for_plan(plan, library)
         parts = ["自拍"]
         outfit = self.outfit_today()
         if outfit:
             parts.append("穿着" + outfit)
-        parts.append("在" + place)
+        parts.append("在" + (where or "不指定具体地点"))
         parts.extend([
             "背景要能看出这个地方，不要换成别的场景",
-            "自然光", "手机前置摄像头", "生活感",
+            pose_text,
+            plan.guard,
+            _light_text(self, plan),
+            "手机前置摄像头", "生活感",
             "人物长相参考模板，衣服锁定为上面的今日穿搭，不要换别的衣服，也不要照搬模板里的衣服",
         ])
-        return "，".join(parts)
+        prompt = "，".join(part for part in parts if part)
+        _log_photo_debug(self, activity, plan, prompt, pose_text)
+        return prompt
 
     async def generate_prompt(self, prompt, send=False):
         """面板「按提示词生成」：画一张；send=True 时同时发到最近会话。"""
@@ -1384,3 +1737,42 @@ class PhotoEngine:
             ),
         ]
         return "\n".join(lines)
+
+
+# ---- 2026-11-12 按场景细化：一个 default 会误伤家里/餐厅/酒店 ----
+# 只在模块加载后覆盖对应 key；scene_policy()/scene_guard() 都读同一个 dict。
+SCENE_POLICY.update({
+    "home": {"poses": ["library"], "banned_postures": [], "banned_props": [], "seat": "soft"},
+    "restaurant": {"poses": ["sit"], "banned_postures": [], "banned_props": [], "seat": "chair"},
+    "hotel": {"poses": ["sit_edge", "stand"], "banned_postures": [], "banned_props": [], "seat": "soft"},
+    "office": {"poses": ["stand", "sit"], "banned_postures": [], "banned_props": ["bedding"], "seat": "chair"},
+    "mall": {"poses": ["stand", "walk"], "banned_postures": [],
+             "banned_props": ["bedding", "instant_noodles", "tableware"], "seat": "bench"},
+    "station": {"poses": ["stand"], "banned_postures": [],
+                "banned_props": ["bedding", "instant_noodles", "tableware"], "seat": "bench"},
+    "scenic": {"poses": ["stand", "walk"], "banned_postures": [],
+               "banned_props": ["bedding", "instant_noodles", "tableware"], "seat": "bench"},
+    "street": {"poses": ["stand", "walk"], "banned_postures": [],
+               "banned_props": ["bedding", "instant_noodles", "tableware"], "seat": "bench"},
+    "hospital": {"poses": ["sit"], "banned_postures": [], "banned_props": ["bedding"], "seat": "chair"},
+})
+
+
+# ---- 2026-11-12 场景“该有什么”：只靠禁词会让画面空、道具乱，给每个场景一句正向要素 ----
+SCENE_ALLOWED = {
+    "home": "家里该有的东西：沙发或床、抱枕、毯子、水杯、窗边的光",
+    "office": "工位该有的东西：办公桌、显示器、键盘、马克杯、文件、办公椅",
+    "mall": "商场该有的东西：店铺橱窗、扶梯、地砖、指示牌、来往的人",
+    "scenic": "景区该有的东西：景点建筑或山水、栏杆、游客、路牌、自然光",
+    "restaurant": "餐厅该有的东西：餐桌、碗筷餐盘、菜单、杯子、店里的灯",
+    "hotel": "酒店房间该有的东西：床和枕头、床头灯、行李、窗帘、地毯",
+    "station": "车站该有的东西：候车座椅、指示牌、行李箱、时刻表、行人",
+    "hospital": "医院该有的东西：候诊椅、叫号屏、走廊、扶手、消毒水味的环境",
+    "road": "路上该有的东西：扶手或安全带、车窗、座椅、窗外街景或隧道",
+    "street": "街边该有的东西：路面、行道树、店面、路牌、走过的行人",
+}
+
+
+def scene_allowed_line(zone):
+    """这个场景里应该出现什么（和禁词配合，避免画面空荡或乱加道具）。"""
+    return SCENE_ALLOWED.get(str(zone or ""), "只出现这个地点本来就有的东西")

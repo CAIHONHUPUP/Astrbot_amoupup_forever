@@ -34,6 +34,57 @@ import random
 import re
 from datetime import date, datetime, timedelta
 
+try:
+    from .schedule_holiday import (
+        is_long_holiday,
+        pick_amusement_spot,
+        pick_holiday_plan,
+    )
+    from .schedule_segments import (
+        amusement_segments,
+        homebody_segments,
+        shopping_segments,
+    )
+    from .schedule_scenic import scenic_segments
+    from .schedule_day_segments import (
+        indoor_rest_segments,
+        outing_segments,
+        workday_segments,
+    )
+    from .schedule_rest_segments import (
+        business_trip_segments,
+        overtime_segments,
+        period_rest_segments,
+        sick_rest_segments,
+    )
+    from .schedule_social_segments import friend_dinner_segments
+    from .schedule_swim import swim_segments
+except ImportError:  # 直接按文件加载时
+    from schedule_holiday import (
+        is_long_holiday,
+        pick_amusement_spot,
+        pick_holiday_plan,
+    )
+    from schedule_segments import (
+        amusement_segments,
+        homebody_segments,
+        shopping_segments,
+    )
+    from schedule_scenic import scenic_segments
+    from schedule_day_segments import (
+        indoor_rest_segments,
+        outing_segments,
+        workday_segments,
+    )
+    from schedule_rest_segments import (
+        business_trip_segments,
+        overtime_segments,
+        period_rest_segments,
+        sick_rest_segments,
+    )
+    from schedule_social_segments import friend_dinner_segments
+    from schedule_swim import swim_segments
+
 # 统一时区：日程的 generated_at / 跨天日期按配置时区算，不吃服务器本地时区。
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .clock import now as _clock_now, today as _clock_today
@@ -88,8 +139,24 @@ PROVINCE_CITIES = {
 
 POSITIVE_LABELS = ("开心", "兴奋", "黏人")
 def _city_of(ctx):
-    """当前城市。景点/车站/饭店这类前缀都用它，别再写死某个城市。"""
-    return str((ctx or {}).get("city") or "").strip() or "贵阳"
+    """当前城市；没配城市就是空串（不再兜底写死某个城市）。"""
+    return str((ctx or {}).get("city") or "").strip()
+
+
+def _with_city(ctx, text):
+    """把词尾拼在城市后面；没有城市就只留这个词（北站/车站这类）。"""
+    city = _city_of(ctx)
+    text = str(text or "")
+    return (city + text) if city else text
+
+
+def _place_of(ctx, name):
+    """「城市·地点」；没有城市就只写地点，避免出现「·饭店」这种半截字符串。"""
+    city = _city_of(ctx)
+    name = str(name or "").strip()
+    if not name:
+        return city
+    return (city + "·" + name) if city else name
 
 
 CITY_POOL = [
@@ -404,9 +471,9 @@ class ScheduleEngine:
         if not city:
             city = str(world.get("city") or "").strip()
         if not city or city in ("城市", "未知", "某市"):
-            city = str(cached.get("city") or "").strip()
-        if not city:
-            city = CITY_POOL[md5_int(str(world.get("name") or "") + "|city") % len(CITY_POOL)]
+            # 配置/人格/世界观都没有城市就留空：日程骨架走「不写具体城市」的分支，
+            # 不再从 CITY_POOL 随机编一个；旧档案里的城市也不沿用（否则「清空城市」清不掉）
+            city = ""
         if cached.get("city") and cached.get("city") != city:
             cached = {}
 
@@ -544,13 +611,17 @@ class ScheduleEngine:
 
     @staticmethod
     def _random_home(city, seed):
-        districts = DISTRICT_MAP.get(str(city or "")) or ["市区"]
         rng = random.Random(md5_int(str(city or "") + "|home|" + str(seed or "")))
+        if not str(city or "").strip():
+            return rng.choice(HOME_STYLES)
+        districts = DISTRICT_MAP.get(str(city or "")) or ["市区"]
         return rng.choice(districts) + "·" + rng.choice(HOME_STYLES)
 
     @staticmethod
     def _random_workplace(city, seed):
         rng = random.Random(md5_int(str(city or "") + "|work|" + str(seed or "")))
+        if not str(city or "").strip():
+            return rng.choice(COMPANY_POOL)
         return rng.choice(COMPANY_POOL) + "（" + str(city or "市区") + "）"
 
     # ------------------------------------------------------------------
@@ -568,12 +639,20 @@ class ScheduleEngine:
         yesterday = self.yesterday_summary(day)
         good_weather = self._good_weather(weather)
         event = self._pick_event(day, meta, weather, health, period, seed, world)
-        scenic = self._pick_scenic(day, meta, weather, health, period, event, good_weather, seed, city)
-        swim = None
-        if not scenic:
-            # 一天只安排一件事：去景区就不去玩水，反之亦然
-            swim = self._pick_swim(day, meta, weather, health, period, event,
-                                   good_weather, seed, city)
+        holiday_plan = self._pick_holiday_plan(
+            day, meta, weather, health, period, event, good_weather, seed, city,
+        )
+        if holiday_plan is not None:
+            scenic = holiday_plan.get("scenic")
+            swim = holiday_plan.get("swim")
+        else:
+            scenic = self._pick_scenic(day, meta, weather, health, period, event,
+                                       good_weather, seed, city)
+            swim = None
+            if not scenic:
+                # 一天只安排一件事：去景区就不去玩水，反之亦然
+                swim = self._pick_swim(day, meta, weather, health, period, event,
+                                       good_weather, seed, city)
 
         mood_now = {key: clamp(mood.get(key, MOOD_BASE[key])) for key in MOOD_KEYS}
         return {
@@ -597,6 +676,7 @@ class ScheduleEngine:
             "yesterday": yesterday,
             "good_weather": good_weather,
             "event": event,
+            "holiday_plan": holiday_plan,
             "scenic": scenic,
             "swim": swim,
             "profile": profile,
@@ -782,6 +862,9 @@ class ScheduleEngine:
         if rng.random() > prob:
             return {"kind": "none"}
         rest = bool((meta or {}).get("rest"))
+        if self._is_long_holiday(meta):
+            # 长假由 holiday_plan 安排，不再随机塞加班/出差。
+            return {"kind": "none"}
         kind = occupation_kind(world)
         if not rest:
             # 只有会跑外勤的职业才出差；其他人是加班/加课/排班
@@ -828,6 +911,19 @@ class ScheduleEngine:
             "soothe": True,
         }
 
+    def _is_long_holiday(self, meta):
+        return is_long_holiday(self.p, meta)
+
+    def _pick_amusement_spot(self, city, seed):
+        return pick_amusement_spot(self.p, city, seed)
+
+    def _pick_holiday_plan(self, day, meta, weather, health, period, event,
+                           good_weather, seed, city):
+        return pick_holiday_plan(
+            self, day, meta, weather, health, period, event,
+            good_weather, seed, city,
+        )
+
     def _pick_scenic(self, day, meta, weather, health, period, event, good_weather, seed, city):
         if not (meta or {}).get("rest"):
             return None
@@ -844,14 +940,21 @@ class ScheduleEngine:
             spots = []
         spots = [item for item in spots if isinstance(item, dict) and item.get("name")]
         _city = str(city or "").strip()
+        if not _city:
+            # 没配城市：不挑任何城市的景点，给一个不写城市的通用公园
+            return {
+                "name": "人民公园", "city": "", "province": "",
+                "area": "", "projects": ["慢慢逛", "找个地方坐会儿", "拍几张照"],
+                "duration": "3-4小时", "indoor": False,
+            }
         _local = [item for item in spots if _city and _city in str(item.get("city") or "")]
-        if _city and not _local and int((meta or {}).get("holiday_days") or 0) < 4:
+        if _city and not _local and not ScheduleEngine._is_long_holiday(self, meta):
             return None
         if _local:
             spots = _local
         if not spots:
             return {
-                "name": "人民公园", "city": str(city or "").strip() or "市区", "province": "",
+                "name": "人民公园", "city": _city, "province": "",
                 "area": "", "projects": ["慢慢逛", "找个地方坐会儿", "拍几张照"],
                 "duration": "3-4小时", "indoor": False,
             }
@@ -861,7 +964,7 @@ class ScheduleEngine:
         if not good_weather:
             indoor = [item for item in spots if item.get("indoor")]
             pool = indoor or list(spots)
-        elif int((meta or {}).get("holiday_days") or 0) >= 4:
+        elif ScheduleEngine._is_long_holiday(self, meta):
             # 长假去外地：先挑不在本市的
             pool = [item for item in spots if str(city or "") not in str(item.get("city") or "")] or list(spots)
         else:
@@ -924,7 +1027,7 @@ class ScheduleEngine:
             _note_swallowed("schedule_engine.ScheduleEngine._pick_swim.kv", _amo_exc)
             used = ""
         used_kind, _, used_day = used.partition("|")
-        traveling = int((meta or {}).get("holiday_days") or 0) >= 4
+        traveling = ScheduleEngine._is_long_holiday(self, meta)
         if used_kind and traveling and used_day != str(day):
             # 旅游期间不受「这周已经去过」的限制
             used_kind, used_day = "", ""
@@ -962,70 +1065,10 @@ class ScheduleEngine:
         }
 
     def _swim_segments(self, ctx):
-        """去游泳/海边/水上乐园那天：上午出门，中午吃个饭，下午接着玩，傍晚回家。"""
-        ctx = dict(ctx or {})
-        home = ctx.get("home") or "家"
-        swim = ctx.get("swim") or {}
-        where = str(swim.get("place") or "")
-        place_name = str(swim.get("spot") or "泳池")
-        return [
-            self._seg("00:00", "07:00", "睡觉", home, "home", "sleep"),
-            self._seg("07:00", "08:00", "起床洗漱、吃早餐", home, "home", "life"),
-            self._seg("08:00", "09:00", "收拾泳衣和毛巾，装进包里", home, "home", "life",
-                      detail="还带了防晒和换洗衣服"),
-            self._seg("09:00", "10:00", "出门去" + where, "路上", "road", "commute",
-                      transit="subway", vehicle="地铁"),
-            self._seg("10:00", "12:00", str(swim.get("activity") or ("在%s玩水" % place_name)),
-                      where, "scenic", "play", spot=place_name,
-                      detail=str(swim.get("detail") or "")),
-            self._seg("12:00", "13:00", "上岸冲一下，在附近吃午饭", where + "·附近小馆子",
-                      "restaurant", "meal"),
-            self._seg("13:00", "15:00", "下午接着在%s玩" % place_name, where, "scenic", "play",
-                      spot=place_name, detail=self._choose(list(SWIM_DETAILS),
-                                                           random.Random(place_name), "")),
-            self._seg("15:00", "16:00", "冲个澡换好衣服，头发还没干", where, "scenic", "rest",
-                      spot=place_name, detail="头发湿着，懒得吹"),
-            self._seg("16:00", "17:00", "坐车回家，路上有点犯困", "路上", "road", "commute",
-                      transit="subway", vehicle="地铁"),
-            self._seg("17:00", "18:00", "到家把泳衣洗了晾上", home, "home", "life",
-                      detail="晒了一下午，脸有点红"),
-            self._seg("18:00", "19:00", "吃晚饭", home, "home", "meal"),
-            self._seg("19:00", "20:00", "窝在沙发上刷手机，腿有点酸", home, "home", "rest"),
-            self._seg("20:00", "22:00", "洗完澡敷个面膜", home, "home", "rest"),
-            self._seg("22:00", "23:00", "吹头发、护肤", home, "home", "life"),
-            self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-        ]
+        return swim_segments(ctx, self._seg, self._choose, SWIM_DETAILS)
 
     def _outing_segments(self, ctx):
-        """外出日骨架：早上出门，白天在外面玩，傍晚回家。
-
-        时间必须落在整点：``_expand`` 按小时切段、``_validate`` 再把第 i 段钉成
-        ``i:00``，半小时边界会让整天的行程整体错位。zone 也要用既有取值
-        （road / scenic / mall / restaurant / home），否则 ``_validate`` 会把每次
-        区域切换都改写成「从 A 赶去 B」。
-        """
-        ctx = dict(ctx or {})
-        home = ctx.get("home") or "家"
-        city = ctx.get("city") or "城里"
-        spot = ctx.get("scenic") or {}
-        where = str(spot.get("name") or "").strip() or ("%s的街上" % city)
-        zone = "scenic" if str(spot.get("name") or "").strip() else "mall"
-        return [
-            self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-            self._seg("08:00", "09:00", "起床收拾，翻衣柜挑今天要穿的衣服", home, "home", "life"),
-            self._seg("09:00", "10:00", "出门，坐车去%s" % where, "路上", "road", "commute",
-                      transit="在路上", vehicle="地铁"),
-            self._seg("10:00", "12:00", "在%s慢慢逛" % where, where, zone, "play"),
-            self._seg("12:00", "13:00", "找了家小店吃饭", "%s附近" % where, "restaurant", "meal"),
-            self._seg("13:00", "16:00", "接着逛，走走停停", where, zone, "play"),
-            self._seg("16:00", "17:00", "找个地方坐下歇一会儿，喝点东西", where, zone, "rest"),
-            self._seg("17:00", "18:00", "往回走，路上有点累", "路上", "road", "commute",
-                      transit="在路上", vehicle="地铁"),
-            self._seg("18:00", "19:00", "到家先洗把脸缓一缓", home, "home", "life"),
-            self._seg("19:00", "20:00", "到家附近吃晚饭", home, "home", "meal"),
-            self._seg("20:00", "22:00", "洗完澡窝在沙发上，翻今天拍的照片", home, "home", "rest"),
-            self._seg("22:00", "24:00", "睡觉", home, "home", "sleep"),
-        ]
+        return outing_segments(ctx, self._seg)
 
     def build_skeleton(self, ctx):
         event_kind = (ctx.get("event") or {}).get("kind")
@@ -1033,18 +1076,33 @@ class ScheduleEngine:
         day_id = str(((ctx or {}).get("day_type") or {}).get("id") or "")
         sick = bool((ctx.get("health") or {}).get("sick"))
         good_weather = bool(ctx.get("good_weather", True))
+        holiday = ctx.get("holiday_plan") or {}
         if event_kind == "business_trip" and not meta.get("rest"):
             segments = self._business_trip_segments(ctx)
+        elif holiday:
+            kind = str(holiday.get("kind") or "")
+            if kind == "beach":
+                segments = self._swim_segments(ctx)
+            elif kind == "shopping":
+                segments = self._shopping_segments(ctx)
+            elif kind == "amusement":
+                segments = self._amusement_segments(ctx)
+            else:
+                segments = self._scenic_segments(ctx)
         elif ctx.get("swim") and not sick and good_weather:
             # 去游泳/海边/水上乐园：整天按玩水安排，衣柜会自动换泳装
             segments = self._swim_segments(ctx)
         elif day_id == "outing":
             # 生病、天气不好就别硬出门，按宅家过
             segments = self._outing_segments(ctx) if (good_weather and not sick) else self._rest_segments(ctx)
+        elif day_id == "homebody":
+            # 宅家日真的待在家，不再复用“去商场”的室内休息骨架。
+            segments = self._homebody_segments(ctx)
+        elif meta.get("rest"):
+            # 法定节假日/周末优先于加班日，避免节假日小概率还排上班。
+            segments = self._rest_segments(ctx)
         elif day_id == "overtime":
             segments = self._workday_segments(ctx, overtime=True)
-        elif day_id == "homebody" or meta.get("rest"):
-            segments = self._rest_segments(ctx)
         else:
             # 工作日的「临时加班」以前只改文案、不改骨架：突发事件写着「今天回不去了」，
             # 日程却还是 18:00 下班回家。这里让骨架真的晚走。
@@ -1058,90 +1116,20 @@ class ScheduleEngine:
 
     def _seg(self, start, end, activity, place, zone, category,
              transit="", vehicle="", detail="", effects=None,
-             event="", spot="", soothe=False):
+             event="", spot="", soothe=False, swim=False):
         return {
             "start": start, "end": end, "activity": activity, "place": place,
             "zone": zone, "category": category, "transit": transit,
             "vehicle": vehicle, "detail": detail, "effects": effects or {},
             "event": event, "spot": spot, "soothe": soothe,
+            "swim": True if swim else False,
         }
 
     def _workday_segments(self, ctx, overtime=False):
-        home = ctx["home"]
-        office = ctx["workplace"]
-        late = bool((ctx.get("yesterday") or {}).get("late_night"))
-        sick = bool((ctx.get("health") or {}).get("sick"))
-        wake = "赖床、起不来" if late else "起床洗漱、吃早餐"
-        has_car = bool(ctx.get("has_gift_car"))
-        if has_car:
-            commute = "开车去公司"
-        elif sick:
-            commute = "带病出门，慢慢走去地铁站"
-        else:
-            commute = "挤地铁去公司"
-        if overtime:
-            effects = (ctx.get("event") or {}).get("effects") or {}
-            evening = [
-                self._seg("18:00", "19:00", "临时的事还没完，还在公司", office, "office", "work",
-                          effects=effects),
-                self._seg("19:00", "20:00", "点个外卖，边吃边改", office, "office", "work"),
-                self._seg("20:00", "21:00", "总算收尾，收拾东西准备走", office, "office", "work"),
-                self._seg("21:00", "22:00", "下班回家", "路上", "road", "commute",
-                          transit="drive" if has_car else "subway",
-                          vehicle=ctx.get("car") if has_car else "",
-                          detail="晚高峰，慢慢挪" if has_car else ""),
-                self._seg("22:00", "23:00", "到家洗漱", home, "home", "life"),
-                self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-            ]
-        else:
-            evening = [
-                self._seg("18:00", "19:00", "下班开车回家" if has_car else "下班回家", "路上", "road", "commute",
-                          transit="drive" if has_car else "subway",
-                          vehicle=ctx.get("car") if has_car else "",
-                          detail="晚高峰，慢慢挪" if has_car else ""),
-                self._seg("19:00", "20:00", "吃晚饭", home, "home", "meal"),
-                self._seg("20:00", "22:00", "休息", home, "home", "rest"),
-                self._seg("22:00", "23:00", "洗澡护肤", home, "home", "life"),
-                self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-            ]
-        return [
-            self._seg("00:00", "07:00", "睡觉", home, "home", "sleep"),
-            self._seg("07:00", "08:00", wake, home, "home", "life", detail="昨晚没睡好" if late else ""),
-            self._seg("08:00", "09:00", commute, "路上", "road", "commute",
-                      transit="drive" if has_car else "subway",
-                      vehicle=ctx.get("car") if has_car else "",
-                      detail="早高峰有点堵，到公司还得找车位" if has_car else ""),
-            self._seg("09:00", "12:00", "上班", office, "office", "work"),
-            self._seg("12:00", "13:00", "吃午饭", office + "附近", "restaurant", "meal"),
-            self._seg("13:00", "14:00", "午休", office, "office", "rest"),
-            self._seg("14:00", "18:00", "上班", office, "office", "work"),
-        ] + evening
+        return workday_segments(ctx, self._seg, overtime=overtime)
 
     def _business_trip_segments(self, ctx):
-        home = ctx["home"]
-        event = ctx.get("event") or {}
-        city = str(event.get("city") or "成都")
-        where = str(event.get("where") or ("外省·" + city))
-        office = where + "·客户公司"
-        hotel = where + "·酒店"
-        effects = event.get("effects") or {}
-        return [
-            self._seg("00:00", "06:00", "睡觉", home, "home", "sleep"),
-            self._seg("06:00", "07:00", "起床收拾行李", home, "home", "life"),
-            self._seg("07:00", "08:00", "接到外派通知，打车去" + _city_of(ctx) + "北站", "路上", "road", "commute",
-                      transit="taxi", event="business_trip", effects=effects),
-            self._seg("08:00", "09:00", "进站候车", _city_of(ctx) + "北站", "station", "commute", transit="train"),
-            self._seg("09:00", "12:00", "坐高铁去" + city, "路上", "road", "commute",
-                      transit="train", detail="临时买票，只剩二等座"),
-            self._seg("12:00", "13:00", "到站吃午饭", where + "·车站附近", "restaurant", "meal"),
-            self._seg("13:00", "14:00", "打车去客户公司", "路上", "road", "commute", transit="taxi"),
-            self._seg("14:00", "18:00", "在客户公司处理紧急项目", office, "office", "work"),
-            self._seg("18:00", "19:00", "打车去酒店", "路上", "road", "commute", transit="taxi"),
-            self._seg("19:00", "20:00", "酒店附近吃晚饭", where + "·小吃街", "restaurant", "meal"),
-            self._seg("20:00", "21:00", "回酒店整理资料", hotel, "hotel", "work"),
-            self._seg("21:00", "23:00", "在酒店休息", hotel, "hotel", "rest"),
-            self._seg("23:00", "24:00", "睡觉", hotel, "hotel", "sleep"),
-        ]
+        return business_trip_segments(ctx, self._seg, _with_city)
 
     def _rest_segments(self, ctx):
         event_kind = (ctx.get("event") or {}).get("kind")
@@ -1152,7 +1140,7 @@ class ScheduleEngine:
         # 痛经是痛经，不是发烧：以前 pain>=8 也走「吃药、量体温、捂汗」，每个月都被写成病号。
         if int(period.get("pain") or 0) >= 8:
             return self._period_rest_segments(ctx)
-        if event_kind == "overtime":
+        if event_kind == "overtime" and not (ctx.get("meta") or {}).get("rest"):
             return self._overtime_segments(ctx)
         if event_kind == "friend_dinner":
             return self._friend_dinner_segments(ctx)
@@ -1161,228 +1149,34 @@ class ScheduleEngine:
         return self._indoor_rest_segments(ctx)
 
     def _scenic_segments(self, ctx):
-        home = ctx["home"]
-        spot = ctx.get("scenic") or {}
-        name = str(spot.get("name") or "附近公园")
-        place = _city_of(ctx) + "·" + name
-        car = ctx["car"]
-        projects = [str(item) for item in (spot.get("projects") or []) if str(item)]
-        project_a = projects[0] if projects else "景区主景点"
-        project_b = projects[1] if len(projects) > 1 else "拍照散步"
-        long_trip = int((ctx.get("meta") or {}).get("holiday_days") or 0) >= 4 and _city_of(ctx) not in str(spot.get("city") or "")
-        if long_trip:
-            return [
-                self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-                self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-                self._seg("09:00", "10:00", "收拾东西准备出发", home, "home", "life"),
-                self._seg("10:00", "12:00", "开车去" + name, "路上", "road", "commute",
-                          transit="drive", vehicle=car, detail="出城有点堵，导航显示还要两个多小时"),
-                self._seg("12:00", "13:00", "到景区附近吃午饭", place + "·餐馆", "restaurant", "meal"),
-                self._seg("13:00", "15:00", "逛" + name + "：" + project_a, place, "scenic", "play",
-                          transit="drive", vehicle=car, spot=name, soothe=True),
-                self._seg("15:00", "16:00", "找地方歇脚、喝点东西", place + "·茶饮店", "restaurant", "rest"),
-                self._seg("16:00", "17:00", "继续逛" + name + "：" + project_b, place, "scenic", "play",
-                          transit="drive", vehicle=car, spot=name, soothe=True),
-                self._seg("17:00", "19:00", "开车回" + _city_of(ctx), "路上", "road", "commute",
-                          transit="drive", vehicle=car, detail="返程堵在高速上"),
-                self._seg("19:00", "20:00", "到家附近吃晚饭", home + "附近", "restaurant", "meal"),
-                self._seg("20:00", "22:00", "回家整理照片、追剧", home, "home", "rest"),
-                self._seg("22:00", "23:00", "洗澡护肤", home, "home", "life"),
-                self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-            ]
-        return [
-            self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-            self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-            self._seg("09:00", "10:00", "收拾包、换衣服准备出门", home, "home", "life"),
-            self._seg("10:00", "11:00", "开车去" + name, "路上", "road", "commute",
-                      transit="drive", vehicle=car, detail="周末出城有点堵，停车场还不好找"),
-            self._seg("11:00", "12:00", "到" + name + "，排队停车买票", place, "scenic", "play",
-                      transit="drive", vehicle=car, spot=name, detail="停车位找了半天", soothe=True),
-            self._seg("12:00", "13:00", "在景区附近吃午饭", place + "·餐馆", "restaurant", "meal"),
-            self._seg("13:00", "15:00", "逛" + name + "：" + project_a, place, "scenic", "play",
-                      spot=name, soothe=True),
-            self._seg("15:00", "16:00", "找家店喝下午茶", place + "·茶饮店", "restaurant", "rest"),
-            self._seg("16:00", "17:00", "继续逛" + name + "：" + project_b, place, "scenic", "play",
-                      spot=name, soothe=True),
-            self._seg("17:00", "18:00", "开车回家", "路上", "road", "commute",
-                      transit="drive", vehicle=car, detail="晚高峰，堵在回家的路上"),
-            self._seg("18:00", "19:00", "到家瘫一会儿", home, "home", "rest"),
-            self._seg("19:00", "20:00", "吃晚饭", home, "home", "meal"),
-            self._seg("20:00", "22:00", "整理照片、追剧", home, "home", "rest"),
-            self._seg("22:00", "23:00", "洗澡护肤", home, "home", "life"),
-            self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-        ]
+        return scenic_segments(
+            ctx, self._seg, _place_of, _city_of,
+            long_holiday=self._is_long_holiday((ctx or {}).get("meta")),
+        )
+
+    def _shopping_segments(self, ctx):
+        return shopping_segments(ctx, self._seg)
+
+    def _amusement_segments(self, ctx):
+        return amusement_segments(ctx, self._seg)
+
+    def _homebody_segments(self, ctx):
+        return homebody_segments(ctx, self._seg)
 
     def _indoor_rest_segments(self, ctx):
-        home = ctx["home"]
-        spot = ctx.get("scenic") or {}
-        name = str(spot.get("name") or "商场")
-        place = _city_of(ctx) + "·" + name
-        car = ctx["car"]
-        return [
-            self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-            self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-            self._seg("09:00", "10:00", "收拾屋子、洗衣服", home, "home", "life"),
-            self._seg("10:00", "11:00", "开车去" + name, "路上", "road", "commute",
-                      transit="drive", vehicle=car, detail="下雨天路滑，开得慢"),
-            self._seg("11:00", "13:00", "逛" + name, place, "mall" if not spot.get("indoor") else "scenic",
-                      "play", vehicle=car, spot=name),
-            self._seg("13:00", "14:00", "吃午饭", place + "·餐厅", "restaurant", "meal"),
-            self._seg("14:00", "16:00", "继续逛、找地方坐着", place, "mall", "play"),
-            self._seg("16:00", "17:00", "喝杯热饮", place + "·咖啡店", "restaurant", "rest"),
-            self._seg("17:00", "18:00", "开车回家", "路上", "road", "commute",
-                      transit="drive", vehicle=car),
-            self._seg("18:00", "19:00", "到家缓一会儿", home, "home", "rest"),
-            self._seg("19:00", "20:00", "吃晚饭", home, "home", "meal"),
-            self._seg("20:00", "22:00", "追剧、刷手机", home, "home", "rest"),
-            self._seg("22:00", "23:00", "洗澡护肤", home, "home", "life"),
-            self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-        ]
+        return indoor_rest_segments(ctx, self._seg, _place_of)
 
     def _sick_rest_segments(self, ctx):
-        home = ctx["home"]
-        health = ctx.get("health") or {}
-        treatment = str(health.get("treatment") or "")
-        if "打吊水" in treatment or "看医生" in treatment:
-            # 去医院的日子：把挂号/看诊/吊水写成明确时段，而不是笼统「吃药量体温」。
-            # 必须整点切段：_expand 按小时展开、_validate 再把第 i 段钉成 i:00，
-            # 09:30 这种半小时边界会让后面整天的日程错位一小时。
-            hospital = "医院"
-            drip = "打吊水" in treatment
-            if drip:
-                return [
-                    self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-                    self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-                    self._seg("09:00", "10:00", "收拾一下去医院", home, "home", "life"),
-                    self._seg("10:00", "13:00", "在医院挂号、排队、打吊水",
-                              hospital, "hospital", "health", detail="吊水约 3 小时"),
-                    self._seg("13:00", "14:00", "回家吃午饭", home, "home", "meal"),
-                    self._seg("14:00", "17:00", "卧床休息、捂汗", home, "home", "rest"),
-                    self._seg("17:00", "18:00", "吃药、量体温", home, "home", "life"),
-                    self._seg("18:00", "19:00", "喝点粥当晚饭", home, "home", "meal"),
-                    self._seg("19:00", "22:00", "早早躺着刷手机", home, "home", "rest"),
-                    self._seg("22:00", "23:00", "洗漱", home, "home", "life"),
-                    self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-                ]
-            return [
-                self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-                self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-                self._seg("09:00", "10:00", "收拾一下去医院", home, "home", "life"),
-                self._seg("10:00", "12:00", "在诊室看医生、拿药",
-                          hospital, "hospital", "health", detail="看诊拿药"),
-                self._seg("12:00", "13:00", "回家吃午饭", home, "home", "meal"),
-                self._seg("13:00", "16:00", "卧床休息、捂汗", home, "home", "rest"),
-                self._seg("16:00", "17:00", "吃药、量体温", home, "home", "life"),
-                self._seg("17:00", "18:00", "靠在沙发上发呆", home, "home", "rest"),
-                self._seg("18:00", "19:00", "喝点粥当晚饭", home, "home", "meal"),
-                self._seg("19:00", "22:00", "早早躺着刷手机", home, "home", "rest"),
-                self._seg("22:00", "23:00", "洗漱", home, "home", "life"),
-                self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-            ]
-        return [
-            self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-            self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-            self._seg("09:00", "10:00", "吃药、量体温", home, "home", "life"),
-            self._seg("10:00", "12:00", "窝在床上休息", home, "home", "rest"),
-            self._seg("12:00", "13:00", "简单吃点午饭", home, "home", "meal"),
-            self._seg("13:00", "16:00", "睡午觉、捂汗", home, "home", "rest"),
-            self._seg("16:00", "17:00", "起来喝水、吃药", home, "home", "life"),
-            self._seg("17:00", "18:00", "靠在沙发上发呆", home, "home", "rest"),
-            self._seg("18:00", "19:00", "喝点粥当晚饭", home, "home", "meal"),
-            self._seg("19:00", "22:00", "早早躺着刷手机", home, "home", "rest"),
-            self._seg("22:00", "23:00", "洗漱", home, "home", "life"),
-            self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-        ]
+        return sick_rest_segments(ctx, self._seg)
 
     def _period_rest_segments(self, ctx):
-        """痛经卧床：热水袋、红糖水，不是「吃药量体温」。"""
-        home = ctx["home"]
-        return [
-            self._seg("00:00", "08:00", "睡得不太安稳", home, "home", "sleep"),
-            self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-            self._seg("09:00", "11:00", "抱着热水袋窝在床上", home, "home", "rest"),
-            self._seg("11:00", "12:00", "给自己冲杯红糖水", home, "home", "life"),
-            self._seg("12:00", "13:00", "简单吃点午饭", home, "home", "meal"),
-            self._seg("13:00", "16:00", "疼得没力气，继续躺着", home, "home", "rest"),
-            self._seg("16:00", "17:00", "煮点热乎的，暖暖肚子", home, "home", "life"),
-            self._seg("17:00", "18:00", "靠在沙发上发会儿呆", home, "home", "rest"),
-            self._seg("18:00", "19:00", "喝点粥当晚饭", home, "home", "meal"),
-            self._seg("19:00", "22:00", "早早躺下刷手机", home, "home", "rest"),
-            self._seg("22:00", "23:00", "洗漱", home, "home", "life"),
-            self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-        ]
+        return period_rest_segments(ctx, self._seg)
 
     def _overtime_segments(self, ctx):
-        home = ctx["home"]
-        office = ctx["workplace"]
-        car = ctx["car"]
-        event = ctx.get("event") or {}
-        return [
-            self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-            self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-            self._seg("09:00", "10:00", "本来打算在家躺一天", home, "home", "rest"),
-            self._seg("10:00", "11:00", "接到电话，" + str(event.get("task") or "处理点急事"), home, "home", "work",
-                      event="overtime", effects=event.get("effects") or {}),
-            self._seg("11:00", "12:00", "开车赶去公司", "路上", "road", "commute",
-                      transit="drive", vehicle=car, detail="周末也堵，心里更烦了"),
-            self._seg("12:00", "13:00", "在公司楼下随便吃一口", office + "附近", "restaurant", "meal"),
-            self._seg("13:00", "18:00", "在公司" + str(event.get("task") or "处理事情") + "、被拉去开会", office, "office", "work"),
-            self._seg("18:00", "19:00", "下班回家", "路上", "road", "commute",
-                      transit="drive", vehicle=car),
-            self._seg("19:00", "20:00", "到家吃晚饭", home, "home", "meal"),
-            self._seg("20:00", "22:00", "瘫着不想动", home, "home", "rest"),
-            self._seg("22:00", "23:00", "洗澡", home, "home", "life"),
-            self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-        ]
+        return overtime_segments(ctx, self._seg)
 
     def _friend_dinner_segments(self, ctx):
-        home = ctx["home"]
-        event = ctx.get("event") or {}
-        if ctx.get("scenic") and ctx.get("good_weather"):
-            spot = ctx.get("scenic") or {}
-            name = str(spot.get("name") or "附近公园")
-            place = _city_of(ctx) + "·" + name
-            car = ctx["car"]
-            projects = [str(item) for item in (spot.get("projects") or []) if str(item)]
-            project_a = projects[0] if projects else "景区主景点"
-            return [
-                self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-                self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-                self._seg("09:00", "10:00", "收拾出门", home, "home", "life"),
-                self._seg("10:00", "11:00", "开车去" + name, "路上", "road", "commute",
-                          transit="drive", vehicle=car),
-                self._seg("11:00", "12:00", "到景区，停车买票", place, "scenic", "play",
-                          transit="drive", vehicle=car, spot=name, soothe=True),
-                self._seg("12:00", "13:00", "景区附近吃午饭", place + "·餐馆", "restaurant", "meal"),
-                self._seg("13:00", "15:00", "逛" + name + "：" + project_a, place, "scenic", "play",
-                          spot=name, soothe=True),
-                self._seg("15:00", "16:00", "喝下午茶", place + "·茶饮店", "restaurant", "rest"),
-                self._seg("16:00", "17:00", "再逛一会儿、拍照", place, "scenic", "play", spot=name, soothe=True),
-                self._seg("17:00", "18:00", "开车回家", "路上", "road", "commute",
-                          transit="drive", vehicle=car),
-                self._seg("18:00", "19:00", "回家换衣服，出门赴约", "路上", "road", "commute", transit="taxi"),
-                self._seg("19:00", "21:00", "和朋友吃饭、聊天", _city_of(ctx) + "·饭店", "restaurant", "social",
-                          event="friend_dinner", effects=event.get("effects") or {}, soothe=True),
-                self._seg("21:00", "22:00", "饭后散步、吹吹风", "路上", "road", "other"),
-                self._seg("22:00", "23:00", "回家洗澡", home, "home", "life"),
-                self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-            ]
-        return [
-            self._seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-            self._seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-            self._seg("09:00", "10:00", "收拾屋子", home, "home", "life"),
-            self._seg("10:00", "12:00", "在家追剧、刷手机", home, "home", "rest"),
-            self._seg("12:00", "13:00", "吃午饭", home, "home", "meal"),
-            self._seg("13:00", "16:00", "睡午觉、发呆", home, "home", "rest"),
-            self._seg("16:00", "17:00", "收拾一下准备出门", home, "home", "life"),
-            self._seg("17:00", "18:00", "出门赴约", "路上", "road", "commute", transit="taxi"),
-            self._seg("18:00", "20:00", "和朋友吃饭、聊天", _city_of(ctx) + "·饭店", "restaurant", "social",
-                      event="friend_dinner", effects=event.get("effects") or {}, soothe=True),
-            self._seg("20:00", "21:00", "饭后散步", "路上", "road", "other"),
-            self._seg("21:00", "22:00", "回家", home, "home", "rest"),
-            self._seg("22:00", "23:00", "洗澡护肤", home, "home", "life"),
-            self._seg("23:00", "24:00", "睡觉", home, "home", "sleep"),
-        ]
+        return friend_dinner_segments(ctx, self._seg, _place_of)
 
     # ------------------------------------------------------------------
     # 3. 展开成 24 个整点
@@ -1414,6 +1208,7 @@ class ScheduleEngine:
                     "vehicle": str(seg.get("vehicle") or ""),
                     "detail": str(seg.get("detail") or "") if hour == first_hour else "",
                     "spot": str(seg.get("spot") or ""),
+                    "swim": bool(seg.get("swim")),
                     "soothe": bool(seg.get("soothe")),
                     "event": str(seg.get("event") or "") if hour == first_hour else "",
                     "effects": dict(seg.get("effects") or {}) if hour == first_hour else {},
@@ -1434,7 +1229,7 @@ class ScheduleEngine:
                     "place": ctx["home"], "zone": "home",
                     "category": "sleep" if hour < 7 or hour >= 23 else "rest",
                     "transit": "", "vehicle": "", "detail": "", "spot": "",
-                    "soothe": False, "event": "", "effects": {},
+                    "swim": False, "soothe": False, "event": "", "effects": {},
                 }
             item["end"] = fmt_hhmm(key + 60)
             result.append(item)
@@ -1552,6 +1347,9 @@ class ScheduleEngine:
                     "导航一路飘红", "停车场绕了三圈", "被加塞了", "堵在市区路上",
                 ])
             return pick(["车上人很多", "差点坐过站", "一路小跑"])
+        if zone == "playground":
+            return pick(["排队排到腿酸", "过山车下来嗓子都喊哑了", "气球差点飞走",
+                         "巡游队伍太热闹了", "买了个发箍戴上"])
         if zone == "office" and category == "work":
             return pick(["改到第三版", "需求又变了", "咖啡续了一杯", "被拉进临时会议"])
         if zone == "restaurant":
@@ -1699,7 +1497,8 @@ class ScheduleEngine:
             ("mall", "restaurant"), ("restaurant", "mall"),
             ("station", "restaurant"), ("restaurant", "station"),
             ("home", "home"), ("office", "office"), ("scenic", "scenic"),
-            ("restaurant", "restaurant"), ("mall", "mall"),
+            ("restaurant", "restaurant"), ("mall", "mall"), ("playground", "playground"),
+            ("playground", "restaurant"), ("restaurant", "playground"),
         }
         for index in range(1, len(items)):
             prev = items[index - 1]
@@ -2012,7 +1811,7 @@ class ScheduleEngine:
             "10. 只输出 JSON：{\"diary\":\"...\"}。"
         ) % (
             ctx.get("day"), (ctx.get("meta") or {}).get("label") or "普通一天",
-            _weather_text(ctx.get("weather") or {}), ctx.get("location") or ctx.get("city") or "贵阳",
+            _weather_text(ctx.get("weather") or {}), ctx.get("location") or _city_of(ctx) or "未设置",
             (ctx.get("health") or {}).get("status", "健康"),
             (ctx.get("period") or {}).get("phase", ""),
             (ctx.get("yesterday") or {}).get("note") or "正常",
@@ -2098,9 +1897,9 @@ def _brief_world(world):
 
 def _weather_text(weather):
     weather = weather or {}
-    return "%s %s %s℃" % (
-        weather.get("city", ""), weather.get("text", ""), weather.get("temp", ""),
-    )
+    city = str(weather.get("city") or "").strip()
+    prefix = (city + " ") if city else ""
+    return "%s%s %s℃" % (prefix, weather.get("text", ""), weather.get("temp", ""))
 
 
 def _mood_text(mood):

@@ -8,7 +8,13 @@ MODULES = ("main.py", "amo_shared.py", "amo_observability.py", "amo_db.py",
            "amo_proactive.py", "amo_schedule.py", "amo_llm.py", "amo_memory.py",
            "amo_commands.py", "amo_config.py", "amo_message.py", "amo_social.py",
            "amo_travel.py", "amo_runtime.py", "amo_kb.py", "amo_usage.py",
-           "draw_engine.py", "photo_engine.py", "photo_view.py")
+           "amo_route_table.py", "amo_api_diary.py", "amo_api_schedule.py",
+           "amo_api_wardrobe.py", "amo_api_photo.py", "amo_voice.py",
+           "schedule_holiday.py", "schedule_segments.py",
+           "schedule_scenic.py", "schedule_day_segments.py", "schedule_rest_segments.py",
+           "schedule_social_segments.py", "schedule_swim.py",
+           "draw_engine.py", "photo_engine.py", "photo_view.py",
+           "amo_group_guard.py")
 
 
 def module_paths(root):

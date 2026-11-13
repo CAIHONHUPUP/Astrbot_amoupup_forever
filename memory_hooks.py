@@ -246,10 +246,10 @@ class MemoryProvider:
         }
 
     # -- 能力 --
-    async def remember(self, uid, content, kind="fact", importance=0.5, scope="private", group_id=""):
+    async def remember(self, uid, content, kind="fact", importance=0.5, scope="private", group_id="", subject="user"):
         return {"ok": False, "reason": "unsupported"}
 
-    async def recall(self, uid, query="", limit=6, scope="", group_id=""):
+    async def recall(self, uid, query="", limit=6, scope="", group_id="", platform=""):
         return []
 
     async def profile(self, uid):
@@ -318,7 +318,7 @@ class AmoDataProvider(MemoryProvider):
                     return method
         return None
 
-    async def remember(self, uid, content, kind="fact", importance=0.5, scope="private", group_id=""):
+    async def remember(self, uid, content, kind="fact", importance=0.5, scope="private", group_id="", subject="user"):
         method = await self._call(("remember", "add_memory", "save_memory"))
         if method is None:
             return {"ok": False, "reason": "no_interface"}
@@ -326,6 +326,7 @@ class AmoDataProvider(MemoryProvider):
             result = await method(
                 self.rt.bot_id(), str(uid), content,
                 kind=kind, importance=importance, scope=scope, group_id=group_id,
+                subject=str(subject or "user"),
             )
         except TypeError:
             try:
@@ -358,7 +359,7 @@ class AmoDataProvider(MemoryProvider):
                 found.append(method)
         return found
 
-    async def recall(self, uid, query="", limit=6, scope="", group_id=""):
+    async def recall(self, uid, query="", limit=6, scope="", group_id="", platform=""):
         """先按完整签名调，TypeError 逐级缩短参数；换方法名重试的是「非 TypeError」。
 
         以前只选中第一个存在的方法名：接口改名/签名变化时第一次 TypeError 后
@@ -374,6 +375,8 @@ class AmoDataProvider(MemoryProvider):
         last_exc = None
         for method in methods:
             attempts = (
+                # 带上平台：记忆终端才知道"这条是从飞书问的"，日志才能标 source_platform
+                (self.rt.bot_id(), str(uid), query, limit, scope, group_id, platform),
                 (self.rt.bot_id(), str(uid), query, limit, scope, group_id),
                 (self.rt.bot_id(), str(uid), query, limit),
                 (self.rt.bot_id(), str(uid), query),
@@ -502,7 +505,7 @@ class MemoryCompanionProvider(MemoryProvider):
             self._block_logged = True
             self.note("memory_companion 写入被门禁拦截，已停止再试（%s）" % type(exc).__name__)
 
-    async def remember(self, uid, content, kind="fact", importance=0.5, scope="private", group_id=""):
+    async def remember(self, uid, content, kind="fact", importance=0.5, scope="private", group_id="", subject="user"):
         if self.write_blocked:
             return {"ok": False, "reason": "blocked"}
         target = self._target()
@@ -672,18 +675,20 @@ class MemoryHub:
         return self.turn % every == 0
 
     # -- 能力转发 --
-    async def remember(self, uid, content, kind="fact", importance=0.5, scope="private", group_id=""):
+    async def remember(self, uid, content, kind="fact", importance=0.5, scope="private", group_id="", subject="user"):
         provider = self.refresh()
         text = _clean(content, 500)
         if provider is None or CAP_REMEMBER not in provider.caps or not text:
             return {"ok": False, "reason": "no_provider"}
         try:
-            return await provider.remember(uid, text, kind, importance, scope, group_id) or {"ok": False}
+            return await provider.remember(
+                uid, text, kind, importance, scope, group_id, subject=subject,
+            ) or {"ok": False}
         except Exception as exc:
             _note_swallowed("memory_hooks.MemoryHub.remember", exc)
             return {"ok": False, "reason": str(exc)}
 
-    async def recall(self, uid, query="", limit=6, scope="", group_id=""):
+    async def recall(self, uid, query="", limit=6, scope="", group_id="", platform=""):
         provider = self.refresh()
         if provider is None or CAP_RECALL not in provider.caps:
             _warn_once(
@@ -694,7 +699,11 @@ class MemoryHub:
             )
             return []
         try:
-            return await provider.recall(uid, query, limit, scope, group_id) or []
+            try:
+                # 带平台：记忆终端的日志/来源标记才知道"这次是从哪个平台问的"
+                return await provider.recall(uid, query, limit, scope, group_id, platform) or []
+            except TypeError:
+                return await provider.recall(uid, query, limit, scope, group_id) or []
         except Exception as exc:
             self.rt.logger.warning("[amo] 记忆召回失败（%s）: %s" % (type(exc).__name__, exc))
             return []

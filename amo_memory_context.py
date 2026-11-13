@@ -54,6 +54,19 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
     _MixinBase = object
 
 
+def memory_subject(item):
+    """记忆主体：优先 subject 字段；旧记忆按 bot_ 前缀 kind 兜底，默认 user。"""
+    row = item if isinstance(item, dict) else {}
+    subject = str(row.get("subject") or "").strip().lower()
+    if subject in ("user", "bot"):
+        return subject
+    kind = str(row.get("kind") or row.get("memory_type") or "")
+    content = str(row.get("content") or "")
+    if kind.startswith("bot_") or content.startswith(("[我发的照片]", "[我发的语音]")):
+        return "bot"
+    return "user"
+
+
 class RecallContextMixin(_MixinBase):
     async def _time_recall_context(self, event, uid):
         """按时间回看：他问"昨天下午/前天/上周三"时，去记忆终端取那段时间的聊天。"""
@@ -172,6 +185,9 @@ class RecallContextMixin(_MixinBase):
             if not text:
                 continue
             label = item.get("label") or item.get("platform") or "别的平台"
+            group_name = str(item.get("group_name") or "").strip()
+            if group_name:
+                label = "%s · %s" % (label, group_name)
             # 必须标出「他 / 她」：只写「· [飞书] 番茄蘑菇汤」模型分不清是谁说的，
             # 就会当成闲聊而不是「他已经回答过」。
             who = "她" if str(item.get("role") or "") == "bot" else "他"
@@ -229,7 +245,18 @@ class RecallContextMixin(_MixinBase):
                         except Exception as _amo_exc:
                             _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
                             group_id = ""
-                    memories = await hub.recall(uid, text, limit, scope, group_id)
+                    hub_platform = ""
+                    try:
+                        if event is not None:
+                            hub_platform = self._platform_of(event)
+                    except Exception as _amo_exc:
+                        _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
+                        hub_platform = ""
+                    try:
+                        memories = await hub.recall(uid, text, limit, scope, group_id, hub_platform)
+                    except TypeError:
+                        # 旧版 hub 的 recall 没有 platform 参数
+                        memories = await hub.recall(uid, text, limit, scope, group_id)
             except Exception as exc:
                 logger.debug("[amo] 能力层召回失败: %s" % exc)
                 memories = []
@@ -254,6 +281,7 @@ class RecallContextMixin(_MixinBase):
         lines = []
         for item in memories:
             source = str(item.get("source") or "")
+            subject = memory_subject(item)
             if source == "amo_data":
                 label = "记忆"
             elif source == "companion":
@@ -263,6 +291,8 @@ class RecallContextMixin(_MixinBase):
                 label = "珍贵" if tier >= 2 else ("重要" if tier == 1 else "普通")
             who = str(item.get("name") or "").strip()
             prefix = (who + "：") if (who and source in ("hub", "amo_data")) else ""
+            if subject == "bot":
+                prefix = "[bot] "
             # 老记忆里常有"今天/昨晚/刚才"这种相对说法：注入时补一个记录日期，
             # 免得她把 11-04 的事当成"昨晚"（用户反馈过一次）。
             body = str(item.get("content", ""))
@@ -281,10 +311,20 @@ class RecallContextMixin(_MixinBase):
                         body = "（记于 %s）%s" % (day.strftime("%m-%d"), body)
                 except Exception as _amo_exc:
                     _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
-            # 记忆都是“关于他”的：没名字的统一补「他：」，避免模型把「脸疼」当成自己的感受
-            if not prefix and not body.startswith(("他", "她", "用户")):
+            # 用户记忆默认补「他：」；bot 自己的记忆用 [bot]，不能标成用户。
+            if subject == "user" and not prefix and not body.startswith(("他", "她", "用户")):
                 prefix = "他："
-            lines.append("· " + prefix + body + "（" + label + "）")
+            # 记忆带来源平台时标出来：别把飞书说过的话当成 QQ 刚说的
+            src = str(item.get("platform") or "").strip()
+            src_label = ""
+            if src:
+                try:
+                    src_label = str(self._platform_label(src) or src)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
+                    src_label = src
+            lines.append("· " + prefix + body + "（" + label
+                         + (" · 来源:" + src_label if src_label else "") + "）")
         if lines:
             lines.append("（记忆里出现的『今天/昨晚/刚才』是当时记下的说法，不是现在；对不上就以他刚说的为准。）")
         text = "\n".join(lines)

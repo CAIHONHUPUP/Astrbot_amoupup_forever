@@ -2,6 +2,19 @@
 """ApiMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
+try:
+    from .amo_route_table import build_routes
+    from .amo_api_diary import DiaryApiMixin
+    from .amo_api_schedule import ScheduleApiMixin
+    from .amo_api_wardrobe import WardrobeApiMixin
+    from .amo_api_photo import PhotoApiMixin
+except ImportError:  # 直接按文件加载时
+    from amo_route_table import build_routes
+    from amo_api_diary import DiaryApiMixin
+    from amo_api_schedule import ScheduleApiMixin
+    from amo_api_wardrobe import WardrobeApiMixin
+    from amo_api_photo import PhotoApiMixin
+
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -74,7 +87,7 @@ except ImportError:  # 直接按文件加载时
             return []
 
 
-class ApiMixin(_MixinBase):
+class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin, _MixinBase):
     def _register_web_apis(self):
         prefixes = uniq([
             getattr(self, "name", None),
@@ -116,98 +129,36 @@ class ApiMixin(_MixinBase):
                 ]
         except Exception as exc:
             logger.warning("[amo] 清理旧 Web API 路由失败（插件重载后如遇 closed database，请完整重启）: %s" % exc)
-        routes = [
-            ("/status", self.api_status, ["GET"]),
-            ("/get_status", self.api_get_status, ["GET"]),
-            ("/diary/tree", self.api_diary_tree, ["GET", "POST"]),
-            ("/diary/read", self.api_diary_read, ["GET", "POST"]),
-            ("/diary/write", self.api_diary_write, ["POST"]),
-            ("/diary/open", self.api_diary_open, ["GET", "POST"]),
-            ("/diary/import", self.api_diary_import, ["POST"]),
-            ("/profiles", self.api_profiles, ["GET", "POST"]),
-            ("/get_profile", self.api_get_profile, ["GET", "POST"]),
-            ("/profiles/sync", self.api_profiles_sync, ["GET", "POST"]),
-            ("/relations", self.api_relations, ["GET", "POST"]),
-            ("/relation/save", self.api_relation_save, ["GET", "POST"]),
-            ("/relation_save", self.api_relation_save, ["GET", "POST"]),
-            ("/relation/delete", self.api_relation_delete, ["GET", "POST"]),
-            ("/relation_delete", self.api_relation_delete, ["GET", "POST"]),
-            ("/memory/candidates", self.api_memory_candidates, ["GET"]),
-            ("/memory_candidates", self.api_memory_candidates, ["GET"]),
-            ("/profiles_sync", self.api_profiles_sync, ["GET", "POST"]),
-            ("/config", self.api_config, ["GET"]),
-            ("/weather/brief", self.api_weather_brief, ["GET", "POST"]),
-            ("/city/search", self.api_city_search, ["GET", "POST"]),
-            ("/city/set", self.api_city_set, ["GET", "POST"]),
-            ("/usage", self.api_usage, ["GET"]),
-            ("/providers", self.api_providers, ["GET"]),
-            ("/providers_list", self.api_providers, ["GET"]),
-            ("/balance", self.api_balance, ["GET"]),
-            ("/config/save", self.api_config_save, ["GET", "POST"]),
-            ("/config_save", self.api_config_save, ["GET", "POST"]),
-            ("/profile/save", self.api_profile_save, ["GET", "POST"]),
-            ("/profile/links", self.api_profile_links, ["GET", "POST"]),
-            ("/profile_save", self.api_profile_save, ["GET", "POST"]),
-            ("/profile/delete", self.api_profile_delete, ["GET", "POST"]),
-            ("/profile_delete", self.api_profile_delete, ["GET", "POST"]),
-            ("/memories", self.api_memories, ["GET", "POST"]),
-            ("/chat/history", self.api_chat_history, ["GET", "POST"]),
-            ("/chat_history", self.api_chat_history, ["GET", "POST"]),
-            ("/memory/add", self.api_memory_add, ["GET", "POST"]),
-            ("/memory_add", self.api_memory_add, ["GET", "POST"]),
-            ("/memory/delete", self.api_memory_delete, ["GET", "POST"]),
-            ("/memory_delete", self.api_memory_delete, ["GET", "POST"]),
-            ("/schedule", self.api_schedule, ["GET", "POST"]),
-            ("/schedule/detail", self.api_schedule_detail, ["GET", "POST"]),
-            ("/schedule_detail", self.api_schedule_detail, ["GET", "POST"]),
-            ("/mood/update", self.api_mood_update, ["GET", "POST"]),
-            ("/mood_update", self.api_mood_update, ["GET", "POST"]),
-            ("/schedule/regen", self.api_schedule_regen, ["GET", "POST"]),
-            ("/kb/regen", self.api_kb_regen, ["GET", "POST"]),
-            ("/scenic_kb/regen", self.api_scenic_kb_regen, ["GET", "POST"]),
-            ("/scenic_kb_regen", self.api_scenic_kb_regen, ["GET", "POST"]),
-            ("/kb_regen", self.api_kb_regen, ["GET", "POST"]),
-            ("/schedule_regen", self.api_schedule_regen, ["GET", "POST"]),
-            ("/weather", self.api_weather, ["GET"]),
-            ("/gift", self.api_gift, ["GET"]),
-            ("/gift/list", self.api_gift, ["GET"]),
-            ("/wardrobe", self.api_wardrobe, ["GET", "POST"]),
-            ("/wardrobe/add", self.api_wardrobe_add, ["GET", "POST"]),
-            ("/wardrobe/delete", self.api_wardrobe_delete, ["GET", "POST"]),
-            ("/wardrobe/reroll", self.api_wardrobe_reroll, ["GET", "POST"]),
-            ("/wardrobe/today", self.api_wardrobe_today, ["GET", "POST"]),
-            ("/wardrobe/night", self.api_wardrobe_night, ["GET", "POST"]),
-            ("/wardrobe/refs", self.api_wardrobe_refs, ["GET", "POST"]),
-            ("/wardrobe/refs/status", self.api_wardrobe_refs_status, ["GET", "POST"]),
-            ("/poses", self.api_poses, ["GET", "POST"]),
-            ("/poses/save", self.api_poses_save, ["GET", "POST"]),
-            ("/poses/refs", self.api_poses_refs, ["GET", "POST"]),
-            ("/poses/refs/status", self.api_poses_refs_status, ["GET", "POST"]),
-            ("/photo/test", self.api_photo_test, ["GET", "POST"]),
-            ("/photo/prompt", self.api_photo_prompt, ["GET", "POST"]),
-            ("/photo/prompt_saved", self.api_photo_prompt_saved, ["GET", "POST"]),
-            ("/photo/sheet", self.api_photo_sheet, ["GET", "POST"]),
-            ("/photo/job", self.api_photo_job, ["GET", "POST"]),
-            ("/photo/persona", self.api_photo_persona, ["GET", "POST"]),
-            ("/photo/persona/delete", self.api_photo_persona_delete, ["GET", "POST"]),
-            ("/photo/persona/toggle", self.api_photo_persona_toggle, ["GET", "POST"]),
-            ("/photo/template_dir", self.api_photo_template_dir, ["GET", "POST"]),
-            ("/photo/template_open", self.api_photo_template_open, ["GET", "POST"]),
-            ("/draw/status", self.api_draw_status, ["GET"]),
-            ("/draw/decide", self.api_draw_decide, ["GET", "POST"]),
-            ("/draw/test", self.api_draw_test, ["GET", "POST"]),
-            ("/worldview", self.api_worldview, ["GET"]),
-            ("/worldview/regen", self.api_worldview_regen, ["GET", "POST"]),
-            ("/worldview_regen", self.api_worldview_regen, ["GET", "POST"]),
-            ("/say", self.api_say, ["GET", "POST"]),
-            ("/refresh_status", self.api_refresh_status, ["GET"]),
-        ]
+        routes = build_routes(self)
+        failures = []
         for prefix in prefixes:
             clean = str(prefix).strip("/")
             if not clean:
                 continue
             for path, handler, methods in routes:
-                self._safe_register("/" + clean + path, handler, methods, path)
+                full = "/" + clean + path
+                if not self._safe_register(full, handler, methods, path):
+                    failures.append((full, handler, methods, path))
+        self._web_route_failures = failures
+        if failures:
+            logger.warning("[WEB_REG] failed=%d/%d pending_retry=1",
+                           len(failures), len(failures) + (len(prefixes) * len(routes)))
+
+    def _retry_web_api_routes(self):
+        """只重试失败的路由；成功注册过的路由不重复注册。"""
+        failures = list(getattr(self, "_web_route_failures", None) or [])
+        if not failures:
+            return 0
+        remaining = []
+        fixed = 0
+        for full, handler, methods, desc in failures:
+            if self._safe_register(full, handler, methods, desc):
+                fixed += 1
+            else:
+                remaining.append((full, handler, methods, desc))
+        self._web_route_failures = remaining
+        logger.warning("[WEB_REG] retry fixed=%d remaining=%d", fixed, len(remaining))
+        return fixed
 
     def _web_guard(self, handler, is_write=False):
         """写操作的前置检查：只收 POST + 拒绝跨站来源。
@@ -258,7 +209,7 @@ class ApiMixin(_MixinBase):
                             logger.warning("[amo] 拒绝来源不一致的 Web 写操作: %s -> %s" % (origin, host))
                             return {"code": 403, "msg": "拒绝来源不一致的请求"}
             except Exception as exc:
-                logger.debug("[amo] Web 守卫检查失败（放行）: %s" % exc)
+                logger.warning("[WEB_GUARD] check_failed=1 fail_open=1 error=%s", exc)
             return await handler(*args, **kwargs)
         return wrapper
 
@@ -656,75 +607,6 @@ class ApiMixin(_MixinBase):
         await self._data_call("delete_relation", self._data_bot_id(), a_uid, b_uid)
         return await self.api_relations()
 
-    async def api_diary_import(self):
-        await self._ensure_ready()
-        payload = await self._body()
-        path = str((payload or {}).get("path") or "").strip()
-        if not path:
-            return {"code": 1, "msg": "缺少文件夹路径"}
-        if len(path.rstrip("\\/")) <= 2:
-            return {"code": 1, "msg": "别整盘导入，请选具体文件夹"}
-        if not callable(_diary_import_folder):
-            return {"code": 1, "msg": "日记模块未加载"}
-        # 递归遍历 + 复制是同步阻塞的，放线程里，别把 AstrBot 事件循环卡住
-        result = await asyncio.to_thread(_diary_import_folder, path, self._diary_dir())
-        if not result.get("ok"):
-            return {"code": 1, "msg": result.get("error") or "导入失败"}
-        return {"code": 0, "data": result}
-
-    async def api_diary_tree(self):
-        await self._ensure_ready()
-        if not callable(_diary_tree):
-            return {"code": 1, "msg": "日记模块未加载"}
-        return {"code": 0, "data": await asyncio.to_thread(_diary_tree, self._diary_dir())}
-
-    async def api_diary_read(self):
-        await self._ensure_ready()
-        payload = await self._body()
-        day = _diary_parse_day((payload or {}).get("date"))
-        if not day:
-            return {"code": 1, "msg": "日期格式应为 YYYY-MM-DD"}
-        text = _diary_read(self._diary_dir(), day) if callable(_diary_read) else ""
-        return {"code": 0, "data": {"date": day.isoformat(), "text": text}}
-
-    async def api_diary_write(self):
-        await self._ensure_ready()
-        payload = await self._body()
-        day = _diary_parse_day((payload or {}).get("date"))
-        day, error = diary_manual_target(_now(), day)
-        if error:
-            return {"code": 1, "msg": error}
-        text = await self._generate_daily_diary(day)
-        if not text:
-            return {"code": 1, "msg": "日记生成失败（没有素材或模型没返回）"}
-        try:
-            path = _diary_write(self._diary_dir(), day, text)
-        except Exception as exc:
-            _note_swallowed("amo_api.ApiMixin.api_diary_write", exc)
-            return {"code": 1, "msg": "写入失败: %s" % exc}
-        try:
-            self.db.kv_set("diary_written:" + day.isoformat(), path)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_api.ApiMixin.api_diary_write", _amo_exc)
-        logger.info("[amo] 日记已写（手动）: %s" % path)
-        return {"code": 0, "data": {"date": day.isoformat(), "path": path, "text": text}}
-
-    async def api_diary_open(self):
-        await self._ensure_ready()
-        root = self._diary_dir()
-        try:
-            os.makedirs(root, exist_ok=True)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_api.ApiMixin.api_diary_open", _amo_exc)
-        opened = False
-        try:
-            if os.name == "nt" and os.path.isdir(root):
-                os.startfile(root)
-                opened = True
-        except Exception as exc:
-            logger.debug("[amo] 打开日记文件夹失败: %s" % exc)
-        return {"code": 0, "data": {"root": root, "opened": opened}}
-
     async def api_dispatch(self, action: str = ""):
         await self._ensure_ready()
         name = (action or "").replace("/", "_").strip("_").lower()
@@ -926,58 +808,6 @@ class ApiMixin(_MixinBase):
             "msg": "记忆由记忆终端保存，请到「我能永远记住你」面板里删除",
         }
 
-    async def api_mood_update(self):
-        await self._ensure_ready()
-        data = await self._body()
-        incoming = data.get("mood") if isinstance(data.get("mood"), dict) else data
-        for key in MOOD_KEYS:
-            if key in incoming:
-                try:
-                    self.state.mood[key] = clamp(float(incoming[key]), 0.0, 100.0)
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_api.ApiMixin.api_mood_update", _amo_exc)
-                    continue
-        self.state.save()
-        return {"code": 0, "data": self.state.snapshot()}
-
-    async def api_schedule(self):
-        await self._ensure_ready()
-        data = await self._body()
-        day = str(data.get("date") or self._q("date", "") or today_str())
-        if day == today_str():
-            items = await self.state.ensure_schedule(self._last_umo)
-        else:
-            items = self.state._hourly_schedule(self.db.get_schedule(day) or [])
-        return {"code": 0, "data": {"day": day, "meta": day_meta(day), "items": items, "tree": self.state.schedule_tree(day), "current": self.state.current_activity(), "context": self.state.schedule_context(day)}}
-
-    async def api_schedule_detail(self):
-        await self._ensure_ready()
-        data = await self._body()
-        day = str(data.get("date") or "").strip() or today_str()
-        start_raw = str(data.get("start") or "").strip()
-        matched = re.match(r"^(\d{1,2})(?::(\d{2}))?$", start_raw)
-        if not matched:
-            return {"code": 1, "msg": "start 需要 HH:MM，例如 10:00"}
-        hour = max(0, min(23, int(matched.group(1))))
-        start = "%02d:00" % hour
-        if day == today_str():
-            items = await self.state.ensure_schedule(self._last_umo)
-        else:
-            items = self.state._hourly_schedule(self.db.get_schedule(day) or [])
-        item = None
-        for entry in items:
-            if str(entry.get("start") or "") == start:
-                item = entry
-                break
-        if item is None:
-            return {"code": 1, "msg": "没有找到这一小时的日程：" + start}
-        force_raw = data.get("force", "")
-        force = str(force_raw).lower() in ("1", "true", "yes", "on")
-        result = await self.state.expand_hour(day, item, items, force=force)
-        payload = {"day": day, "start": item.get("start", start), "end": item.get("end", "")}
-        payload.update(result)
-        return {"code": 0, "data": payload}
-
     async def api_scenic_kb_regen(self):
         await self._ensure_ready()
         kb = await self._ensure_scenic_kb()
@@ -1024,537 +854,6 @@ class ApiMixin(_MixinBase):
         except Exception as exc:
             logger.debug("[amo] 礼物面板数据失败: %s" % exc)
             return {"code": 0, "data": {"enabled": False, "wishes": [], "gifts": []}}
-
-    async def api_wardrobe(self):
-        """面板「穿搭」页：三分类 + 今日锁定的一套。"""
-        await self._ensure_ready()
-        wardrobe = getattr(self, "wardrobe", None)
-        empty = {"enabled": False, "categories": [], "today": {}, "outfit_count": 0}
-        if wardrobe is None:
-            return {"code": 0, "data": empty}
-        try:
-            data = wardrobe.snapshot()
-        except Exception as exc:
-            logger.debug("[amo] 穿搭面板数据失败: %s" % exc)
-            return {"code": 0, "data": empty}
-        data["enabled"] = True
-        return {"code": 0, "data": data}
-
-    async def api_wardrobe_add(self):
-        """面板手动加一件：category=top/bottom/shoes，name=衣服名。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        wardrobe = getattr(self, "wardrobe", None)
-        if wardrobe is None:
-            return {"code": 1, "msg": "穿搭衣柜没加载（看日志有没有 wardrobe 初始化失败）"}
-        result = wardrobe.add_item(
-            data.get("category", ""),
-            data.get("name", ""),
-            sleep=bool(data.get("sleep")),
-            hotel=bool(data.get("hotel")),
-            swim=bool(data.get("swim")),
-        )
-        if not result.get("ok"):
-            return {"code": 1, "msg": result.get("msg") or "添加失败"}
-        name = str(data.get("name") or "").strip()
-        if name and not result.get("dup"):
-            try:
-                from .outfit_refs import ensure_ref
-                asyncio.create_task(ensure_ref(self, name))
-            except Exception as exc:
-                logger.debug("[amo] 服装参考图任务创建失败: %s" % exc)
-        return {
-            "code": 0,
-            "msg": "已添加" + ("（已有的同款）" if result.get("dup") else ""),
-            "data": {"item": result.get("item"), "combos": result.get("combos", 0)},
-        }
-
-    async def api_wardrobe_refs(self):
-        """逐件生成参考图：已有跳过，只补没有的；生成一张确认后再下一张。"""
-        await self._ensure_ready()
-        wardrobe = getattr(self, "wardrobe", None)
-        if wardrobe is None:
-            return {"code": 1, "msg": "穿搭衣柜没加载"}
-        from .outfit_refs import batch_items, ensure_batch, pending_items, batch_status
-        status = batch_status()
-        if status.get("running"):
-            return {"code": 0,
-                    "msg": "正在生成 %d/%d：%s" % (status.get("done", 0),
-                                                status.get("total", 0),
-                                                status.get("current", "")),
-                    "data": status}
-        items = batch_items(wardrobe)
-        if not items:
-            return {"code": 1, "msg": "衣柜里还没有衣服"}
-        pending = pending_items(self, items)
-        if not pending:
-            return {"code": 0,
-                    "msg": "全部衣服都有参考图了（%d 件），没有要补的" % len(items),
-                    "data": {"running": False, "total": len(items), "done": len(items)}}
-        asyncio.create_task(ensure_batch(self, pending))
-        return {"code": 0,
-                "msg": "已生成 %d 件，开始补剩下的 %d 件" % (len(items) - len(pending), len(pending)),
-                "data": {"running": True, "total": len(pending), "done": 0}}
-
-    async def api_wardrobe_refs_status(self):
-        await self._ensure_ready()
-        from .outfit_refs import batch_status
-        status = batch_status()
-        return {"code": 0, "data": status,
-                "msg": ("生成中 %d/%d：%s" % (status.get("done", 0), status.get("total", 0),
-                                            status.get("current", ""))
-                        if status.get("running") else "空闲")}
-
-    async def api_wardrobe_delete(self):
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        wardrobe = getattr(self, "wardrobe", None)
-        if wardrobe is None:
-            return {"code": 1, "msg": "穿搭衣柜没加载"}
-        result = wardrobe.delete_item(data.get("id", ""))
-        if not result.get("ok"):
-            return {"code": 1, "msg": result.get("msg") or "删除失败"}
-        return {"code": 0, "msg": "已删除", "data": result}
-
-    async def api_wardrobe_reroll(self):
-        """换一套：重掷今天的锁定穿搭。"""
-        await self._ensure_ready()
-        wardrobe = getattr(self, "wardrobe", None)
-        if wardrobe is None:
-            return {"code": 1, "msg": "穿搭衣柜没加载"}
-        try:
-            wardrobe.reroll()
-            return {"code": 0, "msg": "换好了", "data": wardrobe.snapshot()}
-        except Exception as exc:
-            logger.debug("[amo] 换穿搭失败: %s" % exc)
-            return {"code": 1, "msg": "换穿搭失败：" + str(exc)}
-
-    async def api_wardrobe_today(self):
-        """保存今日穿搭：面板选好上衣/裤子/鞋子后点保存。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        wardrobe = getattr(self, "wardrobe", None)
-        if wardrobe is None:
-            return {"code": 1, "msg": "穿搭衣柜没加载"}
-        if bool(data.get("swim")):
-            # 泳衣模式：只保存上衣（泳衣）+ 裤子（泳裤），没有鞋
-            result = wardrobe.set_swim(
-                top=str(data.get("top") or ""),
-                bottom=str(data.get("bottom") or ""),
-            )
-            if not result.get("ok"):
-                return {"code": 1, "msg": result.get("msg") or "保存失败"}
-            return {"code": 0, "msg": "泳装已保存", "data": wardrobe.snapshot()}
-        try:
-            result = wardrobe.set_today(
-                coat=data.get("coat", ""),
-                top=data.get("top", ""),
-                bottom=data.get("bottom", ""),
-                skirt=data.get("skirt", ""),
-                shoes=data.get("shoes", ""),
-            )
-        except Exception as exc:
-            logger.debug("[amo] 保存今日穿搭失败: %s" % exc)
-            return {"code": 1, "msg": "保存失败：" + str(exc)}
-        if not result.get("ok"):
-            return {"code": 1, "msg": result.get("msg") or "保存失败"}
-        return {"code": 0, "msg": "今日穿搭已保存", "data": wardrobe.snapshot()}
-
-    async def api_wardrobe_night(self):
-        """晚上穿搭（睡衣）：换一套 / 锁定今晚这套。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        wardrobe = getattr(self, "wardrobe", None)
-        if wardrobe is None:
-            return {"code": 1, "msg": "穿搭衣柜没加载"}
-        reroll = bool(data.get("reroll"))
-        try:
-            wardrobe.set_night(
-                outfit_id=str(data.get("outfit") or ""),
-                reroll=reroll,
-                top=str(data.get("top") or ""),
-                bottom=str(data.get("bottom") or ""),
-                shoes=str(data.get("shoes") or ""),
-            )
-            return {
-                "code": 0,
-                "msg": "换好睡衣了" if reroll else "今晚睡衣已锁定",
-                "data": wardrobe.snapshot(),
-            }
-        except Exception as exc:
-            logger.debug("[amo] 设置睡衣失败: %s" % exc)
-            return {"code": 1, "msg": "设置睡衣失败：" + str(exc)}
-
-    # ---------- 自拍姿势库 ----------
-
-    async def api_poses(self):
-        """面板「姿势库」：列出姿势 + 有没有参考图。"""
-        await self._ensure_ready()
-        library = getattr(self, "pose", None)
-        if library is None:
-            return {"code": 1, "msg": "姿势库没加载（看日志）"}
-        return {"code": 0, "data": library.snapshot()}
-
-    async def api_poses_save(self):
-        """保存姿势库：整份替换（面板点「保存」时调用）。"""
-        await self._ensure_ready()
-        library = getattr(self, "pose", None)
-        if library is None:
-            return {"code": 1, "msg": "姿势库没加载（看日志）"}
-        payload = await self._body()
-        items = payload.get("poses") if isinstance(payload, dict) else None
-        if items is None:
-            items = payload if isinstance(payload, list) else []
-        result = library.save_all(items)
-        if not result.get("ok"):
-            return {"code": 1, "msg": result.get("msg") or "保存失败"}
-        return {"code": 0, "msg": result.get("msg") or "已保存", "data": library.snapshot()}
-
-    async def api_poses_refs(self):
-        """逐张生成姿势参考图：已有跳过，只补没有的。"""
-        await self._ensure_ready()
-        library = getattr(self, "pose", None)
-        if library is None:
-            return {"code": 1, "msg": "姿势库没加载（看日志）"}
-        status = pose_batch_status()
-        if status.get("running"):
-            return {"code": 0,
-                    "msg": "正在生成 %d/%d：%s" % (status.get("done", 0), status.get("total", 0),
-                                                status.get("current", "")),
-                    "data": status}
-        poses = library.poses()
-        if not poses:
-            return {"code": 1, "msg": "姿势库里还没有姿势"}
-        pending = pose_pending(library)
-        if not pending:
-            return {"code": 0,
-                    "msg": "全部姿势都有参考图了（%d 个），没有要补的" % len(poses),
-                    "data": {"running": False, "total": len(poses), "done": len(poses)}}
-        asyncio.create_task(pose_ensure_batch(self, pending))
-        return {"code": 0,
-                "msg": "开始补 %d 个姿势的参考图" % len(pending),
-                "data": {"running": True, "total": len(pending), "done": 0}}
-
-    async def api_poses_refs_status(self):
-        await self._ensure_ready()
-        status = pose_batch_status()
-        return {"code": 0, "data": status,
-                "msg": ("生成中 %d/%d：%s" % (status.get("done", 0), status.get("total", 0),
-                                            status.get("current", ""))
-                        if status.get("running") else "空闲")}
-
-    def _photo_job_start(self, kind, coro):
-        """后台跑生图任务，接口立刻返回 job id，避免桥接请求超时。"""
-        jobs = getattr(self, "_photo_jobs", None)
-        if jobs is None:
-            jobs = {}
-            self._photo_jobs = jobs
-        cutoff = now_ts() - 900
-        for key in [key for key, value in jobs.items() if float(value.get("ts") or 0) < cutoff]:
-            jobs.pop(key, None)
-        job_id = uuid.uuid4().hex[:12]
-        jobs[job_id] = {"status": "running", "kind": kind, "ts": now_ts(), "data": None, "msg": ""}
-
-        async def runner():
-            try:
-                result = await coro
-                jobs[job_id].update(status="done", data=result)
-            except Exception as exc:
-                logger.warning("[amo] 照片任务失败(%s): %s" % (kind, exc))
-                jobs[job_id].update(status="error", msg=str(exc))
-
-        try:
-            asyncio.create_task(runner())
-        except RuntimeError:
-            try:
-                coro.close()
-            except Exception:
-                pass
-            jobs[job_id].update(status="error", msg="事件循环不可用")
-        return job_id
-
-    async def api_photo_job(self):
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        job_id = str(data.get("id") or "")
-        job = (getattr(self, "_photo_jobs", {}) or {}).get(job_id)
-        if not job:
-            return {"code": 1, "msg": "任务不存在（插件可能重载过，重新生成一次）"}
-        return {"code": 0, "data": {
-            "id": job_id,
-            "status": job.get("status"),
-            "kind": job.get("kind"),
-            "msg": job.get("msg") or "",
-            "data": job.get("data"),
-        }}
-
-    async def api_photo_prompt(self):
-        """面板「按提示词生成」：用角色模板画一张，发到最近会话。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        prompt = str(data.get("prompt") or "").strip()
-        send = bool(data.get("send", False))
-        if not prompt:
-            return {"code": 1, "msg": "提示词不能为空"}
-        engine = getattr(self, "photo", None)
-        if engine is None:
-            return {"code": 1, "msg": "照片引擎未加载"}
-
-        async def build():
-            item = await engine.generate_prompt(prompt, send=send)
-            if not item:
-                raise RuntimeError("没出图，看日志（[amo] 自定义生图）")
-            url = (item.get("url") or item.get("image_url") or item.get("data_url")
-                   or item.get("file_path") or "")
-            return {"url": url, "preview": engine.preview_data_url(item),
-                    "msg": "已生成并发到聊天" if send else "已生成"}
-
-        return {"code": 0, "data": {"job": self._photo_job_start("prompt", build())}}
-
-    async def api_photo_prompt_saved(self):
-        """保存/读取「按提示词生成」输入框里上一次写的提示词。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        if "text" in data:
-            try:
-                self.db.kv_set("photo_prompt_saved", str(data.get("text") or ""))
-            except Exception as exc:
-                return {"code": 1, "msg": "保存失败：%s" % exc}
-        try:
-            text = str(self.db.kv_get("photo_prompt_saved", "") or "")
-        except Exception:
-            text = ""
-        return {"code": 0, "data": {"text": text}}
-
-    async def api_photo_sheet(self):
-        """角色三视图：front / side / full。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        view = str(data.get("view") or "front").strip().lower()
-        engine = getattr(self, "photo", None)
-        if engine is None:
-            return {"code": 1, "msg": "照片引擎未加载"}
-
-        async def build():
-            item = await engine.persona_sheet(view)
-            if not item:
-                raise RuntimeError("没出图，看日志")
-            engine.set_candidate(view, item)
-            url = (item.get("url") or item.get("image_url") or item.get("data_url")
-                   or item.get("file_path") or "")
-            return {"url": url, "preview": engine.preview_data_url(item),
-                    "view": view, "msg": "已生成 " + view}
-
-        return {"code": 0, "data": {"job": self._photo_job_start("sheet", build())}}
-
-    async def api_photo_persona(self):
-        """把选中的三视图设为角色模板。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        url = str(data.get("url") or "").strip()
-        view = str(data.get("view") or "front").strip().lower()
-        engine = getattr(self, "photo", None)
-        if engine is None:
-            return {"code": 1, "msg": "照片引擎未加载"}
-        # 优先用本地候选文件，避免远端 URL 过期后保存失败
-        candidate = engine.candidate(view)
-        local = str(candidate.get("file") or "")
-        if local and os.path.exists(local):
-            url = local
-        if not url:
-            return {"code": 1, "msg": "缺少图片地址"}
-        message = await engine.adopt_persona(url, view)
-        if message.startswith("✅"):
-            engine.clear_candidate(view)
-        return {"code": 0 if message.startswith("✅") else 1, "msg": message}
-
-    async def api_photo_persona_delete(self):
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        view = str(data.get("view") or "").strip().lower()
-        engine = getattr(self, "photo", None)
-        if engine is None:
-            return {"code": 1, "msg": "照片引擎未加载"}
-        try:
-            message = await engine.delete_persona(view)
-        except Exception as exc:
-            return {"code": 1, "msg": "删除失败：%s" % exc}
-        return {"code": 0 if message.startswith("✅") else 1, "msg": message}
-
-    async def api_photo_persona_toggle(self):
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        view = str(data.get("view") or "").strip().lower()
-        enabled = bool(data.get("enabled", True))
-        engine = getattr(self, "photo", None)
-        if engine is None:
-            return {"code": 1, "msg": "照片引擎未加载"}
-        message = engine.set_template_enabled(view, enabled)
-        return {"code": 0 if message.startswith("✅") else 1, "msg": message}
-
-    async def api_photo_template_dir(self):
-        """角色模板保存位置：GET 读取，POST 修改。"""
-        await self._ensure_ready()
-        engine = getattr(self, "photo", None)
-        if engine is None:
-            return {"code": 1, "msg": "照片引擎未加载"}
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        if "dir" in data:
-            folder = str(data.get("dir") or "").strip()
-            try:
-                self.config["photo_template_dir"] = folder
-                if hasattr(self.config, "save_config"):
-                    self.config.save_config()
-            except Exception as exc:
-                return {"code": 1, "msg": "保存失败：%s" % exc}
-        info = engine.template_info()
-        info["configured"] = self.cfg_str("photo_template_dir", "")
-        info["msg"] = "已保存" if "dir" in data else ""
-        return {"code": 0, "data": info}
-
-    async def api_photo_template_open(self):
-        await self._ensure_ready()
-        engine = getattr(self, "photo", None)
-        if engine is None:
-            return {"code": 1, "msg": "照片引擎未加载"}
-        root = engine.template_info().get("root", "")
-        opened = False
-        try:
-            if os.name == "nt" and os.path.isdir(root):
-                os.startfile(root)
-                opened = True
-        except Exception as exc:
-            logger.debug("[amo] 打开模板文件夹失败: %s" % exc)
-        return {"code": 0, "data": {"root": root, "opened": opened}}
-
-    async def api_photo_test(self):
-        """面板「现在发一张」：无视概率，按类别立刻分享一张照片。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        kind = str(data.get("category") or "daily").strip().lower() or "daily"
-        target_umo = str(data.get("umo") or "").strip()
-        engine = getattr(self, "photo", None)
-        if engine is None:
-            return {"code": 1, "msg": "照片引擎未加载"}
-
-        async def build():
-            message = await engine.share_now(kind, umo=target_umo)
-            return {"msg": message}
-
-        return {"code": 0, "data": {"job": self._photo_job_start("test", build())}}
-
-    async def api_draw_status(self):
-        await self._ensure_ready()
-        engine = getattr(self, "draw", None)
-        if engine is None:
-            return {"code": 1, "msg": "画图引擎未加载"}
-        try:
-            return {"code": 0, "msg": engine.diagnostics()}
-        except Exception as exc:
-            return {"code": 1, "msg": "画图自检失败：%s" % exc}
-
-    async def api_draw_decide(self):
-        """调试：给一段用户消息和她的回复，看会不会触发、提示词是什么。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        text = str(data.get("text") or "")
-        reply = str(data.get("reply") or "")
-        uid = str(data.get("uid") or "302578963")
-        engine = getattr(self, "draw", None)
-        if engine is None:
-            return {"code": 1, "msg": "画图引擎未加载"}
-
-        class _FakeEvent:
-            def __init__(self, message, sender):
-                self.message_str = message
-                self.unified_msg_origin = "debug:private:%s" % sender
-                self._sender = sender
-
-            def is_private_chat(self):
-                return True
-
-            def get_sender_id(self):
-                return self._sender
-
-            def is_admin(self):
-                return False
-
-        try:
-            plan = engine.decide(_FakeEvent(text, uid), reply)
-        except Exception as exc:
-            return {"code": 1, "msg": "decide 异常：%s" % exc}
-        safe = None
-        if isinstance(plan, dict):
-            safe = {k: v for k, v in plan.items() if k != "cached"}
-            safe["cached"] = bool(plan.get("cached"))
-        return {"code": 0, "data": {"plan": safe}}
-
-    async def api_draw_test(self):
-        """调试：按当前场景真画一张并发到最近会话（会花钱，仅测试用）。"""
-        await self._ensure_ready()
-        data = await self._body()
-        data = data if isinstance(data, dict) else {}
-        text = str(data.get("text") or "拍照给我看看")
-        reply = str(data.get("reply") or "在呀")
-        umo = str(data.get("umo") or self._last_umo or "")
-        if not umo:
-            try:
-                for profile in self.db.proactive_profiles(limit=5) or []:
-                    candidate = self._pick_proactive_umo(profile)
-                    if candidate:
-                        umo = str(candidate)
-                        break
-            except Exception as exc:
-                logger.debug("[amo] 画图测试取会话失败: %s" % exc)
-        engine = getattr(self, "draw", None)
-        if engine is None:
-            return {"code": 1, "msg": "画图引擎未加载"}
-        if not umo:
-            return {"code": 1, "msg": "没有可发送的会话"}
-        plugin = self
-
-        class _FakeEvent:
-            def __init__(self):
-                self.message_str = text
-                self.unified_msg_origin = umo
-
-            def is_private_chat(self):
-                return True
-
-            def get_sender_id(self):
-                return "302578963"
-
-            def is_admin(self):
-                return False
-
-            async def send(self, chain):
-                await plugin.context.send_message(umo, chain)
-
-        plan = engine.decide(_FakeEvent(), reply)
-        if not plan:
-            return {"code": 0, "msg": "没有触发（看 draw_debug 日志）", "data": {"plan": None}}
-        engine._schedule(_FakeEvent(), plan["prompt"], plan.get("reason", "test"),
-                         plan.get("cached"), plan.get("cache_key", ""), plan.get("selfie", False))
-        return {"code": 0, "msg": "已开始画：%s" % plan["prompt"], "data": {"umo": umo}}
-
-    async def api_schedule_regen(self):
-        await self._ensure_ready()
-        items = await self.state.ensure_schedule(self._last_umo, force=True)
-        return {"code": 0, "data": items}
 
     async def api_weather(self):
         await self._ensure_ready()

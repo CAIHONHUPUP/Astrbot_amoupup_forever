@@ -282,7 +282,7 @@ class WeatherTests(StateTestCase):
         for key in ("city", "text", "tag", "temp", "humidity", "wind", "ts", "source", "ok"):
             self.assertIn(key, data)
         self.assertEqual(data["source"], "simulate")
-        self.assertEqual(data["city"], "贵阳")
+        self.assertEqual(data["city"], "")
 
     def test_simulate_uses_display_name(self) -> None:
         self.plugin.config["weather_city"] = "101281601"

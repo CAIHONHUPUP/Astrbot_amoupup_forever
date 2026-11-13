@@ -61,6 +61,18 @@ except ImportError:  # 直接按文件加载时
         def correction_hint(activity, said):
             return ""
 
+try:  # 「发语音 / 用语音说」按需触发
+    from .amo_voice import clean_voice_text, voice_requested
+except ImportError:  # 直接按文件加载时
+    try:
+        from amo_voice import clean_voice_text, voice_requested
+    except Exception:  # pragma: no cover
+        def voice_requested(text):
+            return False
+
+        def clean_voice_text(text, limit=600):
+            return str(text or "")
+
 
 class RuntimeMixin(_MixinBase):
     @filter.event_message_type(filter.EventMessageType.ALL)
@@ -553,7 +565,7 @@ class RuntimeMixin(_MixinBase):
                 recent_text = ""
             if recent_text:
                 parts.append(
-                    "【最近对话】（包含你自己说过的）\n" + recent_text + "\n"
+                    "【最近对话】（“你”=bot，“他”=用户；包含你自己说过的）\n" + recent_text + "\n"
                     "他说“你刚才说过X/你什么时候说过”时，以这里为准；找不到也别否认，"
                     "说“可能是我说的，我记混了”，绝不能说“你自己看岔了/我没说过”。"
                 )
@@ -670,6 +682,19 @@ class RuntimeMixin(_MixinBase):
                             )
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
+
+        if is_group:
+            try:
+                members_line = self.heartflow.members.describe(umo, limit=10) if self.heartflow is not None else ""
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
+                members_line = ""
+            if members_line:
+                parts.append(
+                    "【群成员】" + members_line
+                    + "。带（机器人）的是别的机器人：不要主动跟它们搭话，它们叫你也不用理；"
+                    "群友叫的是它们时，别抢着接。"
+                )
 
         parts = self._lean_parts(parts)
         if (not is_group) and first_person_experience is not None:
@@ -852,6 +877,8 @@ class RuntimeMixin(_MixinBase):
                 _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
             text = self._trim_reply(text)
             result.chain = [Comp.Plain(text)]
+            if await self._maybe_send_voice_reply(event, text, result):
+                return
 
             # 群聊/私聊的最终发送只交给完整本地分段引擎。
             if self.segment_engine is None or not self.cfg_bool("seg_enable", True):
@@ -880,6 +907,85 @@ class RuntimeMixin(_MixinBase):
         except Exception as exc:
             logger.debug("[amo] 结果装饰失败: %s" % exc)
 
+    async def _maybe_send_voice_reply(self, event, text, result):
+        """用户这一轮明确要语音时，把最终人设文字交给 TTS 发出去。
+
+        普通回复仍走 AstrBot 的随机 TTS；只有这里命中「发语音 / 用语音说 /
+        语音回我 / 念给我听」才强制转换一次。失败只回退文字，不吞消息。
+        """
+        if not self.cfg_bool("voice_on_demand_enable", True):
+            return False
+        if not voice_requested(getattr(event, "message_str", "")):
+            return False
+        get_extra = getattr(event, "get_extra", None)
+        if callable(get_extra) and get_extra("_amo_voice_done"):
+            return False
+        umo = str(getattr(event, "unified_msg_origin", "") or "")
+        if not umo or not text.strip():
+            return False
+        getter = getattr(self.context, "get_using_tts_provider_async", None)
+        if not callable(getter):
+            logger.info("[amo] 按需语音：当前上下文不支持 TTS，回退文字")
+            return False
+        try:
+            provider = getter(umo)
+            if inspect.isawaitable(provider):
+                provider = await provider
+        except Exception as exc:
+            logger.warning("[amo] 按需语音：获取 TTS 供应商失败，回退文字: %s" % exc)
+            return False
+        if provider is None:
+            logger.info("[amo] 按需语音：这个会话没有 TTS 供应商，回退文字")
+            return False
+        max_chars = 600
+        timeout = 45
+        try:
+            cfg_int = getattr(self, "cfg_int", None)
+            if callable(cfg_int):
+                max_chars = max(60, min(2000, int(cfg_int("voice_max_chars", 600))))
+                timeout = max(5, min(120, int(cfg_int("voice_tts_timeout_seconds", 45))))
+        except Exception:
+            pass
+        voice_text = clean_voice_text(text, limit=max_chars)
+        if not voice_text:
+            logger.info("[amo] 按需语音：清理后没有可念的文字，回退文字")
+            return False
+        try:
+            audio_call = provider.get_audio(voice_text)
+            if inspect.isawaitable(audio_call):
+                audio_path = await asyncio.wait_for(audio_call, timeout=timeout)
+            else:
+                audio_path = audio_call
+        except asyncio.TimeoutError:
+            logger.warning("[amo] 按需语音：TTS 超过 %s 秒，回退文字" % timeout)
+            return False
+        except Exception as exc:
+            logger.warning("[amo] 按需语音：TTS 合成失败，回退文字: %s" % exc)
+            return False
+        if not audio_path:
+            logger.warning("[amo] 按需语音：TTS 没有返回音频，回退文字")
+            return False
+        record_cls = getattr(Comp, "Record", None)
+        if record_cls is None:
+            logger.warning("[amo] 按需语音：当前消息组件没有 Record，回退文字")
+            return False
+        try:
+            record = record_cls(file=audio_path, url=audio_path, text=voice_text)
+        except TypeError:
+            record = record_cls(file=audio_path)
+        result.chain = [record]
+        set_extra = getattr(event, "set_extra", None)
+        if callable(set_extra):
+            set_extra("_amo_voice_done", True)
+        remember = getattr(self, "_remember_bot_media", None)
+        if callable(remember):
+            try:
+                self._spawn(remember(umo, "[我发的语音] " + voice_text))
+            except Exception as exc:
+                logger.debug("[amo] 按需语音记忆写入失败: %s" % exc)
+        logger.info("[amo] 按需语音已发送: %s" % text[:40])
+        return True
+
     async def _background_loop(self):
         try:
             await asyncio.sleep(4)
@@ -899,6 +1005,7 @@ class RuntimeMixin(_MixinBase):
 
     async def _tick(self):
         if not self._ready or self.state is None:
+            logger.debug("[GATE] background skip reason=not_ready")
             return
         if self.photo is not None:
             try:
@@ -958,6 +1065,24 @@ class RuntimeMixin(_MixinBase):
             self.state.apply_schedule_events()
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._tick", _amo_exc)
+        # Web API 注册失败时每 5 分钟只重试失败的路由，不重复注册成功的。
+        if (getattr(self, "_web_route_failures", None)
+                and now_ts() - to_float(getattr(self, "_last_web_retry", 0), 0) > 300):
+            self._last_web_retry = now_ts()
+            try:
+                self._retry_web_api_routes()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin._tick.web_retry", _amo_exc)
+        # 穿搭后台 tick：8:00 生成白天、20:00 在家生成晚上；不依赖面板打开。
+        if getattr(self, "wardrobe", None) is not None:
+            try:
+                self.wardrobe.tick()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin._tick.outfit", _amo_exc)
+        # 小日记统一调度：每 30 秒最多扫一次，补已经过完但还没生成的小时。
+        if now_ts() - to_float(getattr(self, "_last_diary_sched", 0), 0) >= 30:
+            self._last_diary_sched = now_ts()
+            self._spawn(self._diary_scheduler_tick())
 
         now = now_ts()
         if now - self._last_relation_decay > 3600:

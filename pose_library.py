@@ -238,10 +238,24 @@ class PoseLibrary:
         with_ref = len([p for p in poses if p["has_ref"]])
         return {"poses": poses, "count": len(poses), "with_ref": with_ref}
 
-    def random_pose(self):
+    #: 描述里带这些词 = 床上的姿势，只能在家里用
+    BED_WORDS = ("床", "被窝", "枕", "趴坐", "跪")
+
+    def random_pose(self, zone=None):
+        """随机挑一个姿势。zone 不是家时，跳过床上的那些（地铁上跪坐会穿帮）。"""
         poses = [p for p in self.poses() if str(p.get("name") or "").strip()]
         if not poses:
             return None
+        if zone and str(zone) != "home":
+            outdoors = [
+                p for p in poses
+                if not any(w in (str(p.get("note") or "") + str(p.get("name") or ""))
+                           for w in self.BED_WORDS)
+            ]
+            if outdoors:
+                poses = outdoors
+            else:
+                return None
         return dict(random.choice(poses))
 
     # ---------- 修改 ----------

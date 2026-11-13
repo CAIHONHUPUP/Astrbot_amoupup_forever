@@ -639,6 +639,42 @@ def dialect_for_city(city: Any) -> str:
     return ""
 
 
+def city_or_empty(plugin: Any) -> str:
+    """当前城市；哪儿都没配就返回空串。
+
+    取值顺序：日程城市 → 天气城市（`weather_city` 可能是数字 LocationID，
+    这时用 `weather_city_name`）→ 世界观城市 → `""`。
+
+    以前这里兜底写死「贵阳」，新用户/没配城市的人会莫名其妙排出一整天贵阳的
+    行程（观山湖区上班之类）。现在空就是空，由日程骨架走「不写具体城市」的分支。
+    """
+    def _clean(value: Any) -> str:
+        return str(value or "").strip()
+
+    def _cfg(key: str) -> str:
+        try:
+            return _clean(plugin.cfg_str(key, ""))
+        except Exception:
+            return ""
+
+    city = _cfg("schedule_city")
+    if city:
+        return city
+    weather_city = _cfg("weather_city")
+    if weather_city and not weather_city.isdigit() and "," not in weather_city:
+        return weather_city
+    city = _cfg("weather_city_name")
+    if city:
+        return city
+    state = getattr(plugin, "state", None)
+    world = getattr(state, "worldview", None) if state is not None else None
+    if isinstance(world, dict):
+        city = _clean(world.get("city"))
+        if city and city not in ("城市", "未知", "某市"):
+            return city
+    return ""
+
+
 DIALECT_FALLBACK_ROWS = {
     "东北话": [
         ("咋整", "怎么办", "咋整啊"), ("唠嗑", "聊天", "来唠嗑"), ("得瑟", "显摆", "别得瑟"),
@@ -782,26 +818,87 @@ SOLAR_TERMS = {
 }
 
 
+#: 可编辑的节假日日历：plugin 目录下的 holiday_calendar.json。
+#: 格式：
+#:   {"2028-01-01": {"name": "元旦", "rest": true},
+#:    "2028-01-08": {"name": "调休补班", "rest": false}}
+#: 也可以是简写 {"2028-01-01": "元旦"}。文件优先于内置 CN_HOLIDAYS。
+_HOLIDAY_CALENDAR_CACHE = {"path": "", "mtime": None, "data": {}}
+
+
+def _holiday_calendar():
+    plugin_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        # 优先 plugin_data：重装/覆盖插件目录不会吃掉用户编辑的日历
+        os.path.join(os.path.dirname(os.path.dirname(plugin_dir)),
+                     "plugin_data", os.path.basename(plugin_dir), "holiday_calendar.json"),
+        os.path.join(plugin_dir, "holiday_calendar.json"),
+    ]
+    path = next((item for item in candidates if os.path.exists(item)), candidates[0])
+    cache = _HOLIDAY_CALENDAR_CACHE
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        if cache.get("path") != path or cache.get("mtime") not in (None, 0):
+            cache.update(path=path, mtime=None, data={})
+        return {}
+    if cache.get("path") == path and cache.get("mtime") == mtime:
+        return cache.get("data") or {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        data = data if isinstance(data, dict) else {}
+    except Exception as _amo_exc:
+        _note_swallowed("amo_shared._holiday_calendar", _amo_exc)
+        data = {}
+    cache.update(path=path, mtime=mtime, data=data)
+    return data
+
+
+def _holiday_entry(day: str):
+    """返回 (名称, rest 覆盖值, 来源)。外部日历优先，内置表兜底。"""
+    key = str(day)
+    entry = _holiday_calendar().get(key)
+    if entry is not None:
+        if isinstance(entry, dict):
+            name = str(entry.get("name") or "").strip()
+            rest = entry.get("rest") if isinstance(entry.get("rest"), bool) else None
+            return name, rest, "holiday_calendar"
+        name = str(entry or "").strip()
+        if name:
+            return name, None, "holiday_calendar"
+    return CN_HOLIDAYS.get(key, ""), None, "CN_HOLIDAYS"
+
+
+def _holiday_name(day: str) -> str:
+    entry = _holiday_calendar().get(str(day))
+    if isinstance(entry, dict):
+        return str(entry.get("name") or "").strip()
+    if isinstance(entry, str):
+        return entry.strip()
+    return CN_HOLIDAYS.get(str(day), "")
+
+
 def day_meta(day: Any = None) -> dict:
-    """返回某天的节日、节气和是否休息日。"""
+    """返回某天的节日、节气和是否休息日；支持 holiday_calendar.json 覆盖。"""
     try:
         target = date.fromisoformat(str(day)) if day else _now().date()
     except Exception as _amo_exc:
         _note_swallowed("amo_shared.day_meta", _amo_exc)
         target = _now().date()
     key = target.isoformat()
-    holiday = CN_HOLIDAYS.get(key, "")
+    holiday, rest_override, source = _holiday_entry(key)
     term = SOLAR_TERMS.get(key, "")
     weekend = target.weekday() >= 5
-    rest = bool(weekend or holiday)
+    rest = rest_override if isinstance(rest_override, bool) else bool(weekend or holiday)
     holiday_days = 0
-    if holiday:
+    if holiday and rest:
         cursor = target
-        while CN_HOLIDAYS.get(cursor.isoformat()) == holiday:
+        while _holiday_name(cursor.isoformat()) == holiday:
             holiday_days += 1
             cursor -= timedelta(days=1)
         cursor = target + timedelta(days=1)
-        while CN_HOLIDAYS.get(cursor.isoformat()) == holiday:
+        while _holiday_name(cursor.isoformat()) == holiday:
             holiday_days += 1
             cursor += timedelta(days=1)
     label = "、".join(item for item in (holiday, term) if item)
@@ -817,6 +914,7 @@ def day_meta(day: Any = None) -> dict:
         "solar_term": term,
         "holiday_days": holiday_days,
         "rest": rest,
+        "holiday_source": source,
         "label": label,
     }
 
@@ -1910,5 +2008,5 @@ def extract_persona_name(persona: Any) -> str:
     return ""
 
 __all__ = [
-    "_now", "Comp", "logger", "AstrMessageEvent", "filter", "Context", "Star", "MessageChain", "web_request", "TextPart", "HeartflowEngine", "SegmentEngine", "importlib", "_engine_dir", "_load_engine", "evaluate_weather_alert", "parse_weather_daily", "next_check_slot", "parse_clock", "slot_key", "is_weather_query", "forecast_brief", "GiftEngine", "_pg_analyze_rows", "_pg_compose_task", "_pg_near_duplicate", "_looks_like_time_query", "_render_time_block", "_greeting_targets", "_within_minutes", "_DIARY_WRITTEN", "_DIARY_SHOW", "_diary_pick_hints", "_DIARY_DEFAULT_DIR", "_diary_resolve_dir", "_diary_parse_day", "_diary_build_prompt", "_diary_import_folder", "_diary_write", "_diary_read", "_diary_tree", "_ms_should_archive", "_ms_transcript", "_ms_build_prompt", "_ms_build_content", "_wander_assess", "_wander_ask_limit", "_wander_agree", "_wander_question", "_follow_invite", "_follow_refuse", "_wander_refuse", "_wander_follow_agree_text", "_follow_block", "_wander_offer_block", "_wander_offer_text", "_wander_pick", "_wander_plan_text", "_wander_solo_agree_text", "_wander_solo_block", "_wander_solo_refuse_text", "_wander_trip_days", "_wander_want", "MemoryHub", "render_recent_block", "first_person_experience", "attribution_leak", "leak_tokens", "strip_brushoff", "parse_relations", "_CITY_DEFAULT", "_city_detect", "_city_block", "_city_travel_block", "_city_travel_events", "_city_travel_action", "_city_travel_to_events", "_city_pick_spots", "_rank_edges", "plan_relation_edges", "ScheduleEngine", "_importlib_util", "_schedule_path", "_schedule_spec", "_schedule_module", "PLUGIN_NAME", "PLUGIN_VERSION", "DEFAULT_ADMIN", "LEGACY_DEFAULT_ADMIN", "RELATIONS", "DIALECT_SAMPLES", "CITY_DIALECT_RULES", "dialect_for_city", "DIALECT_FALLBACK_ROWS", "DIALECT_REGIONS", "SCHEDULE_VERSION", "NETWORK_RELATIONS", "MOOD_KEYS", "SICK_STATUSES", "MOOD_BASE", "STYLE_HINTS", "POS_WORDS", "NEG_WORDS", "ANGRY_WORDS", "SAD_WORDS", "AFFECTION_WORDS", "INSULT_WORDS", "INTERNAL_RELATION_NODES", "now_ts", "CN_HOLIDAYS", "SOLAR_TERMS", "day_meta", "lark_quote_kwargs", "today_str", "other_platform_bot_lines", "_CATEGORY_MOOD_CACHE", "schedule_category_mood", "weekday_cn", "clamp", "to_int", "to_float", "truncate", "md5_int", "uniq", "parse_hhmm", "minutes_now", "in_minute_range", "quiet_now", "looks_like_plain_command", "has_question", "sentiment", "_WORD_RE", "_CJK_RE", "tokens", "overlap", "json_extract_list", "json_extract", "CHAT_FORMAT_NOISE", "strip_chat_format", "clean_reply", "_PAIRS", "_STRONG", "_WEAK", "_TRIM", "_protect_mask", "_cut", "_protected_ranges", "_mask_with_placeholders", "_split_regex", "segment_text", "AI_ADMISSION_RE", "looks_like_ai_admission", "MODEL_LEAK_RE", "DEFENSIVE_REPLY_RE", "looks_like_defensive_reply", "looks_like_model_leak", "typing_delay_ms", "USAGE_PEAK_HOURS", "USAGE_DEFAULT_PRICES", "usage_is_peak", "_usage_row_ts", "_empty_bucket", "summarize_token_usage", "usage_cost", "fetch_provider_balance", "fetch_deepseek_balance", "merge_uid_alias_data", "extract_persona_name",
+    "_now", "Comp", "logger", "AstrMessageEvent", "filter", "Context", "Star", "MessageChain", "web_request", "TextPart", "HeartflowEngine", "SegmentEngine", "importlib", "_engine_dir", "_load_engine", "evaluate_weather_alert", "parse_weather_daily", "next_check_slot", "parse_clock", "slot_key", "is_weather_query", "forecast_brief", "GiftEngine", "_pg_analyze_rows", "_pg_compose_task", "_pg_near_duplicate", "_looks_like_time_query", "_render_time_block", "_greeting_targets", "_within_minutes", "_DIARY_WRITTEN", "_DIARY_SHOW", "_diary_pick_hints", "_DIARY_DEFAULT_DIR", "_diary_resolve_dir", "_diary_parse_day", "_diary_build_prompt", "_diary_import_folder", "_diary_write", "_diary_read", "_diary_tree", "_ms_should_archive", "_ms_transcript", "_ms_build_prompt", "_ms_build_content", "_wander_assess", "_wander_ask_limit", "_wander_agree", "_wander_question", "_follow_invite", "_follow_refuse", "_wander_refuse", "_wander_follow_agree_text", "_follow_block", "_wander_offer_block", "_wander_offer_text", "_wander_pick", "_wander_plan_text", "_wander_solo_agree_text", "_wander_solo_block", "_wander_solo_refuse_text", "_wander_trip_days", "_wander_want", "MemoryHub", "render_recent_block", "first_person_experience", "attribution_leak", "leak_tokens", "strip_brushoff", "parse_relations", "_CITY_DEFAULT", "_city_detect", "_city_block", "_city_travel_block", "_city_travel_events", "_city_travel_action", "_city_travel_to_events", "_city_pick_spots", "_rank_edges", "plan_relation_edges", "ScheduleEngine", "_importlib_util", "_schedule_path", "_schedule_spec", "_schedule_module", "PLUGIN_NAME", "PLUGIN_VERSION", "DEFAULT_ADMIN", "LEGACY_DEFAULT_ADMIN", "RELATIONS", "DIALECT_SAMPLES", "CITY_DIALECT_RULES", "dialect_for_city", "city_or_empty", "DIALECT_FALLBACK_ROWS", "DIALECT_REGIONS", "SCHEDULE_VERSION", "NETWORK_RELATIONS", "MOOD_KEYS", "SICK_STATUSES", "MOOD_BASE", "STYLE_HINTS", "POS_WORDS", "NEG_WORDS", "ANGRY_WORDS", "SAD_WORDS", "AFFECTION_WORDS", "INSULT_WORDS", "INTERNAL_RELATION_NODES", "now_ts", "CN_HOLIDAYS", "SOLAR_TERMS", "day_meta", "lark_quote_kwargs", "today_str", "other_platform_bot_lines", "_CATEGORY_MOOD_CACHE", "schedule_category_mood", "weekday_cn", "clamp", "to_int", "to_float", "truncate", "md5_int", "uniq", "parse_hhmm", "minutes_now", "in_minute_range", "quiet_now", "looks_like_plain_command", "has_question", "sentiment", "_WORD_RE", "_CJK_RE", "tokens", "overlap", "json_extract_list", "json_extract", "CHAT_FORMAT_NOISE", "strip_chat_format", "clean_reply", "_PAIRS", "_STRONG", "_WEAK", "_TRIM", "_protect_mask", "_cut", "_protected_ranges", "_mask_with_placeholders", "_split_regex", "segment_text", "AI_ADMISSION_RE", "looks_like_ai_admission", "MODEL_LEAK_RE", "DEFENSIVE_REPLY_RE", "looks_like_defensive_reply", "looks_like_model_leak", "typing_delay_ms", "USAGE_PEAK_HOURS", "USAGE_DEFAULT_PRICES", "usage_is_peak", "_usage_row_ts", "_empty_bucket", "summarize_token_usage", "usage_cost", "fetch_provider_balance", "fetch_deepseek_balance", "merge_uid_alias_data", "extract_persona_name",
 ]

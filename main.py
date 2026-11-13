@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 
 
-PLUGIN_VERSION = "6.9.2"
+PLUGIN_VERSION = "7.0.0"
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -187,6 +187,12 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         except Exception:  # 没装/导入失败时不影响主脑启动
             Wardrobe = None  # type: ignore[assignment,misc]
 
+# ---- 进程内事件总线（日程/媒体等稳定事件）----
+try:
+    from .amo_events import EventBus, ScheduleChanged
+except ImportError:  # 直接按文件加载时
+    from amo_events import EventBus, ScheduleChanged
+
 # ---- 自拍姿势库（面板「姿势库」/ 自拍随机挑姿势）----
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .pose_library import PoseLibrary
@@ -204,6 +210,16 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 # ---------------------------------------------------------------------------
 # 插话判定
 # ---------------------------------------------------------------------------
+
+# 关系 → 私聊回复的基础概率：恋人必回，其它按亲疏分档（配置 private_reply_prob 只管没列出来的关系）
+RELATION_REPLY_PROB = {
+    "相恋": 1.0, "恋人": 1.0, "爱人": 1.0,
+    "家人": 0.9, "亲人": 0.9,
+    "熟识": 0.7, "朋友": 0.7, "同学": 0.7, "同事": 0.7,
+    "普通": 0.5, "陌生人": 0.3,
+    "抵触": 0.3, "仇恨": 0.1,
+}
+
 
 class ReplyGate:
     def __init__(self, plugin):
@@ -431,7 +447,15 @@ class ReplyGate:
         }
 
     def private_probability(self, snap, profile):
-        probability = 0.95
+        relation = str(profile.get("relation") or "普通")
+        # 关系决定基础档：恋人必回；其它关系 9 成 / 7 成 / 5 成 / 3 成 / 1 成
+        base = RELATION_REPLY_PROB.get(relation)
+        if base is None:
+            base = clamp(self.p.cfg_float("private_reply_prob", 0.5), 0.0, 1.0)
+        if base >= 1.0:
+            # 恋人：不看日程、心情、生病，一律回复
+            return 1.0
+        probability = base
         category = snap["activity"].get("category")
         probability *= {
             "sleep": 0.02, "work": 0.42, "study": 0.50,
@@ -455,13 +479,6 @@ class ReplyGate:
                 probability *= 0.35
         except Exception as _amo_exc:
             _note_swallowed("main.ReplyGate.private_probability", _amo_exc)
-        relation = profile.get("relation", "普通")
-        if relation == "相恋":
-            probability = max(probability, 0.90)
-        elif relation == "仇恨":
-            probability *= 0.20
-        elif relation == "抵触":
-            probability *= 0.45
         return clamp(probability, 0.0, 1.0)
 
 
@@ -553,6 +570,8 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context)
         self.config = config or {}
+        self.events = EventBus()
+        self.events.subscribe(ScheduleChanged, self._on_schedule_changed)
         self.plugin_dir = os.path.dirname(os.path.abspath(__file__))
         self._migrate_legacy_config()
         self.bot_name = self.cfg_str("bot_name", "") or "陪伴"
@@ -621,6 +640,21 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             logger.info("[amo] 画图引擎已加载（%s）" % ("开" if self.draw.enabled else "关"))
         if self.photo is not None:
             logger.info("[amo] 照片引擎已加载（%s）" % ("开" if self.photo.enabled else "关"))
+        try:
+            logger.info(
+                "[CONFIG] private=%s group=%s draw=%s photo=%s gift=%s diary=%s "
+                "heartflow=%s schedule_change=%s",
+                self.cfg_bool("enable_private_reply", True),
+                self.cfg_bool("enable_group_reply", True),
+                self.cfg_bool("draw_enable", False),
+                self.cfg_bool("photo_enable", False),
+                self.cfg_bool("gift_enable", False),
+                self.cfg_bool("diary_enabled", True),
+                self.cfg_bool("hf_enable_heartflow", True),
+                self.cfg_bool("schedule_change_enabled", True),
+            )
+        except Exception as _amo_exc:
+            _note_swallowed("main.HumanCorePlugin.__init__.config_summary", _amo_exc)
         self.heartflow = None
         self.segment_engine = None
         try:
@@ -778,6 +812,12 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             except Exception as exc:
                 logger.debug("[amo] 与数据插件同步失败: %s" % exc)
             self._ready = True
+            try:
+                retry = getattr(self, "_retry_web_api_routes", None)
+                if callable(retry):
+                    retry()
+            except Exception as _amo_exc:
+                _note_swallowed("main.HumanCorePlugin._ensure_ready.web_retry", _amo_exc)
             self._spawn(self._log_omni_handshake())
             self._loop_task = self._spawn(self._background_loop())
             self._spawn(self._warm_up())
@@ -830,6 +870,49 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                 len(nodes), ("，模型 " + model) if model else ""))
         except Exception as exc:
             logger.debug("[amo] 万象画卷握手检查失败: %s" % exc)
+
+    def _on_schedule_changed(self, event):
+        """日程事件订阅者：日记失效/取消 + 穿搭失效 + 生图刷新日志。"""
+        day = str(getattr(event, "day", "") or "")
+        version = int(getattr(event, "version", 0) or 0)
+        start_hour = int(getattr(event, "start_hour", -1) or -1)
+        cancelled = []
+        state = getattr(self, "state", None)
+        if state is not None and start_hour >= 0:
+            try:
+                state.db.mark_diaries_stale(day, start_hour, version)
+            except Exception as exc:
+                logger.warning("[EVENT] diary_stale failed: %s", exc)
+            cancel = getattr(self, "_cancel_diary_tasks", None)
+            if callable(cancel):
+                try:
+                    cancelled = cancel(day, start_hour) or []
+                except Exception as exc:
+                    logger.warning("[EVENT] diary_cancel failed: %s", exc)
+            daily_mark = getattr(self, "_mark_daily_diary_stale", None)
+            if callable(daily_mark):
+                try:
+                    daily_mark(day, version)
+                except Exception as exc:
+                    logger.warning("[EVENT] daily_diary_stale failed: %s", exc)
+        wardrobe = getattr(self, "wardrobe", None)
+        if wardrobe is not None:
+            invalidate = getattr(wardrobe, "invalidate", None)
+            if callable(invalidate):
+                try:
+                    invalidate(day, reason="schedule_changed")
+                except Exception as exc:
+                    logger.warning("[EVENT] wardrobe_invalidate failed: %s", exc)
+        photo = getattr(self, "photo", None)
+        hook = getattr(photo, "on_schedule_changed", None) if photo is not None else None
+        if callable(hook):
+            try:
+                hook(day, version, "schedule_changed")
+            except Exception as exc:
+                logger.warning("[EVENT] photo_refresh failed: %s", exc)
+        logger.debug("[EVENT] schedule_changed day=%s version=%s start_hour=%s cancelled=%s",
+                     day, version, start_hour, len(cancelled))
+        return cancelled
 
     async def initialize(self):
         await self._ensure_ready()
@@ -1249,13 +1332,13 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         except TypeError:
             pass
         except Exception as exc:
-            logger.debug("[amo] Web API 注册失败 %s: %s" % (route, exc))
+            logger.warning("[WEB_REG] route=%s ok=0 error=%s", route, exc)
             return False
         try:
             self.context.register_web_api(route, methods, desc, handler)
             return True
         except Exception as exc:
-            logger.debug("[amo] Web API 兼容注册失败 %s: %s" % (route, exc))
+            logger.warning("[WEB_REG] route=%s ok=0 legacy_error=%s", route, exc)
             return False
 
     def _q(self, key, default=None):

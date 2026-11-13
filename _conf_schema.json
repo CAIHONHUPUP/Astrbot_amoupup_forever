@@ -225,12 +225,6 @@
     "hint": "下雨、低温、月经期、过度疲惫会额外增加",
     "default": 0.02
   },
-  "local_chat_cache": {
-    "type": "bool",
-    "description": "在陪伴本地缓存聊天记录",
-    "hint": "默认关闭：原始聊天只写进「我想永远记住你」，陪伴用内存缓冲 + 记忆终端钩子取上下文，不再占本地库；关掉后重启会自动从终端把最近 30 条捞回来。",
-    "default": false
-  },
   "auto_relation": {
     "type": "bool",
     "description": "自动记关系网",
@@ -492,6 +486,30 @@
     "type": "bool",
     "default": true,
     "hint": "启用后，机器人将智能判断群聊消息并主动回复"
+  },
+  "hf_reply_only_when_addressed": {
+    "description": "【心流】只在被叫到时才回复",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后，群里没人叫她（没 @、没叫名字、不是接她的话）就不搭话；关掉才恢复“看气氛插一句”。"
+  },
+  "hf_ignore_bots": {
+    "description": "【心流】不跟其他机器人聊天",
+    "type": "bool",
+    "default": true,
+    "hint": "按昵称关键词/账号认出群里的机器人，只把它们的发言当背景，不判定也不回复。"
+  },
+  "hf_bot_keywords": {
+    "description": "【心流】机器人昵称关键词",
+    "type": "string",
+    "default": "bot,robot,assistant,gpt,chatgpt,claude,llm,机器人,小助手,智能助手,小爱同学,天猫精灵",
+    "hint": "逗号分隔；英文按独立单词匹配（Bottle 不会命中），中文按包含匹配。"
+  },
+  "hf_bot_ids": {
+    "description": "【心流】已知机器人账号",
+    "type": "string",
+    "default": "",
+    "hint": "逗号分隔的 QQ 号/ID。昵称看不出来时，把群里的机器人账号填进来。"
   },
   "hf_judge_provider_name": {
     "description": "【心流】判断模型提供商",
@@ -1178,6 +1196,12 @@
     "hint": "0~0.9；按日期种子决定，同一天不会反复变。休息日：加班/聚餐；工作日：外派。",
     "default": 0.28
   },
+  "schedule_holiday_min_days": {
+    "type": "int",
+    "description": "长假最少天数",
+    "hint": "同名法定假期连续几天算长假；默认 4 天。长假会走旅游/海边/逛街/游乐园规划。",
+    "default": 4
+  },
   "schedule_llm_backbone": {
     "type": "bool",
     "description": "用大模型润色主干文案",
@@ -1611,6 +1635,12 @@
     "description": "【照片】照片调试日志",
     "default": false
   },
+  "debug_prompt": {
+    "type": "bool",
+    "description": "【照片】生图链路调试日志",
+    "hint": "打开后每次生图打一行 [PHOTO_DEBUG]：日程、zone、姿势规则、守卫词和最终提示词；无日程/冲突/纠偏也会写明原因。",
+    "default": false
+  },
   "schedule_day_types": {
     "type": "template_list",
     "description": "日子类型：每天先按权重抽一种，再按类型生成日程",
@@ -1687,7 +1717,7 @@
         "name": "宅家日",
         "enabled": true,
         "weight": 1,
-        "scope": "any",
+        "scope": "weekend",
         "guide": "哪儿也不去，窝在家：睡到中午、点外卖、看剧看书。"
       },
       {
@@ -1727,5 +1757,23 @@
     "default": true,
     "description": "生日祝福",
     "hint": "打开后，他到生日那天她会用自己的人设语气发一句生日祝福；关闭则完全不发。"
+  },
+  "voice_on_demand_enable": {
+    "type": "bool",
+    "description": "按需语音",
+    "default": true,
+    "hint": "开启后，你说「发语音 / 用语音说 / 语音回我 / 念给我听」时，这一轮会强制把她的回复转成语音；普通聊天仍按全局 TTS 的随机概率。需要 AstrBot 全局 TTS 已启用并配置供应商；失败会自动退回文字。"
+  },
+  "voice_max_chars": {
+    "type": "int",
+    "description": "语音最多念多少字",
+    "default": 600,
+    "hint": "超过后按最后一句截断，避免一条语音太长、TTS 超时或费用过高；只影响语音，不影响文字。"
+  },
+  "voice_tts_timeout_seconds": {
+    "type": "int",
+    "description": "语音合成超时（秒）",
+    "default": 45,
+    "hint": "TTS 超过这个时间就放弃语音并回退文字；建议 15-60 秒。"
   }
 }

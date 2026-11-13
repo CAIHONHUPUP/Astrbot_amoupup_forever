@@ -94,6 +94,7 @@ class DataSyncMixin(_MixinBase):
                 importance = to_float(row.get("importance"), 0.5)
                 name = str(row.get("name") or row.get("who") or "").strip()
                 kind = str(row.get("kind") or row.get("memory_type") or "fact")
+                subject = str(row.get("subject") or "")
                 created_at = row.get("created_at", 0)
             else:
                 memory = getattr(row, "memory", None) or row
@@ -101,6 +102,7 @@ class DataSyncMixin(_MixinBase):
                 importance = to_float(getattr(memory, "importance", 0.5), 0.5)
                 name = str(getattr(memory, "name", "") or "").strip()
                 kind = str(getattr(memory, "memory_type", "") or "fact")
+                subject = str(getattr(memory, "subject", "") or "")
                 created_at = getattr(memory, "created_at", 0)
             if len(content) < 2:
                 continue
@@ -109,6 +111,7 @@ class DataSyncMixin(_MixinBase):
                 "tier": 2 if importance >= 0.72 else (1 if importance >= 0.42 else 0),
                 "importance": importance,
                 "kind": kind,
+                "subject": ("bot" if (subject == "bot" or kind.startswith("bot_")) else "user"),
                 "name": name,
                 "source": "hub",
                 "created_at": created_at,
@@ -570,13 +573,20 @@ class DataSyncMixin(_MixinBase):
                 group_id = str(event.get_group_id() or "")
         except Exception as _amo_exc:
             _note_swallowed("amo_llm.LlmMixin._data_memory_recall", _amo_exc)
+        platform = ""
+        try:
+            if event is not None:
+                platform = self._platform_of(event)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_llm.LlmMixin._data_memory_recall", _amo_exc)
+            platform = ""
         try:
             rows = await recall(
                 self._data_bot_id(), str(uid), str(text or ""),
-                max(1, to_int(limit, 6)), scope, group_id,
+                max(1, to_int(limit, 6)), scope, group_id, platform=platform,
             )
         except TypeError:
-            # 旧版没有 scope / group_id 参数
+            # 旧版没有 scope / group_id / platform 参数
             try:
                 rows = await recall(
                     self._data_bot_id(), str(uid), str(text or ""), max(1, to_int(limit, 6))
@@ -595,20 +605,25 @@ class DataSyncMixin(_MixinBase):
             if len(content) < 2:
                 continue
             importance = to_float(row.get("importance"), 0.5)
+            kind = str(row.get("kind") or "fact")
+            subject = str(row.get("subject") or "")
             items.append({
                 "content": content[:500],
                 "tier": 2 if importance >= 0.72 else (1 if importance >= 0.42 else 0),
-                "kind": str(row.get("kind") or "fact"),
+                "kind": kind,
+                "subject": ("bot" if (subject == "bot" or kind.startswith("bot_")) else "user"),
                 "source": "amo_data",
                 "memory_type": str(row.get("kind") or ""),
                 "created_at": row.get("created_at", 0),
+                "platform": str(row.get("platform") or ""),
+                "pid": int(row.get("pid") or 0),
                 "hits": 0,
                 "expires_at": None,
             })
         return items
     async def _data_memory_write(self, uid, content, kind="fact", tier=1,
-                                 scope="private", group_id=""):
-        """把一条记忆交给「记忆终端」写入；它只负责存，陪伴不落本地库。"""
+                                 scope="private", group_id="", subject="user", platform=""):
+        """把一条记忆交给「记忆终端」写入；subject=user/bot 区分主体。"""
         mem = self._data_mem()
         if mem is None or not uid:
             return False
@@ -624,12 +639,26 @@ class DataSyncMixin(_MixinBase):
         scope = "group" if str(scope or "") == "group" else "private"
         group_id = str(group_id or "") if scope == "group" else ""
         # 数据插件版本不同认的参数也不同：从最全的写法往后退，别把记忆整个丢掉
-        variants = [
+        subject = "bot" if str(subject or "").strip().lower() == "bot" else "user"
+        logger.info(
+            "[IDENTITY_DEBUG] action=memory_write subject=%s kind=%s",
+            subject, str(kind or "fact"),
+        )
+        platform = str(platform or "").strip()
+        variants = []
+        if platform:
+            # 新版记忆终端认 platform：写进去才知道这条是飞书还是 QQ 说的
+            variants.append({"kind": str(kind or "fact"), "importance": importance,
+                             "scope": scope, "group_id": group_id, "subject": subject,
+                             "platform": platform})
+        variants.extend([
+            {"kind": str(kind or "fact"), "importance": importance,
+             "scope": scope, "group_id": group_id, "subject": subject},
             {"kind": str(kind or "fact"), "importance": importance,
              "scope": scope, "group_id": group_id},
             {"kind": str(kind or "fact"), "importance": importance},
             {},
-        ]
+        ])
         result = False
         last_error = None
         for kwargs in variants:

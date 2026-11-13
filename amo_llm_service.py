@@ -25,6 +25,7 @@ if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
         other_platform_bot_lines,
         to_int,
         today_str,
+        city_or_empty,
         truncate,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
@@ -42,7 +43,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             other_platform_bot_lines,
             to_int,
             today_str,
-            truncate,
+            city_or_empty,
+        truncate,
         )
     except ImportError:  # 直接按文件加载时
         from amo_shared import (
@@ -58,7 +60,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             other_platform_bot_lines,
             to_int,
             today_str,
-            truncate,
+            city_or_empty,
+        truncate,
         )
 
 try:  # 地点跟日程对齐：主动消息里说错地方也改回来
@@ -238,11 +241,7 @@ class LLMService:
         return {
             "name": str(data.get("name") or self.p.bot_name),
             "age": to_int(data.get("age"), 22),
-            "city": str(
-                data.get("city")
-                or self.p.cfg_str("weather_city_name", "")
-                or self.p.cfg_str("weather_city", "贵阳")
-            ),
+            "city": str(data.get("city") or city_or_empty(self.p)),
             "occupation": str(data.get("occupation") or "普通上班族"),
             "workplace": str(data.get("workplace") or "公司"),
             "personality": str(data.get("personality") or "温柔敏感"),

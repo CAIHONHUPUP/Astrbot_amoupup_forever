@@ -259,10 +259,11 @@ class GroupDecisionTests(unittest.TestCase):
 
 
 class PrivateProbabilityTests(unittest.TestCase):
-    def test_default_is_high(self) -> None:
+    def test_default_follows_relation(self) -> None:
+        # 没写关系时按「普通」= 5 成；恋爱关系见 RelationProbabilityTests
         gate = ReplyGate(FakePlugin())
         idle = make_snap(activity={"category": "idle"})
-        self.assertAlmostEqual(gate.private_probability(idle, {}), 0.95, places=2)
+        self.assertAlmostEqual(gate.private_probability(idle, {}), 0.5, places=2)
 
     def test_sleep_work_and_sickness(self) -> None:
         gate = ReplyGate(FakePlugin())
@@ -285,15 +286,47 @@ class PrivateProbabilityTests(unittest.TestCase):
         angry = gate.private_probability(make_snap(mood={"生气": 90}, activity=idle), {})
         happy = gate.private_probability(make_snap(mood={"开心": 80}, activity=idle), {})
         period = gate.private_probability(make_snap(period={"phase": "月经期"}, activity=idle), {})
-        self.assertLess(angry, 0.95)
-        self.assertGreaterEqual(happy, 0.95)
-        self.assertLess(period, 0.95)
+        self.assertLess(angry, 0.5)
+        self.assertGreaterEqual(happy, 0.5)
+        self.assertLess(period, 0.5)
 
     def test_depressed_cuts_probability(self) -> None:
         plugin = FakePlugin()
         plugin.config["depressed"] = True
         gate = ReplyGate(plugin)
         self.assertLess(gate.private_probability(make_snap(), {"uid": "1"}), 0.95)
+
+class RelationProbabilityTests(unittest.TestCase):
+    """私聊回复概率按关系分档：恋人必回，其它 9/7/5/3/1 成。"""
+
+    def _prob(self, relation, **snap):
+        gate = ReplyGate(FakePlugin())
+        return gate.private_probability(make_snap(**snap), {"relation": relation, "uid": "u1"})
+
+    def test_lover_always_replies(self) -> None:
+        for snap in (
+            {"activity": {"category": "sleep"}},
+            {"health": {"sick": True, "status": "感冒"}},
+            {"mood": {"生气": 95}},
+        ):
+            self.assertEqual(self._prob("相恋", **snap), 1.0, "恋人必须 100% 回复")
+
+    def test_other_relations_base(self) -> None:
+        for relation, expect in (("家人", 0.9), ("熟识", 0.7), ("普通", 0.5),
+                                 ("陌生人", 0.3), ("仇恨", 0.1)):
+            self.assertAlmostEqual(
+                self._prob(relation, activity={"category": "rest"}), expect, places=3,
+                msg="关系 %s 的基础概率应为 %.1f" % (relation, expect))
+
+    def test_unknown_relation_uses_config(self) -> None:
+        gate = ReplyGate(FakePlugin(private_reply_prob=0.42))
+        self.assertAlmostEqual(
+            gate.private_probability(make_snap(activity={"category": "rest"}),
+                                     {"relation": "网友", "uid": "u1"}),
+            0.42, places=3)
+
+    def test_state_still_lowers_non_lover(self) -> None:
+        self.assertLess(self._prob("普通", activity={"category": "sleep"}), 0.05)
 
 
 if __name__ == "__main__":

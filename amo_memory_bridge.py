@@ -93,8 +93,8 @@ class BridgeMixin(_MixinBase):
         return _Runtime()
 
     async def _write_memory_checked(self, uid, content, kind="fact", tier=1,
-                                    scope="private", group_id=""):
-        """写一条记忆并返回是否真的成功；失败打 warning，调用方据此决定要不要标记。"""
+                                    scope="private", group_id="", subject="user", platform=""):
+        """写一条记忆并返回是否真的成功；subject=user/bot 区分主体。"""
         hub = self._memory_hub()
         level = to_int(tier, 1)
         importance = 0.75 if level >= 2 else (0.55 if level == 1 else 0.35)
@@ -103,6 +103,7 @@ class BridgeMixin(_MixinBase):
                 result = await hub.remember(
                     str(uid), content, str(kind or "fact"), importance,
                     scope=str(scope or "private"), group_id=str(group_id or ""),
+                    subject=str(subject or "user"),
                 )
             except Exception as exc:
                 logger.warning("[amo] 记忆写入异常: %s" % exc)
@@ -116,7 +117,7 @@ class BridgeMixin(_MixinBase):
         if self._data_mem() is not None:
             try:
                 result = await self._data_memory_write(
-                    uid, content, kind, tier, scope, group_id
+                    uid, content, kind, tier, scope, group_id, subject=subject, platform=platform
                 )
             except Exception as _amo_exc:
                 _note_swallowed("amo_memory_bridge.BridgeMixin._write_memory_checked", _amo_exc)
@@ -126,8 +127,8 @@ class BridgeMixin(_MixinBase):
         return False
 
     def _external_memory_write(self, uid, content, kind="fact", tier=1,
-                               scope="private", group_id=""):
-        """把一条记忆交给「想记」；能力层不可用时直接写它的 mem 门面。
+                               scope="private", group_id="", subject="user", platform=""):
+        """把一条记忆交给「想记」；subject=user/bot 区分主体。
 
         陪伴自己不存记忆，只负责把要记的东西丢过去；写不进去就返回 False，
         调用方（命令/面板）会如实告诉用户。
@@ -143,6 +144,7 @@ class BridgeMixin(_MixinBase):
                 self._spawn(hub.remember(
                     uid, content, str(kind or "fact"), importance,
                     scope=str(scope or "private"), group_id=str(group_id or ""),
+                    subject=str(subject or "user"),
                 ))
                 logger.debug("[amo] 记忆已交给能力层: %s" % content[:40])
                 return True
@@ -152,7 +154,9 @@ class BridgeMixin(_MixinBase):
         if mem is not None and callable(getattr(mem, "remember", None)):
             coro = None
             try:
-                coro = self._data_memory_write(uid, content, kind, tier, scope, group_id)
+                coro = self._data_memory_write(
+                    uid, content, kind, tier, scope, group_id, subject=subject, platform=platform,
+                )
                 if self._spawn(coro) is not None:
                     logger.debug("[amo] 记忆已交给记忆终端: %s" % content[:40])
                     return True

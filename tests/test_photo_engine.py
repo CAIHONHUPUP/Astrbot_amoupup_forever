@@ -18,6 +18,7 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 from photo_engine import PhotoEngine  # noqa: E402
+from photo_rules import resolve_plan  # noqa: E402
 
 
 class FakeDB:
@@ -203,13 +204,22 @@ class PhotoTests(unittest.TestCase):
         self.assertEqual(PhotoEngine._clean_place("他桌面上"), "家里")
         self.assertEqual(PhotoEngine._clean_place("西湖"), "西湖")
 
-    def test_smart_prompt_recognizes_photo_request(self):
-        engine, _ = engine_for()
+    def test_smart_prompt_follows_schedule_not_recent_place(self):
+        engine, plugin = engine_for()
         engine._recent_place = lambda: "公园"
+        plugin.state.activity = {"activity": "在家休息", "place": "家", "zone": "home", "category": "life"}
         text = engine.smart_prompt("拍照给我看看")
-        self.assertIn("公园", text)
+        self.assertIn("客厅", text)
+        self.assertNotIn("公园", text)
         self.assertIn("自拍", text)
         self.assertIn(engine.outfit_today(), text)
+
+    def test_smart_prompt_uses_recent_place_when_no_schedule(self):
+        engine, plugin = engine_for()
+        engine._recent_place = lambda: "公园"
+        plugin.state.activity = {}
+        text = engine.smart_prompt("拍照给我看看")
+        self.assertIn("公园", text)
 
     def test_smart_prompt_keeps_explicit_scene(self):
         engine, _ = engine_for()
@@ -344,13 +354,14 @@ class PosePromptTests(unittest.TestCase):
         # 用了姿势库就不再沿用日程里的动作（两个动作会打架）
         self.assertNotIn("瘫在沙发上", prompt)
 
-    def test_selfie_prompt_without_library_keeps_activity(self):
+    def test_selfie_prompt_outdoors_uses_scene_pose(self):
+        # 不在家时姿势库不能用（里面全是床上的），改用场景兜底姿势
         engine, plugin = engine_for()
         plugin.state.activity = {"activity": "在咖啡馆坐着", "place": "咖啡馆",
                                  "zone": "mall", "category": "life"}
         prompt = engine._selfie_prompt_for("daily", "", plugin.state.activity)
         self.assertNotIn("姿势：", prompt)
-        self.assertIn("在咖啡馆坐着", prompt)
+        self.assertIn("橱窗前", prompt)
 
     def test_pick_pose_without_library(self):
         engine, _ = engine_for()
@@ -411,25 +422,60 @@ class PosePromptTests(unittest.TestCase):
         run_tick(engine, plugin)
         self.assertEqual(plugin.tasks, [])
 
-    def test_missing_omni_no_crash(self):
+    def test_missing_omni_sends_one_notice(self):
         engine, plugin = engine_for()
         plugin.context.omni = None
         plugin.state.activity = {"activity": "逛景区", "place": "西湖", "zone": "scenic", "category": "travel"}
         run_tick(engine, plugin)
-        self.assertEqual(plugin.context.sent, [])
+        self.assertEqual(len(plugin.context.sent), 1)
+        self.assertIn("没拍成", plugin.context.sent[0][1].chain[0].text)
 
     def test_share_now_disabled(self):
         engine, plugin = engine_for({"photo_enable": False})
         msg = asyncio.run(engine.share_now("daily"))
         self.assertIn("没开", msg)
 
-    def test_selfie_failure_falls_back_to_scene(self):
+    def test_selfie_failure_falls_back_to_scene_and_notifies(self):
         omni = FakeOmni(fail=True)
         engine, plugin = engine_for({"photo_selfie_ratio": 100}, omni)
         plugin.state.activity = {"activity": "逛景区", "place": "西湖", "zone": "scenic", "category": "travel"}
         run_tick(engine, plugin)
         self.assertGreaterEqual(len(omni.calls), 1)
-        self.assertEqual(plugin.context.sent, [])
+        # 生成/发送失败不再静默：补一句“没拍成”。
+        self.assertEqual(len(plugin.context.sent), 1)
+        self.assertIn("没拍成", plugin.context.sent[0][1].chain[0].text)
+
+
+class SceneLockPassingTests(unittest.TestCase):
+    def test_generate_passes_english_scene_and_pose_lock(self):
+        omni = FakeOmni()
+        engine, plugin = engine_for({}, omni)
+        activity = {"activity": "挤地铁去公司", "place": "路上", "zone": "road",
+                    "category": "commute", "transit": "subway"}
+        plugin.state.activity = activity
+        plan = resolve_plan(activity, mode="photo")
+        asyncio.run(engine._generate(omni, "P", True, plan=plan))
+        self.assertTrue(omni.calls)
+        call = omni.calls[0]
+        self.assertIn("subway", call.get("scene_lock", ""))
+        self.assertIn("overhead strap", call.get("pose_lock", ""))
+
+    def test_old_omni_without_lock_args_still_works(self):
+        class OldOmni(FakeOmni):
+            async def generate_images_for_plugin(self, **kwargs):
+                if "scene_lock" in kwargs or "pose_lock" in kwargs:
+                    raise TypeError("unexpected keyword argument 'scene_lock'")
+                return await super().generate_images_for_plugin(**kwargs)
+
+        omni = OldOmni()
+        engine, plugin = engine_for({}, omni)
+        activity = {"activity": "挤地铁", "place": "路上", "zone": "road", "transit": "subway"}
+        plugin.state.activity = activity
+        plan = resolve_plan(activity, mode="photo")
+        item = asyncio.run(engine._generate(omni, "P", True, plan=plan))
+        self.assertIsNotNone(item)
+        self.assertEqual(len(omni.calls), 1)
+        self.assertNotIn("scene_lock", omni.calls[0])
 
 
 if __name__ == "__main__":

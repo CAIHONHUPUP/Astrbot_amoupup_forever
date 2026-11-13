@@ -8,7 +8,7 @@ import shutil
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -109,9 +109,29 @@ class DiaryEngineTests(unittest.TestCase):
             self.assertEqual(len(set(pool)), 96)
 
     def test_prompt_uses_a_sample_from_ending_pool(self):
-        prompt = diary_engine.build_prompt(date(2026, 11, 8), ["他：在吗"], ["13:00 在工位"])
+        # 约三成日子才要求“不要看”，测试固定挑一个该有的日子。
+        day = date(2026, 11, 8)
+        for offset in range(10):
+            candidate = day + timedelta(days=offset)
+            if diary_engine.wants_private_ending(candidate):
+                day = candidate
+                break
+        self.assertTrue(diary_engine.wants_private_ending(day))
+        prompt = diary_engine.build_prompt(day, ["他：在吗"], ["13:00 在工位"])
         self.assertTrue(any(item in prompt for item in diary_engine.DIARY_ENDING_HINTS))
         self.assertNotIn("不许偷看", diary_engine.DIARY_ENDING_HINTS)
+
+    def test_private_ending_is_occasional_and_guaranteed(self):
+        days = [date(2026, 11, 1) + timedelta(days=i) for i in range(30)]
+        wanted = [day for day in days if diary_engine.wants_private_ending(day)]
+        self.assertTrue(0 < len(wanted) < len(days))
+        body = "今天上班有点累，但晚饭吃得很香。"
+        out = diary_engine.ensure_private_ending(wanted[0], body)
+        self.assertNotEqual(out, body)
+        self.assertTrue(any(word in out for word in diary_engine._PRIVATE_ENDING_WORDS))
+        # 已经写过“不给看”的，不重复补。
+        already = body + "\n\n不给看，收好啦。"
+        self.assertEqual(diary_engine.ensure_private_ending(wanted[0], already), already)
 
     def test_import_folder_merges_by_date(self):
         source = tempfile.mkdtemp(prefix="amo-diary-src-")

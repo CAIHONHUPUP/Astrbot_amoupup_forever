@@ -234,7 +234,10 @@ class SwimSceneTests(unittest.TestCase):
             self.assertIn(expect, photo_scene.scene_for(activity))
 
     def test_is_swim(self):
-        self.assertTrue(photo_scene.is_swim({"place": "海边"}))
+        # “海边”单独出现不够，必须真的玩水；散步/拍照不算。
+        self.assertFalse(photo_scene.is_swim({"place": "海边"}))
+        self.assertFalse(photo_scene.is_swim({"place": "海边", "activity": "海边散步"}))
+        self.assertTrue(photo_scene.is_swim({"place": "海边", "activity": "在海边玩水"}))
         self.assertTrue(photo_scene.is_swim({"activity": "在水上乐园玩"}))
         self.assertFalse(photo_scene.is_swim({"place": "家", "activity": "看电视"}))
 

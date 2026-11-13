@@ -89,6 +89,30 @@ class SocialMixin(_MixinBase):
             self._uid_alias_cache_key = cache_key
         return getattr(self, "_uid_alias_map", {}) or {}
 
+    @staticmethod
+    def _group_name_of(event):
+        """群名（平台给了就用；私聊或拿不到返回空串）。"""
+        try:
+            group = getattr(getattr(event, "message_obj", None), "group", None)
+            if group is not None:
+                return str(getattr(group, "group_name", "") or "").strip()
+        except Exception:
+            return ""
+        return ""
+
+    @staticmethod
+    def _voice_note_text(text):
+        """用户语音的转写文本 → 可写进记忆的一句话；不是语音返回空串。
+
+        聊天记录里它是本地转写插件塞进 message_str 的 "[语音：老婆我听见了]"。
+        """
+        body = str(text or "").strip()
+        for left, right in (("[语音：", "]"), ("[语音:", "]"), ("[audio]", "")):
+            if body.startswith(left) and (not right or body.endswith(right)):
+                inner = body[len(left):len(body) - (1 if right else 0)].strip()
+                return ("[语音] " + inner[:200]) if inner else ""
+        return ""
+
     def _canonical_uid(self, event):
         """把平台账号换算成同一个人的主 uid；关掉开关就返回原 uid。"""
         try:
@@ -154,6 +178,15 @@ class SocialMixin(_MixinBase):
         uid = self._canonical_uid(event)
         name = event.get_sender_name() or uid
         umo = event.unified_msg_origin
+        if self.cfg_bool("identity_debug", True):
+            try:
+                raw_id = str(event.get_sender_id())
+            except Exception:
+                raw_id = ""
+            logger.info(
+                "[IDENTITY_DEBUG] platform=%s raw_id=%s person_id=%s bound=%s",
+                self._platform_of(event), raw_id, uid, bool(raw_id and uid and raw_id != uid),
+            )
         group_id = event.get_group_id()
         private = event.is_private_chat()
         profile = self.db.touch_profile(
@@ -171,17 +204,32 @@ class SocialMixin(_MixinBase):
                 await self._learn_relations(event, text, uid)
             except Exception as exc:
                 logger.debug("[amo] 关系自动识别失败: %s" % exc)
-        # 上下文先进内存；本地缓存默认关掉，原始聊天交给记忆终端
+        # 上下文先进内存；本地 messages 表不再缓存原始聊天，长期记录交给记忆终端
         self._ctx_remember(umo, uid, name, "user", text)
-        if self.cfg_bool("local_chat_cache", False):
-            self.db.add_message(umo, uid, name, "user", text)
         try:
             await self._data_call(
                 "add_message", self._data_bot_id(), umo, uid, name, "user", text,
                 platform=self._platform_of(event), message_id=self._event_message_id(event),
+                group_name=self._group_name_of(event),
             )
         except Exception as exc:
             logger.warning("[amo] 聊天记录同步失败: %s" % exc)
+
+        # 语音消息：转写出来的内容当场写一条长期记忆
+        # （和她自己发语音时写的 bot_media 对称，不用等里程碑/日报）
+        voice_body = self._voice_note_text(text)
+        if voice_body:
+            try:
+                written = await self._write_memory_checked(
+                    uid, voice_body, "voice_note", 1, scope="private",
+                    platform=self._platform_of(event),
+                )
+                logger.info(
+                    "[amo] 语音内容进长期记忆：%s（%s）",
+                    "成功" if written else "失败", voice_body[:40],
+                )
+            except Exception as exc:
+                logger.debug("[amo] 语音记忆写入失败: %s" % exc)
 
         senti = sentiment(text)
         affection = to_int(profile.get("affection"), 10)

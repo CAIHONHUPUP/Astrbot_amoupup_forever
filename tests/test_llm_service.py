@@ -257,7 +257,7 @@ class WorldviewTests(unittest.TestCase):
         service = LLMService(FakePlugin(FakeContext(provider=FakeProvider('{"name": "阿珍"}'))))
         world = asyncio.run(service.gen_worldview("u", "人设"))
         self.assertEqual(world["occupation"], "普通上班族")
-        self.assertEqual(world["city"], "贵阳")
+        self.assertEqual(world["city"], "")
 
 
 class ExtractFactsTests(unittest.TestCase):

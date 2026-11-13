@@ -173,6 +173,9 @@ class AmoDB:
                     hour TEXT DEFAULT '',
                     text TEXT DEFAULT '',
                     updated REAL DEFAULT 0,
+                    version INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'valid',
+                    invalidated_at REAL DEFAULT 0,
                     PRIMARY KEY(day, hour)
                 );
                 CREATE TABLE IF NOT EXISTS proactive_log (
@@ -214,6 +217,26 @@ class AmoDB:
                     self.conn.commit()
             except Exception as _amo_exc:
                 _note_swallowed("amo_db.AmoDB.init", _amo_exc)
+            try:
+                diary_cols = {
+                    row[1]
+                    for row in self.conn.execute("PRAGMA table_info(schedule_diary)").fetchall()
+                }
+                if "version" not in diary_cols:
+                    self.conn.execute(
+                        "ALTER TABLE schedule_diary ADD COLUMN version INTEGER DEFAULT 0"
+                    )
+                if "status" not in diary_cols:
+                    self.conn.execute(
+                        "ALTER TABLE schedule_diary ADD COLUMN status TEXT DEFAULT 'valid'"
+                    )
+                if "invalidated_at" not in diary_cols:
+                    self.conn.execute(
+                        "ALTER TABLE schedule_diary ADD COLUMN invalidated_at REAL DEFAULT 0"
+                    )
+                self.conn.commit()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_db.AmoDB.init.diary_columns", _amo_exc)
 
     def _migrate_legacy(self):
         try:
@@ -764,6 +787,20 @@ class AmoDB:
             self.conn.execute("DELETE FROM schedule WHERE day < ?", (cutoff,))
             self.conn.commit()
 
+    def schedule_version(self, day):
+        """某天日程的变更版本号；每次真正改日程 +1。"""
+        try:
+            return int(self.kv_get("schedule_ver:" + str(day), 0) or 0)
+        except Exception:
+            return 0
+
+    def bump_schedule_version(self, day):
+        """把某天日程版本 +1，并返回新版本。"""
+        with self.lock:
+            version = self.schedule_version(day) + 1
+            self.kv_set("schedule_ver:" + str(day), version)
+            return version
+
     def get_schedule(self, day):
         with self.lock:
             row = self.conn.execute("SELECT items FROM schedule WHERE day=?", (str(day),)).fetchone()
@@ -775,6 +812,26 @@ class AmoDB:
             _note_swallowed("amo_db.AmoDB.get_schedule", _amo_exc)
             return None
 
+    def get_diary_record(self, day, hour):
+        """返回小日记的完整记录（不存在返回 None）。"""
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT day, hour, text, updated, version, status, invalidated_at "
+                "FROM schedule_diary WHERE day=? AND hour=?",
+                (str(day), str(hour)),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "day": str(row["day"] or ""),
+            "hour": str(row["hour"] or ""),
+            "text": str(row["text"] or ""),
+            "updated": float(row["updated"] or 0),
+            "version": int(row["version"] or 0),
+            "status": str(row["status"] or "valid"),
+            "invalidated_at": float(row["invalidated_at"] or 0),
+        }
+
     def get_diary(self, day, hour):
         with self.lock:
             row = self.conn.execute(
@@ -783,14 +840,51 @@ class AmoDB:
             ).fetchone()
         return str(row["text"] or "") if row else ""
 
-    def save_diary(self, day, hour, text):
+    def save_diary(self, day, hour, text, version=None, status="valid"):
+        """写入小日记；version 默认取当天当前日程版本。
+
+        旧调用 save_diary(day, hour, text) 仍然兼容。
+        """
+        if version is None:
+            version = self.schedule_version(day)
         with self.lock:
             self.conn.execute(
-                "INSERT INTO schedule_diary(day, hour, text, updated) VALUES(?,?,?,?) "
-                "ON CONFLICT(day, hour) DO UPDATE SET text=excluded.text, updated=excluded.updated",
-                (str(day), str(hour), str(text or ""), now_ts()),
+                "INSERT INTO schedule_diary(day, hour, text, updated, version, status, invalidated_at) "
+                "VALUES(?,?,?,?,?,?,0) "
+                "ON CONFLICT(day, hour) DO UPDATE SET "
+                "text=excluded.text, updated=excluded.updated, version=excluded.version, "
+                "status=excluded.status, invalidated_at=0",
+                (str(day), str(hour), str(text or ""), now_ts(), int(version), str(status or "valid")),
             )
             self.conn.commit()
+
+    def diary_is_valid(self, day, hour, version=None):
+        """这条日记是否仍然是有效缓存。
+
+        有效性以 status 为准：日程变更只把目标小时及以后标 stale，之前的日记
+        即使 day 版本号变新也仍然有效，不能因为全局版本变化全部重算。
+        """
+        record = self.get_diary_record(day, hour)
+        if not record:
+            return False
+        return record["status"] == "valid" and bool(str(record.get("text") or "").strip())
+
+    def mark_diaries_stale(self, day, from_hour, version=None):
+        """把某天 from_hour 及以后的小日记标成 stale，不物理删除。
+
+        旧文本保留，供生成失败时兜底显示；下一次读取/调度会按当前版本重算。
+        返回被标记的行数。
+        """
+        with self.lock:
+            params = [now_ts(), str(day), str(from_hour)]
+            sql = (
+                "UPDATE schedule_diary SET status='stale', invalidated_at=? "
+                "WHERE day=? AND CAST(hour AS INTEGER)>=CAST(? AS INTEGER) "
+                "AND status!='stale'"
+            )
+            cur = self.conn.execute(sql, params)
+            self.conn.commit()
+            return int(cur.rowcount or 0)
 
     def clear_diaries(self, day):
         with self.lock:
@@ -798,7 +892,7 @@ class AmoDB:
             self.conn.commit()
 
     def clear_diaries_from(self, day, hour):
-        """只清某个小时及以后的小日记（换城覆盖日程时用，过去的留着）。"""
+        """只清某个小时及以后的小日记（保留给旧调用/迁移用）。"""
         with self.lock:
             # hour 是 TEXT 列：直接比字符串会认为 "9" >= "10"（字典序），必须转成整数比
             self.conn.execute(

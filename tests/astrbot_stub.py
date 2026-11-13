@@ -93,6 +93,12 @@ def install():
         def __init__(self, qq=""):
             self.qq = qq
 
+    class Record:
+        def __init__(self, file=None, url=None, text=""):
+            self.file = file
+            self.url = url or file
+            self.text = text
+
     class Image:
         def __init__(self, file=None, **kwargs):
             self.file = file
@@ -113,6 +119,7 @@ def install():
     components.Plain = Plain
     components.Reply = Reply
     components.At = At
+    components.Record = Record
     components.Image = Image
 
     provider = types.ModuleType("astrbot.api.provider")

@@ -186,3 +186,11 @@ def rewrite_reply(text, activity):
                 value,
             )
     return value
+
+
+# 2026-11-12 新增 zone（医院/景区/街边）也要有“地点纠正”的目标词
+TARGET_WORD.update({
+    "hospital": "医院",
+    "scenic": "景区",
+    "street": "街边",
+})

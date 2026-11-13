@@ -17,6 +17,40 @@ import datetime
 import re
 from typing import Any, TypedDict
 
+try:  # 纯规则模块，不依赖 AstrBot 运行时
+    from .photo_rules import zone_for_place
+except ImportError:  # 直接按文件加载时
+    from photo_rules import zone_for_place
+
+
+def _sync_zone(item: dict, place: str = "", category: str = "") -> dict:
+    """改 activity/place 时同步 zone：日程可以“改”，但不能自相矛盾。
+
+    以前只改 place/category，zone 留着旧值——她说“回家了/去医院了”，
+    照片背景却还是办公室或车厢。这里按地点重算，非路面就清掉交通字段。
+    """
+    if not isinstance(item, dict):
+        return item
+    current_place = str(place or item.get("place") or "").strip()
+    current_category = str(category or item.get("category") or "").strip()
+    old_zone = str(item.get("zone") or "").strip()
+    if current_category == "sleep":
+        item["zone"] = "home"
+        item["place"] = current_place or "家"
+        item["transit"] = ""
+        item["vehicle"] = ""
+        return item
+    zone = zone_for_place(current_place)
+    if not zone:
+        return item
+    item["zone"] = zone
+    if zone != "road":
+        item["transit"] = ""
+        item["vehicle"] = ""
+    elif not item.get("transit") and old_zone != "road":
+        item["transit"] = "walk"
+    return item
+
 
 class Rule(TypedDict, total=False):
     keys: tuple[str, ...]
@@ -58,6 +92,15 @@ _RULES: list[Rule] = [
         "place": "路上",
         "category": "commute",
         "anchor": "off_work_now",
+        "negatable": True,
+    },
+    {
+        # 从家/外面去上班：验收里的「在家 → 通勤」靠这条
+        "keys": ("去上班", "上班去", "去公司", "通勤", "去单位", "回公司"),
+        "activity": "出门上班，路上",
+        "place": "路上",
+        "category": "commute",
+        "anchor": "now",
         "negatable": True,
     },
     {
@@ -263,6 +306,68 @@ def _pick_target(items: list[dict[str, Any]], anchor: str, now_min: int) -> dict
     return current
 
 
+def infer_place_category(activity: str, current_place: str = "",
+                         current_category: str = "") -> tuple[str, str]:
+    """命令改日程时，从活动文字推断地点/分类，避免只改 activity 后自相矛盾。"""
+    text = str(activity or "").strip()
+    place = str(current_place or "").strip()
+    category = str(current_category or "").strip()
+    if not text:
+        return place, category
+    if any(key in text for key in ("通勤", "路上", "地铁", "公交", "打车", "开车", "堵车",
+                                   "去上班", "上班去", "去公司", "回公司", "去单位")):
+        return "路上", "commute"
+    if any(key in text for key in ("上班", "公司", "工作", "加班", "开会", "见客户")):
+        return "公司", "work"
+    if any(key in text for key in ("医院", "看病", "看诊", "挂号", "吊水", "输液")):
+        return "医院", "health"
+    if "睡" in text:
+        return "家", "sleep"
+    if any(key in text for key in ("到家", "家里", "在家")):
+        return "家", ("meal" if "吃" in text else "rest")
+    if "回家" in text:
+        return ("家", "meal") if "吃" in text else ("路上", "commute")
+    if any(key in text for key in ("吃饭", "吃", "餐厅", "午饭", "晚饭", "聚餐")):
+        return "外面", "meal"
+    if any(key in text for key in ("商场", "逛街", "看电影", "玩")):
+        return "外面", "play"
+    if "家" in text or "休息" in text:
+        return "家", "rest"
+    return place, category
+
+
+def apply_at(items: list[dict[str, Any]], start: str,
+             change: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """精确改某一个整点段（命令 /改日程 用），并同步 zone。"""
+    if not items or not change:
+        return items
+    wanted = str(start or "")
+    activity = str(change.get("activity") or "").strip()
+    if not wanted or not activity:
+        return items
+    out: list[dict[str, Any]] = []
+    hit = False
+    for item in items:
+        if not isinstance(item, dict):
+            out.append(item)
+            continue
+        if not hit and str(item.get("start") or "") == wanted:
+            hit = True
+            new_item = dict(item)
+            new_item["activity"] = activity
+            new_item["swim"] = False
+            place = str(change.get("place") or item.get("place") or "").strip()
+            category = str(change.get("category") or item.get("category") or "").strip()
+            if place:
+                new_item["place"] = place
+            if category:
+                new_item["category"] = category
+            out.append(_sync_zone(new_item, place, category))
+            continue
+        out.append(item)
+    return out if hit else items
+
+
 def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
                  now: datetime.datetime) -> list[dict[str, Any]]:
     """改写「锚点那一段」；睡觉类还会把之后到凌晨的整段并成睡觉。"""
@@ -332,6 +437,7 @@ def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
                 visit["start"] = _hhmm(split_start)
                 visit["end"] = _hhmm(split_end)
                 visit["activity"] = activity
+                visit["swim"] = False
                 if place:
                     visit["place"] = place
                 if category:
@@ -340,7 +446,7 @@ def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
                     "打吊水，约%d分钟" % (split_end - split_start)
                     if "打吊水" in activity else "看诊拿药，约%d分钟" % (split_end - split_start)
                 )
-                out.append(visit)
+                out.append(_sync_zone(visit, place, category))
                 if split_end < target_end:
                     after = dict(item)
                     after["start"] = _hhmm(split_end)
@@ -350,18 +456,19 @@ def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
                 continue
             new_item = dict(item)
             new_item["activity"] = activity
+            new_item["swim"] = False
             if place:
                 new_item["place"] = place
             if category:
                 new_item["category"] = category
-            out.append(new_item)
+            out.append(_sync_zone(new_item, place, category))
             continue
         if hit and sleeping:
             new_item = dict(item)
             new_item["activity"] = "睡觉"
             new_item["place"] = "家"
             new_item["category"] = "sleep"
-            out.append(new_item)
+            out.append(_sync_zone(new_item, "家", "sleep"))
             continue
         out.append(item)
     return out

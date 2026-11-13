@@ -40,17 +40,30 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
+        AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, city_or_empty, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
+            AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, city_or_empty, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
         )
     except ImportError:  # 直接按文件加载时
         from amo_shared import (
-            AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
+            AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, city_or_empty, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
         )
+
+
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .schedule_change import apply_at as apply_sched_at, infer_place_category
+else:
+    try:
+        from .schedule_change import apply_at as apply_sched_at, infer_place_category
+    except ImportError:  # 直接按文件加载时
+        try:
+            from schedule_change import apply_at as apply_sched_at, infer_place_category
+        except ImportError:
+            apply_sched_at = None  # type: ignore[assignment]
+            infer_place_category = None  # type: ignore[assignment]
 
 
 if TYPE_CHECKING:
@@ -212,6 +225,8 @@ class CommandMixin(_MixinBase):
         # 记忆后端连没连上要写在状态里：没装想记的人只会看到「记忆 0」，然后以为功能坏了。
         plugin_state = data.get("data_plugin") or {}
         lines.append(memory_backend_line(bool(plugin_state.get("connected"))))
+        if not city_or_empty(self):
+            lines.append("📍 城市：未设置城市（不影响聊天，日程会写得笼统些）")
         return "\n".join(lines)
 
     async def _handle_command(self, event):
@@ -544,7 +559,8 @@ class CommandMixin(_MixinBase):
                 yield event.plain_result("还没说要改成什么。")
                 return
             key = today_str()
-            items = self.state.schedule.get(key) or self.db.get_schedule(key) or []
+            old_items = self.state.schedule.get(key) or self.db.get_schedule(key) or []
+            items = [dict(item) if isinstance(item, dict) else item for item in old_items]
             hit = None
             for item in items:
                 if str(item.get("start") or "") == clock:
@@ -560,10 +576,25 @@ class CommandMixin(_MixinBase):
             if hit is None:
                 yield event.plain_result("那个时间点找不到对应的安排。")
                 return
-            hit["activity"] = activity
-            self.state.schedule[key] = items
-            self.db.kv_set("schedule", self.state.schedule)
-            self.db.save_schedule(key, items)
+            place = str(hit.get("place") or "")
+            category = str(hit.get("category") or "")
+            if callable(infer_place_category):
+                place, category = infer_place_category(activity, place, category)
+            change = {"activity": activity, "place": place, "category": category}
+            if callable(apply_sched_at):
+                new_items = apply_sched_at(items, str(hit.get("start") or clock), change)
+            else:
+                hit["activity"] = activity
+                hit["place"] = place
+                hit["category"] = category
+                new_items = items
+            if new_items == items:
+                yield event.plain_result("和原来一样，没有改。")
+                return
+            self.state.commit_schedule_change(
+                key, new_items, old_items=old_items,
+                source="command", reason="/改日程 %s %s" % (clock, activity),
+            )
             yield event.plain_result("改好了，%s 那段现在是「%s」。" % (hit.get("start"), activity[:30]))
         except Exception as _amo_exc:
             _note_swallowed("amo_commands.cmd_schedule_edit", _amo_exc)
@@ -702,4 +733,11 @@ class CommandMixin(_MixinBase):
         if not self.gift.is_owner(event):
             yield event.plain_result("这个只给主人用哦。")
             return
+        # AstrBot 的 command handler 不保证把命令后面的参数注入 item；
+        # 这里以 event.message_str 为准兜底，避免 /送礼 一条围巾 永远提示“用法”。
+        if not str(item or "").strip():
+            raw = str(getattr(event, "message_str", "") or "").replace("／", "/").strip()
+            parts = [part for part in raw.split() if part and not part.startswith("@")]
+            if parts and parts[0].lstrip("/").startswith("送礼"):
+                item = " ".join(parts[1:]).strip()
         yield event.plain_result(self.gift.manual_gift(event, item))

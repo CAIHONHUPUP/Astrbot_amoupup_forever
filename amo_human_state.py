@@ -11,6 +11,12 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     except ImportError:  # 直接按文件加载时
         from amo_observability import note as _note_swallowed
 
+# 稳定事件：日程写完后发布；当前订阅者为空，行为与直接调用完全兼容。
+try:
+    from .amo_events import ScheduleChanged
+except ImportError:  # 直接按文件加载时
+    from amo_events import ScheduleChanged
+
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .day_types import normalize_day_types, pick_day_type
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
@@ -31,6 +37,7 @@ import json
 import math
 import random
 import re
+import threading
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -55,6 +62,7 @@ if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
         parse_hhmm,
         parse_weather_daily,
         schedule_category_mood,
+        city_or_empty,
         sentiment,
         to_float,
         to_int,
@@ -85,7 +93,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             parse_hhmm,
             parse_weather_daily,
             schedule_category_mood,
-            sentiment,
+            city_or_empty,
+        sentiment,
             to_float,
             to_int,
             today_str,
@@ -114,12 +123,18 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             parse_hhmm,
             parse_weather_daily,
             schedule_category_mood,
-            sentiment,
+            city_or_empty,
+        sentiment,
             to_float,
             to_int,
             today_str,
             weekday_cn,
         )
+
+try:  # 纯规则模块：日程 → 地点/场景优先级（照片严格跟随日程用）
+    from .photo_rules import CATEGORY_PRIORITY, zone_for_place
+except ImportError:  # 直接按文件加载时
+    from photo_rules import CATEGORY_PRIORITY, zone_for_place
 
 
 def slot_has_ended(day, start, end, now=None):
@@ -160,6 +175,9 @@ class HumanState:
     def __init__(self, plugin):
         self.p = plugin
         self.db = plugin.db
+        # 日程读改写统一串行化：对话改日程、后台 tick、面板写日程不会同时落库。
+        self._schedule_commit_lock = threading.RLock()
+        self._schedule_gen_locks = {}
         saved_mood = self.db.kv_get("mood", {}) or {}
         self.mood = {key: clamp(saved_mood.get(key, MOOD_BASE[key])) for key in MOOD_KEYS}
         self.mood_ts = to_float(self.db.kv_get("mood_ts", now_ts()), now_ts())
@@ -521,14 +539,10 @@ class HumanState:
             base_temp = 19
         text, tag = rng.choice(choices)
         temp = base_temp + rng.randint(-4, 4)
-        city = (
-            self.p.cfg_str("weather_city", "").strip()
-            or str((getattr(self, "schedule_profile", {}) or {}).get("city") or "").strip()
-            or "贵阳"
-        )
+        city = city_or_empty(self.p)
         return {
             # 存显示名，refresh_weather 的缓存签名才比得上（weather_city 可能是数字 ID）
-            "city": (self.p.cfg_str("weather_city_name", "") or "").strip() or city,
+            "city": city,
             "text": text, "tag": tag, "temp": temp,
             "humidity": rng.randint(40, 90),
             "wind": random.choice(["东风", "南风", "西北风", "微风"]) + str(rng.randint(1, 4)) + "级",
@@ -721,16 +735,12 @@ class HumanState:
             _note_swallowed("amo_human_state.HumanState.refresh_weather", _amo_exc)
         current = self.weather or {}
         key = self.p.cfg_str("hefeng_key", "")
-        city = (
-            self.p.cfg_str("weather_city", "").strip()
-            or str((getattr(self, "schedule_profile", {}) or {}).get("city") or "").strip()
-            or "贵阳"
-        )
+        city = city_or_empty(self.p)
         host = self.p.cfg_str("weather_host", "")
         # 配置里的城市/Key/Host 变了就必须重取，不能继续用旧缓存。
         # 比较用显示名：weather_city 可能是数字 LocationID，缓存里存的却是「东莞」这种名字，
         # 拿数字去比永远不相等 → 每次轮询都强制重取天气（30 秒一次，免费额度会被打光）。
-        city_label = (self.p.cfg_str("weather_city_name", "") or "").strip() or city
+        city_label = city
         current_signature = (current.get("city"), bool(current.get("key_set")), current.get("host"))
         desired_signature = (city_label, bool(key), host)
         if current_signature != desired_signature:
@@ -742,7 +752,7 @@ class HumanState:
             return current
         old_tag = current.get("tag")
         data = None
-        if key:
+        if key and city:
             data = await self._fetch_qweather(key, city)
         if not data:
             data = self._simulate_weather()
@@ -759,8 +769,10 @@ class HumanState:
         weather = self.weather or {}
         if not weather:
             return "还不知道天气"
-        return "%s %s %s℃ 湿度%s%% %s" % (
-            weather.get("city", ""), weather.get("text", ""),
+        city = str(weather.get("city") or "").strip()
+        prefix = (city + " ") if city else ""
+        return "%s%s %s℃ 湿度%s%% %s" % (
+            prefix, weather.get("text", ""),
             weather.get("temp", ""), weather.get("humidity", ""), weather.get("wind", ""),
         )
 
@@ -785,12 +797,7 @@ class HumanState:
         return {
             "name": self.p.persona_name or self.p.cfg_str("bot_name", "") or "陪伴",
             "age": 22,
-            "city": (
-                self.p.cfg_str("weather_city_name", "").strip()
-                or self.p.cfg_str("weather_city", "").strip()
-                or str((getattr(self, "schedule_profile", {}) or {}).get("city") or "").strip()
-                or "贵阳"
-            ),
+            "city": city_or_empty(self.p),
             "occupation": "普通上班族",
             "workplace": "公司",
             "personality": "温柔、敏感，偶尔有点小脾气",
@@ -855,23 +862,35 @@ class HumanState:
             return 0 <= parse_hhmm(text) < 24 * 60
 
         valid = [item for item in (items or []) if _good_start(item)]
+        if not valid:
+            # 没有日程就是没有：不能凭空造 24 小时「休息/睡觉」，否则会生成假小日记。
+            return []
         valid.sort(key=lambda item: parse_hhmm(item.get("start")))
         result = []
         for hour in range(24):
             start_min = hour * 60
             found = None
+            found_overlap = 0
+            found_begin = -1
             for item in valid:
                 begin = parse_hhmm(item.get("start"))
                 finish = parse_hhmm(item.get("end")) or (begin + 60)
-                if begin <= start_min < finish:
+                # 一小时内被切成两段时，取占时更长的那段；并列取更晚开始的那段
+                # （例如 13:30 改日程：13:00-13:30 旧、13:30-14:00 新 -> 13 点日记算新）。
+                overlap = min(finish, start_min + 60) - max(begin, start_min)
+                if overlap <= 0:
+                    continue
+                if overlap > found_overlap or (overlap == found_overlap and begin >= found_begin):
                     found = item
-                    break
+                    found_overlap = overlap
+                    found_begin = begin
             entry = {
                 "start": "%02d:00" % hour,
                 "end": "24:00" if hour == 23 else "%02d:00" % (hour + 1),
                 "activity": "睡觉" if hour < 7 or hour >= 23 else "休息",
                 "place": "家",
                 "category": "sleep" if hour < 7 or hour >= 23 else "rest",
+                "subject": "bot",
             }
             if found:
                 entry.update({
@@ -880,7 +899,7 @@ class HumanState:
                     "category": found.get("category", "rest"),
                 })
                 for key in ("zone", "transit", "vehicle", "detail", "spot",
-                            "event", "mood", "mood_valence"):
+                            "event", "mood", "mood_valence", "swim"):
                     if found.get(key) not in (None, "", 0):
                         entry[key] = found.get(key)
                 if isinstance(found.get("effects"), dict):
@@ -889,6 +908,171 @@ class HumanState:
                     entry["soothe"] = True
             result.append(entry)
         return result
+
+    @classmethod
+    def changed_hours(cls, old_items, new_items):
+        """比较两版日程在 24 个整点槽上的差异，返回变化的小时列表。"""
+        try:
+            old = cls._hourly_schedule(old_items)
+            new = cls._hourly_schedule(new_items)
+        except Exception:
+            return []
+        if not old and not new:
+            return []
+        changed = []
+        fields = ("activity", "place", "category", "zone", "detail", "event")
+        for hour in range(24):
+            a = old[hour] if hour < len(old) else {}
+            b = new[hour] if hour < len(new) else {}
+            if any(str(a.get(key) or "") != str(b.get(key) or "") for key in fields):
+                changed.append(hour)
+        return changed
+
+    @classmethod
+    def _brief_schedule(cls, items, hours, limit=3):
+        """日志用：只打变化小时的活动/地点/分类，避免整份日程刷屏。"""
+        hourly = cls._hourly_schedule(items)
+        by_hour = {}
+        for item in hourly:
+            try:
+                by_hour[int(str(item.get("start") or "0")[:2])] = item
+            except Exception:
+                continue
+        picked = []
+        for hour in (hours or [])[:limit]:
+            item = by_hour.get(int(hour)) or {}
+            picked.append("%02d:00|%s|%s|%s" % (
+                int(hour), item.get("activity") or "-",
+                item.get("place") or "-", item.get("category") or "-",
+            ))
+        if hours and len(hours) > limit:
+            picked.append("...+%d" % (len(hours) - limit))
+        return ",".join(picked) or "-"
+
+    def commit_schedule_change(self, day, new_items, old_items=None, source="",
+                               reason="", invalidate_from=None):
+        """所有日程写入口的唯一落库点；外层锁保证同一天的读改写串行。"""
+        with self._schedule_commit_lock:
+            return self._commit_schedule_change_locked(
+                day, new_items, old_items=old_items, source=source,
+                reason=reason, invalidate_from=invalidate_from,
+            )
+
+    def _commit_schedule_change_locked(self, day, new_items, old_items=None, source="",
+                                       reason="", invalidate_from=None):
+        """commit_schedule_change 的锁内实现。"""
+        day = str(day)
+        if old_items is None:
+            old_items = list(self.schedule.get(day) or [])
+        old_items = list(old_items or [])
+        new_items = list(new_items or [])
+        if old_items == new_items and invalidate_from is None:
+            return {
+                "changed": False,
+                "version": self.db.schedule_version(day),
+                "changed_hours": [],
+                "cancelled": [],
+            }
+        changed = self.changed_hours(old_items, new_items)
+        try:
+            version = self.db.bump_schedule_version(day)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
+            version = 0
+        self.schedule[day] = new_items
+        if source in ("chat", "command", "manual"):
+            try:
+                ctx = dict(self.schedule_ctx.get(day) or {})
+                ctx["manual_override"] = True
+                ctx["manual_source"] = source
+                ctx["manual_reason"] = str(reason or "")
+                self.schedule_ctx[day] = ctx
+                self.db.kv_set("schedule_ctx", self.schedule_ctx)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.commit_schedule_change.manual", _amo_exc)
+        try:
+            self.db.save_schedule(day, new_items)
+            self.db.kv_set("schedule", self.schedule)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
+        if invalidate_from is not None:
+            try:
+                start_hour = max(0, min(23, int(invalidate_from)))
+            except (TypeError, ValueError):
+                start_hour = 0
+        elif changed:
+            start_hour = min(changed)
+        else:
+            start_hour = None
+        cancelled = []
+        events = getattr(self.p, "events", None)
+        has_bus = bool(callable(getattr(events, "has_subscribers", None))
+                       and events.has_subscribers(ScheduleChanged))
+        if has_bus:
+            try:
+                results = events.publish_collect(ScheduleChanged(
+                    day=str(day), version=int(version or 0),
+                    source=str(source or ""), reason=str(reason or ""),
+                    manual_override=bool((self.schedule_ctx.get(day) or {}).get("manual_override")),
+                    start_hour=start_hour if start_hour is not None else -1,
+                    changed_hours=tuple(changed or ()),
+                )) or []
+                for result in results:
+                    if isinstance(result, (list, tuple)):
+                        cancelled = list(result)
+                        break
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.HumanState.commit_schedule_change.event", _amo_exc)
+        else:
+            # 兼容没有事件总线的旧实例/单测；线上由 main 的订阅者接管。
+            if start_hour is not None:
+                try:
+                    self.db.mark_diaries_stale(day, start_hour, version)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
+                cancel = getattr(self.p, "_cancel_diary_tasks", None)
+                if callable(cancel):
+                    try:
+                        cancelled = cancel(day, start_hour) or []
+                    except Exception as _amo_exc:
+                        _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
+            daily_mark = getattr(self.p, "_mark_daily_diary_stale", None)
+            if callable(daily_mark):
+                try:
+                    daily_mark(day, version)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
+            wardrobe = getattr(self.p, "wardrobe", None)
+            if wardrobe is not None:
+                try:
+                    invalidate = getattr(wardrobe, "invalidate", None)
+                    if callable(invalidate):
+                        invalidate(day, reason="schedule_changed")
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
+            photo = getattr(self.p, "photo", None)
+            changed_hook = getattr(photo, "on_schedule_changed", None) if photo is not None else None
+            if callable(changed_hook):
+                try:
+                    changed_hook(day, version, "schedule_changed")
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_human_state.HumanState.commit_schedule_change.photo", _amo_exc)
+        logger.info(
+            "[SCHEDULE_DEBUG] day=%s old=%s new=%s version=%s source=%s subject=bot "
+            "target_hours=%s invalidate_from=%s cancel=%s reason=%s manual_override=%s",
+            day,
+            self._brief_schedule(old_items, changed or ([start_hour] if start_hour is not None else [])),
+            self._brief_schedule(new_items, changed or ([start_hour] if start_hour is not None else [])),
+            version, source or "-", changed or ([start_hour] if start_hour is not None else []),
+            start_hour if start_hour is not None else "-", cancelled, reason or "-",
+            bool((self.schedule_ctx.get(day) or {}).get("manual_override")),
+        )
+        return {
+            "changed": True,
+            "version": version,
+            "changed_hours": changed,
+            "cancelled": cancelled,
+        }
 
     @staticmethod
     def _fmt_minutes(value):
@@ -901,6 +1085,8 @@ class HumanState:
         """一级 4 段、二级每小时；不再生成三级 10 分钟。"""
         day = str(day or today_str())
         hourly = self._hourly_schedule(self.schedule.get(day) or self.db.get_schedule(day) or [])
+        if not hourly:
+            return []
         now_min = minutes_now()
         is_today = day == today_str()
         blocks = [
@@ -1048,7 +1234,13 @@ class HumanState:
             cached = store.get(key)
             if isinstance(cached, dict) and cached.get("id"):
                 return cached
-            picked = dict(pick_day_type(self._day_types(), date.fromisoformat(key).weekday() >= 5, key))
+            # 法定节假日也按“休息日池”抽；不能只看 weekday>=5，否则节假日
+            # 仍可能抽到加班日/上班日。
+            try:
+                rest = bool(day_meta(key).get("rest"))
+            except Exception:
+                rest = date.fromisoformat(key).weekday() >= 5
+            picked = dict(pick_day_type(self._day_types(), rest, key))
             store[key] = picked
             if len(store) > 30:
                 for old in sorted(store)[:-30]:
@@ -1084,12 +1276,45 @@ class HumanState:
             _note_swallowed("amo_human_state.schedule_text_of", _amo_exc)
             return "想不起来…"
 
+    def _schedule_gen_lock(self, day):
+        key = str(day or today_str())
+        lock = self._schedule_gen_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._schedule_gen_locks[key] = lock
+        return lock
+
     async def ensure_schedule(self, umo, force=False):
-        """每天只生成一次主干；点击二级卡片时再动态生成这一小时的日记。"""
+        """每天只生成一次主干；同一日期加锁，避免并发生成两份。"""
+        async with self._schedule_gen_lock(today_str()):
+            return await self._ensure_schedule_locked(umo, force=force)
+
+    async def _ensure_schedule_locked(self, umo, force=False):
+        """ensure_schedule 的锁内实现；点击二级卡片时再动态生成这一小时的日记。"""
         today = today_str()
         meta = day_meta(today)
+        if force:
+            # /amo schedule regen、面板重生成：先丢掉当天缓存的 day_type，
+            # 否则配置改成 weekend 之后还会读回旧的 homebody。
+            try:
+                store = self._day_type_store()
+                if today in store:
+                    store.pop(today, None)
+                    self.db.kv_set("day_types", store)
+                ctx = dict(self.schedule_ctx.get(today) or {})
+                if ctx.pop("manual_override", None):
+                    self.schedule_ctx[today] = ctx
+                    self.db.kv_set("schedule_ctx", self.schedule_ctx)
+                    logger.info("[SCHEDULE_DEBUG] day=%s manual_override=cleared reason=force_regen", today)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.ensure_schedule.clear_day_type", _amo_exc)
+        previous = list(self.schedule.get(today) or [])
         existing = None if force else self.schedule.get(today)
         context = self.schedule_ctx.get(today) or {}
+        if not force and context.get("manual_override") and self.schedule.get(today):
+            # 用户手动改过就先按手动版走，自动日程不覆盖。
+            logger.info("[SCHEDULE_DEBUG] day=%s manual_override=true skip=auto_ensure", today)
+            return self._hourly_schedule(self.schedule.get(today) or [])
         version_ok = (
             self.db.kv_get("schedule_version", "") == SCHEDULE_VERSION
             and isinstance(context, dict)
@@ -1099,9 +1324,10 @@ class HumanState:
         if existing and version_ok and not force:
             hourly = self._hourly_schedule(existing)
             if hourly != existing:
-                self.schedule[today] = hourly
-                self.db.kv_set("schedule", self.schedule)
-                self.db.save_schedule(today, hourly)
+                self.commit_schedule_change(
+                    today, hourly, old_items=existing,
+                    source="ensure_normalize", reason="hourly_normalize",
+                )
             return hourly
         world = await self.ensure_worldview(umo)
         persona = ""
@@ -1143,12 +1369,7 @@ class HumanState:
                 items = None
         if not items:
             profile = getattr(self, "schedule_profile", {}) or {}
-            fallback_city = (
-                self.p.cfg_str("schedule_city", "").strip()
-                or str(profile.get("city") or "").strip()
-                or str((weather or {}).get("city") or "").strip()
-                or "贵阳"
-            )
+            fallback_city = city_or_empty(self.p)
             context = context or {
                 "version": "backbone-v5",
                 "day": today,
@@ -1171,20 +1392,18 @@ class HumanState:
             }
             items = self._emergency_schedule()
         items = self._hourly_schedule(items)
-        self.schedule[today] = items
         if context:
             context["version"] = "backbone-v5"
             context["day"] = today
             self.schedule_ctx[today] = context
             self.db.kv_set("schedule_ctx", self.schedule_ctx)
         self.db.kv_set("schedule_version", SCHEDULE_VERSION)
-        self.db.kv_set("schedule", self.schedule)
-        self.db.save_schedule(today, items)
-        if force:
-            try:
-                self.db.clear_diaries(today)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_human_state.HumanState.ensure_schedule", _amo_exc)
+        self.commit_schedule_change(
+            today, items, old_items=previous,
+            source="ensure_regen" if force else "ensure",
+            reason="force" if force else "rebuild",
+            invalidate_from=0 if force else None,
+        )
         cutoff = (_now().date() - timedelta(days=14)).isoformat()
         for day in list(self.schedule.keys()):
             if day < cutoff:
@@ -1336,9 +1555,6 @@ class HumanState:
         merged = keep + items
         if not merged:
             return False
-        self.schedule[today] = merged
-        self.db.save_schedule(today, merged)
-        self.db.kv_set("schedule", self.schedule)
         try:
             ctx = dict(self.schedule_ctx.get(today) or {})
             if ctx:
@@ -1350,13 +1566,11 @@ class HumanState:
                 self.db.kv_set("schedule_ctx", self.schedule_ctx)
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState.apply_follow_start", _amo_exc)
-        try:
-            if keep_past:
-                self.db.clear_diaries_from(today, "%02d:00" % start)
-            else:
-                self.db.clear_diaries(today)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_human_state.HumanState.apply_follow_start", _amo_exc)
+        self.commit_schedule_change(
+            today, merged, old_items=existing,
+            source="travel_follow_start", reason="follow_start",
+            invalidate_from=start if keep_past else 0,
+        )
         logger.info("[amo] 出发日日程：%s 点坐车去 %s" % (start, name))
         return True
 
@@ -1394,17 +1608,15 @@ class HumanState:
             _note_swallowed("amo_human_state.HumanState.apply_return_overlay", _amo_exc)
             spots = []
         his = str(self.db.kv_get("his_city", "") or "").strip() or _CITY_DEFAULT
+        existing = self.schedule.get(today) or self.db.get_schedule(today) or []
         items = _city_travel_events(name, 0, spots=spots, until_hour=until)
         items += _city_travel_events(his, until, home=True)
         if not items:
             return False
-        self.schedule[today] = items
-        self.db.save_schedule(today, items)
-        self.db.kv_set("schedule", self.schedule)
-        try:
-            self.db.clear_diaries(today)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_human_state.HumanState.apply_return_overlay", _amo_exc)
+        self.commit_schedule_change(
+            today, items, old_items=existing,
+            source="travel_return", reason="return_overlay", invalidate_from=0,
+        )
         logger.info("[amo] 旅游最后一天：%s 点前在 %s，之后回家" % (until, name))
         return True
 
@@ -1448,9 +1660,6 @@ class HumanState:
         )
         if not merged:
             return False
-        self.schedule[today] = merged
-        self.db.save_schedule(today, merged)
-        self.db.kv_set("schedule", self.schedule)
         try:
             ctx = dict(self.schedule_ctx.get(today) or {})
             if ctx:
@@ -1469,10 +1678,11 @@ class HumanState:
                 self.db.kv_set("schedule_ctx", self.schedule_ctx)
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState.apply_travel_overlay", _amo_exc)
-        try:
-            self.db.clear_diaries_from(today, "%02d:00" % from_hour)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_human_state.HumanState.apply_travel_overlay", _amo_exc)
+        self.commit_schedule_change(
+            today, merged, old_items=existing,
+            source="travel_overlay", reason="travel_overlay",
+            invalidate_from=from_hour,
+        )
         logger.info("[amo] 出行日程已写入：%s 起在 %s%s" % (
             "%02d:00" % from_hour, name, "（回家）" if home else "",
         ))
@@ -1492,12 +1702,7 @@ class HumanState:
             _note_swallowed("amo_human_state.HumanState._minimal_context", _amo_exc)
             meta = day_meta()
         profile = getattr(self, "schedule_profile", {}) or {}
-        city = (
-            self.p.cfg_str("schedule_city", "").strip()
-            or str(profile.get("city") or "").strip()
-            or str((self.weather or {}).get("city") or "").strip()
-            or "贵阳"
-        )
+        city = city_or_empty(self.p)
         return {
             "version": "backbone-v5",
             "day": day,
@@ -1520,29 +1725,75 @@ class HumanState:
         }
 
     async def expand_hour(self, day, item, items=None, force=False):
-        """点击二级卡片时，实时生成这一小时的第一人称小日记。"""
+        """点击二级卡片/调度器生成这一小时的第一人称小日记。
+
+        同一 (day, start) 用进程内锁串行，避免双击/调度器重复调用模型。
+        """
+        day = str(day or today_str())
+        item = dict(item or {})
+        start = str(item.get("start") or "")
+        get_lock = getattr(self.p, "_diary_lock", None)
+        if callable(get_lock) and start:
+            lock = get_lock(day, start)
+            if lock is not None:
+                async with lock:
+                    return await self._expand_hour_impl(day, item, items, force)
+        return await self._expand_hour_impl(day, item, items, force)
+
+    async def _expand_hour_impl(self, day, item, items=None, force=False):
         day = str(day or today_str())
         item = dict(item or {})
         items = items or self._hourly_schedule(self.schedule.get(day) or [])
-        start = item.get("start") or ""
+        start = str(item.get("start") or "")
         if not start:
             return {"diary": "", "mood": "平静", "place": "", "activity": ""}
+        # 以当前日程为准刷新这一小时：面板请求可能在改日程之前就取到了旧 item。
+        try:
+            latest_items = self._hourly_schedule(
+                self.schedule.get(day) or self.db.get_schedule(day) or []
+            )
+            latest_item = next(
+                (x for x in latest_items if str(x.get("start") or "") == start), None,
+            )
+            if latest_item is not None:
+                item = dict(latest_item)
+                items = latest_items
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.HumanState.expand_hour", _amo_exc)
+        get_version = getattr(self.db, "schedule_version", None)
+        try:
+            version = int(get_version(day)) if callable(get_version) else 0
+        except Exception:
+            version = 0
         # 小日记只写已经过完的时间段：这一小时还没结束就返回 pending，不能提前生成。
         if not slot_has_ended(day, start, item.get("end")):
+            logger.info(
+                "[DIARY_DEBUG] hour=%s timer_cancel=none next_run=%s reason=pending version=%s",
+                start, item.get("end") or "-", version,
+            )
             return {"diary": "", "mood": item.get("mood") or "平静",
                     "place": item.get("place") or "",
                     "activity": item.get("activity") or "",
-                    "pending": True}
-        if not force:
-            cached = self.db.get_diary(day, start)
-            if cached:
-                return {
-                    "diary": cached,
-                    "mood": item.get("mood") or "平静",
-                    "place": item.get("place") or "",
-                    "activity": item.get("activity") or "",
-                    "cached": True,
-                }
+                    "pending": True, "version": version}
+        get_record = getattr(self.db, "get_diary_record", None)
+        record = None
+        if callable(get_record):
+            try:
+                record = get_record(day, start)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.HumanState.expand_hour", _amo_exc)
+        if not force and record and str(record.get("status") or "valid") == "valid" \
+                and record.get("text"):
+            return {
+                "diary": str(record.get("text") or ""),
+                "mood": item.get("mood") or "平静",
+                "place": item.get("place") or "",
+                "activity": item.get("activity") or "",
+                "cached": True, "version": version,
+            }
+        stale_text = ""
+        if record and str(record.get("status") or "") == "stale":
+            stale_text = str(record.get("text") or "")
         context = self.schedule_context(day)
         if not context:
             context = self._minimal_context(day)
@@ -1575,7 +1826,8 @@ class HumanState:
                 _note_swallowed("amo_human_state.HumanState.expand_hour", _amo_exc)
                 prev_diary = ""
         result = {"diary": "", "mood": item.get("mood") or "平静",
-                  "place": item.get("place") or "", "activity": item.get("activity") or ""}
+                  "place": item.get("place") or "", "activity": item.get("activity") or "",
+                  "version": version}
         if self.engine is not None:
             try:
                 result.update(await self.engine.generate_diary(
@@ -1584,6 +1836,11 @@ class HumanState:
                 ))
             except Exception as exc:
                 logger.warning("[amo] 动态日记生成失败: %s" % exc)
+        if not result.get("diary") and stale_text:
+            # 重算失败就保留旧文，不把这一小时清空；下次读取会再试。
+            result["diary"] = stale_text
+            result["stale"] = True
+            return result
         if not result.get("diary") and self.engine is not None:
             result["diary"] = self.engine.fallback_diary(context, item, prev_item)
         if not result.get("diary"):
@@ -1591,7 +1848,66 @@ class HumanState:
                 item.get("place") or "家", item.get("activity") or "待着",
                 item.get("mood") or "平静",
             )
-        self.db.save_diary(day, start, result["diary"])
+        # 生成期间日程又变了：不把旧版本写回去，保留旧文并标记 stale，等下次重算。
+        try:
+            current_version = int(get_version(day)) if callable(get_version) else version
+        except Exception:
+            current_version = version
+        if current_version != version:
+            # 只有“这一小时本身被改 / 被标记 stale”才丢弃；别的时段改日程
+            # 导致全局版本变化时，这一小时仍可安全写回新版本。
+            slot_changed = False
+            try:
+                current_items = self._hourly_schedule(self.schedule.get(day) or [])
+                current_item = next(
+                    (x for x in current_items if str(x.get("start") or "") == start), {},
+                )
+                slot_changed = any(
+                    str(current_item.get(key) or "") != str(item.get(key) or "")
+                    for key in ("activity", "place", "category", "zone", "detail")
+                )
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.HumanState.expand_hour", _amo_exc)
+            record_now = None
+            if callable(get_record):
+                try:
+                    record_now = get_record(day, start)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_human_state.HumanState.expand_hour", _amo_exc)
+            marked_stale = bool(record_now and str(record_now.get("status") or "") == "stale")
+            if slot_changed or marked_stale:
+                logger.info(
+                    "[DIARY_DEBUG] hour=%s timer_cancel=none next_run=- reason=version_changed_discard version=%s->%s",
+                    start, version, current_version,
+                )
+                if stale_text:
+                    result["diary"] = stale_text
+                result["stale"] = True
+                result["version"] = current_version
+                return result
+            version = current_version
+            result["version"] = version
+        if not result.get("diary") and stale_text:
+            result["diary"] = stale_text
+            result["stale"] = True
+            return result
+        try:
+            self.db.save_diary(day, start, result["diary"], version=version, status="valid")
+        except TypeError:
+            # 兼容旧测试里的简化 DB
+            self.db.save_diary(day, start, result["diary"])
+        # 小日记内容变了（首次生成/旧日程重算），已经写好的每日总结也要重写。
+        if force or stale_text or record is None:
+            daily_mark = getattr(self.p, "_mark_daily_diary_stale", None)
+            if callable(daily_mark):
+                try:
+                    daily_mark(day, version)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_human_state.HumanState.expand_hour", _amo_exc)
+        logger.info(
+            "[DIARY_DEBUG] hour=%s timer_cancel=none next_run=- reason=%s version=%s",
+            start, "force_regen" if force else "generated", version,
+        )
         return result
 
     def apply_schedule_events(self):
@@ -1653,28 +1969,134 @@ class HumanState:
                     break
         self.db.kv_set(key, True)
 
-    def current_activity(self):
-        items = self.schedule.get(today_str()) or []
-        current = minutes_now()
-        for item in items:
-            if in_minute_range(current, parse_hhmm(item.get("start")), parse_hhmm(item.get("end"))):
-                return dict(item)
+    def _photo_info(self, message):
+        """生图链路的可见日志：只在 debug_prompt / photo_debug 打开时打。"""
+        try:
+            if not (self.p.cfg_bool("debug_prompt", False) or self.p.cfg_bool("photo_debug", False)):
+                return
+        except Exception:
+            return
+        logger.info(str(message))
+
+    def _hour_fallback_activity(self):
+        """最后的按小时兜底（只在今天、昨天都没有日程时才用）。"""
         hour = _now().hour
         if hour < 6:
-            return {"start": "00:00", "end": "06:00", "activity": "睡觉", "place": "家", "category": "sleep"}
-        if hour < 9:
-            return {"start": "07:00", "end": "09:00", "activity": "起床收拾", "place": "家", "category": "life"}
-        if hour < 12:
-            return {"start": "09:00", "end": "12:00", "activity": "上班", "place": "公司", "category": "work"}
-        if hour < 14:
-            return {"start": "12:00", "end": "14:00", "activity": "吃午饭", "place": "公司附近", "category": "meal"}
-        if hour < 18:
-            return {"start": "14:00", "end": "18:00", "activity": "上班", "place": "公司", "category": "work"}
-        if hour < 20:
-            return {"start": "18:00", "end": "20:00", "activity": "吃晚饭", "place": "家", "category": "meal"}
-        if hour < 23:
-            return {"start": "20:00", "end": "23:00", "activity": "休息", "place": "家", "category": "rest"}
-        return {"start": "23:00", "end": "24:00", "activity": "准备睡觉", "place": "家", "category": "sleep"}
+            data = {"start": "00:00", "end": "06:00", "activity": "睡觉", "place": "家", "category": "sleep"}
+        elif hour < 9:
+            data = {"start": "07:00", "end": "09:00", "activity": "起床收拾", "place": "家", "category": "life"}
+        elif hour < 12:
+            data = {"start": "09:00", "end": "12:00", "activity": "上班", "place": "公司", "category": "work"}
+        elif hour < 14:
+            data = {"start": "12:00", "end": "14:00", "activity": "吃午饭", "place": "公司附近", "category": "meal"}
+        elif hour < 18:
+            data = {"start": "14:00", "end": "18:00", "activity": "上班", "place": "公司", "category": "work"}
+        elif hour < 20:
+            data = {"start": "18:00", "end": "20:00", "activity": "吃晚饭", "place": "家", "category": "meal"}
+        elif hour < 23:
+            data = {"start": "20:00", "end": "23:00", "activity": "休息", "place": "家", "category": "rest"}
+        else:
+            data = {"start": "23:00", "end": "24:00", "activity": "准备睡觉", "place": "家", "category": "sleep"}
+        data["zone"] = zone_for_place(data.get("place"))
+        return data
+
+    def current_activity_info(self):
+        """当前日程 + 取到它的原因（照片/自拍链路用；原因会写进日志）。
+
+        优先级：
+        1. 今天日程里覆盖当前分钟的那条（多条重叠取最近开始的，同时间按类别优先级）；
+        2. 今天有日程但这小时没覆盖（编辑后留了空档）→ 沿用最近开始的那条；
+        3. 今天还没生成日程（0 点后 / 刚启动）→ 沿用昨天同一小时；
+        4. 昨天也没有 → 按小时兜底，并明确标记 no_schedule。
+        """
+        today = today_str()
+        try:
+            items = self.schedule.get(today) or []
+        except Exception:
+            items = []
+        if not isinstance(items, list):
+            items = []
+        current = minutes_now()
+        hits = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                if in_minute_range(current, parse_hhmm(item.get("start")), parse_hhmm(item.get("end"))):
+                    hits.append(item)
+            except Exception:
+                continue
+        if len(hits) > 1:
+            hits.sort(key=lambda it: (
+                parse_hhmm(it.get("start")),
+                CATEGORY_PRIORITY.get(str(it.get("category") or ""), 0),
+            ))
+            chosen = hits[-1]
+            self._photo_info(
+                "[PHOTO_DEBUG] schedule_conflict=%d chosen=%s-%s zone=%s others=%s"
+                % (len(hits), chosen.get("start"), chosen.get("end"), chosen.get("zone"),
+                   "|".join("%s-%s" % (it.get("start"), it.get("end")) for it in hits[:-1]))
+            )
+            return dict(chosen), "schedule_conflict"
+        if hits:
+            return dict(hits[0]), "schedule"
+        if items:
+            started = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    if parse_hhmm(item.get("start")) <= current:
+                        started.append(item)
+                except Exception:
+                    continue
+            if started:
+                chosen = max(started, key=lambda it: parse_hhmm(it.get("start")))
+                data = dict(chosen)
+                data["_source"] = "stale_slot"
+                data["_reason"] = "今天日程这小时没有覆盖，沿用最近开始的一段"
+                self._photo_info(
+                    "[PHOTO_DEBUG] fallback=stale_slot chosen=%s-%s zone=%s"
+                    % (chosen.get("start"), chosen.get("end"), chosen.get("zone"))
+                )
+                return data, "stale_slot"
+        # 今天还没生成：沿用昨天同一小时（生活连续性比凭空换场景更自然）
+        try:
+            yesterday = (_now().date() - timedelta(days=1)).isoformat()
+        except Exception:
+            yesterday = ""
+        y_items = []
+        if yesterday:
+            try:
+                y_items = self.schedule.get(yesterday) or self.db.get_schedule(yesterday) or []
+            except Exception:
+                y_items = []
+        y_hits = []
+        for item in y_items or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                if in_minute_range(current, parse_hhmm(item.get("start")), parse_hhmm(item.get("end"))):
+                    y_hits.append(item)
+            except Exception:
+                continue
+        if y_hits:
+            data = dict(y_hits[0])
+            data["_source"] = "yesterday_same_hour"
+            data["_reason"] = "今天日程还没生成，沿用昨天同一小时"
+            self._photo_info(
+                "[PHOTO_DEBUG] fallback=no_schedule_today reused=yesterday_same_hour %s zone=%s"
+                % (yesterday, data.get("zone"))
+            )
+            return data, "yesterday_same_hour"
+        data = self._hour_fallback_activity()
+        data["_source"] = "no_schedule"
+        data["_reason"] = "今天和昨天都没有日程，按小时兜底"
+        self._photo_info("[PHOTO_DEBUG] fallback=no_schedule reason=no_today_no_yesterday")
+        return data, "no_schedule"
+
+    def current_activity(self):
+        return self.current_activity_info()[0]
 
     @staticmethod
     def busy_level(activity):

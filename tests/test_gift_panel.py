@@ -28,7 +28,7 @@ class PanelTests(unittest.TestCase):
 
     def test_main_registers_gift_api(self):
         source = _plugin_source.all_source(ROOT)
-        self.assertEqual(source.count('("/gift", self.api_gift, ["GET"])'), 1)
+        self.assertEqual(source.count('("/gift", "api_gift", ("GET",))'), 1)
         self.assertEqual(source.count("async def api_gift"), 1)
 
 

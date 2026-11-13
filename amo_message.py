@@ -226,6 +226,17 @@ class MessageMixin(_MixinBase):
         self._ctx_hydrated = getattr(self, "_ctx_hydrated", set())
         self._ctx_hydrated.add(str(umo))
 
+    def _is_other_bot(self, event) -> bool:
+        """发言人是不是群里的其他机器人（只在她开“不跟机器人聊”时生效）。"""
+        engine = getattr(self, "heartflow", None)
+        if engine is None or not getattr(engine, "ignore_bots", True):
+            return False
+        try:
+            return bool(engine.is_other_bot_sender(event))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message.HumanCorePlugin._is_other_bot", _amo_exc)
+            return False
+
     def _is_talking_to_me(self, event):
         """这句是不是冲她来的：私聊、被 @ / 叫名字、或心流判定对象是 bot。"""
         try:
@@ -263,29 +274,52 @@ class MessageMixin(_MixinBase):
             _note_swallowed("amo_message.HumanCorePlugin._handle_message", _amo_exc)
         uid = self._canonical_uid(event)
         if not uid or uid == str(event.get_self_id()):
+            logger.debug("[GATE] chat=unknown skip reason=no_uid")
             return
         text = (event.message_str or "").strip()
         if not text:
+            logger.debug("[GATE] chat=unknown skip reason=empty_text")
             return
         if self._looks_like_command(text):
+            logger.debug("[GATE] chat=command skip reason=command")
             return
 
         umo = event.unified_msg_origin
         private = event.is_private_chat()
+        if not private and self._is_other_bot(event):
+            # 群里别的机器人：@她也不接，避免两个机器人互相聊
+            logger.info("[GATE] chat=group skip reason=other_bot sender=%s", event.get_sender_name())
+            try:
+                if self.heartflow is not None:
+                    self.heartflow.note_other_bot(event)
+                event.stop_event()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_message.HumanCorePlugin._handle_message", _amo_exc)
+            return
         if private:
             self._clear_proactive_pending(uid)
             self._try_soothe(uid, text)
         if private and not self.cfg_bool("enable_private_reply", True):
+            logger.debug("[GATE] chat=private skip reason=private_reply_off")
             return
         if not private and not self.cfg_bool("enable_group_reply", True):
+            logged = getattr(self, "_group_off_logged", None)
+            if logged is None:
+                logged = set()
+                self._group_off_logged = logged
+            if umo not in logged:
+                logged.add(umo)
+                logger.info("[GATE] chat=group skip reason=group_reply_off umo=%s", umo)
             return
         if private and self.cfg_bool("private_debounce_enabled", True):
             # 同一个人连着发的几条先合起来，只让最后一条走完整回复流程
             ok_debounce = await self._debounce_private(event, text)
             if not ok_debounce:
+                logger.debug("[GATE] chat=private skip reason=debounce_buffer")
                 return
             text = (event.message_str or "").strip()
             if not text:
+                logger.debug("[GATE] chat=private skip reason=empty_after_debounce")
                 return
 
         if not private:
@@ -303,6 +337,7 @@ class MessageMixin(_MixinBase):
 
         # 群聊只走完整心流引擎；旧的五维门控/防抖/直发逻辑不再参与。
         if self.heartflow is None or not self.cfg_bool("hf_enable_heartflow", True):
+            logger.debug("[GATE] chat=group skip reason=heartflow_off")
             return
         snap = self.state.snapshot()
         if self._should_disturb(snap, umo, uid, text, group=True):
@@ -324,12 +359,14 @@ class MessageMixin(_MixinBase):
         if self._should_disturb(snap, umo, uid, event.message_str or "", group=False):
             self._apply_disturbance(umo)
             # 不 stop_event，让 AstrBot 正常生成；<amo_state> 会带上被打扰的语气。
+            logger.debug("[GATE] chat=private skip reason=disturb_mode")
             return
         probability = self.gate.private_probability(snap, profile)
         roll = random.random()
         logger.info(
-            "[amo] 私聊判定 | 概率=%.2f | roll=%.2f | %s"
-            % (probability, roll, "回复" if roll <= probability else "不回")
+            "[amo] 私聊判定 | 关系=%s | 概率=%.2f | roll=%.2f | %s"
+            % (profile.get("relation", "普通"), probability, roll,
+               "回复" if roll <= probability else "不回")
         )
         if roll <= probability:
             return
@@ -535,8 +572,7 @@ class MessageMixin(_MixinBase):
                 if saved_user == last_user:
                     return
             self._ctx_remember(umo, "bot", self.bot_name, "bot", text)
-            if self.cfg_bool("local_chat_cache", False):
-                self.db.add_message(umo, "bot", self.bot_name, "bot", text)
+            # 本地 messages 表不再缓存原始聊天；上下文只在内存，长期记录写记忆终端。
             # 直接同步写进记忆终端：fire-and-forget 在 reload/退出时会丢这句
             saved = False
             store = self._data_store()
@@ -591,7 +627,9 @@ class MessageMixin(_MixinBase):
         if not uid or uid == "bot":
             return
         try:
-            await self._data_memory_write(uid, marker, kind="event", tier=0, scope="private")
+            await self._data_memory_write(
+                uid, marker, kind="bot_media", tier=0, scope="private", subject="bot",
+            )
         except Exception as exc:
             logger.debug("[amo] 媒体记忆写入失败: %s" % exc)
 

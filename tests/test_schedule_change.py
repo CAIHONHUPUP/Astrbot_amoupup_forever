@@ -90,6 +90,27 @@ class ScheduleChangeTests(unittest.TestCase):
         new = apply_change(items, change, datetime.datetime(2026, 11, 12, 20, 10))
         self.assertEqual(new[0]["category"], "rest")
 
+    def test_change_syncs_zone_with_place(self):
+        # 改日程只改 activity/place 时，zone 必须跟着变，否则拍照背景还是旧地点
+        items = [
+            {"start": "17:00", "end": "18:00", "activity": "上班", "place": "公司",
+             "zone": "office", "category": "work"},
+        ]
+        change = detect_schedule_change("那赶快回家吧")
+        new = apply_change(items, change, datetime.datetime(2026, 11, 12, 17, 50))
+        self.assertEqual(new[0]["zone"], "road")
+        self.assertEqual(new[0]["place"], "路上")
+
+    def test_sleep_change_moves_zone_home(self):
+        items = [
+            {"start": "21:00", "end": "22:00", "activity": "加班", "place": "公司",
+             "zone": "office", "category": "work"},
+        ]
+        change = detect_schedule_change("我该睡了")
+        new = apply_change(items, change, datetime.datetime(2026, 11, 12, 21, 10))
+        self.assertEqual(new[0]["zone"], "home")
+        self.assertEqual(new[0]["place"], "家")
+
 
 if __name__ == "__main__":
     unittest.main()

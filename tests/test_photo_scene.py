@@ -95,7 +95,7 @@ class SceneForOutsideTests(unittest.TestCase):
     def test_road_driving_is_car_window(self):
         scene = scene_for({"zone": "road", "place": "路上", "category": "commute",
                            "activity": "开车", "transit": "drive", "vehicle": "车"})
-        self.assertIn("车里", scene)
+        self.assertIn("安全带", scene)
 
     def test_road_default_is_street(self):
         scene = scene_for({"zone": "road", "place": "路上", "activity": "走了两步"})

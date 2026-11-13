@@ -5,7 +5,7 @@
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#f8f6fc" />
+  <meta name="theme-color" content="#eaf8ff" />
   <title>我能永远陪伴你</title>
   <style>
     :root {
@@ -335,9 +335,182 @@
     }
   </style>
 <style id="amo-skyblue-theme">
-  /* 天蓝主题（2026-11-11 用户定）：覆盖主色，不碰布局 */
-  :root { --pink: #0ea5e9; --pink2: #38bdf8; --brand: #0ea5e9; --accent: #0ea5e9; }
-  html[data-theme="dark"] { --pink: #38bdf8; --pink2: #7dd3fc; }
+  /* 天蓝主题：整页天空蓝，卡片保持浅色玻璃感 */
+  :root {
+    --pink: #0ea5e9; --pink2: #38bdf8; --brand: #0ea5e9; --accent: #0ea5e9;
+    --bg1: #eaf8ff; --bg2: #dff2ff; --card: #f7fcff;
+    --line: #cfe9fa; --text: #123044; --muted: #5b7c93; --hover: #e0f2fe;
+    --track: rgba(14, 165, 233, .12);
+  }
+  html[data-theme="dark"] {
+    --pink: #38bdf8; --pink2: #7dd3fc;
+    --bg1: #071c2b; --bg2: #0b2a3f; --card: #0f2d42;
+    --line: #1d4b66; --text: #e6f7ff; --muted: #9dc6da; --hover: #123d57;
+  }
+  body {
+    background:
+      radial-gradient(1100px 500px at 50% -10%, rgba(255,255,255,.75), transparent 65%),
+      linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 55%, var(--bg1) 100%);
+    background-attachment: fixed;
+  }
+  .card {
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    border-color: var(--line);
+    box-shadow: 0 10px 30px rgba(14, 165, 233, .07);
+  }
+  .photo-nav {
+    display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 6px;
+    margin: 0 0 4px; scrollbar-width: none;
+  }
+  .photo-nav::-webkit-scrollbar { display: none; }
+  .photo-nav-btn {
+    flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--muted);
+    padding: 8px 13px; font-size: 13px; cursor: pointer; white-space: nowrap;
+    transition: .18s ease; text-align: center;
+  }
+  .photo-nav-btn:hover { border-color: var(--pink); color: var(--pink); background: var(--hover); }
+  .photo-nav-btn.active {
+    color: #fff; background: linear-gradient(135deg, var(--pink), var(--pink2));
+    border-color: transparent; box-shadow: 0 6px 16px rgba(14, 165, 233, .24);
+    font-weight: 600;
+  }
+  .photo-pane > .card:first-child { margin-top: 0; }
+  .photo-section-title {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; border: 0; background: transparent; color: var(--text);
+    font-size: 14px; font-weight: 650; padding: 0; margin: 0 0 8px;
+    cursor: pointer; text-align: left;
+  }
+  .photo-section-title .chev { color: var(--pink); transition: transform .18s; }
+  .photo-section-title[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+  /* 顶部导航：圆角方形 + 图标 + 文字，选中填充天蓝 */
+  .tabs {
+    gap: 7px; padding: 4px 2px; background: transparent;
+  }
+  .tab {
+    min-width: 60px; height: 58px; padding: 6px 4px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; border: 1px solid var(--line); border-radius: 16px;
+    background: color-mix(in srgb, var(--card) 82%, transparent);
+    color: var(--muted); font-size: 11px; line-height: 1.1;
+    box-shadow: 0 5px 14px rgba(14, 165, 233, .04);
+  }
+  .tab .tab-ico { display: block; font-size: 18px; line-height: 1; }
+  .tab:hover { border-color: var(--pink); color: var(--pink); background: var(--hover); }
+  .tab.active {
+    color: #fff; border-color: transparent;
+    background: linear-gradient(145deg, var(--pink), var(--pink2));
+    box-shadow: 0 7px 18px rgba(14, 165, 233, .28);
+  }
+  .tab.active .tab-ico { filter: drop-shadow(0 1px 1px rgba(0,0,0,.12)); }
+  .tab.icon-tab {
+    width: 32px; height: 32px; min-width: 32px; padding: 0;
+    display: grid; place-items: center; border-radius: 10px;
+  }
+  .neuron-btn {
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; line-height: 0;
+  }
+  .neuron-btn svg { display: block; width: 15px; height: 15px; }
+  .settings-group {
+    border: 1px solid var(--line); border-radius: 14px;
+    background: color-mix(in srgb, var(--card) 74%, transparent);
+    overflow: hidden;
+  }
+  .settings-group > summary {
+    list-style: none; cursor: pointer; padding: 12px 14px;
+    display: flex; align-items: center; justify-content: flex-start;
+    gap: 8px; min-height: 46px; color: var(--text);
+    font-size: 14px; font-weight: 650;
+  }
+  .settings-group > summary::-webkit-details-marker { display: none; }
+  .settings-group-title {
+    flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .settings-count {
+    flex: 0 0 auto; margin-left: auto; color: var(--muted);
+    font-size: 13px; font-weight: 600; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: .2px;
+  }
+  .settings-group > summary::after {
+    flex: 0 0 14px; width: 14px; text-align: center;
+    content: "▾"; color: var(--pink); font-size: 13px;
+    transition: transform .18s;
+  }
+  .settings-group:not([open]) > summary::after { transform: rotate(-90deg); }
+  .settings-group-body { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .settings-group-body .setting-row { padding-top: 0; }
+  /* 世界文档：身份卡 + 可展开长文，避免一屏全是段落 */
+  .world-doc {
+    margin-top: 12px; padding: 0; border: 0; background: transparent;
+    color: var(--text); font-size: 13px; line-height: 1.7;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  .world-hero {
+    display: flex; align-items: center; gap: 12px; padding: 14px;
+    border: 1px solid var(--line); border-radius: 16px;
+    background: linear-gradient(135deg, rgba(14,165,233,.10), rgba(255,255,255,.5));
+  }
+  .world-avatar {
+    flex: 0 0 42px; width: 42px; height: 42px; border-radius: 14px;
+    display: grid; place-items: center; font-size: 22px;
+    background: linear-gradient(145deg, var(--pink), var(--pink2));
+    color: #fff; box-shadow: 0 6px 14px rgba(14,165,233,.22);
+  }
+  .world-name { font-size: 20px; font-weight: 750; line-height: 1.2; }
+  .world-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .world-facts {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px; margin-top: 10px;
+  }
+  .world-fact {
+    padding: 9px 11px; border: 1px solid var(--line); border-radius: 12px;
+    background: color-mix(in srgb, var(--card) 78%, transparent);
+    min-width: 0;
+  }
+  .world-fact span { display: block; color: var(--muted); font-size: 10.5px; }
+  .world-fact strong { display: block; font-size: 12.5px; margin-top: 2px; font-weight: 600; }
+  .world-fact.wide { grid-column: 1 / -1; }
+  .world-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .world-tag {
+    padding: 5px 9px; border-radius: 999px; font-size: 12px;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+  }
+  .world-tag b { color: var(--pink); font-weight: 600; }
+  .world-section {
+    margin-top: 10px; border: 1px solid var(--line); border-radius: 14px;
+    background: color-mix(in srgb, var(--card) 74%, transparent); overflow: hidden;
+  }
+  .world-section > summary {
+    list-style: none; cursor: pointer; padding: 11px 13px;
+    display: flex; align-items: baseline; gap: 8px; color: var(--text);
+    font-size: 13px; font-weight: 650;
+  }
+  .world-section > summary::-webkit-details-marker { display: none; }
+  .world-section > summary::after {
+    content: "▾"; margin-left: auto; color: var(--pink); font-size: 12px;
+  }
+  .world-section:not([open]) > summary::after { transform: rotate(-90deg); }
+  .world-section-title {
+    flex: 0 0 3em; width: 3em; white-space: nowrap; word-break: keep-all;
+  }
+  .world-preview {
+    color: var(--muted); font-size: 11.5px; font-weight: 400;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0; flex: 1 1 40px;
+  }
+  .world-section[open] .world-preview { display: none; }
+  .world-section-body {
+    padding: 0 13px 13px; color: var(--text); font-size: 12.5px;
+    line-height: 1.8; white-space: pre-wrap;
+  }
+  .world-expand {
+    border: 1px solid var(--line); border-radius: 999px; background: var(--card);
+    color: var(--muted); font-size: 12px; padding: 6px 11px; cursor: pointer;
+  }
+  .world-expand:hover { border-color: var(--pink); color: var(--pink); }
 </style>
 <style id="amo-wardrobe-theme">
   /* 穿搭页：衣服小标签 */
@@ -386,21 +559,22 @@
     <div class="tabnav">
       <button class="tabnav-arrow left" type="button" aria-label="向前">‹</button>
       <nav class="tabs">
-      <button class="tab active" data-tab="world">世界</button>
-      <button class="tab" data-tab="schedule">日程</button>
-      <button class="tab" data-tab="actions">操作</button>
-      <button class="tab" data-tab="profiles">用户</button>
-      <button class="tab" data-tab="gift">礼物</button>
-      <button class="tab" data-tab="wardrobe">穿搭</button>
-      <button class="tab" data-tab="photo">照片</button>
-      <button class="tab" data-tab="settings" data-group="基础">基础</button>
-      <button class="tab" data-tab="settings" data-group="状态">参数</button>
-      <button class="tab" data-tab="settings" data-group="记忆">记忆</button>
-      <button class="tab" data-tab="settings" data-group="私聊">私聊</button>
-      <button class="tab" data-tab="settings" data-group="心流">心流</button>
-      <button class="tab" data-tab="settings" data-group="分段">分段</button>
-      <button class="tab" data-tab="diary">日记</button>
-      <button class="tab" data-tab="usage">用量</button>
+      <button class="tab active" data-tab="world"><span class="tab-ico">🌍</span><span>世界</span></button>
+      <button class="tab" data-tab="schedule"><span class="tab-ico">🗓️</span><span>日程</span></button>
+      <button class="tab" data-tab="actions"><span class="tab-ico">🎛️</span><span>操作</span></button>
+      <button class="tab" data-tab="profiles"><span class="tab-ico">👤</span><span>用户</span></button>
+      <button class="tab" data-tab="gift"><span class="tab-ico">🎁</span><span>礼物</span></button>
+      <button class="tab" data-tab="wardrobe"><span class="tab-ico">👗</span><span>穿搭</span></button>
+      <button class="tab" data-tab="photo"><span class="tab-ico">📷</span><span>照片</span></button>
+      <button class="tab" data-tab="settings" data-group="基础"><span class="tab-ico">🧱</span><span>基础</span></button>
+      <button class="tab" data-tab="settings" data-group="状态"><span class="tab-ico">⚙️</span><span>参数</span></button>
+      <button class="tab" data-tab="settings" data-group="记忆"><span class="tab-ico">🧠</span><span>记忆</span></button>
+      <button class="tab" data-tab="settings" data-group="私聊"><span class="tab-ico">💬</span><span>私聊</span></button>
+      <button class="tab" data-tab="settings" data-group="语音"><span class="tab-ico">🎙️</span><span>语音</span></button>
+      <button class="tab" data-tab="settings" data-group="心流"><span class="tab-ico">💗</span><span>心流</span></button>
+      <button class="tab" data-tab="settings" data-group="分段"><span class="tab-ico">✂️</span><span>分段</span></button>
+      <button class="tab" data-tab="diary"><span class="tab-ico">📔</span><span>日记</span></button>
+      <button class="tab" data-tab="usage"><span class="tab-ico">📊</span><span>用量</span></button>
       </nav>
       <button class="tabnav-arrow right" type="button" aria-label="向后">›</button>
     </div>
@@ -454,8 +628,9 @@
         <div class="row between">
           <div>
             <div class="label">世界文档</div>
-            <div class="sub">她的生活设定、城市、工作、性格与边界。</div>
+            <div class="sub">她的生活设定、城市、工作、性格与边界；长文默认收起，点标题展开。</div>
           </div>
+          <button id="worldExpandAll" class="world-expand" type="button">展开全部</button>
         </div>
         <article id="worldDoc" class="world-doc">加载中…</article>
       </section>
@@ -725,7 +900,13 @@
     </div>
 
     <div id="tab-photo" class="tab-panel" hidden>
-      <section class="card">
+      <nav class="photo-nav" id="photoNav" role="tablist" aria-label="照片功能">
+        <button class="photo-nav-btn active" type="button" data-photo-pane="share">📷 分享与拍摄</button>
+        <button class="photo-nav-btn" type="button" data-photo-pane="generate">🪄 按提示词生成</button>
+        <button class="photo-nav-btn" type="button" data-photo-pane="persona">🧍 角色三视图</button>
+        <button class="photo-nav-btn" type="button" data-photo-pane="advanced">💾 保存与说明</button>
+      </nav>
+      <section class="card photo-pane" data-photo-pane="share">
         <div class="row between">
           <div>
             <div class="label">照片分享</div>
@@ -748,9 +929,9 @@
         </div>
       </section>
 
-      <section class="card" style="margin-top:14px">
+      <section class="card photo-pane" data-photo-pane="generate" style="margin-top:14px" hidden>
         <div class="label">按提示词生成</div>
-        <div class="sub">自动加上「照片提示词前缀」和今天的穿搭；勾选「同时发到聊天」才会发出去</div>
+        <div class="sub">这里的提示词只描述“你想让她拍什么画面”，会叠加上照片前缀和今天的穿搭；不会改人设、日程或记忆。勾选「同时发到聊天」才会发出去。</div>
         <textarea id="photoPrompt" class="input" rows="2" placeholder="例如：在咖啡馆窗边自拍，穿着米色针织衫" style="width:100%;margin-top:8px;resize:vertical"></textarea>
         <div class="row" style="margin-top:8px;gap:8px;align-items:center">
           <button id="photoGen" type="button">生成</button>
@@ -764,7 +945,7 @@
         <div id="photoGenPreview" style="margin-top:10px"></div>
       </section>
 
-      <section class="card" style="margin-top:14px">
+      <section class="card photo-pane" data-photo-pane="persona" style="margin-top:14px" hidden>
         <div class="label">角色三视图</div>
         <div class="sub">每个视角独立：生成预览里勾选一张保存为模板；模板预览里勾选表示启用</div>
         <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap;align-items:center">
@@ -783,7 +964,7 @@
         <div class="sub" style="margin-top:12px;line-height:1.7">⚠ 生图需要万象画卷插件（astrbot_plugin_omnidraw）；在万象画卷里配好 key 和主脑/副脑模型后，想陪会自动握手，三视图、穿搭参考图和提示词直接生效，不用两边重复配置。</div>
       </section>
 
-      <section class="card" style="margin-top:14px">
+      <section class="card photo-pane" data-photo-pane="persona" style="margin-top:14px" hidden>
         <div class="sub" style="line-height:1.7;font-size:14px;margin-top:0">
           <strong style="color:#d94a86">注意</strong><br>
           · 每个视角独立保存一张模板；在「生成预览」里勾选候选图再点「保存勾选的模板」<br>
@@ -794,7 +975,7 @@
         </div>
       </section>
 
-      <section class="card" style="margin-top:14px">
+      <section class="card photo-pane" data-photo-pane="advanced" style="margin-top:14px" hidden>
         <div class="label">最终保存</div>
         <div class="sub" style="line-height:1.7">
           滚到这儿不用再回头找按钮，点一次把这栏能存的一起存好：<br>
@@ -1412,6 +1593,15 @@
       try {
         const response = await call("schedule_detail", { date: currentScheduleDay, start: hour.start });
         const data = objectFrom(response) || {};
+        if (data.pending) {
+          box.textContent = "";
+          const pending = document.createElement("div");
+          pending.className = "diary-meta";
+          pending.textContent = "这一小时还没过完，过点后再生成。";
+          box.appendChild(pending);
+          delete row.dataset.loading;
+          return;
+        }
         const diary = String(data.diary || "").trim();
         if (!diary) throw new Error("模型没有返回内容");
         box.textContent = "";
@@ -1421,6 +1611,7 @@
           (data.start || hour.start) + "-" + (data.end || hour.end),
           data.place || hour.place || "",
           data.mood ? "心情 " + data.mood : "",
+          data.stale ? "旧日程，重算中" : "",
         ].filter(Boolean).join(" · ");
         const text = document.createElement("div");
         text.className = "diary-text";
@@ -1454,8 +1645,9 @@
       day.textContent = data.day
         ? "日期：" + data.day + (meta.label ? " · " + meta.label : "") + (meta.rest ? " · 休息日" : "") + eventText + " · 点开每小时卡片生成小日记"
         : "";
+      const items = Array.isArray(data.items) ? data.items : [];
       const tree = Array.isArray(data.tree) ? data.tree : (Array.isArray(data.schedule_tree) ? data.schedule_tree : []);
-      if (!tree.length) {
+      if (!items.length || !tree.length) {
         box.textContent = "暂无日程，点“刷新”或“重生日程”。";
         return;
       }
@@ -1658,6 +1850,13 @@
       await action("worldview_regen", e.currentTarget);
       await loadWorld();
     });
+    const worldExpandButton = document.getElementById("worldExpandAll");
+    if (worldExpandButton) worldExpandButton.addEventListener("click", () => {
+      const sections = Array.from(document.querySelectorAll("#worldDoc details.world-section"));
+      const allOpen = sections.length > 0 && sections.every((section) => section.open);
+      sections.forEach((section) => { section.open = !allOpen; });
+      worldExpandButton.textContent = allOpen ? "展开全部" : "收起全部";
+    });
     document.getElementById("worldDialect").addEventListener("change", async (event) => {
       const select = event.currentTarget;
       const value = select.value;
@@ -1708,34 +1907,124 @@
       return value === undefined || value === null ? "" : String(value);
     }
 
+    function worldPreview(text, limit) {
+      const clean = String(text || "").replace(/\s+/g, " ").trim();
+      const max = limit || 46;
+      return clean.length > max ? clean.slice(0, max) + "…" : clean;
+    }
+
+    function worldFact(label, value, wide) {
+      const text = worldText(value).trim();
+      if (!text) return null;
+      const item = document.createElement("div");
+      item.className = "world-fact" + (wide ? " wide" : "");
+      const key = document.createElement("span");
+      key.textContent = label;
+      const val = document.createElement("strong");
+      val.textContent = text;
+      item.appendChild(key);
+      item.appendChild(val);
+      return item;
+    }
+
+    function worldSection(label, value) {
+      const text = worldText(value).trim();
+      if (!text) return null;
+      const details = document.createElement("details");
+      details.className = "world-section";
+      const summary = document.createElement("summary");
+      const title = document.createElement("span");
+      title.className = "world-section-title";
+      title.textContent = label;
+      const preview = document.createElement("span");
+      preview.className = "world-preview";
+      preview.textContent = worldPreview(text);
+      summary.appendChild(title);
+      summary.appendChild(preview);
+      details.appendChild(summary);
+      const body = document.createElement("div");
+      body.className = "world-section-body";
+      body.textContent = text;
+      details.appendChild(body);
+      return details;
+    }
+
     function renderWorld(world) {
       const box = document.getElementById("worldDoc");
       box.textContent = "";
-      const rows = [
-        ["名字", world.name],
-        ["年龄", world.age],
-        ["城市", world.city],
-        ["职业", world.occupation],
-        ["任职", world.workplace],
-        ["性格", world.personality],
-        ["爱好", world.hobbies],
-        ["日常", world.daily_life],
-        ["世界规则", world.world_rules],
-        ["简介", world.summary],
-      ];
-      let count = 0;
-      rows.forEach(([label, value]) => {
-        const text = worldText(value).trim();
-        if (!text) return;
-        count += 1;
-        const title = document.createElement("h3");
-        title.textContent = label;
-        const para = document.createElement("p");
-        para.textContent = text;
-        box.appendChild(title);
-        box.appendChild(para);
+      const name = worldText(world.name).trim();
+      const age = worldText(world.age).trim();
+      const city = worldText(world.city).trim();
+      const occupation = worldText(world.occupation).trim();
+      const workplace = worldText(world.workplace).trim();
+      const personality = worldText(world.personality).trim();
+      const hobbies = worldText(world.hobbies).trim();
+      const daily = worldText(world.daily_life).trim();
+      const rules = worldText(world.world_rules).trim();
+      const summaryText = worldText(world.summary).trim();
+      const hasAny = [name, age, city, occupation, workplace, personality, hobbies, daily, rules, summaryText].some(Boolean);
+      if (!hasAny) {
+        box.textContent = "还没有生成世界文档。";
+        const emptyExpand = document.getElementById("worldExpandAll");
+        if (emptyExpand) emptyExpand.hidden = true;
+        return;
+      }
+
+      const hero = document.createElement("div");
+      hero.className = "world-hero";
+      const avatar = document.createElement("div");
+      avatar.className = "world-avatar";
+      avatar.textContent = (name || "她").slice(0, 1);
+      const heroText = document.createElement("div");
+      const heroName = document.createElement("div");
+      heroName.className = "world-name";
+      heroName.textContent = name || "未命名";
+      const heroSub = document.createElement("div");
+      heroSub.className = "world-sub";
+      heroSub.textContent = [age ? age + " 岁" : "", city, occupation].filter(Boolean).join(" · ");
+      heroText.appendChild(heroName);
+      if (heroSub.textContent) heroText.appendChild(heroSub);
+      hero.appendChild(avatar);
+      hero.appendChild(heroText);
+      box.appendChild(hero);
+
+      const facts = document.createElement("div");
+      facts.className = "world-facts";
+      [
+        ["年龄", age ? age + " 岁" : ""],
+        ["城市", city],
+        ["职业", occupation],
+        ["任职", workplace, true],
+      ].forEach(([label, value, wide]) => {
+        const item = worldFact(label, value, wide);
+        if (item) facts.appendChild(item);
       });
-      if (!count) box.textContent = "还没有生成世界文档。";
+      if (facts.children.length) box.appendChild(facts);
+
+      const tags = document.createElement("div");
+      tags.className = "world-tags";
+      [["性格", personality], ["爱好", hobbies]].forEach(([label, value]) => {
+        if (!value) return;
+        const tag = document.createElement("span");
+        tag.className = "world-tag";
+        const key = document.createElement("b");
+        key.textContent = label + "：";
+        tag.appendChild(key);
+        tag.appendChild(document.createTextNode(value));
+        tags.appendChild(tag);
+      });
+      if (tags.children.length) box.appendChild(tags);
+
+      [["简介", summaryText], ["日常", daily], ["世界", rules]].forEach(([label, value]) => {
+        const section = worldSection(label, value);
+        if (section) box.appendChild(section);
+      });
+
+      const expand = document.getElementById("worldExpandAll");
+      if (expand) {
+        expand.textContent = "展开全部";
+        expand.hidden = !box.querySelector("details.world-section");
+      }
     }
 
     async function loadWorld() {
@@ -1929,7 +2218,8 @@
       textEl.textContent = "读取中…";
       try {
         const data = objectFrom(await call("diary/read", { date })) || {};
-        textEl.textContent = data.text || "（这篇是空的）";
+        const staleNote = data.stale ? "\n\n[这篇日记写完后日程又变了，正在按新日程重写]" : "";
+        textEl.textContent = (data.text || "（这篇是空的）") + staleNote;
       } catch (error) {
         textEl.textContent = "读取失败：" + (error && error.message ? error.message : "接口未就绪");
       }
@@ -2219,14 +2509,18 @@
         }
       });
       const names = wardrobeNames(wardrobeSel);
+      const dayState = String(data.day_state || "");
+      const nightState = String(data.night_state || "");
       const todayBox = document.getElementById("wardrobeToday");
       if (todayBox) {
         todayBox.innerHTML = "";
         if (data.enabled === false) {
           todayBox.appendChild(wardrobeRow("穿搭衣柜没加载", "看日志有没有 wardrobe 初始化失败"));
-        } else if (data.current && data.current.wearing_swim) {
-          todayBox.appendChild(wardrobeRow("正在穿泳装",
-            (data.current.set || data.current.text || "泳装整套")));
+        } else if (dayState === "swim") {
+          todayBox.appendChild(wardrobeRow("正在使用泳装",
+            (data.swim && (data.swim.set || data.swim.text)) || "泳装整套"));
+        } else if (dayState === "pending8") {
+          todayBox.appendChild(wardrobeRow("白天穿搭", "8 点自动生成"));
         } else {
           const skirtName = names.skirt || "";
           const skirtIsDress = /连衣裙|长裙|连身裙|睡裙/.test(skirtName);
@@ -2242,6 +2536,8 @@
       if (meta) {
         if (data.enabled === false) meta.textContent = "";
         else if (wardrobeDirty) meta.textContent = "还没保存 · 点「保存今日穿搭」才锁定";
+        else if (dayState === "pending8") meta.textContent = "8 点自动生成";
+        else if (dayState === "swim") meta.textContent = "正在使用泳装";
         else {
           const dayCount = Number(data.outfit_count) || 0;
           const daySeed = Number(data.day_seed_count) || 0;
@@ -2259,6 +2555,11 @@
         nightBox.innerHTML = "";
         if (data.enabled === false) {
           nightBox.appendChild(wardrobeRow("睡衣还没加载", ""));
+        } else if (nightState === "swim") {
+          nightBox.appendChild(wardrobeRow("正在使用泳装",
+            (data.swim && (data.swim.set || data.swim.text)) || "泳装整套"));
+        } else if (nightState === "outing") {
+          nightBox.appendChild(wardrobeRow("晚上穿搭", "临时外出"));
         } else if (night.pending) {
           nightBox.appendChild(wardrobeRow("今晚睡衣", "20:00 后自动生成"));
         } else {
@@ -2271,6 +2572,8 @@
       const nightMeta = document.getElementById("wardrobeNightMeta");
       if (nightMeta) {
         if (data.enabled === false) nightMeta.textContent = "";
+        else if (nightState === "swim") nightMeta.textContent = "正在使用泳装";
+        else if (nightState === "outing") nightMeta.textContent = "临时外出 · 回家后恢复晚上穿搭";
         else if (night.pending) nightMeta.textContent = "20:00 后自动生成";
         else {
           nightMeta.textContent = night.hotel
@@ -3421,6 +3724,22 @@
         }
       });
     });
+    function showPhotoPane(name) {
+      const target = String(name || "share");
+      document.querySelectorAll("#tab-photo .photo-pane").forEach((section) => {
+        section.hidden = section.dataset.photoPane !== target;
+      });
+      document.querySelectorAll("#photoNav [data-photo-pane]").forEach((button) => {
+        const active = button.dataset.photoPane === target;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
+      });
+    }
+    document.querySelectorAll("#photoNav [data-photo-pane]").forEach((button) => {
+      button.addEventListener("click", () => showPhotoPane(button.dataset.photoPane));
+    });
+    showPhotoPane("share");
+
     const photoRefreshButton = document.getElementById("photoRefresh");
     if (photoRefreshButton) photoRefreshButton.addEventListener("click", () => loadPhoto());
     const photoSaveButton = document.getElementById("photoSave");
@@ -4098,6 +4417,53 @@
       return row;
     }
 
+    function settingsCategory(item, group) {
+      const text = [item.key, item.description, item.hint, item.group].join(" ").toLowerCase();
+      if (group === "基础") {
+        if (/weather|city|timezone|hefeng|weather_/.test(text)) return "城市、天气与时区";
+        if (/bot_name|persona|reply|dialect|style|name|称呼/.test(text)) return "角色与说话";
+        if (/theme|debug|log|enable|开关|面板/.test(text)) return "开关与显示";
+        return "其他基础";
+      }
+      if (group === "状态") {
+        if (/period|menstru|生理/.test(text)) return "生理期";
+        if (/health|sick|健康|生病/.test(text)) return "健康";
+        if (/mood|心情|情绪/.test(text)) return "心情";
+        if (/schedule|日程/.test(text)) return "日程与作息";
+        return "其他状态";
+      }
+      if (group === "记忆") {
+        if (/provider|来源|source|plugin|data/.test(text)) return "来源与连接";
+        if (/recall|召回|summary|摘要|context|记忆/.test(text)) return "召回与摘要";
+        if (/milestone|digest|auto_learn|归档|学习/.test(text)) return "归档与学习";
+        return "其他记忆";
+      }
+      if (group === "语音") {
+        if (/enable|开关/.test(text)) return "按需语音";
+        return "发送方式";
+      }
+      if (group === "私聊") {
+        if (/debounce|防抖/.test(text)) return "防抖与合并";
+        if (/proactive|主动|问候|greeting|ritual/.test(text)) return "主动与问候";
+        if (/delay|segment|分段|回复/.test(text)) return "回复节奏";
+        return "其他私聊";
+      }
+      if (group === "心流") {
+        if (/enable|开关|debug|日志/.test(text)) return "开关与调试";
+        if (/threshold|阈值|activity|活跃/.test(text)) return "阈值与活跃度";
+        if (/judge|判断|provider|模型|context/.test(text)) return "判断模型";
+        if (/whitelist|白名单|group|群/.test(text)) return "群聊与白名单";
+        return "其他心流";
+      }
+      if (group === "分段") {
+        if (/enable|开关|debug/.test(text)) return "开关与调试";
+        if (/split|symbol|min|max|断句|分隔/.test(text)) return "断句规则";
+        if (/delay|延迟|typing|打字/.test(text)) return "延迟节奏";
+        return "其他分段";
+      }
+      return "其他";
+    }
+
     function renderSettings() {
       const box = document.getElementById("settingsList");
       box.textContent = "";
@@ -4111,10 +4477,11 @@
           const haystack = (item.key + " " + (item.description || "") + " " + (item.hint || "")).toLowerCase();
           if (!haystack.includes(term)) return;
         }
-        if (!groups[groupName]) groups[groupName] = [];
-        groups[groupName].push(item);
+        const category = settingsCategory(item, groupName);
+        if (!groups[category]) groups[category] = [];
+        groups[category].push(item);
       });
-      const items = groups[activeGroup] || [];
+      const total = Object.values(groups).reduce((sum, rows) => sum + rows.length, 0);
       if (activeGroup === "基础") {
         const themeRow = document.createElement("div");
         themeRow.className = "setting-row";
@@ -4146,27 +4513,48 @@
         box.appendChild(themeRow);
       }
       if (activeGroup === "基础" && !term) box.appendChild(buildCityRow());
-      if (!items.length) {
+      if (!total) {
         if (activeGroup !== "基础") box.textContent = "这个分组没有匹配的配置";
         return;
       }
-      items.forEach((item) => {
-        const row = document.createElement("div");
-        row.className = "setting-row" + (item.type === "template_list" ? " wide" : "");
-        const left = document.createElement("div");
-        const name = document.createElement("div");
-        name.className = "name";
-        name.textContent = item.description || item.key;
-        left.appendChild(name);
-        if (item.hint || item.type === "list" || item.type === "template_list") {
-          const hint = document.createElement("div");
-          hint.className = "hint";
-          hint.textContent = (item.hint || "") + (item.type === "list" ? "（一行一个，直接输入，不用加引号/JSON）" : (item.type === "template_list" ? "（在下面逐项填写）" : ""));
-          left.appendChild(hint);
-        }
-        row.appendChild(left);
-        row.appendChild(settingControl(item));
-        box.appendChild(row);
+      Object.keys(groups).sort().forEach((category) => {
+        const rows = groups[category] || [];
+        const details = document.createElement("details");
+        details.className = "settings-group";
+        // 默认收起；只有用户主动搜索时才自动展开匹配项。
+        details.open = Boolean(term);
+        const summary = document.createElement("summary");
+        const title = document.createElement("span");
+        title.className = "settings-group-title";
+        title.textContent = category;
+        const count = document.createElement("span");
+        count.className = "settings-count";
+        count.textContent = rows.length + " 项";
+        summary.appendChild(title);
+        summary.appendChild(count);
+        details.appendChild(summary);
+        const body = document.createElement("div");
+        body.className = "settings-group-body";
+        rows.forEach((item) => {
+          const row = document.createElement("div");
+          row.className = "setting-row" + (item.type === "template_list" ? " wide" : "");
+          const left = document.createElement("div");
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = item.description || item.key;
+          left.appendChild(name);
+          if (item.hint || item.type === "list" || item.type === "template_list") {
+            const hint = document.createElement("div");
+            hint.className = "hint";
+            hint.textContent = (item.hint || "") + (item.type === "list" ? "（一行一个，直接输入，不用加引号/JSON）" : (item.type === "template_list" ? "（在下面逐项填写）" : ""));
+            left.appendChild(hint);
+          }
+          row.appendChild(left);
+          row.appendChild(settingControl(item));
+          body.appendChild(row);
+        });
+        details.appendChild(body);
+        box.appendChild(details);
       });
     }
 

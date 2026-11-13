@@ -109,7 +109,9 @@ class NightWindowTests(unittest.TestCase):
     def test_before_20_panel_shows_pending(self):
         self._at(10)
         data = self.wardrobe.snapshot()
-        self.assertEqual(data["night"], {"pending": True})
+        self.assertTrue(data["night"].get("pending"))
+        self.assertEqual(data["night"].get("state"), "pending20")
+        self.assertEqual(data["night_state"], "pending20")
         self.assertEqual(data["hour"], 10)
 
     def test_before_20_does_not_lock_todays_sleep_outfit(self):
@@ -127,10 +129,12 @@ class NightWindowTests(unittest.TestCase):
         self.assertTrue(night.get("top") or night.get("skirt"))
         self.assertEqual(data["current"].get("sleep"), True)
 
-    def test_early_morning_still_night(self):
+    def test_early_morning_is_pending_not_tonights_sleepwear(self):
         self._at(3)
         data = self.wardrobe.snapshot()
-        self.assertFalse(data["night"].get("pending"))
+        self.assertTrue(data["night"].get("pending"))
+        self.assertEqual(data["night"]["state"], "pending20")
+        self.assertEqual(data["day_state"], "pending8")
 
 
 if __name__ == "__main__":

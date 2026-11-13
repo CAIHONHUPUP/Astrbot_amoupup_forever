@@ -57,7 +57,7 @@ DAY_TYPES: list[DayType] = [
         "name": "宅家日",
         "enabled": True,
         "weight": 1,
-        "scope": "any",
+        "scope": "weekend",
         "guide": "哪儿也不想去，几乎一整天窝在家：睡到中午，点外卖，"
                  "追剧看书，作息有点乱，晚上反而精神。",
     },

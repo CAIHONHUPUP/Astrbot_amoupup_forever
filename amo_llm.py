@@ -62,6 +62,25 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 
 
 
+PHOTO_REQUEST_RULE = (
+    "\n【拍照请求·执行者是你】他这轮是在让你拍照/发自拍，执行者是你（bot），不是他。"
+    "你要自然答应（“好，我拍 / 等我一下 / 这就拍”），说清你现在的场景；"
+    "禁止说“你拍 / 你快点拍 / 你自己拍 / 给我看看你的”。"
+    "照片由你生成并发送，不是让用户去拍。"
+)
+
+#: 固定动作归属规则：只加一次，不随每轮变化，避免破坏 system prompt 缓存。
+ACTION_OWNERSHIP_RULES = (
+    "\n\n【动作归属·最高优先级】\n"
+    "- 你能做：聊天、发照片/自拍、发语音、写日记、改日程、表达情绪。\n"
+    "- 用户说“发张自拍 / 拍张照片 / 帮我拍 / 拍给我看看”时，执行者是你（bot），不是用户；"
+    "你回答“好，我拍 / 等我一下 / 这就拍”，绝不能说“你拍 / 你快点拍 / 你自己拍 / 给我看看你的”。\n"
+    "- 用户的动作和经历（我明天开会、我在吃饭、我刚下车）只属于用户，不是你的动作；"
+    "你的动作（我拍、我发、我换衣服、我去上班）只属于你，不要推给用户。\n"
+    "- 照片/自拍里的画面主体是你自己（虚拟角色大肥鱼），不是用户；用户不在画面里。\n"
+)
+
+
 class LlmMixin(_MixinBase):
     async def _persona_name_for(self, umo=""):
         """读取当前会话的人格名；读不到时返回空字符串。"""
@@ -382,6 +401,7 @@ class LlmMixin(_MixinBase):
         if note:
             # 延迟补话的说明放在系统侧，不能混进“对方刚刚说”里
             system_parts.append("【这次的情况】" + note)
+        system_parts.append(ACTION_OWNERSHIP_RULES)
         system = "\n\n".join(system_parts)
         if group:
             prompt = (
@@ -423,15 +443,28 @@ class LlmMixin(_MixinBase):
             if self._looks_like_command(event.message_str or ""):
                 return
             context_text = await self._dynamic_context(event)
+            # 固定动作归属块只加一次，不随每轮变化；不破坏 system prompt 前缀缓存。
+            try:
+                system_prompt = str(getattr(req, "system_prompt", "") or "")
+                if "【动作归属·最高优先级】" not in system_prompt:
+                    req.system_prompt = (system_prompt + ACTION_OWNERSHIP_RULES).lstrip()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_llm.LlmMixin.on_llm_request.system", _amo_exc)
             # 只走官方推荐的 extra_user_content_parts（临时 part）注入。
-            # 绝不能改 req.system_prompt：那里放每轮都变的内容会打散系统提示词前缀，
-            # 破坏模型侧缓存（成本涨 7-20 倍），上架审核也会因此被拒。
-            body = "<amo_state>\n" + context_text + "\n</amo_state>"
+            # 绝不能放每轮都变的内容到 req.system_prompt；这里只加固定规则。
+            body = (
+                "<amo_state>\n"
+                "[系统内部状态，不是用户发言；本块里的“你”=bot，“他”=用户]\n"
+                "【动作归属】用户说“发张自拍/拍张照片/帮我拍”是让你拍，执行者是你（bot），"
+                "不是用户；禁止说“你拍/你快点拍/你自己拍”。\n"
+                + context_text + "\n</amo_state>"
+            )
             try:
                 if self.draw is not None and self.draw.wants_photo(event):
-                    body += (
-                        "\n【拍照请求】他这轮明确想要一张照片：自然答应（可以害羞、可以说等一下），"
-                        "说清你现在在哪、在做什么；不要直接拒绝（不要说“不拍 / 拍什么拍”）。"
+                    body += PHOTO_REQUEST_RULE
+                    logger.info(
+                        "[IDENTITY_DEBUG] action=photo executor=bot subject=user request=%s route=normal",
+                        truncate(str(getattr(event, "message_str", "") or ""), 40),
                     )
             except Exception as _amo_exc:
                 _note_swallowed("amo_llm.LlmMixin.on_llm_request", _amo_exc)
@@ -450,7 +483,7 @@ class LlmMixin(_MixinBase):
                 part = {"type": "text", "text": body, "_no_save": True}
             parts.append(part)
         except Exception as exc:
-            logger.debug("[amo] 注入状态失败: %s" % exc)
+            logger.warning("[CONTEXT] inject=0 reason=%s", exc)
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, resp):

@@ -20,17 +20,27 @@
 """
 from __future__ import annotations
 
-try:  # 包模式优先，按文件直接加载时退回绝对导入
-    from .amo_image_common import clean_place
+try:  # 纯规则模块：地点→zone、词表、清洗，和图片引擎解耦
+    from .photo_rules import (
+        SHOPPING_WORDS,
+        TRAVEL_WORDS,
+        clean_place,
+        is_swim_activity,
+        road_ride,
+        zone_for_place,
+    )
 except ImportError:  # 直接按文件加载时
-    from amo_image_common import clean_place
+    from photo_rules import (
+        SHOPPING_WORDS,
+        TRAVEL_WORDS,
+        clean_place,
+        is_swim_activity,
+        road_ride,
+        zone_for_place,
+    )
 
-#: 日程/活动里出现这些词就算「在旅游」
-TRAVEL_WORDS = ("旅游", "旅行", "景区", "景点", "古镇", "海边", "爬山", "公园", "游乐园")
 #: 日程/活动里出现这些词就算「在玩水」（衣柜会换泳装，照片背景是泳池/海边）
-SWIM_WORDS = ("游泳", "泳池", "泳馆", "海边", "沙滩", "水上乐园", "水世界", "海里", "玩水")
 #: 出现这些词就算「在逛街」
-SHOPPING_WORDS = ("逛街", "商场", "专柜", "步行街")
 #: 工作日早上要发「出门穿搭」的类别
 OUTFIT_CATEGORY = ("commute", "work")
 
@@ -51,9 +61,12 @@ _ZONE_PROPS = {
     "restaurant": "餐桌、碗筷和头顶的暖色吊灯",
     "mall": "店铺橱窗、明亮的灯光和来往的人",
     "scenic": "远处的山和树木、石板路和零星的游客",
+    "playground": "过山车、旋转木马、气球和来往的游客",
     "road": "路面、行道树、店面和走过的人",
     "hotel": "大床、落地窗和暖色的灯",
     "station": "指示牌、行李和来往的旅客",
+    "street": "路面、行道树、店面和走过的行人",
+    "hospital": "候诊椅、叫号屏、扶手和走廊",
 }
 
 #: 只说了 zone（没有具体地点）时的整句场景
@@ -63,9 +76,12 @@ _ZONE_SCENES = {
     "restaurant": "餐厅里，餐桌、碗筷和头顶的暖色吊灯",
     "mall": "商场里，明亮的中庭、店铺橱窗和来往的人",
     "scenic": "景区里，远处的山和树木、石板路和零星的游客",
+    "playground": "游乐园里，彩色过山车、旋转木马、气球和来往的游客",
     "road": "街边，路面、行道树、店面和走过的人",
     "hotel": "酒店房间里，大床、落地窗和暖色的灯",
     "station": "车站候车厅，指示牌、行李和来往的旅客",
+    "street": "街边，路面、行道树、店面和走过的行人",
+    "hospital": "医院走廊，候诊椅、叫号屏、扶手和消毒水味的环境",
 }
 
 #: 没有 zone 时按生图类别兜底的场景（面板「发一张旅游照」这类手动请求）
@@ -97,27 +113,11 @@ def place_of(activity):
 
 
 def zone_of(activity):
-    """日程里的地图区域：home / office / mall / scenic / road / restaurant / hotel / station。"""
+    """日程里的地图区域；没有写明 zone 时按地点词反推（具体优先，街/路兜底）。"""
     zone = str(_activity_dict(activity).get("zone") or "").strip()
     if zone:
         return zone
-    place = place_of(activity)
-    if any(word in place for word in ("家", "客厅", "卧室", "沙发", "床", "厨房", "阳台")):
-        return "home"
-    if any(word in place for word in ("酒店", "宾馆", "民宿", "旅馆", "客栈")):
-        return "hotel"
-    if "路" in place or "街" in place:
-        return "road"
-    if "写字楼" in place or "公司" in place or "办公室" in place:
-        return "office"
-    if "商场" in place:
-        return "mall"
-    if "餐厅" in place or "饭馆" in place or "饭店" in place or "食堂" in place:
-        return "restaurant"
-    if "站" in place or "机场" in place:
-        return "station"
-    return ""
-
+    return zone_for_place(place_of(activity))
 
 def scene_blob(activity):
     """zone / 地点 / 活动拼起来，给关键词判断用。"""
@@ -139,7 +139,7 @@ def is_shopping(activity):
 
 def is_swim(activity):
     """在游泳馆/海边/水上乐园玩水（这时候穿的是泳装，背景也得对）。"""
-    return any(word in scene_blob(activity) for word in SWIM_WORDS)
+    return is_swim_activity(activity)
 
 
 def _swim_scene(activity):
@@ -194,16 +194,19 @@ def _home_scene(activity):
 
 def _road_scene(activity):
     activity = _activity_dict(activity)
-    act = str(activity.get("activity") or "")
-    transit = str(activity.get("transit") or "")
-    vehicle = str(activity.get("vehicle") or "")
-    text = act + transit + vehicle
-    if any(word in text for word in ("地铁", "subway", "metro", "车厢里站着")):
-        return "地铁车厢里，扶手、车窗和站着的乘客"
-    if any(word in text for word in ("公交", "大巴")):
-        return "公交车里，车窗、扶手和坐着的乘客"
-    if any(word in text for word in ("打车", "taxi", "网约", "开车", "车里", "驾驶", "车上")):
-        return "车里，车窗外是流动的街景"
+    ride = road_ride(activity)
+    if ride == "subway":
+        return ("真实地铁车厢：车壁两侧是一条硬质长条座椅（不是沙发、不是床），"
+                "头顶一根横向扶手杆、垂着一排吊环拉手，车门上方有线路图，窗外是隧道或站台")
+    if ride == "bus":
+        return ("真实公交车厢：一排排硬质塑料座椅（不是沙发、不是床），"
+                "竖杆扶手和头顶横杆、下车铃、刷卡机，窗外是街道和站牌")
+    if ride == "drive":
+        return ("私家车驾驶位：方向盘、仪表盘和中控台，身上系着安全带，"
+                "前挡风玻璃外是路面、前车和后视镜里的街景")
+    if ride == "taxi":
+        return ("出租车/网约车后排：座椅、车窗和安全带，"
+                "窗外是街道、路口的车流和路边的树")
     return _ZONE_SCENES["road"]
 
 

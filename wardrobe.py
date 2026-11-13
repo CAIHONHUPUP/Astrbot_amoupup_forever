@@ -20,6 +20,7 @@ import re
 import threading
 import time
 import uuid
+from datetime import date, timedelta
 
 from astrbot.api import logger
 
@@ -202,6 +203,12 @@ SWIM_SEED_VERSION = 2
 #: 日程地点里出现这些词就是「在水边/玩水」，自动换泳装
 SWIM_PLACE_WORDS = ("游泳", "泳池", "泳馆", "海边", "沙滩", "水上乐园", "水世界",
                     "海里", "玩水", "泳装")
+
+#: 结构化/严格泳装判定：只有真正玩水才算；海边散步/拍照/看海/买泳装/路过沙滩不算。
+SWIM_STRONG_WORDS = ("游泳", "泳池", "游泳馆", "泳馆", "水上乐园", "水世界",
+                     "海里", "玩水", "踩浪", "戏水", "冲浪", "滑道")
+SWIM_NEGATIVE_WORDS = ("散步", "拍照", "看海", "路过", "买泳装")
+SWIM_SPOTS = ("游泳馆", "泳池", "海边", "沙滩", "水上乐园", "水世界")
 
 SHOE_WORDS = ("鞋", "靴", "拖鞋", "凉拖", "玛丽珍")
 BOTTOM_WORDS = ("裤", "裙")
@@ -1194,6 +1201,23 @@ class Wardrobe:
         sets.sort(key=lambda entry: entry["set"])
         return sets
 
+    def is_swim_activity(self, activity):
+        """严格判定：真正玩水才算泳装场景；海边散步/拍照/看海/买泳装不算。"""
+        data = activity if isinstance(activity, dict) else {}
+        if data.get("swim") is True:
+            return True
+        spot = str(data.get("spot") or "").strip()
+        if spot in ("游泳馆", "泳池", "水上乐园", "水世界"):
+            return True
+        text = " ".join(str(data.get(key) or "") for key in
+                        ("place", "activity", "detail", "spot"))
+        if any(word in text for word in SWIM_STRONG_WORDS):
+            return True
+        if any(word in text for word in SWIM_NEGATIVE_WORDS):
+            return False
+        # “海边/沙滩”本身不够，必须有玩水动作；没有就当普通散步/看海。
+        return False
+
     def _at_swim(self):
         """现在是不是在游泳/海边/水上乐园：是的话自动换泳装。"""
         try:
@@ -1201,8 +1225,7 @@ class Wardrobe:
         except Exception as _amo_exc:
             _note_swallowed("wardrobe.Wardrobe._at_swim", _amo_exc)
             return False
-        text = str(activity.get("place") or "") + " " + str(activity.get("activity") or "")
-        return any(word in text for word in SWIM_PLACE_WORDS)
+        return self.is_swim_activity(activity)
 
     def at_swim(self):
         return self._at_swim()
@@ -1231,8 +1254,7 @@ class Wardrobe:
         for item in items:
             if not isinstance(item, dict):
                 continue
-            text = str(item.get("place") or "") + " " + str(item.get("activity") or "")
-            if not any(word in text for word in SWIM_PLACE_WORDS):
+            if not self.is_swim_activity(item):
                 continue
             start = minutes(item.get("start"))
             end = minutes(item.get("end"))
@@ -1432,6 +1454,22 @@ class Wardrobe:
                 result = self.today(day)
             self._sync_sidecar(result)
             return dict(result)
+        # 0–8 点：还穿着昨晚的睡衣，但不生成/锁定“今晚”的睡衣。
+        if hour < SLEEP_HOUR_TO:
+            try:
+                previous = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+            except Exception:
+                previous = ""
+            if previous:
+                data = self._load()
+                outfit = self._night_entry(data, previous)
+                if outfit is not None:
+                    result = self._describe_sleep(data, outfit, previous)
+                else:
+                    # 昨晚没锁睡衣：沿用昨天的白天穿搭，别在凌晨生成“今晚”的睡衣。
+                    result = self.today(previous)
+                self._sync_sidecar(result)
+                return dict(result)
         night = hour >= SLEEP_HOUR_FROM or hour < SLEEP_HOUR_TO
         if home_early and at_home is True:
             night = True
@@ -1443,6 +1481,45 @@ class Wardrobe:
             result = self.today(day)
         self._sync_sidecar(result)
         return dict(result)
+
+    def invalidate(self, day="", reason=""):
+        """日程变更后清掉穿搭侧缓存；下次读取按新日程实时算状态。"""
+        self._today_cache = None
+        logger.info(
+            "[OUTFIT_DEBUG] time=%s schedule=changed day_slot=- night_slot=- "
+            "swim_slot=- reason=%s",
+            str(day or today_str()), str(reason or "schedule_changed"),
+        )
+
+    def tick(self):
+        """后台 30 秒 tick：8:00 生成白天穿搭，20:00 在家生成晚上穿搭。
+
+        不依赖面板是否打开；20:00 不在家（医院/超市/外面）不生成晚上穿搭，
+        等回家后的下一次 tick 再生成/复用同一套。
+        """
+        day = today_str()
+        try:
+            hour = int(_clock_now().hour)
+        except Exception:
+            hour = 20
+        if hour < 8:
+            return
+        try:
+            self.today(day)
+        except Exception as _amo_exc:
+            _note_swallowed("wardrobe.Wardrobe.tick.day", _amo_exc)
+        if hour < SLEEP_HOUR_FROM:
+            return
+        if self._at_swim():
+            # 泳装优先：泳装场景不生成/不切换睡衣
+            return
+        at_hotel = self._at_hotel()
+        at_home = self._at_home()
+        if at_hotel or at_home is not False:
+            try:
+                self.night(day, hour=hour, hotel=at_hotel)
+            except Exception as _amo_exc:
+                _note_swallowed("wardrobe.Wardrobe.tick.night", _amo_exc)
 
     def _at_home(self):
         """看当前日程地点判断在不在家：True 在家 / False 在外面 / None 判断不了。"""
@@ -1799,11 +1876,54 @@ class Wardrobe:
 
     def snapshot(self):
         data = self._load()
-        today = self.today()
         try:
-            hour = int(_clock_now().hour)
+            now_clock = _clock_now()
+            hour = int(now_clock.hour)
+            minute = int(now_clock.minute)
         except Exception:
             hour = 20
+            minute = 0
+        day_text = today_str()
+        swim_now = self._at_swim()
+        swim_window = self._swim_window(day_text)
+        at_home = self._at_home()
+        at_hotel = self._at_hotel()
+        day_ready = hour >= 8
+        night_ready = hour >= SLEEP_HOUR_FROM
+        # 酒店不算“临时外出”：住酒店仍用酒店睡衣；家里/外面才分。
+        night_out = bool(night_ready and at_home is False and not at_hotel)
+        if swim_now:
+            day_state = night_state = "swim"
+        else:
+            day_state = "ready" if day_ready else "pending8"
+            night_state = ("outing" if night_out else
+                           ("ready" if night_ready else "pending20"))
+        if day_state == "ready":
+            today = self.today(day_text)
+        else:
+            today = {"pending": True, "state": day_state,
+                     "text": "8 点自动生成"}
+        if night_state == "ready":
+            night = self.night(day_text, hour=hour, hotel=at_hotel)
+        elif night_state == "outing":
+            night = {"pending": True, "state": "outing", "text": "临时外出"}
+        elif night_state == "swim":
+            night = {"pending": True, "state": "swim", "text": "正在使用泳装"}
+        else:
+            night = {"pending": True, "state": "pending20",
+                     "text": "20:00 后自动生成"}
+        reason = ("swim_scene" if swim_now else
+                  "before_8" if hour < 8 else
+                  "out_after_20" if night_out else
+                  "home_after_20" if night_ready else "daytime")
+        logger.info(
+            "[OUTFIT_DEBUG] time=%02d:%02d schedule=%s day_slot=%s night_slot=%s "
+            "swim_slot=%s reason=%s",
+            hour, minute,
+            ("swim" if swim_now else ("outing" if night_out else "normal")),
+            day_state, night_state,
+            "ready" if swim_now else "pending", reason,
+        )
 
         def category_list(sleep, hotel=False, swim=False):
             result = []
@@ -1826,20 +1946,12 @@ class Wardrobe:
                 })
             return result
 
-        # 晚上穿搭（睡衣）只在 20:00 之后生成：白天面板只提示「20:00 后自动生成」，
-        # 免得早上就看到今晚穿哪套。真正换上同样在 20:00（current() 里判断）。
-        night_ready = hour >= SLEEP_HOUR_FROM or hour < SLEEP_HOUR_TO
-        # 这几项面板每次刷新都要用：只算一次，别在 dict 里反复查日程/数据库
-        swim_now = self._at_swim()
-        swim_window = self._swim_window(today)
-        return {
-            "categories": category_list(False, False, False),
-            "sleep_categories": category_list(True, False, False),
-            "hotel_categories": category_list(True, True, False),
-            # 泳装只有上衣（泳衣）和裤子（泳裤），鞋是横线
-            "swim_categories": category_list(False, False, True),
-            "swim_sets": self.swim_sets(data),
-            "swim": self.swim_outfit() if swim_now else {
+        # 泳装格：正在玩水就显示实际泳装；否则显示待泳/未来时段。
+        if swim_now:
+            swim_data = self.swim_outfit(day_text)
+            swim_state = "ready"
+        else:
+            swim_data = {
                 "pending": True,
                 "swim": True,
                 "state": swim_window.get("state") or "none",
@@ -1847,11 +1959,24 @@ class Wardrobe:
                          % divmod(int(swim_window.get("start") or 0), 60))
                         if swim_window.get("state") == "later"
                         else "游泳 / 海边 / 水上乐园 自动生成",
-            },
+            }
+            swim_state = "pending"
+        return {
+            "categories": category_list(False, False, False),
+            "sleep_categories": category_list(True, False, False),
+            "hotel_categories": category_list(True, True, False),
+            # 泳装只有上衣（泳衣）和裤子（泳裤），鞋是横线
+            "swim_categories": category_list(False, False, True),
+            "swim_sets": self.swim_sets(data),
+            "swim": swim_data,
             "at_swim": swim_now,
             "today": today,
+            "day": day_text,
+            "day_state": day_state,
             "current": self._current_snapshot(),
-            "night": self.night() if night_ready else {"pending": True},
+            "night": night,
+            "night_state": night_state,
+            "swim_state": swim_state,
             "hour": hour,
             "outfit_count": len([outfit for outfit in data.get("outfits", [])
                                  if is_day_outfit(outfit)]),

@@ -363,6 +363,8 @@ class ConfigMixin(_MixinBase):
                 group = "日程"
             elif key.startswith("seg_"):
                 group = "分段"
+            elif key.startswith("voice_"):
+                group = "语音"
             elif key.startswith("companion_") or key.startswith("memory_") or key in ("admin_uids",):
                 group = "记忆"
             elif key.startswith("proactive_") or key.startswith("delay_") or key.startswith("disturb_") or key.startswith("birthday_") or key in ("quiet_hours", "auto_active_msg"):

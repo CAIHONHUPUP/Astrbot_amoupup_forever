@@ -97,7 +97,7 @@ class HintTests(unittest.TestCase):
         self.assertEqual(spoken_place(HOME), "家")
         self.assertEqual(spoken_place(MALL), "商场")
         self.assertEqual(spoken_place(SCENIC), "景区")
-        self.assertEqual(spoken_place({"place": "贵阳·黔灵山公园"}), "黔灵山公园")
+        self.assertEqual(spoken_place({"place": "某市·某某公园"}), "某某公园")
 
 
 class RewriteTests(unittest.TestCase):

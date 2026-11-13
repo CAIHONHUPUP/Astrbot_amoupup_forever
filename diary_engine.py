@@ -289,8 +289,53 @@ def import_folder(source: str, root: str) -> Dict[str, Any]:
     return result
 
 
+_PRIVATE_ENDING_WORDS = (
+    "不给看", "别翻", "偷看", "私人", "本子", "收好", "没门", "心事",
+    "秘密", "打不开", "不给你", "藏起", "锁起",
+)
+
+
+def wants_private_ending(day: date) -> bool:
+    """约三成的日子，日记结尾自己带一句“不要看”；不依赖用户问。"""
+    try:
+        return (int(day.toordinal()) * 7 + 3) % 10 < 3
+    except Exception:
+        return False
+
+
+def private_ending_hint(day: date) -> str:
+    """按日期稳定挑一句结尾，避免每次生成都换。"""
+    try:
+        hints = pick_hints(DIARY_ENDING_HINTS, 1, day.isoformat())
+        if hints:
+            return str(hints[0]).strip()
+    except Exception:
+        pass
+    return "不给看，收好啦。"
+
+
+def ensure_private_ending(day: date, text: str) -> str:
+    """模型没写“不要看”时补一句；只在 wants_private_ending(day) 为真的日子补。"""
+    body = str(text or "").strip()
+    if not body or not wants_private_ending(day):
+        return body
+    tail = body[-180:]
+    if any(word in tail for word in _PRIVATE_ENDING_WORDS):
+        return body
+    return body + "\n\n" + private_ending_hint(day)
+
+
 def build_prompt(day: date, chat_lines, hourly_lines) -> str:
     """拼日记 prompt（纯函数，方便测试）。"""
+    private_today = wants_private_ending(day)
+    if private_today:
+        ending_rule = (
+            "7. 今天结尾要自然带一句不让对方看的话（比如“别翻我本子”“不给看”“收好啦”），"
+            "一句就够，不要生硬，也不要整段都在说这个；可参考："
+            + "、".join("「" + item + "」" for item in pick_hints(DIARY_ENDING_HINTS, 16, day)) + "；\n"
+        )
+    else:
+        ending_rule = "7. 今天结尾不要提偷看、不给看、私人本子、秘密这类话；\n"
     return (
         "日期：" + day.strftime("%Y年%m月%d日") + "\n"
         "下面是这一天的聊天节选（他和我）：\n" + ("\n".join(list(chat_lines)[-200:]) or "（这天没怎么聊）") + "\n\n"
@@ -303,10 +348,9 @@ def build_prompt(day: date, chat_lines, hourly_lines) -> str:
         "4. 可以很长，也可以只有一两句，甚至只写一句想他、爱他；\n"
         "5. 口吻和人格设定完全一致，可以有情绪、有小脾气、有细节；\n"
         "6. 不许编：日程里没有的活动、聊天里没说过的事，都不要写成事实；拿不准就不写；\n"
-        "7. 这是你的私人日记：结尾大多数时候不用特意提醒；想带一句就偶尔写、每次换说法，"
-        "不要用「不许偷看」这几个字，也别和上一篇用同一句。可参考（池子里还有很多，也可以自己造新的）："
-        + "、".join("「" + item + "」" for item in pick_hints(DIARY_ENDING_HINTS, 16, day)) + "；\n"
-        "8. 不要提「日程」「AI」「模型」「插件」这些词，不要分点，不要写日期标题；\n"
+        + ending_rule
+        + "8. 文中的“我”是 bot 本人；用户是“他”，不要把“我”写成用户；\n"
+        "9. 不要提「日程」「AI」「模型」「插件」这些词，不要分点，不要写日期标题；\n"
         "直接输出日记正文。"
     )
 

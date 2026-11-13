@@ -32,6 +32,12 @@ from astrbot.api import logger, AstrBotConfig
 from astrbot.api.message_components import Plain, At, Reply
 from astrbot.api.provider import LLMResponse
 
+# 群聊身份识别：认机器人 / 认人 / 判“这句是不是冲她说的”
+try:
+    from .amo_group_guard import MemberBook, addressing_verdict, is_bot_sender, parse_ids, parse_keywords
+except ImportError:  # 直接按文件加载时
+    from amo_group_guard import MemberBook, addressing_verdict, is_bot_sender, parse_ids, parse_keywords
+
 # 统一时区（只影响面板/日志里显示的时间，但别和 clock 配置打架）
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .clock import now as _hf_now, from_timestamp as _hf_ts
@@ -116,6 +122,11 @@ BASE_JUDGE_PROMPT = """你是群聊机器人决策系统，判断机器人是否
 机器人名字：{bot_name}
 机器人别名：{bot_aliases}
 如果当前消息包含这些名字或别名，说明群友是在叫机器人，不是叫其他群友；relevance、continuity 必须给高分。
+
+## 群成员（按最近发言）
+{group_members}
+带「（机器人）」的是别的机器人：它们说的话只是背景，不要当成群友在叫你，也不要去接它们的话；
+群友在叫它们时，target 一律算 other，不接。
 
 ## ⚠️ 最高优先级：关注机器人自己的发言
 对话历史（contexts）中，role 为 assistant 的消息是【机器人自己】之前说的话，role 为 user 的消息是群友说的话（带 [昵称] 前缀）。
@@ -233,6 +244,8 @@ class RawMessage:
     normalized_content: str
     timestamp: float
     is_bot: bool = False
+    # 群里别的机器人说的话：只当背景，不参与“在跟谁说话”的判定。
+    is_other_bot: bool = False
     msg_id: str = ""
     # 记录这条消息时平台返回的机器人 ID；为空 = 平台没给，@ 目标无法可靠判断。
     self_id: str = ""
@@ -565,6 +578,13 @@ class HeartflowEngine:
         self._debounce_states: Dict[str, Dict[str, Any]] = {}
         self.enable_detailed_log: bool = self.config.get("enable_detailed_log", False)
 
+        # 群聊身份识别
+        self.ignore_bots: bool = bool(self.config.get("ignore_bots", True))
+        self.only_when_addressed: bool = bool(self.config.get("reply_only_when_addressed", True))
+        self.bot_keywords: Tuple[str, ...] = parse_keywords(self.config.get("bot_keywords", ""))
+        self.bot_ids: Set[str] = parse_ids(self.config.get("bot_ids", ""))
+        self.members = MemberBook()
+
         logger.debug(
             f"[心流] 初始化完成 | 基础阈值: {self.reply_threshold} | "
             f"独立配置群数: {len(self.group_threshold_configs)} | 防抖: {'开' if self.enable_debounce else '关'}"
@@ -685,6 +705,28 @@ class HeartflowEngine:
                 return candidate
         return ""
 
+    def note_other_bot(self, event: AstrMessageEvent) -> None:
+        """记下别的机器人的发言：只当背景，不触发判定。"""
+        try:
+            self._record_raw_message(event, is_other_bot=True)
+        except Exception as _amo_exc:
+            _note_swallowed("heartflow_engine.HeartflowEngine.note_other_bot", _amo_exc)
+
+    def is_other_bot_sender(self, event: AstrMessageEvent) -> bool:
+        """发言人是不是别的机器人：显式账号名单 / 名册里学到的 / 昵称关键词。"""
+        try:
+            sender_id = str(event.get_sender_id() or "")
+            sender_name = str(event.get_sender_name() or "")
+            umo = str(event.unified_msg_origin or "")
+        except Exception as _amo_exc:
+            _note_swallowed("heartflow_engine.HeartflowEngine.is_other_bot_sender", _amo_exc)
+            return False
+        if sender_id and sender_id in self.bot_ids:
+            return True
+        if self.members.is_known_bot(umo, sender_id):
+            return True
+        return is_bot_sender(sender_name, sender_id, self.bot_keywords, ())
+
     @staticmethod
     def _is_side_question(text: str) -> bool:
         """这条是不是在问某个人（而不是随口感慨）。"""
@@ -729,7 +771,8 @@ class HeartflowEngine:
           2. 当前消息里有没有机器人名字/别名；
           3. 上一条**明确 @ 了别人 / 回复了别人**的消息 → 继承给这条（5 分钟内）；
           4. 机器人 60 秒内说过话 + 这条是个短问句 → 软证据；
-          5. 提到了别的群友昵称 → 对别人说（软证据）。
+          5. 名册里点名了别的群友（不是她）→ 对别人说（软证据）；
+          6. 最近几条里的群友昵称出现在消息里 → 对别人说（软证据）。
         单独的“你”不算证据：群聊里“你吃了吗”太常见，把它认成机器人是上次
         “你pr好了吗”被误答的直接原因。
         """
@@ -755,7 +798,7 @@ class HeartflowEngine:
         # 3. 上一条明确 @ 了别人 / 回复了别人：这条没有新的 @/引用，就是在继续对他说
         last_who = ""
         for msg in reversed(history[-8:]):
-            if msg.is_bot:
+            if msg.is_bot or msg.is_other_bot:
                 continue
             if time.time() - msg.timestamp > 300:
                 break
@@ -773,9 +816,22 @@ class HeartflowEngine:
         if last is not None and last.is_bot and (time.time() - last.timestamp) <= 60:
             if len(plain) <= 24 and re.search(r"[?？]", text):
                 return "bot", False
-        # 5. 提到了别的群友的昵称：在对别人说（昵称至少两个字，避免误判）
+        # 5. 名册里点名了某个群友（把她自己和发送者排除）：这条在对别人说
+        try:
+            member = self.members.mentioned_member(
+                event.unified_msg_origin,
+                text,
+                exclude=[event.get_sender_name() or ""],
+                exclude_uids=[str(event.get_sender_id() or "")],
+            )
+        except Exception as _amo_exc:
+            _note_swallowed("heartflow_engine.HeartflowEngine._retrieve_addressing", _amo_exc)
+            member = None
+        if member and not self._addresses_bot(str(member.get("name") or "")):
+            return "other", False
+        # 6. 最近几条里的群友昵称出现在消息里：同样算在对别人说（昵称至少两个字）
         for msg in reversed(history[-4:]):
-            if msg.is_bot:
+            if msg.is_bot or msg.is_other_bot:
                 continue
             name = re.sub(r"\s+", "", str(msg.sender_name or ""))
             if len(name) >= 2 and name in plain and name != re.sub(r"\s+", "", text):
@@ -875,6 +931,11 @@ class HeartflowEngine:
             return False
         if event.get_sender_id() == event.get_self_id():
             return False
+        if self.ignore_bots and self.is_other_bot_sender(event):
+            # 别的机器人：只记账当背景，不判定、更不接话
+            self.note_other_bot(event)
+            self._log_detail("[心流] 🤖 忽略机器人发言：%s" % (event.get_sender_name() or event.get_sender_id()))
+            return False
         if not (event.message_str and event.message_str.strip()):
             return False
         try:
@@ -960,16 +1021,22 @@ class HeartflowEngine:
                 continue
         return meta
 
-    def _record_raw_message(self, event: AstrMessageEvent, is_bot: bool = False) -> bool:
-        """记录原始消息到缓冲区"""
+    def _record_raw_message(self, event: AstrMessageEvent, is_bot: bool = False, is_other_bot: bool = False) -> bool:
+        """记录原始消息到缓冲区。
+
+        is_bot=True 是她自己的发言；is_other_bot=True 是群里别的机器人，
+        只当背景，不参与“在跟谁说话”的判定。
+        """
         umo = event.unified_msg_origin
         with self._lock:
             buf = self._raw_msg_buffer.setdefault(umo, deque(maxlen=self._raw_msg_buffer_size))
-            raw_content = event.message_str if not is_bot else (event.message_str or "")
+            raw_content = str(event.message_str or "")
             normalized = self._normalize_for_dedup(raw_content)
             if not normalized:
                 return False
             sender_id = "bot" if is_bot else str(event.get_sender_id())
+            if is_other_bot:
+                sender_id = "bot:" + sender_id
             if buf and buf[-1].sender_id == sender_id and buf[-1].normalized_content == normalized and (time.time() - buf[-1].timestamp) < 5:
                 return False
             meta = self._message_meta(getattr(event, "message_obj", None))
@@ -992,7 +1059,15 @@ class HeartflowEngine:
                 reply_to_uid=meta["reply_to_uid"],
                 reply_to_name=meta["reply_to_name"],
                 reply_to_self=bool(self_id and meta["reply_to_uid"] == self_id),
+                is_other_bot=is_other_bot,
             ))
+            if not is_bot:
+                try:
+                    self.members.observe(
+                        umo, str(event.get_sender_id()), event.get_sender_name(), is_bot=is_other_bot,
+                    )
+                except Exception as _amo_exc:
+                    _note_swallowed("heartflow_engine.HeartflowEngine._record_raw_message", _amo_exc)
             self._get_chat_state(umo).last_recorded_message = normalized
             return True
 
@@ -1042,7 +1117,10 @@ class HeartflowEngine:
             return state.cached_activity_level
         
         msgs = self._get_raw_buffer(chat_id)
-        recent_msgs = [m for m in msgs if m.timestamp >= now - self.dynamic_activity_window and not m.is_bot]
+        recent_msgs = [
+            m for m in msgs
+            if m.timestamp >= now - self.dynamic_activity_window and not m.is_bot and not m.is_other_bot
+        ]
         if not recent_msgs:
             state.cached_activity_level = 0.0
             state.activity_cache_time = now
@@ -1184,6 +1262,8 @@ class HeartflowEngine:
                 marks.append("→回复" + str(who))
             if msg.is_bot:
                 text = f"[{stamp}] {content}"
+            elif msg.is_other_bot:
+                text = f"[{stamp}] [机器人·{msg.sender_name or '机器人'}] {content}"
             else:
                 flag = (" " + " ".join(marks)) if marks else ""
                 text = f"[{stamp}] [{msg.sender_name}]{flag} {content}"
@@ -1222,6 +1302,15 @@ class HeartflowEngine:
         activity_desc = self._get_activity_description(activity)
         return (f"活跃度:{activity_desc}({activity:.0%}) | 回复率:{rate:.1f}% | "
                 f"模式:{mode} | 阈值:{dynamic_threshold:.2f} | {_hf_now().strftime('%H:%M')}")
+
+    def _group_members_line(self, event: AstrMessageEvent) -> str:
+        """群成员一行字，给判定模型认人用；带（机器人）的标记别接话。"""
+        try:
+            desc = self.members.describe(event.unified_msg_origin, limit=12)
+        except Exception as _amo_exc:
+            _note_swallowed("heartflow_engine.HeartflowEngine._group_members_line", _amo_exc)
+            desc = ""
+        return desc or "（还没有记录）"
 
     def _get_last_bot_reply(self, event: AstrMessageEvent) -> Optional[str]:
         """获取机器人最后一次回复内容"""
@@ -1283,6 +1372,7 @@ class HeartflowEngine:
             message=event.message_str,
             bot_name=self.bot_name or "机器人",
             bot_aliases="、".join(self.bot_aliases) or "无",
+            group_members=self._group_members_line(event),
             scoring_rules=scoring_rules,
             threshold=dynamic_threshold,
             reasoning_part=reasoning_part,
@@ -1422,7 +1512,7 @@ class HeartflowEngine:
 3. 消息是机器人发起的对话的延续
 4. 消息内容与机器人刚聊的话题直接相关
 5. 群聊中出现冷场，机器人的回复能自然活跃气氛
-6. 群里正聊得热闹、话题轻松，机器人插一句能接上（不要求被点名）
+6. 群里正聊得热闹、话题轻松，机器人插一句能接上（仅当关闭“只在被叫到时回复”时才成立）
 
 ## 当前状态
 - 模式: 沉浸模式 | 剩余: {remaining}秒 | 活跃度: {activity_desc} ({activity:.0%})
@@ -1514,7 +1604,8 @@ class HeartflowEngine:
             if res.should_reply:
                 mode_name = "immersive" if is_immersive else "score"
                 # 心流判定通过后，再检索一次上下文：这条到底是不是在跟机器人说。
-                # 是 → 按这条消息接话；不是 → 随机挑个角度插进他们的话题里，而不是沉默。
+                # 开了“只在被叫到时回复”：不是冲她说的就不开口（下面的闸会拦住）；
+                # 关掉时才回到“随机挑个角度插进他们的话题里”。
                 # 优先级：模型的语义判定 > 上下文检索的软证据；只有硬证据（叫名字 / @）才覆盖模型。
                 target = res.target or "unknown"
                 hinted, hard = self._retrieve_addressing(event)
@@ -1537,13 +1628,28 @@ class HeartflowEngine:
                         logger.info("[心流] 🔇 这条明确在对别人说（上一条 @ 了别人），不接：%s" % _text[:40])
                         state.total_messages += 1
                         return
+                verdict, verdict_reason = addressing_verdict(
+                    target=target,
+                    mentioning_bot=bool(res.is_mentioning_bot),
+                    hard=bool(hard),
+                    soft=bool(not hard and hinted == "bot"),
+                    only_when_addressed=self.only_when_addressed,
+                    forced=bool(getattr(event, "amo_force_reply", False)),
+                )
+                if not verdict:
+                    logger.info(
+                        "[心流] 🔇 没点名她，不搭话（%s）| target=%s | %s",
+                        verdict_reason, target or "?", (event.message_str or "")[:40],
+                    )
+                    state.total_messages += 1
+                    return
                 if style == "none":
                     style = "comment" if target != "bot" else "answer"
 
                 # 回复方式：以模型的 context_type / reply_style 为主，target 兜底。
                 # 「AI好强」这类感慨 → knowledge_comment → 插话；
                 # 「你觉得AI强吗」→ 对机器人说 / question → 直接回答。
-                if target == "bot" or res.is_mentioning_bot:
+                if getattr(event, "amo_force_reply", False) or target == "bot" or res.is_mentioning_bot:
                     mode_hint = "direct"
                 elif res.context_type == "knowledge_comment":
                     mode_hint = "interject"
