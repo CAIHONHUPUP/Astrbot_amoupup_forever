@@ -662,6 +662,16 @@ class DrawEngine:
 
     def maybe_after_reply(self, event, reply_text):
         """on_decorating_result 里调用：判断 + 起一个后台任务，不阻塞。"""
+        # 这一轮她已经自己发过图（LLM 用了 generate_selfie）→ 别再补一张
+        try:
+            photo = getattr(self.plugin, "photo", None)
+            if photo is not None:
+                blocked = getattr(photo, "proactive_blocked", None)
+                if callable(blocked) and blocked():
+                    logger.debug("[amo] 这一轮已经发过照片，跳过自动补图")
+                    return None
+        except Exception as _amo_exc:
+            _note_swallowed("draw_engine.maybe_after_reply.suppress", _amo_exc)
         plan = self.decide(event, reply_text)
         if not plan:
             return None
@@ -671,6 +681,14 @@ class DrawEngine:
         if notice:
             self._spawn(self._send_text(event, notice))
             return None
+        # 先占位：生成要几十秒，期间别让定时分享再补一张
+        try:
+            photo = getattr(self.plugin, "photo", None)
+            note = getattr(photo, "note_sent", None)
+            if callable(note):
+                note()
+        except Exception as _amo_exc:
+            _note_swallowed("draw_engine.maybe_after_reply.claim", _amo_exc)
         self._schedule(event, plan["prompt"], plan["reason"], plan.get("cached"),
                        plan.get("cache_key", ""), plan.get("selfie", False),
                        plan.get("plan"))

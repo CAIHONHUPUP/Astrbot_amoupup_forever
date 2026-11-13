@@ -469,6 +469,7 @@ class LlmMixin(_MixinBase):
                     try:
                         if self.photo is not None:
                             self.photo.note_llm_handled()
+                            self.photo.note_sent()
                     except Exception as _amo_exc:
                         _note_swallowed("amo_llm.photo_handled", _amo_exc)
                     logger.info(

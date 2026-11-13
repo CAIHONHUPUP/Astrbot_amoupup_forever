@@ -270,6 +270,10 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
             if self.cfg_str("weather_city_name", "").strip() != hit["name"]:
                 self.config["weather_city_name"] = hit["name"]
                 save = True
+            # 日程城市也一起改：amo 排日程、守护插件都按它取城市
+            if str(self.config.get("schedule_city") or "").strip() != hit["name"]:
+                self.config["schedule_city"] = hit["name"]
+                save = True
         if save:
             try:
                 if hasattr(self.config, "save_config"):
@@ -277,6 +281,15 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
             except Exception as exc:
                 _note_swallowed("amo_api.ApiMixin.api_city_set", exc)
                 return {"code": 1, "msg": "保存配置失败：%s" % exc}
+        # 面板城市（世界观）同步：面板显示、排日程、守护插件都认它
+        try:
+            world = dict(getattr(self.state, "worldview", {}) or {})
+            if str(world.get("city") or "") != hit["name"]:
+                world["city"] = hit["name"]
+                self.state.worldview = world
+                self.db.kv_set("worldview", world)
+        except Exception as exc:
+            _note_swallowed("amo_api.ApiMixin.api_city_set.world", exc)
         weather = None
         if not save and self.state.weather:
             # 城市没变，别为一次「设置」白打接口

@@ -600,7 +600,7 @@ class PhotoEngine:
         if now - self._last_check < 20:
             return
         # 这一轮她已经自己发过自拍（LLM 工具或照片请求）→ 别再补一张
-        if getattr(self, "_suppress_until", 0) > now:
+        if self.proactive_blocked():
             logger.debug("[PHOTO] tick skip reason=llm_handled")
             return
         self._last_check = now
@@ -639,6 +639,21 @@ class PhotoEngine:
         except Exception as exc:
             logger.debug("[amo] 照片任务失败: %s" % exc)
 
+    def note_sent(self):
+        """记一次「刚发过照片」：图片引擎和自动补图共用这一个冷却。"""
+        self._last_sent_at = time.monotonic()
+
+    def sent_recently(self, seconds=300):
+        return time.monotonic() - getattr(self, "_last_sent_at", 0) < max(0, int(seconds))
+
+    def proactive_blocked(self):
+        """定时分享要不要停：这一轮已处理过照片，或刚发过一张。"""
+        return self.suppressed() or self.sent_recently()
+
+    def suppressed(self):
+        """这一轮是不是已经有照片在发了（10 分钟内不再定时补发）。"""
+        return getattr(self, "_suppress_until", 0) > time.monotonic()
+
     def note_llm_handled(self, seconds=600):
         """她已经在对话里自己处理了拍照：10 分钟内不再由定时器主动补发。"""
         self._suppress_until = time.monotonic() + max(0, int(seconds))
@@ -651,6 +666,8 @@ class PhotoEngine:
             if self.today_count() >= cap:
                 return
             ok = await self._share(kind, scene, profile)
+            if ok:
+                self.note_sent()
             if not ok:
                 await self._notify_failure(self._target_umo(profile), "share_failed")
         finally:
