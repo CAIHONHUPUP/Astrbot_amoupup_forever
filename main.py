@@ -18,6 +18,14 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     except ImportError:  # 直接按文件加载时
         from amo_observability import note as _note_swallowed
 
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .amo_social_bridge import handshake as _watch_handshake
+else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    try:
+        from .amo_social_bridge import handshake as _watch_handshake
+    except ImportError:  # 直接按文件加载时
+        from amo_social_bridge import handshake as _watch_handshake
+
 import asyncio
 import os
 import random
@@ -616,6 +624,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             except Exception as exc:
                 logger.warning("[amo] 姿势库初始化失败: %s" % exc)
         self.state = None
+        self.watch_info = None
         self.llm = LLMService(self)
         self.gate = ReplyGate(self)
         self.gift = None
@@ -819,6 +828,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             except Exception as _amo_exc:
                 _note_swallowed("main.HumanCorePlugin._ensure_ready.web_retry", _amo_exc)
             self._spawn(self._log_omni_handshake())
+            self._spawn(self._watch_handshake())
             self._loop_task = self._spawn(self._background_loop())
             self._spawn(self._warm_up())
 
@@ -870,6 +880,20 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                 len(nodes), ("，模型 " + model) if model else ""))
         except Exception as exc:
             logger.debug("[amo] 万象画卷握手检查失败: %s" % exc)
+
+    async def _watch_handshake(self):
+        """和「我能永远守护你」（Astrbot_amoupup_watch）握一次手。
+
+        只做发现 + describe()：没装 / 停用 / 加载失败 / 版本不匹配都只记日志，
+        不影响聊天。社会逻辑全在 watch 自己的插件里，amo 一行都不碰。
+        """
+        try:
+            info = await _watch_handshake(self)
+        except Exception as exc:
+            _note_swallowed("main.HumanCorePlugin._watch_handshake", exc)
+            return None
+        self.watch_info = info
+        return info
 
     def _on_schedule_changed(self, event):
         """日程事件订阅者：日记失效/取消 + 穿搭失效 + 生图刷新日志。"""
