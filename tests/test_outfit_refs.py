@@ -80,7 +80,11 @@ class OutfitRefTests(unittest.TestCase):
 class PngConvertTests(unittest.TestCase):
     def test_jpeg_converted_to_png(self):
         from io import BytesIO
-        from PIL import Image
+        try:
+            from PIL import Image
+        except ImportError:  # 没装 Pillow 的环境（比如最小化 CI）跳过，不算失败
+            self.skipTest("需要 Pillow")
+            return
         buf = BytesIO()
         Image.new("RGB", (2, 2), (255, 0, 0)).save(buf, "JPEG")
         data = _as_png(buf.getvalue())
