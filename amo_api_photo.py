@@ -209,7 +209,7 @@ class PhotoApiMixin(_MixinBase):
         opened = False
         try:
             if os.name == "nt" and os.path.isdir(root):
-                os.startfile(root)
+                getattr(os, "startfile")(root)  # 只有 Windows 有，Linux 类型桩里没有
                 opened = True
         except Exception as exc:
             logger.debug("[amo] 打开模板文件夹失败: %s" % exc)
