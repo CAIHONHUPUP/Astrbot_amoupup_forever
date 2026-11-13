@@ -20,7 +20,7 @@ except Exception:  # 离线单测
 
 
 class Wallet:
-    ACCOUNTS = ("cash",)
+    ACCOUNTS = ("cash", "withdrawable")  # cash=可用（含可取），withdrawable=可取（现金的子集）
 
     def __init__(self, db):
         self.db = db
@@ -102,6 +102,14 @@ class Wallet:
             "UPDATE wallet_account SET balance_cents = balance_cents + ?, updated=? WHERE account=?",
             (int(delta), time.time(), str(account)),
         )
+        if str(account) == "cash" and int(delta) < 0:
+            # 可取不能超过可用
+            row = conn.execute("SELECT balance_cents FROM wallet_account WHERE account='cash'").fetchone()
+            cash = int(row[0]) if row else 0
+            conn.execute(
+                "UPDATE wallet_account SET balance_cents=? WHERE account='withdrawable' AND balance_cents>?",
+                (cash, cash),
+            )
         conn.commit()
         return True
 

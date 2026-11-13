@@ -565,7 +565,10 @@ class DataSyncMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_memory_data.finance_memory_uid", _amo_exc)
         umo = str(getattr(self, "_last_umo", "") or "")
-        return umo.split(":")[-1] if umo else ""
+        if umo:
+            return umo.split(":")[-1]
+        # 从没聊过天（刚重启）时也要能记金融账：退回固定 owner
+        return "owner"
 
     async def finance_remember(self, content, kind="finance", tier=2, idem_key=""):
         """金融记忆写入（长期、subject=bot）；返回 bool。"""

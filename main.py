@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 
 
-PLUGIN_VERSION = "7.0.0"
+PLUGIN_VERSION = "7.0.1"
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
