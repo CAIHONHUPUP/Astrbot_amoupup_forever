@@ -67,6 +67,8 @@ PHOTO_REQUEST_RULE = (
     "你要自然答应（“好，我拍 / 等我一下 / 这就拍”），说清你现在的场景；"
     "禁止说“你拍 / 你快点拍 / 你自己拍 / 给我看看你的”。"
     "照片由你生成并发送，不是让用户去拍。"
+    "这一轮只发一条文字：直接输出回复即可，不要用 send_message_to_user 预发消息（会变成两条）；"
+    "一次请求只调用一次 generate_selfie，不要重复生成。"
 )
 
 #: 固定动作归属规则：只加一次，不随每轮变化，避免破坏 system prompt 缓存。
@@ -464,6 +466,11 @@ class LlmMixin(_MixinBase):
             try:
                 if self.draw is not None and self.draw.wants_photo(event):
                     body += PHOTO_REQUEST_RULE
+                    try:
+                        if self.photo is not None:
+                            self.photo.note_llm_handled()
+                    except Exception as _amo_exc:
+                        _note_swallowed("amo_llm.photo_handled", _amo_exc)
                     logger.info(
                         "[IDENTITY_DEBUG] action=photo executor=bot subject=user request=%s route=normal",
                         truncate(str(getattr(event, "message_str", "") or ""), 40),

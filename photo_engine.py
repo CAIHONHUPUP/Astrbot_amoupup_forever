@@ -599,6 +599,10 @@ class PhotoEngine:
         now = time.monotonic()
         if now - self._last_check < 20:
             return
+        # 这一轮她已经自己发过自拍（LLM 工具或照片请求）→ 别再补一张
+        if getattr(self, "_suppress_until", 0) > now:
+            logger.debug("[PHOTO] tick skip reason=llm_handled")
+            return
         self._last_check = now
         try:
             if quiet_now(self._cfg_str("photo_quiet_hours", "23:00-07:00")):
@@ -634,6 +638,10 @@ class PhotoEngine:
                 return
         except Exception as exc:
             logger.debug("[amo] 照片任务失败: %s" % exc)
+
+    def note_llm_handled(self, seconds=600):
+        """她已经在对话里自己处理了拍照：10 分钟内不再由定时器主动补发。"""
+        self._suppress_until = time.monotonic() + max(0, int(seconds))
 
     async def _run_share(self, kind, scene, profile):
         try:

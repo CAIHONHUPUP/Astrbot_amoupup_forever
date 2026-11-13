@@ -2,7 +2,7 @@ name: Astrbot_amoupup_forever
 display_name: 我能永远陪伴你
 desc: 我能永远陪伴你：动态日程、心流、分段、十维心情、关系网、方言库
 short_desc: 我能永远陪伴你
-version: 7.0.1
+version: 7.0.2
 author: 彩虹upup
 astrbot_version: ">=4.5.7"
 repo: https://github.com/CAIHONHUPUP/Astrbot_amoupup_forever/
