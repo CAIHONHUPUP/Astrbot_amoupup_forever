@@ -15,7 +15,7 @@ except ImportError:  # 直接按文件加载时
     from amo_api_wardrobe import WardrobeApiMixin
     from amo_api_photo import PhotoApiMixin
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
@@ -504,7 +504,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
         if confirm not in ("1", "true", "yes", "on"):
             return {"code": 1, "msg": "删除档案需要确认：再带一次 confirm=1"}
         logger.info("[amo] 删除档案请求: uid=%s" % uid)
-        profile = {}
+        profile: dict[Any, Any] = {}
         try:
             profile = self.db.get_profile(uid) or {}
         except Exception as _amo_exc:
@@ -718,7 +718,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
         uid = str(data.get("uid") or "").strip()
         if not uid:
             return {"code": 1, "msg": "uid 不能为空"}
-        fields = {}
+        fields: dict[str, Any] = {}
         for key in ("name", "alias", "birthday", "relation", "notes"):
             value = data.get(key, None)
             if value is not None:

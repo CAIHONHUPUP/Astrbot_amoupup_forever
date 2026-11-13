@@ -15,6 +15,10 @@ jobs:
         run: python tools/check_version.py
       - name: Type check
         run: python tools/mypy_check.py
+      - name: Type check (strict)
+        run: |
+          MYPYPATH=.. python -m mypy --config-file mypy.ini --explicit-package-bases \
+            --check-untyped-defs --exclude "(/tests/|/tools/|/__pycache__/)" .
       - name: Quality gate
         run: python tools/quality_gate.py --fast
       - name: Run tests

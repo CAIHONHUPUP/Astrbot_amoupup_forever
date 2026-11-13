@@ -1,5 +1,5 @@
 pytest>=7
 pyflakes>=3.0
-mypy>=1.10
+mypy==2.4.1
 coverage>=7.0
 Pillow>=9.0

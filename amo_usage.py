@@ -2,7 +2,7 @@
 """UsageMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import asyncio
 import os
@@ -175,7 +175,7 @@ class UsageMixin(_MixinBase):
 
     def _provider_api_key(self, item):
         """从 AstrBot 供应商配置里取密钥；只在内存中使用，不写日志不回传。"""
-        config = {}
+        config: dict[Any, Any] = {}
         try:
             for provider in (self.context.get_all_providers() or []):
                 candidate = getattr(provider, "provider_config", None) or {}

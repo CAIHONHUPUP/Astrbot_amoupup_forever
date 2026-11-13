@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
@@ -1011,7 +1011,7 @@ class GiftEngine:
 
         # 每块单独兜异常：某一块挂了不影响其它块，也不至于整段礼物提示丢掉
         try:
-            shop = []
+            shop: list[Any] = []
             self._maybe_shop_hint(umo, shop)
             for piece in shop:
                 _add(piece)

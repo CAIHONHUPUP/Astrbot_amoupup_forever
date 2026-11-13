@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 HOP_WEIGHTS = (1.0, 0.45, 0.2)
 
 
@@ -27,7 +29,7 @@ def spread_scores(edges, uid, max_hops=3, decay=HOP_WEIGHTS):
     # 0 以前被 `max_hops or 2` 吞成 2 跳；现在显式区分 None（默认两跳）和 0（只看直连）。
     hop_count = 2 if max_hops is None else int(max_hops)
     hops = max(1, min(hop_count, len(decay)))
-    graph = {}
+    graph: dict[Any, Any] = {}
     for edge in edges:
         a = str(edge.get("a_uid") or "")
         b = str(edge.get("b_uid") or "")
@@ -36,7 +38,7 @@ def spread_scores(edges, uid, max_hops=3, decay=HOP_WEIGHTS):
         graph.setdefault(a, set()).add(b)
         graph.setdefault(b, set()).add(a)
 
-    scores = {}
+    scores: dict[Any, Any] = {}
     visited = {uid}
     frontier = [uid]
     for depth in range(hops):

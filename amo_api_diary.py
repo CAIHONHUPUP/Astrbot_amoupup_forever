@@ -45,7 +45,13 @@ except ImportError:
             return requested, ""
 
 
-class DiaryApiMixin:
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .amo_types import PluginLike as _MixinBase
+else:  # 运行时用 object：协议里的声明不能进 MRO
+    _MixinBase = object
+
+
+class DiaryApiMixin(_MixinBase):
     async def api_diary_import(self):
         await self._ensure_ready()
         payload = await self._body()

@@ -228,7 +228,7 @@ async def ensure_ref(plugin, name, session=None, force=False):
     try:
         from .wardrobe import classify_item, classify_sleep_item
     except Exception:
-        classify_item = classify_sleep_item = None
+        classify_item = classify_sleep_item = None  # type: ignore[assignment]
     if classify_sleep_item is not None:
         sleep_category = classify_sleep_item(name)
         if sleep_category:

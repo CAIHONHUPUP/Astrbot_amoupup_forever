@@ -29,7 +29,7 @@ import time
 
 from astrbot.api import logger
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -464,7 +464,7 @@ class DrawEngine:
         先按 uid 跨平台找（QQ 说过的话，飞书那边也认），再退回当前会话。
         """
         current = str(reply_text or "").strip()
-        rows = []
+        rows: list[Any] = []
         uid = ""
         try:
             uid = str(self.plugin._canonical_uid(event) or "")

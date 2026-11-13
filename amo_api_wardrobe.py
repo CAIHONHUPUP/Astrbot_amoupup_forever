@@ -31,7 +31,13 @@ except ImportError:
             return []
 
 
-class WardrobeApiMixin:
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .amo_types import PluginLike as _MixinBase
+else:  # 运行时用 object：协议里的声明不能进 MRO
+    _MixinBase = object
+
+
+class WardrobeApiMixin(_MixinBase):
     async def api_wardrobe(self):
         """面板「穿搭」页：三分类 + 今日锁定的一套。"""
         await self._ensure_ready()

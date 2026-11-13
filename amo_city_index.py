@@ -13,6 +13,8 @@ LocationList 生成，见 tools/gen_city_ids.py）。纯标准库、无 astrbot 
 
 from __future__ import annotations
 
+from typing import Any
+
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -101,8 +103,11 @@ def _load():
         except Exception as _amo_exc:
             _note_swallowed("amo_city_index._load", _amo_exc)
             table = {}
-        rows, groups, provinces = [], {}, []
-        cities, names = {}, {}
+        rows: list[Any] = []
+        groups: dict[Any, Any] = {}
+        provinces: list[Any] = []
+        cities: dict[Any, Any] = {}
+        names: dict[Any, Any] = {}
         for prov, city_map in table.items():
             if not isinstance(city_map, dict):
                 continue

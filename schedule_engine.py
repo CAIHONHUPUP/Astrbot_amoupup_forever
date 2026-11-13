@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
@@ -457,7 +457,7 @@ class ScheduleEngine:
             str(world.get("world_rules") or ""),
             str(world.get("summary") or ""),
         ])
-        cached = {}
+        cached: dict[Any, Any] = {}
         try:
             cached = self.state.db.kv_get("schedule_profile", {}) or {}
         except Exception as _amo_exc:
@@ -795,7 +795,7 @@ class ScheduleEngine:
             _note_swallowed("schedule_engine.ScheduleEngine.yesterday_summary", _amo_exc)
             target = _clock_today()
         prev_day = (target - timedelta(days=1)).isoformat()
-        items = []
+        items: list[Any] = []
         try:
             items = self.state.schedule.get(prev_day) or self.state.db.get_schedule(prev_day) or []
         except Exception as _amo_exc:
@@ -1003,7 +1003,7 @@ class ScheduleEngine:
         if (health or {}).get("sick") or int((period or {}).get("pain") or 0) >= 8:
             return None
         try:
-            temp = float((weather or {}).get("temp"))
+            temp = float((weather or {}).get("temp") or 0)
         except (TypeError, ValueError):
             temp = 0.0
         min_temp = 22.0
@@ -1221,7 +1221,7 @@ class ScheduleEngine:
         result = []
         for hour in range(24):
             key = hour * 60
-            item = by_start.get(key)
+            item: Any = by_start.get(key)
             if item is None:
                 item = {
                     "start": fmt_hhmm(key), "end": fmt_hhmm(key + 60),

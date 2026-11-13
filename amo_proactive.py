@@ -2,7 +2,7 @@
 """ProactiveMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
@@ -226,7 +226,7 @@ class ProactiveMixin(_MixinBase):
             start = _now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         except Exception:
             start = now_ts() - 86400
-        rows = []
+        rows: list[Any] = []
         try:
             rows = await self._data_call(
                 "messages_since", self._data_bot_id(), uid, int(start),

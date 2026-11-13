@@ -82,6 +82,8 @@ ACTION_OWNERSHIP_RULES = (
 
 
 class LlmMixin(_MixinBase):
+    persona_name: str
+
     async def _persona_name_for(self, umo=""):
         """读取当前会话的人格名；读不到时返回空字符串。"""
         if not self.cfg_bool("use_persona_name", True):

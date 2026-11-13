@@ -19,7 +19,13 @@ except ImportError:
     from amo_shared import MOOD_KEYS, clamp, day_meta, today_str
 
 
-class ScheduleApiMixin:
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .amo_types import PluginLike as _MixinBase
+else:  # 运行时用 object：协议里的声明不能进 MRO
+    _MixinBase = object
+
+
+class ScheduleApiMixin(_MixinBase):
     async def api_mood_update(self):
         await self._ensure_ready()
         data = await self._body()

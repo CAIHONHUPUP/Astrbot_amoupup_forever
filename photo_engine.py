@@ -28,7 +28,7 @@ import urllib.request
 
 from astrbot.api import logger
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -956,7 +956,7 @@ class PhotoEngine:
         pose_ref = ""
         if selfie:
             try:
-                outfit = {}
+                outfit: dict[Any, Any] = {}
                 wardrobe = getattr(self.plugin, "wardrobe", None)
                 if wardrobe is not None:
                     outfit = wardrobe.current() or {}
@@ -1192,7 +1192,7 @@ class PhotoEngine:
         if result:
             return result
         # 配置里的文件丢了：按文件名把剩下的模板认回来，别把侧/全身当成正面
-        recovered = {}
+        recovered: dict[Any, Any] = {}
         try:
             root = self.template_dir()
             for name in os.listdir(root):

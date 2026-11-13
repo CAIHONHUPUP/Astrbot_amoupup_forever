@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
@@ -276,7 +276,7 @@ class AmoDataProvider(MemoryProvider):
     PLUGIN_NAMES = ("Astrbot_amoupup_data", "Astr_Amo_data", "astrbot_plugin_amo_data", "AstrAmoData")
 
     @property
-    def caps(self):
+    def caps(self):  # type: ignore[override]
         """运行时探测：旧版数据插件缺哪个方法，就不声明哪个能力。"""
         owners = [self._mem(), self._store()]
         found = set()
@@ -389,7 +389,7 @@ class AmoDataProvider(MemoryProvider):
                     continue
                 except Exception as exc:
                     _note_swallowed("memory_hooks.AmoDataProvider.recall", exc)
-                    last_exc = exc
+                    last_exc = exc  # type: ignore[assignment]
                     break  # 这个方法本身坏了，换下一个候选方法名
                 return self.rt.normalize_memories(rows)
         if last_exc is not None:
@@ -470,7 +470,7 @@ class MemoryCompanionProvider(MemoryProvider):
         return service if service is not None else plugin
 
     @property
-    def caps(self):
+    def caps(self):  # type: ignore[override]
         """按目标插件实际暴露的接口声明能力，老版本缺方法时别误判可写。"""
         target = self._target()
         if target is None:
@@ -529,7 +529,7 @@ class MemoryCompanionProvider(MemoryProvider):
                 return {"ok": False, "reason": str(exc)}
         return {"ok": False, "reason": "no_interface"}
 
-    async def recall(self, uid, query="", limit=6, scope="", group_id=""):
+    async def recall(self, uid, query="", limit=6, scope="", group_id="", platform=""):
         target = self._target()
         if target is None:
             return []
@@ -730,7 +730,7 @@ class MemoryHub:
 
     async def recent(self, umo="", uid="", limit=30):
         provider = self.refresh()
-        rows = []
+        rows: list[Any] = []
         if provider is not None and CAP_RECENT in provider.caps:
             try:
                 rows = await provider.recent(umo, uid, limit) or []

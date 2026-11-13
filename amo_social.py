@@ -2,7 +2,7 @@
 """SocialMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import json
 import os
@@ -244,7 +244,7 @@ class SocialMixin(_MixinBase):
         if match:
             self.db.update_profile(uid, birthday="%02d-%02d" % (to_int(match.group(1)), to_int(match.group(2))))
 
-        fields = {"affection": affection}
+        fields: dict[str, Any] = {"affection": affection}
         relation = profile.get("relation", "普通")
         if relation == "普通" and to_int(profile.get("msg_count"), 0) >= self.cfg_int("familiar_msg_count", 30):
             fields["relation"] = "熟识"
@@ -427,7 +427,7 @@ class SocialMixin(_MixinBase):
 
         让她在群里先认人：谁在说话、和她什么关系、该用什么语气，而不是把所有人都当同一个人。
         """
-        roster = []
+        roster: list[Any] = []
         seen = set()
         try:
             rows = self._recent(umo, 40)
@@ -441,7 +441,7 @@ class SocialMixin(_MixinBase):
             if not uid or uid in seen:
                 continue
             seen.add(uid)
-            profile = {}
+            profile: dict[Any, Any] = {}
             try:
                 profile = self.db.get_profile(uid) or {}
             except Exception as _amo_exc:
@@ -659,7 +659,7 @@ class SocialMixin(_MixinBase):
             return
         if not pairs:
             return
-        name_map = {}
+        name_map: dict[Any, Any] = {}
         try:
             for item in self.db.list_profiles(limit=500):
                 for key in ("name", "alias"):
@@ -957,7 +957,7 @@ class SocialMixin(_MixinBase):
             interval = max(5, self.cfg_int("auto_learn_minutes", 15)) * 60
             if now_ts() - last < interval:
                 continue
-            rows = []
+            rows: list[Any] = []
             for one_umo in umos:
                 try:
                     rows.extend(await self._recent_by_uid(uid, 20, umo=one_umo) or [])

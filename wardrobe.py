@@ -705,7 +705,7 @@ class Wardrobe:
             triple_items = [by_key.get(("top", top)), by_key.get(("bottom", bottom)),
                             by_key.get(("shoes", shoes))]
             if all(triple_items):
-                seed_triples.add(tuple(entry["id"] for entry in triple_items))
+                seed_triples.add(tuple(entry["id"] for entry in triple_items if entry is not None))
         kept = []
         repaired = False
         for outfit in outfits:
@@ -810,7 +810,7 @@ class Wardrobe:
             if sleep_count >= SLEEP_TARGET_OUTFITS:
                 break
             key = (coat, top["id"] if top else "", bottom["id"] if bottom else "",
-                   skirt["id"] if skirt else "", shoe["id"])
+                   skirt["id"] if skirt else "", shoe["id"])  # type: ignore[index]
             if key in existing:
                 continue
             existing.add(key)
@@ -1827,9 +1827,9 @@ class Wardrobe:
                     for outfit in data["outfits"]}
         added = 0
         for coat, top, bottom, skirt, shoe in combos:
-            key = (coat["id"] if coat else "", top["id"] if top else "",
-                   bottom["id"] if bottom else "", skirt["id"] if skirt else "",
-                   shoe["id"] if shoe else "")
+            key = (coat["id"] if coat else "", top["id"] if top else "",  # type: ignore[index]
+                   bottom["id"] if bottom else "", skirt["id"] if skirt else "",  # type: ignore[index]
+                   shoe["id"] if shoe else "")  # type: ignore[index]
             if key in existing:
                 continue
             existing.add(key)

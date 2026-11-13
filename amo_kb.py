@@ -2,6 +2,8 @@
 """KbMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
+from typing import Any
+
 from typing import TYPE_CHECKING
 
 import hashlib
@@ -39,6 +41,8 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 
 
 class KbMixin(_MixinBase):
+    _scenic_cache: Any
+
     def _dialect_rows(self):
         region = self._dialect_region()
         try:
@@ -82,7 +86,9 @@ class KbMixin(_MixinBase):
         for spot in self.scenic_spots():
             if not isinstance(spot, dict):
                 continue
-            projects = spot.get("projects") if isinstance(spot.get("projects"), list) else []
+            projects = spot.get("projects")
+            if not isinstance(projects, list):
+                projects = []
             lines.append(
                 "景区：%s\n城市：%s·%s\n等级：%s\n游玩项目：%s\n建议时长：%s\n区域：%s" % (
                     spot.get("name", ""), spot.get("province", ""), spot.get("city", ""),

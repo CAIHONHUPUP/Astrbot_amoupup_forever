@@ -2,7 +2,7 @@
 """ConfigMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import json
 import os
@@ -38,6 +38,10 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 
 
 class ConfigMixin(_MixinBase):
+    _config_mtime: float
+    heartflow: Any
+    segment_engine: Any
+
     def cfg(self, key, default=None):
         try:
             value = self.config.get(key, default)
@@ -126,16 +130,18 @@ class ConfigMixin(_MixinBase):
                 old = json.load(stream)
             if not isinstance(current, dict) or not isinstance(old, dict):
                 return
-            schema = {}
+            schema: dict[Any, Any] = {}
             try:
                 with open(os.path.join(self.plugin_dir, "_conf_schema.json"), encoding="utf-8-sig") as stream:
                     schema = json.load(stream) or {}
             except Exception as _amo_exc:
                 _note_swallowed("amo_config.HumanCorePlugin._migrate_legacy_config", _amo_exc)
                 schema = {}
-            merged = {}
+            merged: dict[str, Any] = {}
             for key, value in old.items():
-                meta = schema.get(key) if isinstance(schema.get(key), dict) else {}
+                meta = schema.get(key)
+                if not isinstance(meta, dict):
+                    meta = {}
                 default = meta.get("default")
                 if key not in current or current.get(key) == default:
                     current[key] = value
@@ -250,7 +256,7 @@ class ConfigMixin(_MixinBase):
         try:
             if self.db.kv_get("typing_realistic_migrated", False):
                 return
-            changes = {}
+            changes: dict[str, Any] = {}
             if to_int(self.cfg("typing_base_ms", 0), 0) == 600:
                 changes["typing_base_ms"] = 700
             if to_int(self.cfg("typing_per_char_ms", 0), 0) == 55:

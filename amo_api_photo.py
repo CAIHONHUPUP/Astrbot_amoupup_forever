@@ -16,7 +16,13 @@ else:
         from amo_shared import logger, now_ts
 
 
-class PhotoApiMixin:
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .amo_types import PluginLike as _MixinBase
+else:  # 运行时用 object：协议里的声明不能进 MRO
+    _MixinBase = object
+
+
+class PhotoApiMixin(_MixinBase):
     def _photo_job_start(self, kind, coro):
         """后台跑生图任务，接口立刻返回 job id，避免桥接请求超时。"""
         jobs = getattr(self, "_photo_jobs", None)

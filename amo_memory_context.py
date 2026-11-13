@@ -2,7 +2,7 @@
 """注入用的上下文块：按时间回看、跨平台近聊、最终 _recall。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -96,7 +96,7 @@ class RecallContextMixin(_MixinBase):
                 # 否则飞书说的「今天吃面」在 QQ 上问就等于没说过。
                 profile = self.db.get_profile(uid) or {}
                 umos = self._ritual_umos(profile)[:3] or [umo]
-                gathered = []
+                gathered: list[Any] = []
                 label = ""
                 for one_umo in umos:
                     result = await self._data_call(

@@ -2,7 +2,7 @@
 """「我能永远记住你」(Astrbot_amoupup_data) 的桥：读写记忆、同步画像/关系、缓存。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -45,6 +45,8 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 
 
 class DataSyncMixin(_MixinBase):
+    _data_found_logged: bool
+
     @staticmethod
     def _star_instance(meta):
         """AstrBot 不同版本把实例放在 star_cls / instance / star 上，挨个试。"""
@@ -309,7 +311,7 @@ class DataSyncMixin(_MixinBase):
             remote_rows = []
         if not remote_rows:
             # mem 门面不可用的旧版：直接读 DataStore
-            lister = getattr(self._data_store(), "list_profiles", None)
+            lister: Any = getattr(self._data_store(), "list_profiles", None)
             if callable(lister):
                 try:
                     remote_rows = await asyncio.to_thread(lambda: lister(bot_id, "", 500)) or []
@@ -365,7 +367,7 @@ class DataSyncMixin(_MixinBase):
             else:
                 failed += 1
         # 推完再查一次，拿到“真的写进去了多少条”
-        after = []
+        after: list[Any] = []
         try:
             after = await self._data_call("list_profiles", bot_id, "", 500) or []
         except Exception as _amo_exc:

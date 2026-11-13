@@ -596,7 +596,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         self._disturb_until: dict[str, float] = {}
         self._disturb_last: dict[str, float] = {}
         self._last_pending_check = 0.0
-        self._last_proactive_activity: dict[str, float] = {}
+        self._last_proactive_activity: dict[str, Any] = {}
         self._last_bot_saved: dict[str, float] = {}
         # 近聊上下文缓冲（只在内存里；本地聊天可以不落库，用记忆终端补）
         self._ctx_buffer: dict[str, list] = {}
@@ -623,7 +623,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                 self.pose = PoseLibrary(self)
             except Exception as exc:
                 logger.warning("[amo] 姿势库初始化失败: %s" % exc)
-        self.state = None
+        self.state: Any = None
         self.watch_info = None
         self.llm = LLMService(self)
         self.gate = ReplyGate(self)
@@ -712,7 +712,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         self._last_relation_decay = 0.0
         self._last_relation_sediment = 0.0
         self._bot_initiated: dict[str, float] = {}
-        self._prefix_cache = None
+        self._prefix_cache: Any = None
         self._loop_task = None
         self._config_mtime = 0.0
         self._register_web_apis()
@@ -900,7 +900,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         day = str(getattr(event, "day", "") or "")
         version = int(getattr(event, "version", 0) or 0)
         start_hour = int(getattr(event, "start_hour", -1) or -1)
-        cancelled = []
+        cancelled: list[Any] = []
         state = getattr(self, "state", None)
         if state is not None and start_hour >= 0:
             try:

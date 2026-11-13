@@ -14,6 +14,9 @@
   顺手清掉 126 个既有 mypy 报错（98 个是「按包/按文件双导入」的 no-redef，用
   `disable_error_code = no-redef` 明确关掉，其余 28 个逐个修：Optional 运算、
   条件定义的兜底函数签名、协议里缺的跨 mixin 方法声明等）。
+- **严格类型检查（--check-untyped-defs）已全绿**：620 → 0。做法：`PluginLike` 补齐 144 个跨 mixin
+  成员、4 个 API mixin 补上协议基类、空容器加显式类型、Optional 加守卫、平台相关的
+  `time.tzset` 加 hasattr 判断；CI 增加阻塞式 `Type check (strict)`，mypy 版本钉在 2.4.1。
 - **质量门加 pyflakes**：`tools/quality_gate.py` 增加 pyflakes 检查（未使用导入/未定义名），
   顺手清掉 16 个既有告警（amo_api 批量未用导入、amo_events/amo_ports 的 `field`、
   draw_engine 的 `has_place_hint`、wardrobe 的未用局部变量等）；CI 增加 `Quality gate --fast`。

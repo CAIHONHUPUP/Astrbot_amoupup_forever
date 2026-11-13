@@ -2,7 +2,7 @@
 """MessageMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import asyncio
 import json
@@ -182,7 +182,7 @@ class MessageMixin(_MixinBase):
             return
         if str(umo) in getattr(self, "_ctx_hydrated", set()):
             return
-        rows = []
+        rows: list[Any] = []
         hub = self._memory_hub()
         if hub is not None:
             try:
@@ -223,7 +223,7 @@ class MessageMixin(_MixinBase):
             }
             for item in ordered[-self.CONTEXT_BUFFER_LIMIT:]
         ]
-        self._ctx_hydrated = getattr(self, "_ctx_hydrated", set())
+        self._ctx_hydrated: Any = getattr(self, "_ctx_hydrated", set())
         self._ctx_hydrated.add(str(umo))
 
     def _is_other_bot(self, event) -> bool:

@@ -2,7 +2,7 @@
 """RuntimeMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import asyncio
 import re
@@ -75,6 +75,14 @@ except ImportError:  # 直接按文件加载时
 
 
 class RuntimeMixin(_MixinBase):
+    _last_relation_decay: float
+    _last_relation_sediment: float
+    _last_purge: float
+    _last_auto_learn: float
+    _last_pending_check: float
+    _last_schedule_save: str
+    _proactive_last: float
+
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
         try:
@@ -337,7 +345,7 @@ class RuntimeMixin(_MixinBase):
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
         try:
             now_text = _now().strftime("%H:%M")
-            agenda = []
+            agenda: list[Any] = []
             for item in (self.state.schedule.get(today_str()) or []):
                 end = str(item.get("end") or "")
                 if end and end <= now_text:
@@ -1170,7 +1178,7 @@ class RuntimeMixin(_MixinBase):
                 since = 0
             # 按这个人的会话取（umo），会话里双方的话都在；不能按 uid（她的行是 uid='bot'），
             # 也不能不带范围（会把所有人的聊天拉进来）。
-            rows = []
+            rows: list[Any] = []
             for one_umo in self._ritual_umos(profile)[:3]:
                 try:
                     part = await self._data_call(
@@ -1199,7 +1207,7 @@ class RuntimeMixin(_MixinBase):
                 # 距上次归档 >= 2 小时、又攒了 >= 6 条，也压一条。
                 idle_minutes = max(30, self.cfg_int("milestone_idle_minutes", 120))
                 idle_msgs = max(4, self.cfg_int("milestone_idle_min_messages", 6))
-                if not _ms_idle_due(len(rows), since, now_ts(), idle_minutes, idle_msgs):
+                if not _ms_idle_due(len(rows), since, int(now_ts()), idle_minutes, idle_msgs):
                     continue
             body = _ms_transcript(rows)
             label = _now().strftime("%Y-%m-%d")
@@ -1262,7 +1270,7 @@ class RuntimeMixin(_MixinBase):
             # 每个会话里双方的话都要（机器人行 uid='bot'，按 uid 过滤会把她的话丢光）。
             # 注意不能传 umo=""：那会把这个 bot 下所有人的聊天都拉进来。
             umos = self._ritual_umos(profile)[:3]
-            messages = []
+            messages: list[Any] = []
             for one_umo in umos:
                 try:
                     result = await self._data_call(

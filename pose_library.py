@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncio
 import json
 import os
@@ -341,7 +343,7 @@ class PoseLibrary:
 # ---------------------------------------------------------------- 参考图
 
 _ref_lock = asyncio.Lock()
-_ref_state = {"running": False, "total": 0, "done": 0, "current": "", "failed": []}
+_ref_state: dict[str, Any] = {"running": False, "total": 0, "done": 0, "current": "", "failed": []}
 
 
 def batch_status():

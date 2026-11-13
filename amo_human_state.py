@@ -1,5 +1,5 @@
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 # -*- coding: utf-8 -*-
 """人类状态机：心情/生理期/健康/天气/世界观/日程/旅行。"""
 
@@ -881,7 +881,7 @@ class HumanState:
                     found = item
                     found_overlap = overlap
                     found_begin = begin
-            entry = {
+            entry: dict[str, Any] = {
                 "start": "%02d:00" % hour,
                 "end": "24:00" if hour == 23 else "%02d:00" % (hour + 1),
                 "activity": "睡觉" if hour < 7 or hour >= 23 else "休息",
@@ -1003,9 +1003,10 @@ class HumanState:
             start_hour = None
         cancelled = []
         events = getattr(self.p, "events", None)
-        has_bus = bool(callable(getattr(events, "has_subscribers", None))
+        has_bus = bool(events is not None
+                       and callable(getattr(events, "has_subscribers", None))
                        and events.has_subscribers(ScheduleChanged))
-        if has_bus:
+        if has_bus and events is not None:
             try:
                 results = events.publish_collect(ScheduleChanged(
                     day=str(day), version=int(version or 0),
@@ -1117,8 +1118,8 @@ class HumanState:
                 }
                 children.append(hour)
             block["date"] = day
-            block["children"] = children
-            block["current"] = any(child["current"] for child in children)
+            block["children"] = children  # type: ignore[assignment]
+            block["current"] = any(child["current"] for child in children)  # type: ignore[assignment]
             if children:
                 if all(item.get("category") == "sleep" for item in children):
                     block["activity"] = "睡觉"
@@ -1856,7 +1857,7 @@ class HumanState:
             slot_changed = False
             try:
                 current_items = self._hourly_schedule(self.schedule.get(day) or [])
-                current_item = next(
+                current_item: dict[str, Any] = next(
                     (x for x in current_items if str(x.get("start") or "") == start), {},
                 )
                 slot_changed = any(
@@ -2062,7 +2063,7 @@ class HumanState:
             yesterday = (_now().date() - timedelta(days=1)).isoformat()
         except Exception:
             yesterday = ""
-        y_items = []
+        y_items: list[Any] = []
         if yesterday:
             try:
                 y_items = self.schedule.get(yesterday) or self.db.get_schedule(yesterday) or []
