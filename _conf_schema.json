@@ -3,7 +3,7 @@
     "type": "string",
     "description": "时区",
     "default": "Asia/Shanghai",
-    "hint": "问候时段、日记、天气、「现在几点」都按这个时区算。服务器跑在 UTC 时务必保持 Asia/Shanghai，否则会把早上算成凌晨（会出现「大晚上的」这类错话）。填 auto 表示跟随系统。"
+    "hint": "主动消息时段、日记、天气、「现在几点」都按这个时区算。服务器跑在 UTC 时务必保持 Asia/Shanghai，否则会把早上算成凌晨（会出现「大晚上的」这类错话）。填 auto 表示跟随系统。"
   },
   "weather_city_name": {
     "type": "string",
@@ -294,111 +294,23 @@
     "hint": "例如 23:30-07:30",
     "default": "23:30-07:30"
   },
-  "ritual_enabled": {
+
+  "bill_autopay": {
     "type": "bool",
-    "description": "每日恋人问候",
-    "hint": "对关系为“相恋”的用户发送晚安、早安、午饭问候",
+    "description": "账单自动扣款",
+    "hint": "关掉后房贷/房租/水电只在到期时提醒，由她调用 pay_bill 或 /代缴 结清",
     "default": true
   },
-  "ritual_goodnight": {
-    "type": "bool",
-    "description": "睡前晚安",
-    "default": true
-  },
-  "ritual_goodnight_window": {
-    "type": "string",
-    "description": "晚安时间段",
-    "hint": "例如 22:00-02:00",
-    "default": "22:00-02:00"
-  },
-  "ritual_morning": {
-    "type": "bool",
-    "description": "起床早安",
-    "default": true
-  },
-  "ritual_morning_window": {
-    "type": "string",
-    "description": "早安时间段",
-    "hint": "例如 06:30-10:00",
-    "default": "06:30-10:00"
-  },
-  "ritual_lunch": {
-    "type": "bool",
-    "description": "午饭问候",
-    "default": true
-  },
-  "ritual_lunch_window": {
-    "type": "string",
-    "description": "午饭时间段",
-    "hint": "例如 11:00-13:30",
-    "default": "11:00-13:30"
-  },
-  "ritual_skip_recent_minutes": {
-    "type": "int",
-    "description": "问候前多少分钟聊过就跳过",
-    "hint": "避免她刚和你聊完又发模板问候；默认 45 分钟",
-    "default": 45
-  },
-  "ritual_skip_if_greeted": {
-    "type": "bool",
-    "description": "已经互相问候就跳过",
-    "hint": "例如你 6 点已经说过早安，她起床后不再重复“还没起来吗”",
-    "default": true
-  },
-  "ritual_random_platform": {
-    "type": "bool",
-    "description": "问候随机挑一个平台",
-    "hint": "QQ 和飞书都有会话时，每次随机选一处发；关掉就只发主页会话（旧行为）",
-    "default": true
-  },
-  "ritual_min_gap_minutes": {
-    "type": "int",
-    "description": "两次问候最短间隔（分钟）",
-    "hint": "时段配置重叠时，刚发过问候就不再发第二条；默认 30",
-    "default": 30
-  },
-  "proactive_after_greeting_minutes": {
-    "type": "int",
-    "description": "问候后多久不再主动搭话（分钟）",
-    "hint": "防止早安刚在一头发完，另一头又来一句；默认 60",
-    "default": 60
-  },
+
+
   "proactive_check_seconds": {
     "type": "int",
     "description": "主动私聊检查间隔（秒）",
     "default": 300
   },
-  "proactive_interval_min": {
-    "type": "int",
-    "description": "同一用户最短主动私聊间隔（分钟）",
-    "default": 90
-  },
-  "proactive_daily_max": {
-    "type": "int",
-    "description": "每人每日主动私聊上限",
-    "default": 3
-  },
-  "proactive_prob": {
-    "type": "float",
-    "description": "每次检查触发主动私聊的概率",
-    "default": 0.25
-  },
-  "proactive_daily_guarantee": {
-    "type": "bool",
-    "description": "相恋每天至少主动一次",
-    "hint": "开启后，关系为“相恋”且当天还没主动私聊过，会在 08:00-24:00 之间至少发一条；免打扰时段也允许这一次",
-    "default": true
-  },
-  "proactive_comfort": {
-    "type": "bool",
-    "description": "难受时找相恋的人求安慰",
-    "default": true
-  },
-  "proactive_share_prob": {
-    "type": "float",
-    "description": "遇到有趣的事主动分享的概率",
-    "default": 0.35
-  },
+
+
+
   "delay_reply": {
     "type": "bool",
     "description": "忙时延迟回复",
@@ -1000,12 +912,7 @@
     "hint": "好友指关系为“熟识/相恋”的用户；没有好友就不主动私聊",
     "default": true
   },
-  "proactive_schedule_only": {
-    "type": "bool",
-    "description": "按日程场景主动私聊",
-    "hint": "主要在吃饭、休息、摸鱼、下班通勤时主动找对方",
-    "default": true
-  },
+
   "proactive_followup_minutes": {
     "type": "int",
     "description": "未回复追问间隔（分钟）",
@@ -1015,8 +922,8 @@
   "proactive_no_reply_minutes": {
     "type": "int",
     "description": "未回复心情变差间隔（分钟）",
-    "hint": "追问后仍没回复，多久开始心情变差；默认 30 分钟",
-    "default": 30
+    "hint": "追问后仍没回复，多久开始心情变差；默认 4 小时",
+    "default": 240
   },
   "proactive_depressed_count": {
     "type": "int",
@@ -1070,12 +977,7 @@
     "hint": "最近这么多分钟内有你的消息，就不发主动消息，避免你在聊天时插话。0 = 关闭。",
     "default": 10
   },
-  "proactive_forced_gap_minutes": {
-    "type": "int",
-    "description": "「日常关心」两条之间的最小间隔（分钟）",
-    "hint": "重启不会重置这个间隔（按数据库里的上次主动时间算），避免重启后立刻又发一条。",
-    "default": 30
-  },
+
   "proactive_unanswered_window_minutes": {
     "type": "int",
     "description": "「他最后一句你还没回」的有效窗口（分钟）",

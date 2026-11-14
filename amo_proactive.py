@@ -11,6 +11,7 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     except ImportError:  # 直接按文件加载时
         from amo_observability import note as _note_swallowed
 
+import asyncio
 import random
 import re
 from datetime import timedelta
@@ -33,6 +34,118 @@ if TYPE_CHECKING:
     from .amo_types import PluginLike as _MixinBase
 else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉别的 mixin 的真实实现
     _MixinBase = object
+
+
+PROACTIVE_SLOTS = (8, 12, 15, 19, 23)
+PROACTIVE_NIGHT_START = 30      # 00:30
+PROACTIVE_NIGHT_END = 7 * 60    # 07:00
+
+SHARE_EVENTS = (
+    "看到了一只很胖的流浪猫，蹲在便利店门口。",
+    "公司下午茶发了一块很好吃的蛋糕。",
+    "下班路上看到了很好看的晚霞。",
+    "便利店新出了一款冰淇淋，你尝了，很好吃。",
+    "路过花店，门口摆了一排小雏菊。",
+    "地铁上有人抱着一只很乖的柯基。",
+    "楼下的桂花开了，风一吹都是甜的。",
+    "今天买了一件新睡衣，软软的。",
+)
+
+
+def night_now(now=None):
+    """00:30-07:00 不主动打扰（极端事件除外）。"""
+    now = now or _now()
+    minute = int(now.hour) * 60 + int(now.minute)
+    return PROACTIVE_NIGHT_START <= minute < PROACTIVE_NIGHT_END or minute < 30
+
+
+def silence_hours(last_seen, now=None):
+    stamp = float(now if now is not None else now_ts())
+    last = to_float(last_seen, 0)
+    if not last:
+        return 24.0
+    return max(0.0, (stamp - last) / 3600.0)
+
+
+def share_drive(silence, sent_today=0, ignored_today=0):
+    """分享欲：越久没聊越想说；今天说太多又被冷落，就冷下来。"""
+    score = float(silence) * 8 - int(sent_today) * 6 - int(ignored_today) * 12
+    return int(max(0, min(100, score)))
+
+
+def missing_score(silence):
+    return int(max(0, min(100, float(silence) * 10)))
+
+
+def pick_life_event(day, uid=""):
+    key = str(day) + "|" + str(uid)
+    return SHARE_EVENTS[sum(ord(ch) for ch in key) % len(SHARE_EVENTS)]
+
+
+def forced_reason(snap, balance_ratio=None, silence=0.0):
+    """必须主动的红线：情绪极值 / 大病 / 余额低于总资产 5% / 超过 8 小时没交流。"""
+    mood = (snap or {}).get("mood") or {}
+    if float(mood.get("开心") or 0) >= 90:
+        return "你现在开心到极点，特别想找人分享。"
+    if float(mood.get("委屈") or 0) >= 85 or float(mood.get("郁闷") or 0) >= 90:
+        return "你现在情绪很崩，一个人很难受，特别想找老公。"
+    health = (snap or {}).get("health") or {}
+    if health.get("sick") and int(health.get("severity") or 0) >= 3:
+        return "你病得有点重，一个人在家很难受。"
+    if balance_ratio is not None and balance_ratio < 0.05:
+        return "你的余额只剩总资产的 5% 不到了，有点慌。"
+    if float(silence) >= 8:
+        return "你已经一整天没跟老公说上话了，有点孤单，想问问他今天过得怎么样。"
+    return ""
+
+
+def proactive_period(hour):
+    if 5 <= hour < 9:
+        return "早上"
+    if 9 <= hour < 11:
+        return "上午"
+    if 11 <= hour < 14:
+        return "中午"
+    if 14 <= hour < 18:
+        return "下午"
+    if 18 <= hour < 23:
+        return "晚上"
+    return "深夜"
+
+
+def proactive_facts(snap, hunger, now=None, extra=""):
+    """把此刻的事实摆给她：几点、天气、心情、饥饿、在做什么；发不发由她自己判断。"""
+    now = now or _now()
+    hour = int(now.hour)
+    activity = snap.get("activity") or {}
+    place = str(activity.get("activity") or "在家")
+    mood = str(snap.get("dominant") or "").strip() or "平静"
+    try:
+        hunger_value = int(round(float(hunger)))
+    except Exception:
+        hunger_value = 80
+    parts = ["现在是%s %s。" % (proactive_period(hour), now.strftime("%H:%M"))]
+    if hour in (6, 7, 8, 9) and any(word in place for word in ("睡", "起床", "赖床")):
+        parts.append("你刚起床。")
+    weather_text = str(snap.get("weather_text") or "").strip()
+    if weather_text:
+        parts.append("外面" + weather_text + "。")
+    parts.append("你的心情是%s，饥饿值是%d。" % (mood, hunger_value))
+    if place:
+        parts.append("你此刻%s。" % place)
+    parts.append("你可以选择做自己的事，也可以选择找老公聊天；发不发、发什么，你自己决定。")
+    if extra:
+        parts.append(str(extra))
+    return "".join(parts)
+
+
+def proactive_skip(text):
+    value = str(text or "").strip()
+    if not value:
+        return True
+    if "[SKIP]" in value.upper():
+        return True
+    return value.strip("[] .。!！").upper() == "SKIP"
 
 
 class ProactiveMixin(_MixinBase):
@@ -69,9 +182,22 @@ class ProactiveMixin(_MixinBase):
         if pending:
             self.db.kv_set(self._pending_key(uid), {})
             self.db.kv_set("proactive_ignored_" + str(uid), 0)
+            self.db.kv_set("proactive_held_" + str(uid), False)
+            text = str(pending.get("text") or "")
+            if text:
+                try:
+                    asyncio.get_running_loop().create_task(self._remember_shared(uid, text))
+                except Exception:
+                    pass
 
-    def _try_soothe(self, uid, text):
-        if not self._depressed_active(uid):
+    async def _remember_shared(self, uid, text):
+        try:
+            await self._data_call("remember", self._data_bot_id(), "amo",
+                                  "今天主动跟老公分享：" + str(text)[:140],
+                                  kind="event", importance=0.45)
+        except Exception as exc:
+            logger.debug("[amo] 分享记忆写入失败: %s" % exc)
+
             return
         words = ("抱抱", "亲亲", "哄", "对不起", "别难过", "喜欢你", "爱你", "怎么啦", "我在", "在呢", "乖")
         if any(word in str(text or "") for word in words):
@@ -144,7 +270,7 @@ class ProactiveMixin(_MixinBase):
             # 0 / 负数 = 关掉追问，只保留「心情变差」这一档
             followup_after = 10 ** 9 if followup_minutes <= 0 else max(5, followup_minutes) * 60
             # 0 / 负数 = 关掉「没回复就心情变差」；默认跟 schema 一致（30 分钟）
-            mood_minutes = max(0, self.cfg_int("proactive_no_reply_minutes", 30))
+            mood_minutes = max(0, self.cfg_int("proactive_no_reply_minutes", 240))
             mood_after = mood_minutes * 60 if mood_minutes else 10 ** 9
             if not pending.get("followup") and age >= followup_after:
                 if not quiet_now(self.cfg_str("quiet_hours", "23:30-07:30")):
@@ -161,6 +287,7 @@ class ProactiveMixin(_MixinBase):
             if not pending.get("mood") and age >= mood_after:
                 pending["mood"] = True
                 self.db.kv_set(self._pending_key(uid), pending)
+                self.db.kv_set("proactive_held_" + uid, True)
                 ignored = to_int(self.db.kv_get("proactive_ignored_" + uid, 0), 0) + 1
                 self.db.kv_set("proactive_ignored_" + uid, ignored)
                 self.state.nudge(委屈=5, 郁闷=5, 生气=2, 依恋=2)
@@ -280,32 +407,7 @@ class ProactiveMixin(_MixinBase):
             _note_swallowed("amo_proactive.ProactiveMixin._mark_greeting", _amo_exc)
 
     def _ritual_pending(self, profile):
-        """现在是否正处在「还没发」的问候时段。
-
-        主动消息要让路：早晨 8 点主动搭话和早安问候撞在一起，就是
-        「两个地方各响一次」的来源。非恋人的好友、刚问候过的、没有会话可发的，
-        都不算待发，否则会白让路一整个时段。
-        """
-        if not self.cfg_bool("ritual_enabled", True):
-            return False
-        if str(profile.get("relation") or "") != "相恋":
-            return False
-        uid = str(profile.get("uid") or "")
-        umos = self._ritual_umos(profile)
-        if not uid or not umos:
-            return False
-        if self._recent_greeting(uid, self.cfg_int("ritual_min_gap_minutes", 30)):
-            return False
-        for kind, enabled_key, window_key, default_window in self.RITUAL_SPECS:
-            if not self.cfg_bool(enabled_key, True):
-                continue
-            if not self._ritual_in_window(self.cfg_str(window_key, default_window)):
-                continue
-            if self.db.kv_get("ritual_" + kind + "_" + uid + "_" + today_str(), False):
-                continue
-            if not self._ritual_should_send(umos, kind):
-                continue
-            return True
+        """每日早晚问候已废除（事实驱动第一阶段）：主动消息不再为问候让路。"""
         return False
 
     def _ritual_should_send(self, umos, kind):
@@ -339,8 +441,7 @@ class ProactiveMixin(_MixinBase):
         return True
 
     async def _maybe_rituals(self):
-        if not self.cfg_bool("ritual_enabled", True):
-            return
+        """只剩生日祝福：每天早/中/晚的固定问候已废除。"""
         now = now_ts()
         if now - to_float(getattr(self, "_last_ritual", 0), 0) < 60:
             return
@@ -391,74 +492,6 @@ class ProactiveMixin(_MixinBase):
                         self.db.log_proactive(uid, "birthday", text)
                         logger.info("[amo] 生日祝福 -> %s: %s" % (name, text[:120]))
                         continue
-            for kind, enabled_key, window_key, default_window in self.RITUAL_SPECS:
-                if not self.cfg_bool(enabled_key, True):
-                    continue
-                if not self._ritual_in_window(self.cfg_str(window_key, default_window)):
-                    continue
-                # 晚安跨零点：00:00-02:00 仍算前一晚，否则 22:00 发过、0 点后 key 变了再发一次
-                ritual_day = today_str()
-                if kind == "goodnight" and minutes_now() < 120:
-                    ritual_day = (_now() - timedelta(days=1)).date().isoformat()
-                daily_key = "ritual_" + kind + "_" + uid + "_" + ritual_day
-                if self.db.kv_get(daily_key, False):
-                    continue
-                if kind == "morning" and (snap.get("activity") or {}).get("category") == "sleep":
-                    continue
-                if self._recent_greeting(uid, self.cfg_int("ritual_min_gap_minutes", 30)):
-                    continue
-                # 他今天已经主动说过话，就别再问「醒了没 / 吃了吗 / 早点睡」——
-                # 2026-11-12 线上：08:04 他说「我九点上班」，09:29 还在发「老公早安，醒了没呀」
-                if await self._user_spoke_today(uid, kind):
-                    continue
-                if not self._ritual_should_send(umos, kind):
-                    continue
-                targets = _greeting_targets(
-                    umos,
-                    home_umo,
-                    randomize=self.cfg_bool("ritual_random_platform", True),
-                )
-                if not targets:
-                    continue
-                text = ""
-                try:
-                    text = await self.llm.gen_proactive(targets[0], profile, snap, kind)
-                except Exception as exc:
-                    logger.debug("[amo] 仪式生成失败: %s" % exc)
-                if not text:
-                    # 兜底文案也要跟着方言开关：关掉方言/普通话时不能冒出「吃啥子哦」
-                    lunch_text = name + "，今天中午吃什么呢？"
-                    try:
-                        if self._dialect_active() and "贵州" in self._dialect_style():
-                            lunch_text = name + "，今天中午吃啥子哦？"
-                    except Exception as _amo_exc:
-                        _note_swallowed("amo_proactive.ProactiveMixin._maybe_rituals", _amo_exc)
-                    text = {
-                        "goodnight": name + "，太晚了，我先去睡觉啦，你也早点睡。",
-                        "morning": name + "，早上好呀，还没起来吗？",
-                        "lunch": lunch_text,
-                    }.get(kind, "")
-                if not text:
-                    continue
-                sent_umo = ""
-                for candidate in targets:
-                    if await self._send_to_umo(candidate, text):
-                        sent_umo = candidate
-                        break
-                if not sent_umo:
-                    continue
-                # 只标记真正收到的那一处；另一头靠 greeting_last 跨平台去重，
-                # 不能把「她刚跟我说过话」的副作用（火气/打扰冷却）打到没收到消息的平台
-                self._mark_bot_initiated(sent_umo)
-                self._mark_greeting(uid, kind, sent_umo)
-                self.db.kv_set(daily_key, True)
-                self.db.log_proactive(uid, kind, text)
-                logger.info(
-                    "[amo] 每日问候(%s) -> %s [%s]: %s"
-                    % (kind, name, str(sent_umo).split(":", 1)[0], text[:200])
-                )
-                break
-
     def _choose_proactive_kind(self, profile, snap, category=""):
         relation = profile.get("relation", "普通")
         mood = snap["mood"]
@@ -512,6 +545,12 @@ class ProactiveMixin(_MixinBase):
             umo = str(umo or "")
             if not umo or umo in items:
                 return
+            try:
+                from .group_scene import proactive_allowed
+            except ImportError:
+                from group_scene import proactive_allowed
+            if not proactive_allowed(self, umo):
+                return
             if not force and self._recent_bot_initiated(umo, 3600):
                 return
             items.append(umo)
@@ -563,7 +602,12 @@ class ProactiveMixin(_MixinBase):
         return items[0][1]
 
     async def _maybe_proactive(self):
+        """时段推演：把分享欲/想念/生活小事/红线摆给她，发不发由她自己判断。"""
+        now = _now()
+        if int(now.hour) not in PROACTIVE_SLOTS:
+            return
         quiet = quiet_now(self.cfg_str("quiet_hours", "23:30-07:30"))
+        night = night_now(now)
         try:
             profiles = self.db.proactive_profiles(limit=100)
         except Exception as _amo_exc:
@@ -573,87 +617,118 @@ class ProactiveMixin(_MixinBase):
             profiles = [profile for profile in profiles if self._is_proactive_friend(profile)]
         if not profiles:
             return
-        random.shuffle(profiles)
-        now = now_ts()
-        interval = max(10, self.cfg_int("proactive_interval_min", 90)) * 60
-        daily_max = max(0, self.cfg_int("proactive_daily_max", 3))
+        snap = self.state.snapshot()
         for profile in profiles:
             uid = str(profile.get("uid") or "")
-            if self._ritual_pending(profile):
+            if not uid:
                 continue
-            if self._recent_greeting(uid, self.cfg_int("proactive_after_greeting_minutes", 60)):
+            slot_key = "proactive_slot:%s:%s:%02d" % (uid, today_str(), now.hour)
+            if self.db.kv_get(slot_key, False):
                 continue
             target_umo = self._pick_proactive_umo(profile)
             if not target_umo:
                 continue
-            if self._recent_bot_initiated(target_umo, 3600):
+            try:
+                from .group_scene import proactive_allowed
+            except ImportError:
+                from group_scene import proactive_allowed
+            if not proactive_allowed(self, target_umo):
+                logger.info("[amo] 主动消息：目标群是工作群/陌生群，取消发送")
+                self.db.kv_set(slot_key, True)
                 continue
-            if self._proactive_user_just_talked(profile, now):
+            if self._proactive_user_just_talked(profile, now_ts()):
                 continue
-            count = to_int(profile.get("proactive_count"))
-            if profile.get("proactive_day") != today_str():
-                count = 0
-            if count >= daily_max:
-                continue
-            relation = str(profile.get("relation") or "普通")
-            guaranteed = (
-                relation == "相恋"
-                and count == 0
-                and self.cfg_bool("proactive_daily_guarantee", True)
-                and _now().hour >= 8
-                and _now().hour < 23
-                and not quiet
-            )
-            if quiet and not guaranteed:
-                continue
-            pending = self.db.kv_get(self._pending_key(profile.get("uid")), None)
+            pending = self.db.kv_get(self._pending_key(uid), None)
             if isinstance(pending, dict) and pending.get("sent_at"):
-                if now - to_float(pending.get("sent_at"), 0) < 6 * 3600:
+                if now_ts() - to_float(pending.get("sent_at"), 0) < 6 * 3600:
                     continue
-                self.db.kv_set(self._pending_key(profile.get("uid")), {})
-            snap = self.state.snapshot()
+                self.db.kv_set(self._pending_key(uid), {})
             category = (snap.get("activity") or {}).get("category", "")
-            if category in ("sleep", "work", "study") and not guaranteed:
+            silence = silence_hours(profile.get("last_seen"), now_ts())
+            sent_today = to_int(profile.get("proactive_count"), 0) if profile.get("proactive_day") == today_str() else 0
+            ignored = to_int(self.db.kv_get("proactive_ignored_" + uid, 0), 0)
+            held = bool(self.db.kv_get("proactive_held_" + uid, False))
+            ratio = None
+            try:
+                total = int(self.wallet.total_assets())
+                if total > 0:
+                    ratio = int(self.wallet.balance()) / float(total)
+            except Exception:
+                ratio = None
+            forced = forced_reason(snap, ratio, silence)
+            # 她睡了 / 夜间 / 免打扰：只有红线才允许打扰
+            if (quiet or night or category == "sleep") and not forced:
+                self.db.kv_set(slot_key, True)
+                logger.info("[amo] 主动消息：夜间或免打扰，她把想说的话留到明天")
                 continue
-            forced = (
-                relation == "相恋"
-                and category in ("meal", "rest", "play", "commute")
-                and self._proactive_forced_allowed(profile, now)
-                and not self._forced_sent_this_hour(profile.get("uid"))
-            )
-            if not guaranteed and not forced and now - to_float(profile.get("last_proactive", 0)) < interval:
+            # 软阈值：今天主动很多次都没回音，她也高冷起来
+            if sent_today >= 5 and ignored >= 3 and not forced:
+                self.db.kv_set(slot_key, True)
+                logger.info("[amo] 主动消息：今天找过 %d 次都没回音，她决定先不打扰" % sent_today)
                 continue
-            if not guaranteed and not forced and random.random() > self.cfg_float("proactive_prob", 0.25):
+            try:
+                hunger = self.get_hunger()
+            except Exception:
+                hunger = 80
+            event = pick_life_event(today_str(), uid)
+            micro = ""
+            try:
+                record = self.db.kv_get("micro_event:last", {}) or {}
+                if isinstance(record, dict) and record.get("text"):
+                    micro = str(record.get("text"))
+            except Exception:
+                micro = ""
+            extra = []
+            if forced:
+                extra.append("【必须主动】" + forced)
+            if held:
+                extra.append("上次你主动找他，他很久没回你，你有点委屈；这次开口可以带点小脾气，但别质问他。")
+            extra.append("你现在有点想他（想念值 %d/100）。" % missing_score(silence))
+            if share_drive(silence, sent_today, ignored) >= 40:
+                extra.append("你今天分享欲挺强，遇到一点小事都想告诉他。")
+            if micro or event:
+                extra.append("你身边的小事：" + (micro or event))
+            facts = proactive_facts(snap, hunger, now, extra="".join(extra))
+            try:
+                text = await self.llm.gen_proactive(target_umo, profile, snap, "decide", facts=facts)
+            except Exception as exc:
+                logger.debug("[amo] 主动消息决策失败: %s" % exc)
+                text = ""
+            self.db.kv_set(slot_key, True)
+            if proactive_skip(text):
+                logger.info("[amo] 主动消息：她自己决定这次不找你（%02d:00）" % int(now.hour))
                 continue
-            if not guaranteed and self.cfg_bool("proactive_schedule_only", True) and category not in ("meal", "rest", "play", "commute"):
+            sent_umo = await self._send_proactive_lines(profile, target_umo, text)
+            if not sent_umo:
                 continue
-            kind = self._choose_proactive_kind(profile, snap, category)
-            # 他今天已经说过吃了什么（哪怕是在另一个平台），就别再发「到饭点了，别随便对付」。
-            if kind == "meal" and await self._user_spoke_today(uid, "lunch"):
-                continue
-            text = await self.llm.gen_proactive(
-                target_umo, profile, snap, kind
-            )
-            if not text:
-                continue
-            sent_umo = ""
-            for candidate in self._proactive_candidates(profile, target_umo):
-                if await self._send_to_umo(candidate, text):
-                    sent_umo = candidate
-                    break
-            ok = bool(sent_umo)
-            if ok:
-                target_umo = sent_umo
-                if kind == "unwell":
-                    self.db.kv_set("unwell_announced:" + today_str(), True)
-                self._mark_bot_initiated(target_umo)
-                self.db.kv_set("last_channel:%s" % profile.get("uid"), target_umo)
-                self.db.bump_proactive(profile["uid"])
-                self.db.log_proactive(profile["uid"], kind, text)
-                self._set_proactive_pending(profile["uid"], kind, text, umo=target_umo)
-                self._mark_forced_hour(profile.get("uid"))
+            self._mark_bot_initiated(sent_umo)
+            self.db.kv_set("last_channel:%s" % uid, sent_umo)
+            self.db.bump_proactive(uid)
+            self.db.log_proactive(uid, "decide", text)
+            self._set_proactive_pending(uid, "decide", text, umo=sent_umo)
+            logger.info("[amo] 主动分享 -> %s (%s)" % (profile.get("name", ""), "forced" if forced else "decide"))
 
-                logger.debug("[amo] 主动私聊 -> %s (%s)" % (profile.get("name", ""), kind))
+    async def _send_proactive_lines(self, profile, target_umo, text):
+        """像真人一样连发 1-3 句，句间留一点打字延迟。"""
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        parts = [item.strip() for item in re.split(r"(?<=[。！？!?~])", raw) if item.strip()]
+        if len(parts) > 3:
+            parts = ["".join(parts[:-2])] + parts[-2:]
+        sent = ""
+        for index, part in enumerate(parts):
+            if index:
+                await asyncio.sleep(random.uniform(0.8, 1.6))
+            for candidate in self._proactive_candidates(profile, target_umo):
+                if await self._send_to_umo(candidate, part):
+                    sent = candidate
+                    target_umo = candidate
+                    break
+            else:
+                break
+        return sent
+
 
     def _record_channel(self, uid, umo, platform):
         """记下这个人各平台的会话地址，供主动消息选边。"""

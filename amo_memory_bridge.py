@@ -95,6 +95,11 @@ class BridgeMixin(_MixinBase):
     async def _write_memory_checked(self, uid, content, kind="fact", tier=1,
                                     scope="private", group_id="", subject="user", platform=""):
         """写一条记忆并返回是否真的成功；subject=user/bot 区分主体。"""
+        # 群聊隔离：群友闲聊不进长期记忆，只有老公在群里说的话才允许记。
+        _is_owner = getattr(self, "_is_registered_lover", None)
+        if (scope == "group" or group_id) and not (_is_owner(uid) if callable(_is_owner) else False):
+            logger.debug("[amo] 群聊记忆已隔离（非主人）: %s" % str(content)[:40])
+            return False
         hub = self._memory_hub()
         level = to_int(tier, 1)
         importance = 0.75 if level >= 2 else (0.55 if level == 1 else 0.35)

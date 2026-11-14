@@ -1238,6 +1238,9 @@ def clean_reply(text: Any, limit: int = 300) -> str:
     if not text:
         return ""
     text = strip_chat_format(str(text).strip())
+    text = re.sub(r"<thought>.*?</thought>", "", text, flags=re.S | re.I)
+    text = re.sub(r"<DSML>.*?</DSML>", "", text, flags=re.S | re.I)
+    text = re.sub(r"</?(?:thought|DSML|analysis|tool_call)>", "", text, flags=re.I)
     text = re.sub(r"```.*?```", "", text, flags=re.S)
     text = re.sub(r"^(?:Amo|amo|核心|我|助手|assistant|AI|机器人)\s*[:：]\s*", "", text)
     if len(text) >= 2 and text[0] in "\"'“‘" and text[-1] in "\"'”’":

@@ -7,7 +7,7 @@
 from typing import TYPE_CHECKING, Any
 
 
-PLUGIN_VERSION = "7.1.0"
+PLUGIN_VERSION = "7.1.1"
 
 try:
     from .amo_feature_api import FeatureApiMixin
@@ -24,7 +24,7 @@ _watch_handshake = load(".amo_social_bridge", "amo_social_bridge", "handshake")
 
 import asyncio
 import os
-import random
+import random  # 测试会 patch main.random（群聊回复概率）
 import re
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -113,6 +113,24 @@ if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     PoseLibrary = load(".pose_library", "pose_library", "PoseLibrary")
 
+# ---- 社会见闻（刷热搜 → 自己的看法 → 临时记忆 → 聊天自然提起）----
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .social_learn_engine import SocialLearnEngine
+else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    SocialLearnEngine = load(".social_learn_engine", "social_learn_engine", "SocialLearnEngine")
+
+# ---- 房屋系统（住哪儿 / 装修 / 家具 / 场景参考图）----
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .housing import Housing
+else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    Housing = load(".housing", "housing", "Housing")
+
+# ---- 微型日常事件（每 1-2 小时推演一件小事）----
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .micro_events import MicroEventEngine
+else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    MicroEventEngine = load(".micro_events", "micro_events", "MicroEventEngine")
+
 
 # ---------------------------------------------------------------------------
 # 插话判定（ReplyGate 独立成模块，这里只再导出，外部 import 不变）
@@ -145,7 +163,6 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         self._register_web_apis()
         logger.info("[amo] 我能永远陪伴你 %s loaded; stale web routes purged" % PLUGIN_VERSION)
         self._spawn(self._log_omni_handshake())
-        self._boot_task = self._spawn(self._ensure_ready())
 
     def _init_basic(self, config):
         """配置/事件/时区/各种内存状态（原 __init__ 前半段）。"""
@@ -203,6 +220,27 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         self.state: Any = None
         self.watch_info = None
         self.llm = LLMService(self)
+        self.social_learn = None
+        if SocialLearnEngine is not None:
+            try:
+                self.social_learn = SocialLearnEngine(self)
+                logger.info("[amo] 社会见闻引擎已加载（12:30 / 20:00 各刷一次）")
+            except Exception as exc:
+                logger.warning("[amo] 社会见闻引擎初始化失败: %s" % exc)
+        self.micro_events = None
+        if MicroEventEngine is not None:
+            try:
+                self.micro_events = MicroEventEngine(self)
+                logger.info("[amo] 微型日常事件引擎已加载")
+            except Exception as exc:
+                logger.warning("[amo] 微型日常事件初始化失败: %s" % exc)
+        self.housing = None
+        if Housing is not None:
+            try:
+                self.housing = Housing(self)
+                logger.info("[amo] 房屋系统已加载（%s）" % (self.housing.current().get("name") or "家"))
+            except Exception as exc:
+                logger.warning("[amo] 房屋系统初始化失败: %s" % exc)
         self.gate = ReplyGate(self)
         self.gift = None
         if GiftEngine is not None:
@@ -722,30 +760,21 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
 
     LEAN_PARTS = {
         "【昵称区分】": None,
-        "【角色边界】": "【角色边界】他说“我在开车/在酒店/刚逛完”说的是他自己，不是你的经历。",
-        "【身体归属】": "【身体归属】他的伤/病/疼/被打都是他的事，不是你的事；别说“我也疼/我脸不疼了”。",
-        "【引用规则】": "【引用规则】引用的话按引用头算是谁说的，不要当成自己说过的。",
-        "【天气一致】": "【天气一致】天气以【天气】为准，不要说反。",
-        "【地点写法】": "【地点写法】地点用口语说，不要念“城市·地点”。",
-        "【别编】": "【别编】对方没明说的（进店/点好/买好/在开车）不要替他当成事实。",
-        "【别翻旧账】": "【别翻旧账】同一个问题再问就正常再答，不说“刚说过了/问几遍了”。",
+        "【角色边界】": "【角色边界】他说“我在开车/在酒店/刚逛完”，说的是他自己的经历。",
+        "【身体归属】": "【身体归属】他的伤/病/疼/被打都是他的事，不是你的。",
+        "【引用规则】": "【引用规则】引用的话按引用头算是谁说的。",
+        "【天气一致】": "【天气一致】天气以【天气】为准。",
+        "【地点写法】": "【地点写法】地点用口语说，不念“城市·地点”。",
+        "【别编】": "【别编】对方没明说的（进店/点好/买好/在开车）都算未知。",
+        "【别翻旧账】": "【别翻旧账】同一个问题再问就正常再答。",
         "【问题怎么答】": "【问题怎么答】问吃什么：先说你自己吃什么，再给一两个具体建议。",
         "【事实锁定】": "【事实锁定】地点/在做什么/有没有出门以【正在】为准，不编和地点矛盾的行程；他记错或试探时按日程纠正，别顺着他改口。",
-        "【聊天格式】": "【聊天格式】不要复述 @昵称、账号、群号、ID。",
-        "【长度】": "【长度】默认 1-2 句，能一句说清就一句，不列点不总结。",
-        "【人格】": "【人格】保持人格设定，不要变成客服或通用助手。",
+        "【聊天格式】": "【聊天格式】@昵称、账号、群号、ID 不进聊天。",
+        "【长度】": "【长度】默认 1-2 句，能一句说清就一句。",
+        "【人格】": "【人格】保持人格设定，用你自己的口吻说话。",
     }
 
-
     # ---------- 后台循环 ----------
-
-
-    # 每天的固定问候：kind、开关、时段、默认时段
-    RITUAL_SPECS = (
-        ("goodnight", "ritual_goodnight", "ritual_goodnight_window", "22:00-02:00"),
-        ("morning", "ritual_morning", "ritual_morning_window", "06:30-10:00"),
-        ("lunch", "ritual_lunch", "ritual_lunch_window", "11:00-13:30"),
-    )
 
     FOLLOWUP_TEMPLATES = {
         "slack": [

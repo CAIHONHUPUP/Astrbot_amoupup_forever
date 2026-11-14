@@ -741,3 +741,61 @@ class CommandMixin(_MixinBase):
             if parts and parts[0].lstrip("/").startswith("送礼"):
                 item = " ".join(parts[1:]).strip()
         yield event.plain_result(self.gift.manual_gift(event, item))
+
+    # ---------- 房屋 ----------
+    @filter.command("我的家")
+    async def cmd_my_home(self, event: AstrMessageEvent):
+        """查看现在的家：/我的家"""
+        await self._ensure_ready()
+        try:
+            yield event.plain_result(self.housing.card_text())
+        except Exception:
+            yield event.plain_result("家有点乱，等会儿再看…")
+
+    @filter.command("房屋")
+    async def cmd_house(self, event: AstrMessageEvent):
+        """房屋分页：/房屋 房产 | /房屋 租房"""
+        await self._ensure_ready()
+        try:
+            raw = str(getattr(event, "message_str", "") or "").replace("／", "/").strip()
+            parts = [part for part in raw.split() if part and not part.startswith("@")]
+            if len(parts) > 2 and parts[1] in ("出租", "出售"):
+                name = parts[2]
+                if parts[1] == "出租":
+                    rent_yuan = 0.0
+                    if len(parts) > 3:
+                        try:
+                            rent_yuan = float(parts[3])
+                        except Exception:
+                            rent_yuan = 0.0
+                    _ok, msg = self.housing.rent_out(name, int(rent_yuan * 100))
+                else:
+                    _ok, msg = self.housing.sell_home(name)
+                yield event.plain_result(msg)
+                return
+            page = parts[1] if len(parts) > 1 else ""
+            yield event.plain_result(self.housing.card_text(page))
+        except Exception:
+            yield event.plain_result("房屋信息读不出来…")
+
+    @filter.command("搬家")
+    async def cmd_move_house(self, event: AstrMessageEvent):
+        """搬到名下另一套房：/搬家 原木风两居室"""
+        await self._ensure_ready()
+        try:
+            raw = str(getattr(event, "message_str", "") or "").replace("／", "/").strip()
+            parts = [part for part in raw.split() if part and not part.startswith("@")]
+            ref = " ".join(parts[1:]).strip()
+            if not ref:
+                yield event.plain_result("用法：/搬家 <房产名>")
+                return
+            ok, msg, _home = self.housing.move_in(ref)
+            if ok:
+                try:
+                    self._spawn(self._ensure_home_images(force=True))
+                except Exception:
+                    pass
+            yield event.plain_result(msg)
+        except Exception:
+            yield event.plain_result("搬家没成功…")
+

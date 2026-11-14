@@ -353,7 +353,8 @@ class ScheduleTests(StateTestCase):
 
     def test_schedule_tree(self) -> None:
         day = today_str()
-        self.state.schedule = {day: [{"start": "09:00", "end": "18:00", "activity": "上班",
+        # 用全天日程，避免测试在 00:00 跑时被 JIT 的“只显示已开始时段”过滤成空
+        self.state.schedule = {day: [{"start": "00:00", "end": "24:00", "activity": "上班",
                                       "place": "公司", "category": "work"}]}
         tree = self.state.schedule_tree(day)
         self.assertEqual(len(tree), 4)

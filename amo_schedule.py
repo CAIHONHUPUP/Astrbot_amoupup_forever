@@ -645,7 +645,6 @@ class ScheduleMixin(_MixinBase):
                 guard = "diary_written:" + day_text
                 stale_key = "diary_stale:" + day_text
                 attempt_key = "diary_attempt:" + day_text
-                version = self.db.schedule_version(day_text)
                 try:
                     written = self.db.kv_get(guard, "")
                     stale = bool(self.db.kv_get(stale_key, False))
@@ -657,57 +656,59 @@ class ScheduleMixin(_MixinBase):
                 except Exception as _amo_exc:
                     _note_swallowed("amo_schedule.ScheduleMixin._maybe_daily_diary", _amo_exc)
                 try:
-                    text = await self._generate_daily_diary(day)
-                    if not text:
+                    committed = False
+                    path = ""
+                    # 日程在生成期间变了：丢弃已生成的结果，静默按最新日程重来，最多 3 次。
+                    for attempt in range(3):
+                        version = self.db.schedule_version(day_text)
+                        text = await self._generate_daily_diary(day)
+                        if not text:
+                            try:
+                                self.db.kv_set(attempt_key, now_ts())
+                            except Exception as _amo_exc:
+                                _note_swallowed("amo_schedule.ScheduleMixin._maybe_daily_diary", _amo_exc)
+                            break
+                        current_version = self.db.schedule_version(day_text)
+                        if current_version != version:
+                            logger.info(
+                                "[DIARY_DEBUG] day=%s silent_retry=1 reason=version_changed "
+                                "attempt=%d version=%s->%s",
+                                day_text, attempt + 1, version, current_version,
+                            )
+                            continue
+                        path = _diary_write(self._diary_dir(), day, text)
+                        latest_version = self.db.schedule_version(day_text)
+                        if latest_version != current_version:
+                            logger.info(
+                                "[DIARY_DEBUG] day=%s silent_retry=1 reason=version_changed_after_write "
+                                "attempt=%d version=%s->%s",
+                                day_text, attempt + 1, current_version, latest_version,
+                            )
+                            continue
                         try:
-                            self.db.kv_set(attempt_key, now_ts())
+                            self.db.kv_set(guard, path)
+                            self.db.kv_set("diary_last_day", day_text)
+                            self.db.kv_set("diary_version:" + day_text, current_version)
+                            self.db.kv_set(stale_key, False)
+                            final_version = self.db.schedule_version(day_text)
+                            if final_version != current_version:
+                                logger.info(
+                                    "[DIARY_DEBUG] day=%s silent_retry=1 reason=version_changed_after_kv "
+                                    "attempt=%d version=%s->%s",
+                                    day_text, attempt + 1, current_version, final_version,
+                                )
+                                continue
                         except Exception as _amo_exc:
                             _note_swallowed("amo_schedule.ScheduleMixin._maybe_daily_diary", _amo_exc)
-                        continue
-                    current_version = self.db.schedule_version(day_text)
-                    if current_version != version:
-                        self.db.kv_set(stale_key, True)
+                        committed = True
+                        logger.info("[amo] 日记已写: %s" % path)
                         logger.info(
-                            "[DIARY_DEBUG] day=%s daily_stale=1 reason=version_changed_discard "
-                            "version=%s->%s",
-                            day_text, version, current_version,
+                            "[DIARY_DEBUG] day=%s daily_stale=0 version=%s reason=daily_regenerated",
+                            day_text, current_version,
                         )
-                        continue
-                    path = _diary_write(self._diary_dir(), day, text)
-                    # 写文件期间日程又改了：保留 stale，下一轮按新版本重写。
-                    latest_version = self.db.schedule_version(day_text)
-                    if latest_version != current_version:
+                        break
+                    if not committed:
                         self.db.kv_set(stale_key, True)
-                        logger.info(
-                            "[DIARY_DEBUG] day=%s daily_stale=1 reason=version_changed_after_write "
-                            "version=%s->%s",
-                            day_text, current_version, latest_version,
-                        )
-                        continue
-                    try:
-                        self.db.kv_set(guard, path)
-                        self.db.kv_set("diary_last_day", day_text)
-                        self.db.kv_set("diary_version:" + day_text, current_version)
-                        self.db.kv_set(stale_key, False)
-                        # kv 写完后最后再看一眼版本：写文件/写 kv 之间又改日程，
-                        # 不能把 stale 清掉，下一轮必须重写。
-                        final_version = self.db.schedule_version(day_text)
-                        if final_version != current_version:
-                            self.db.kv_set(stale_key, True)
-                            logger.info(
-                                "[DIARY_DEBUG] day=%s daily_stale=1 reason=version_changed_after_kv "
-                                "version=%s->%s",
-                                day_text, current_version, final_version,
-                            )
-                    except Exception as _amo_exc:
-                        _note_swallowed("amo_schedule.ScheduleMixin._maybe_daily_diary", _amo_exc)
-                    logger.info("[amo] 日记已写: %s" % path)
-                    logger.info(
-                        "[DIARY_DEBUG] day=%s daily_stale=%s version=%s reason=daily_regenerated",
-                        day_text,
-                        "1" if self.db.kv_get(stale_key, False) else "0",
-                        current_version,
-                    )
                 except Exception as exc:
                     logger.warning("[amo] 写日记失败: %s" % exc)
                     try:
@@ -812,15 +813,17 @@ class ScheduleMixin(_MixinBase):
             "\n\n你现在要保持这个人格，用自己的口吻写日记：第一人称、像真人写给自己的，"
             "不是助手汇报，也不要提 AI、模型、插件、日程表这些词。"
             "文中的“我”指你自己（bot），用户是“他”；不要把“我”写成用户。"
+            "\n\n硬性结尾约束：日记必须是纯粹的内心独白（第一人称），"
+            "严禁在结尾输出任何方括号、圆括号括起来的系统状态说明或代码逻辑！"
         )
         prompt = _diary_build_prompt(day, chat_lines, hourly_lines)
         if not chat_lines and not hourly_lines:
             prompt += ("\n\n今天没有任何聊天、消费或外出记录，非常平淡。"
                        "请结合她的日常状态写一篇碎碎念：可以吐槽无聊、想念老公、抱怨天气、"
-                       "分享刷剧感受；严禁编造素材里没有的消费或事件。")
-        prompt += ("\n\n硬性要求：即使今天很平淡也必须写，不允许空着不写；"
-                   "只能写上面素材包里真实发生的事，绝对不能编造没发生的消费、地点或经历；"
-                   "严禁“心情+5”这类数值；篇幅 200-400 字，语言每天要有变化。")
+                       "分享刷剧感受；消费和事件只写素材包里真实有的。")
+        prompt += ("\n\n硬性要求：即使今天很平淡也要写，每天都有一篇；"
+                   "素材包里真实发生的事才写；消费、地点、经历都以素材包为准；"
+                   "不写“心情+5”这类数值；篇幅 200-400 字，语言每天要有变化。")
         try:
             wardrobe = getattr(self, "wardrobe", None)
             if wardrobe is not None:
@@ -828,7 +831,7 @@ class ScheduleMixin(_MixinBase):
                 outfit_text = str(worn.get("text") or "").strip()
                 if outfit_text:
                     prompt += ("\n\n今天实际穿的是：%s。日记里如果写到衣服，"
-                               "必须写这一套，不能另编。" % outfit_text)
+                               "就写这一套。" % outfit_text)
         except Exception as _amo_exc:
             _note_swallowed("amo_schedule.ScheduleMixin._generate_daily_diary", _amo_exc)
         try:
@@ -840,9 +843,24 @@ class ScheduleMixin(_MixinBase):
         text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
         text = re.sub(r"\s*```$", "", text).strip()
         text = re.sub(r"^我的日记[^\n]*\n+", "", text)
+        text = self._clean_diary_text(text)
         if callable(_diary_ensure_ending):
             text = _diary_ensure_ending(day, text)
         return text if len(text) >= 10 else ""
+
+    @staticmethod
+    def _clean_diary_text(text):
+        """清除模型/旧缓存混进正文的系统标记，保证用户只看到人话。"""
+        value = str(text or "")
+        # 整行的 [..] / <..> / （..）系统说明直接删掉
+        value = re.sub(r"(?im)^\s*[\[<（(].{0,160}(?:重写|系统|日程又变|提示|版本|stale).{0,160}[\]>）)]\s*$", "", value)
+        # 夹在正文里的方括号/尖括号系统说明
+        value = re.sub(r"[\[<][^\]>\n]{0,160}(?:重写|系统提示|日程又变|正在重写|按新日程)[^\]>\n]{0,160}[\]>]", "", value)
+        value = value.replace("这篇日记写完后日程又变了，正在按新日程重写", "")
+        value = value.replace("正在按新日程重写", "")
+        lines = [line for line in value.splitlines()
+                 if not re.search(r"(系统提示|正在重写|按新日程重写|日程又变了)", line)]
+        return "\n".join(lines).strip()
 
     def _weather_alert_umos(self):
         """天气提醒的候选会话，按最近活跃排序。

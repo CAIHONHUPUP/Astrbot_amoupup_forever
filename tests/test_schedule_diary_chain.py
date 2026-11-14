@@ -505,6 +505,47 @@ class DailyDiaryTests(BaseCase):
             self.plugin.db.schedule_version(day),
         )
 
+    def test_clean_diary_text_removes_system_notes(self):
+        text = ("今天有点累，但看到猫还是很开心。\n\n"
+                "[这篇日记写完后日程又变了，正在按新日程重写]\n"
+                "（系统提示：版本更新）")
+        cleaned = ScheduleMixin._clean_diary_text(text)
+        self.assertIn("今天有点累", cleaned)
+        self.assertNotIn("日程又变", cleaned)
+        self.assertNotIn("系统提示", cleaned)
+        self.assertNotIn("正在重写", cleaned)
+
+    def test_silent_retry_uses_new_schedule_after_version_change(self):
+        items = self.hourly()
+        self.install_schedule(items)
+        day = self.day
+        self.plugin.db.kv_set("diary_written:" + day, "/tmp/old-diary.md")
+        self.plugin.db.kv_set("diary_stale:" + day, True)
+        written = {}
+        calls = []
+
+        async def fake_generate(target_day):
+            calls.append(1)
+            if len(calls) == 1:
+                self.plugin.db.bump_schedule_version(day)
+                return "第一版旧日程"
+            return "第二版新日程"
+
+        def fake_write(root, target_day, text):
+            written["text"] = text
+            return "/tmp/new-diary.md"
+
+        self.plugin._generate_daily_diary = fake_generate
+        self.plugin._diary_dir = lambda: "/tmp"
+        fixed = datetime.datetime.combine(datetime.date.fromisoformat(day), datetime.time(23, 10))
+        with mock.patch.object(amo_schedule, "_now", return_value=fixed), \
+                mock.patch.object(amo_schedule, "_diary_write", fake_write):
+            asyncio.run(self.plugin._maybe_daily_diary())
+
+        self.assertEqual(written.get("text"), "第二版新日程")
+        self.assertFalse(self.plugin.db.kv_get("diary_stale:" + day, False))
+        self.assertEqual(len(calls), 2)
+
     def test_daily_diary_version_changed_during_generation_keeps_stale(self):
         items = self.hourly()
         self.install_schedule(items)

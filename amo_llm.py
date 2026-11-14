@@ -12,7 +12,18 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     except ImportError:  # 直接按文件加载时
         from amo_observability import note as _note_swallowed
 
+import random
 import re
+
+try:  # 目标时区下的“现在”（clock 支持面板改时区；直接按文件加载时退回绝对导入）
+    from .clock import now as _now
+except ImportError:  # 直接按文件加载时
+    from clock import now as _now  # type: ignore[no-redef]
+
+try:  # 群聊场景/双轨人设
+    from . import group_scene
+except ImportError:  # 直接按文件加载时
+    import group_scene  # type: ignore[no-redef]
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -54,6 +65,16 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             to_float,
             truncate,
         )
+
+try:  # 短回复人设：prompt 段 + 代码兜底
+    from . import short_reply
+except ImportError:  # 直接按文件加载时
+    import short_reply  # type: ignore[no-redef]
+
+try:  # 拒绝权：底线/身体/情绪
+    from . import refusal
+except ImportError:  # 直接按文件加载时
+    import refusal  # type: ignore[no-redef]
 
 if TYPE_CHECKING:
     from .amo_types import PluginLike as _MixinBase
@@ -239,6 +260,10 @@ class LlmMixin(_MixinBase):
     async def _compose_reply(self, event, text, snap, profile, memories, memory_text, group, note=""):
         umo = event.unified_msg_origin
         uid = self._canonical_uid(event)
+        scene = group_scene.scene_for_event(self, event) if group else "private"
+        is_owner = self._is_registered_lover(uid)
+        sender_name = str(event.get_sender_name() or profile.get("name") or "群友").strip()
+        owner_name = group_scene.owner_nickname(self)
         name = profile.get("alias") or profile.get("name") or event.get_sender_name() or "对方"
         relation = profile.get("relation", "普通")
         persona = await self.llm.persona(umo)
@@ -279,7 +304,23 @@ class LlmMixin(_MixinBase):
         self_name, self_uid, self_qq_nick, self_display = await self._self_identity(event)
         sender_nick = str(event.get_sender_name() or profile.get("name") or uid).strip()
         plat = self._platform_label(self._platform_of(event))
+        try:
+            cash_cents = int(self.wallet.balance())
+        except Exception:
+            cash_cents = 0
+        silence_days = 0
+        try:
+            last_seen = to_float(profile.get("last_seen"), 0)
+            if last_seen > 0:
+                silence_days = max(0, int((now_ts() - last_seen) / 86400))
+        except Exception:
+            silence_days = 0
+        last_refusal = self.db.kv_get("refusal:last", {}) or {}
+        if not isinstance(last_refusal, dict):
+            last_refusal = {}
+        coax = refusal.is_coax(text)
         system_parts = [
+            refusal.ANCHOR,
             persona,
             "【你的角色名】" + self_name + "（角色本名，不是QQ昵称）",
             "【你的QQ账号】QQ昵称：" + self_qq_nick + "；群名片/当前显示名：" + self_display + "；UID：" + (self_uid or "未知") + "。",
@@ -303,9 +344,9 @@ class LlmMixin(_MixinBase):
             "【聊天格式】不要把 @昵称、QQ号、群号、ID 或后台记录念出来；识人时只自然回应，不要复述。",
             "【长度】默认只回 1-2 句，能一句说清就一句；不要解释、不要列点、不要总结，不要写成客服长文。",
             "【人格】保持上面的人格设定，不要变成通用助手或客服；即使回答咨询也要用自己的口吻。",
-            "【短回复也要像你】哪怕只回一两个字，也要带你的称呼/语气词/小情绪（比如「嗯呐」「好呀」「知道啦」），"
-            "不要只回「好」「嗯」「收到」这种通用答复；短不代表冷淡。",
-            "【怎么说话】像跟他发微信，不像写报告：可以有语气词（呀/啦/嘛/诶/哼）、半句话、反问、笑、撒娇、吐槽；不要每句都完整规矩，也不要「好的/我明白了/很抱歉」这种客服句。"
+            refusal.prompt_block(snap, text, memory_text, cash_cents, group,
+                                   _now().hour, silence_days, last_refusal, coax),
+            short_reply.prompt_block(snap, text),
             "【接住他的回答】他刚回答过的问题不要再问一遍：他说「番茄蘑菇汤」就是在说中午吃这个，"
             "别再问「你点了吗 / 吃了吗」；顺着他的答案聊，最多补一句自己的情况。",
         ]
@@ -336,11 +377,15 @@ class LlmMixin(_MixinBase):
                     "【群里的人】（按 UID 认人，同名不同号不是一个人）\n" + roster_text
                 )
             system_parts.append("【怎么回】" + self._group_reply_guide(relation, name))
+            system_parts.append(group_scene.prompt_block(
+                scene, sender_name, owner_name, is_owner, mentioned=(target == "bot")))
             if target != "bot":
                 system_parts.append(
                     "【先想再回】这段话不一定是在跟你说话：叫了别人名字、@了别人、或他们在聊自己的事，"
                     "都当普通群聊，可以插一句但别当成在问你，也别辩解、别怼。"
                 )
+        if not group:
+            system_parts.append(group_scene.prompt_block("private"))
         system_parts.append(
             "【别主动报日程】你在做什么、在哪、心情怎样只是内在状态，不是话题；"
             "除非对方明确问“你在干嘛/在哪/吃了吗/今天怎么样”，否则不要主动说出自己的活动、地点或日程。"
@@ -401,8 +446,8 @@ class LlmMixin(_MixinBase):
         if memory_text:
             system_parts.append("【关于" + name + "的记忆】\n" + memory_text)
         system_parts.append(
-            "【规则】你就是角色本人。只输出你要说的话，不要解释、不要旁白、不要复述设定、"
-            "不要用括号描述动作；像真人在聊天，句子口语化。"
+            "【规则】你就是角色本人。只输出你要说的话，不要解释、不要旁白、不要复述设定；"
+            "允许在极少数关键情境用括号写一个小动作（摇头/揉眼睛/叹气），日常不要每句都用；像真人在聊天，句子口语化。"
         )
         if note:
             # 延迟补话的说明放在系统侧，不能混进“对方刚刚说”里
@@ -430,8 +475,68 @@ class LlmMixin(_MixinBase):
                 persona=persona, style=style, consult=consult,
             )
             reply = self._trim_reply(reply)
+            try:
+                from .date_state import guard as _date_guard
+            except ImportError:
+                from date_state import guard as _date_guard
+            _before = reply
+            reply = _date_guard(reply, self)
+            if reply != _before:
+                logger.info("[DATE_GUARD] 约会后失忆回复已拦截")
+            _refuse, _reason = refusal.should_refuse(
+                snap, text, cash_cents, _now().hour, silence_days)
+            if _refuse:
+                reply = refusal.guard(reply, snap, text, cash_cents, _now().hour, silence_days)
+                if refusal.is_refusal_reply(reply):
+                    try:
+                        self.db.kv_set("refusal:last", {"ts": now_ts(), "reason": _reason})
+                    except Exception:
+                        pass
+            reply = short_reply.guard(reply, snap, text)
             reply = self._guard_self_location(reply, snap.get("activity") or {})
+            if group:
+                reply, _group_changed = group_scene.guard_group_reply(reply, scene, owner_name)
+                if _group_changed:
+                    logger.info("[GROUP_GUARD] 群聊私密/超长回复已拦截重写")
+                self._maybe_group_private_tease(event, uid, text, scene)
         return reply
+
+    def _maybe_group_private_tease(self, event, uid, text, scene):
+        """群里体面敷衍完，私聊补一条吐槽/吃醋（10 分钟内同一群只发一次）。"""
+        try:
+            key = "group_tease:%s:%s" % (uid, scene)
+            if now_ts() - to_float(self.db.kv_get(key, 0), 0) < 600:
+                return
+            profile = self.db.get_profile(uid) or {}
+            line = ""
+            if self._is_registered_lover(uid):
+                if scene not in ("work_group", "stranger_group") and random.random() > 0.35:
+                    return
+                line = random.choice((
+                    "救命！你干嘛在群里跟我聊这个，吓死我了！我都怕群友看出来！",
+                    "刚刚在群里我都紧张死了，只能装作不认识你，哼！",
+                ))
+            else:
+                if not re.search(r"(好看|漂亮|可爱|喜欢你|心动)", str(text or "")):
+                    return
+                lovers = list(self._lover_aliases().values())
+                if not lovers:
+                    return
+                owner = self.db.get_profile(lovers[0]) or {}
+                profile = owner
+                line = "老公，刚刚群里那个谁夸我，你都不吃醋的吗？哼！"
+                key = "group_tease:owner:%s" % scene
+                if now_ts() - to_float(self.db.kv_get(key, 0), 0) < 600:
+                    return
+            umo = str(profile.get("private_umo") or "")
+            if not umo and profile.get("uid"):
+                umo = "aiocqhttp:PrivateMessage:%s" % profile.get("uid")
+            if not umo or group_scene.is_group_umo(umo):
+                return
+            self._spawn(self._send_proactive_lines(profile, umo, line))
+            self.db.kv_set(key, now_ts())
+        except Exception as exc:
+            _note_swallowed("amo_llm.LlmMixin._maybe_group_private_tease", exc)
 
     def _remember_sent_reply(self, event, text):
         """分段引擎没接手时（关掉分段 / 发送异常）的兜底记录。"""

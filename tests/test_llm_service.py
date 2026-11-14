@@ -110,7 +110,7 @@ class PersonaTests(unittest.TestCase):
     def test_from_persona_manager(self) -> None:
         plugin = FakePlugin(FakeContext(persona=FakePersonaManager({"prompt": "我是大肥鱼"})))
         service = LLMService(plugin)
-        self.assertEqual(asyncio.run(service.persona()), "我是大肥鱼")
+        self.assertIn("我是大肥鱼", asyncio.run(service.persona()))
 
     def test_persona_cached(self) -> None:
         manager = FakePersonaManager({"prompt": "缓存人格"})
@@ -126,7 +126,7 @@ class PersonaTests(unittest.TestCase):
             config={"persona": [{"prompt": "配置里的人设"}]},
         )
         service = LLMService(FakePlugin(context))
-        self.assertEqual(asyncio.run(service.persona()), "配置里的人设")
+        self.assertIn("配置里的人设", asyncio.run(service.persona()))
 
     def test_no_persona_uses_default(self) -> None:
         service = LLMService(FakePlugin(FakeContext(config={})))
@@ -142,7 +142,8 @@ class PersonaTests(unittest.TestCase):
         plugin._persona_name_for = name_for
         prompt = asyncio.run(LLMService(plugin).persona())
         self.assertIn("说话短一点", prompt)
-        self.assertTrue(prompt.startswith("你的名字是阿珍"))
+        self.assertIn("你的名字是阿珍", prompt)
+        self.assertIn("我是谁", prompt)
 
 
 class ChatTests(unittest.TestCase):

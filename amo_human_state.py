@@ -39,6 +39,15 @@ import random
 import re
 import threading
 
+try:  # 日程主语校验（纯函数）：生成的活动不能凭空带上老公
+    from .schedule_subject import validate_activity as _validate_activity
+except ImportError:  # 直接按文件加载时
+    try:
+        from schedule_subject import validate_activity as _validate_activity
+    except Exception:  # pragma: no cover - 缺模块时退回放行，不让日程写不进去
+        def _validate_activity(activity, approved=False):
+            return {"ok": True, "activity": activity, "changed": False, "reason": "unavailable"}
+
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
         MOOD_BASE,
@@ -1027,6 +1036,43 @@ class HumanState:
                 day, merged, old_items=current, source=source, reason=reason,
             )
 
+    #: 只有这些来源生成的活动做主语校验；用户明确改的日程（chat/command/manual）按他说的来。
+    ACTIVITY_GUARD_SOURCES = (
+        "jit", "ensure", "ensure_regen", "social", "auto", "life", "wander", "generated",
+    )
+
+    def _date_approved(self) -> bool:
+        """今天是否真的约过会：/赴约、propose_date 会写 date_now/date_fact。"""
+        try:
+            for key in ("date_now", "date_fact"):
+                row = self.db.kv_get(key, {}) or {}
+                if isinstance(row, dict) and float(row.get("until") or 0) > now_ts():
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _guard_activity_subjects(self, items, source):
+        """生成来源的日程：没约过会就把「和老公」改写成「和闺蜜」。"""
+        if str(source or "") not in self.ACTIVITY_GUARD_SOURCES:
+            return items
+        approved = self._date_approved()
+        out = []
+        for item in items:
+            if not isinstance(item, dict):
+                out.append(item)
+                continue
+            row = dict(item)
+            result = _validate_activity(row.get("activity"), approved=approved)
+            if not result.get("ok"):
+                logger.info(
+                    "[amo] 日程主语校验：%r -> %r（%s，source=%s）",
+                    row.get("activity"), result.get("activity"), result.get("reason"), source,
+                )
+                row["activity"] = result.get("activity") or row.get("activity")
+            out.append(row)
+        return out
+
     def _commit_schedule_change_locked(self, day, new_items, old_items=None, source="",
                                        reason="", invalidate_from=None):
         """commit_schedule_change 的锁内实现。"""
@@ -1035,6 +1081,10 @@ class HumanState:
             old_items = list(self.schedule.get(day) or [])
         old_items = list(old_items or [])
         new_items = list(new_items or [])
+        try:
+            new_items = self._guard_activity_subjects(new_items, source)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.HumanState._commit_schedule_change_locked", _amo_exc)
         if old_items == new_items and invalidate_from is None:
             return {
                 "changed": False,
@@ -1414,6 +1464,12 @@ class HumanState:
         if not self._jit_enabled():
             return None
         now = now or _now()
+        try:
+            _date_now = self.db.kv_get("date_now", {}) or {}
+            if isinstance(_date_now, dict) and float(_date_now.get("until") or 0) > now_ts():
+                return None  # 约会进行中：不让 JIT 覆盖“和老公在一起”
+        except Exception:
+            pass
         hour = int(now.hour)
         if hour not in (8, 12, 15, 19, 23):
             return None
@@ -2228,9 +2284,11 @@ class HumanState:
         jit = self.jit_action()
         try:
             if jit and float(jit.get("until") or 0) > now_ts():
-                return {"activity": jit.get("action"), "place": jit.get("place"),
-                        "zone": "home", "category": "life", "_source": "jit",
-                        "_reason": "到点即时决策"}, "jit"
+                place = str(jit.get("place") or "家")
+                return {"activity": jit.get("action"), "place": place,
+                        "zone": str(jit.get("zone") or zone_for_place(place) or "home"),
+                        "category": str(jit.get("category") or "life"),
+                        "_source": "jit", "_reason": "到点即时决策"}, "jit"
         except Exception:
             pass
         try:

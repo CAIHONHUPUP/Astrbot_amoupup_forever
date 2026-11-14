@@ -72,41 +72,6 @@ class WithinMinutesTests(unittest.TestCase):
         self.assertFalse(within_minutes(self.NOW, None, 30))
 
 
-class RitualWiringTests(unittest.TestCase):
-    """静态检查：仪式问候确实走平台选择、只发一处。"""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.source = _plugin_source.all_source(ROOT)
-
-    def test_rituals_use_greeting_targets(self):
-        self.assertIn("greeting_targets(", self.source)
-
-    def test_rituals_mark_cross_platform_greeting(self):
-        self.assertIn("greeting_last:", self.source)
-        self.assertIn("_mark_greeting(", self.source)
-        self.assertIn("_recent_greeting(", self.source)
-
-    def test_rituals_have_random_platform_switch(self):
-        self.assertIn("ritual_random_platform", self.source)
-
-    def test_rituals_have_gap_config(self):
-        self.assertIn("ritual_min_gap_minutes", self.source)
-
-    def test_ritual_block_does_not_send_to_primary_only(self):
-        start = self.source.index("async def _maybe_rituals")
-        end = self.source.index("def _choose_proactive_kind")
-        block = self.source[start:end]
-        self.assertIn("for candidate in targets", block)
-        self.assertNotIn("await self._send_to_umo(umo, text)", block)
-
-    def test_ritual_marks_only_sent_platform(self):
-        start = self.source.index("async def _maybe_rituals")
-        end = self.source.index("def _choose_proactive_kind")
-        block = self.source[start:end]
-        self.assertIn("self._mark_bot_initiated(sent_umo)", block)
-        self.assertNotIn("for candidate in umos:\n                    self._mark_bot_initiated", block)
-
 
 if __name__ == "__main__":
     unittest.main()

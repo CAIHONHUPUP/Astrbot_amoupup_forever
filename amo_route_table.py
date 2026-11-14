@@ -61,6 +61,7 @@ ROUTE_SPECS = (
     ("/weather", "api_weather", ("GET",)),
     ("/gift", "api_gift", ("GET",)),
     ("/gift/list", "api_gift", ("GET",)),
+    ("/housing", "api_housing", ("GET", "POST")),
     ("/wardrobe", "api_wardrobe", ("GET", "POST",)),
     ("/wardrobe/add", "api_wardrobe_add", ("GET", "POST",)),
     ("/wardrobe/delete", "api_wardrobe_delete", ("GET", "POST",)),

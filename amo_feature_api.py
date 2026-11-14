@@ -50,6 +50,28 @@ class FeatureApiMixin:
 
 
 
+        def note_transfer_event(self, amount_cents):
+
+            """记录一笔他转来的钱，供“转账推拉”Prompt 用。"""
+
+            import time as _t
+
+            now = _t.time()
+
+            self.db.kv_set("transfer:last", {"amount": int(amount_cents or 0), "ts": now})
+
+            self.db.kv_set("positive:last", now)
+
+        def note_purchase(self, name, price_cents):
+
+            """记录她刚买的贵东西，供“花钱心虚”Prompt 用。"""
+
+            import time as _t
+
+            self.db.kv_set("last_purchase", {"name": str(name or "东西"),
+
+                                             "price": int(price_cents or 0), "ts": _t.time()})
+
         def _owner_umos(self):
 
             """她能主动找到他的会话：qq / 飞书私聊优先。"""
@@ -151,6 +173,66 @@ class FeatureApiMixin:
             """守护插件写进来的约会情绪提示（期待/失落/冷淡），到点自动失效。"""
 
             self.db.kv_set("date_mood_line", {"line": str(line or ""), "until": float(until_ts or 0)})
+
+        def set_date_now(self, line, until_ts=0):
+
+            """约会进行中：最高事实 + 锁定当前行为（守护插件 /赴约 调用）。"""
+
+            self.db.kv_set("date_now", {"line": str(line or ""), "until": float(until_ts or 0)})
+
+        def set_date_fact(self, line, until_ts=0):
+
+            """约会已发生：当天内最高事实，防“一个人吃饭”幻觉。"""
+
+            self.db.kv_set("date_fact", {"line": str(line or ""), "until": float(until_ts or 0)})
+
+        def set_last_date_event(self, activity, ended_ts=0, hours=6):
+
+            """约会结束锁：6 小时内她必须记得“刚和老公共度”，防失忆。"""
+
+            import time as _t
+
+            end = float(ended_ts or _t.time())
+
+            self.db.kv_set("last_date_event", {
+
+                "activity": str(activity or "约会"), "ended_ts": end,
+
+                "until_ts": end + float(hours or 6) * 3600,
+
+                "day": _t.strftime("%Y-%m-%d", _t.localtime(end)),
+
+            })
+
+        def set_date_prep(self, activity, start_ts=0):
+
+            """约会前准备：化妆/挑衣服，别让她秒回“我到了”。"""
+
+            self.db.kv_set("date_prep", {"activity": str(activity or "约会"),
+
+                                          "start_ts": float(start_ts or 0)})
+
+        def set_date_incident(self, text, until_ts=0):
+
+            """约会中的随机小插曲（下雨/排队/试衣服），让聊天有话题。"""
+
+            self.db.kv_set("date_incident", {"text": str(text or ""),
+
+                                             "until_ts": float(until_ts or 0)})
+
+        def set_current_action(self, action, until_ts=0, place="外面", zone="restaurant", category="social"):
+
+            """守护插件写当前行为：压过 JIT 到点决策，到点自动失效。"""
+
+            self.db.kv_set("current_action", {
+
+                "action": str(action or ""), "place": str(place or ""),
+
+                "zone": str(zone or ""), "category": str(category or ""),
+
+                "at": now_ts(), "until": float(until_ts or 0),
+
+            })
 
 
 

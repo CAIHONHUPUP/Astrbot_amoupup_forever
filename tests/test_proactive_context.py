@@ -193,5 +193,25 @@ class OtherPlatformLinesTests(unittest.TestCase):
         )
 
 
+class DecideModeTests(unittest.TestCase):
+    def test_skip_returns_empty_and_prompt_has_facts(self):
+        state = FakeState()
+        plugin = FakePlugin(state, [])
+        service = FakeService(plugin)
+
+        async def chat(umo, system, prompt, limit=220):
+            service.prompt = prompt
+            return "[SKIP]"
+
+        service.chat = chat
+        out = asyncio.run(
+            LLMService.gen_proactive(service, QQ_UMO, PROFILE, SNAP, "decide",
+                                     facts="现在是早上 08:00。你刚起床。")
+        )
+        self.assertEqual(out, "")
+        self.assertIn("早上 08:00", service.prompt)
+        self.assertIn("[SKIP]", service.prompt)
+
+
 if __name__ == "__main__":
     unittest.main()

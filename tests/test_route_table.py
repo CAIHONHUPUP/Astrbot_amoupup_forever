@@ -31,7 +31,7 @@ class FakeApi:
 
 class RouteTableTests(unittest.TestCase):
     def test_route_count_and_unique_paths(self):
-        self.assertEqual(len(ROUTE_SPECS), 84)
+        self.assertEqual(len(ROUTE_SPECS), 85)
         paths = [item[0] for item in ROUTE_SPECS]
         self.assertEqual(len(paths), len(set(paths)))
 

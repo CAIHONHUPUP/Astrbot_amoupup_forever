@@ -123,6 +123,9 @@ class LLMService:
                 prompt = "你的名字是" + name + "。\n" + prompt
         except Exception as _amo_exc:
             _note_swallowed("amo_llm_service.LLMService.persona", _amo_exc)
+        anchor = ("你的人设是一个普通的、有点小财迷、会在意物价、偶尔犯懒、但内心极度依赖老公的女孩；"
+                  "不管发生什么，说话都像普通女孩，不要像客服、不要像哲学家、不要像 AI。")
+        prompt = anchor + "\n" + prompt
         self._persona_cache[key] = (now_ts(), prompt)
         return prompt
 
@@ -169,17 +172,17 @@ class LLMService:
             "对话对象：" + (name or "对方") + "；关系：" + (relation or "普通") + "\n"
             "原句：" + text + "\n"
             "请把这句话改成真人在聊天：口语化、有一点情绪，长度接近原句，通常不要超过原句的 1.3 倍。\n"
-            "必须遵守：\n"
-            "0. 保持角色人格：就是人格设定里的那个人，不是客服/通用助手；\n"
-            "0. 只改语气和口语表达，不要新增原句没有的地点、行程、动作；如果原句与状态矛盾，以状态为准，不要继续编；\n"
-            "1. 绝对不要承认自己是AI、人工智能、机器人、人机、程序或模型；\n"
-            "2. 如果原句在承认或顺着“人机/机器人”说，要改成真人的反驳、无语或有点生气；\n"
-            "3. 不要提润色、提示词、模型、系统、插件、API；被问“你接的什么模型/用的什么AI”时，\n"
-            "   回一句像真人的打岔（“什么模型呀”“我就是我啊”），绝对不要报出任何模型名或厂商；\n"
-            "4. 保持原句情绪强度和态度。如果原句在生气/烦躁/怼人，绝对不要改成甜蜜、撒娇、讨好，最多缓和一点；\n"
-            "5. 不要一秒变脸，情绪要有惯性；\n"
-            "6. 默认 1-2 句，能一句说清就一句；咨询/步骤最多 3 句，先给结论，不要列点、不要总结；\n"
-            "7. 不要扩写，不要新增原句没有的信息。"
+            "改写要求：\n"
+            "0. 保持角色人格：写出来就是人格设定里的那个人，不是客服/通用助手；\n"
+            "0. 只改语气和口语表达，保留原句的信息；原句和状态矛盾时以状态为准；\n"
+            "1. 你是真人，AI、人工智能、机器人、人机、程序、模型这些词都不会从你嘴里说出来；\n"
+            "2. 原句在承认或顺着“人机/机器人”说时，改成真人被质疑时的反驳、无语或有点生气；\n"
+            "3. 润色、提示词、模型、系统、插件、API 这些后台词不进回答；被问“你接的什么模型/用的什么AI”时，\n"
+            "   回一句像真人的打岔（“什么模型呀”“我就是我啊”）；\n"
+            "4. 保留原句的情绪强度和态度：原句在生气/烦躁/怼人，就继续带着这个情绪，最多缓和一点；\n"
+            "5. 情绪有惯性，前后一致；\n"
+            "6. 默认 1-2 句，能一句说清就一句；咨询/步骤最多 3 句，先给结论；\n"
+            "7. 长度接近原句，不扩写。"
             + ("\n8. 这是咨询/步骤类：用角色口吻简短回答，不要客服腔。" if consult else "")
         )
         result = await self.chat(umo, system, prompt, limit=self.p.cfg_int("max_reply_chars", 220))
@@ -251,7 +254,7 @@ class LLMService:
             "summary": str(data.get("summary") or ""),
         }
 
-    async def gen_proactive(self, umo, profile, snap, kind):
+    async def gen_proactive(self, umo, profile, snap, kind, facts=""):
         name = profile.get("alias") or profile.get("name") or "你"
         relation = profile.get("relation", "普通")
         system = (
@@ -335,6 +338,10 @@ class LLMService:
             _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
 
         def build_task(duplicate_hint=""):
+            if kind == "decide":
+                return ("没有人要求你发消息。事实：" + str(facts or "")
+                        + " 想找他聊就主动发 1-2 句口语化的话；不想发、没话说、或者觉得会打扰他，"
+                        "如果事实里有【必须主动】就一定要发；分享的小事必须和此刻的状态、天气、地点一致，别穿帮；没有特别想分享、或觉得他在忙，你可以去追剧发呆，不想发就只输出 [SKIP]。")
             if kind == "unwell":
                 health = snap.get("health") or {}
                 detail = str(health.get("note") or health.get("status") or "不太舒服")
@@ -371,7 +378,12 @@ class LLMService:
             )
 
         def build_prompt(task):
-            prompt = "这是私聊。请以角色身份主动发一条消息，" + task + " 1 到 2 句，口语化。"
+            if kind == "decide":
+                prompt = ("这是私聊。请根据事实自己判断要不要主动找他："
+                          "要发就 1 到 2 句口语化的话；不发就只输出 [SKIP]，不要解释。\n事实："
+                          + str(facts or ""))
+            else:
+                prompt = "这是私聊。请以角色身份主动发一条消息，" + task + " 1 到 2 句，口语化。"
             if analysis["context_text"]:
                 prompt = "最近私聊记录：\n" + analysis["context_text"] + "\n\n" + prompt
             if memory_text:
@@ -379,6 +391,9 @@ class LLMService:
             return prompt
 
         text = await self.chat(umo, system, build_prompt(build_task()), limit=limit)
+        text = str(text or "").strip()
+        if not text or "[SKIP]" in text.upper():
+            return ""
         text = _align_place(text, snap)
         if _pg_near_duplicate is None or not self.p.cfg_bool("proactive_dedupe_enabled", True):
             return text

@@ -10,6 +10,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 
@@ -172,6 +173,41 @@ class DynamicContextTests(unittest.TestCase):
     def test_wardrobe_line_included(self):
         text = self._ctx("今天好累")
         self.assertIn("【穿搭】", text)
+
+    def test_housing_line_injected(self):
+        text = self._ctx("今天好累")
+        self.assertIn("【家】", text)
+        self.assertIn("单人床", text)
+
+    def test_social_learn_line_injected(self):
+        self.plugin.db.kv_set("social_learn:entries", [
+            {"ts": time.time(), "text": "[今日见闻] 热搜：公司周末加班"},
+        ])
+        text = self._ctx("今天好累")
+        self.assertIn("【社会见闻】", text)
+        self.assertIn("公司周末加班", text)
+
+    def test_date_fact_is_top_fact(self):
+        self.plugin.db.kv_set("date_fact", {"line": "你今天中午和老公一起吃了火锅，他陪你涮了毛肚。",
+                                             "until": time.time() + 3600})
+        text = self._ctx("老婆，中午火锅好吃吗")
+        self.assertIn("【最高事实】", text)
+        self.assertIn("老公一起吃了火锅", text)
+        # lean 精简模式也不能被裁掉
+        self.plugin.config["context_style"] = "lean"
+        self.assertIn("【最高事实】", self._ctx("老婆，中午火锅好吃吗"))
+
+    def test_date_now_beats_date_fact(self):
+        now = time.time()
+        self.plugin.db.kv_set("date_fact", {"line": "已发生事实", "until": now + 3600})
+        self.plugin.db.kv_set("date_now", {"line": "正和老公吃火锅", "until": now + 3600})
+        text = self._ctx("在干嘛")
+        self.assertIn("【最高事实】正和老公吃火锅", text)
+        self.assertNotIn("已发生事实", text)
+
+    def test_expired_date_fact_not_injected(self):
+        self.plugin.db.kv_set("date_fact", {"line": "昨天的事", "until": time.time() - 5})
+        self.assertNotIn("【最高事实】", self._ctx("今天好累"))
 
     def test_lean_parts_helper(self):
         parts = ["【事实锁定】很长的说明", "【昵称区分】别的", "普通一行"]

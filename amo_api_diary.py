@@ -80,6 +80,9 @@ class DiaryApiMixin(_MixinBase):
         if not day:
             return {"code": 1, "msg": "日期格式应为 YYYY-MM-DD"}
         text = _diary_read(self._diary_dir(), day) if callable(_diary_read) else ""
+        cleaner = getattr(self, "_clean_diary_text", None)
+        if callable(cleaner):
+            text = cleaner(text)
         day_text = day.isoformat()
         try:
             stale = bool(self.db.kv_get("diary_stale:" + day_text, False))
@@ -93,6 +96,9 @@ class DiaryApiMixin(_MixinBase):
         返回 {"code":0,"data":{"date","path"}} 或 {"code":1,"msg"}。
         """
         body = str(text or "").strip()
+        cleaner = getattr(self, "_clean_diary_text", None)
+        if callable(cleaner):
+            body = cleaner(body)
         if not body:
             return {"code": 1, "msg": "空的日记"}
         try:
@@ -124,6 +130,9 @@ class DiaryApiMixin(_MixinBase):
         if error:
             return {"code": 1, "msg": error}
         text = await self._generate_daily_diary(day)
+        cleaner = getattr(self, "_clean_diary_text", None)
+        if callable(cleaner):
+            text = cleaner(text)
         if not text:
             return {"code": 1, "msg": "日记生成失败（没有素材或模型没返回）"}
         try:

@@ -117,6 +117,23 @@ except ImportError:  # 直接按文件加载时
     )
 
 
+def home_room_for_plan(plan, activity=None):
+    """在家自拍该用哪张房间参考图：卧室 / 客厅；不在家返回空。"""
+    zone = str(getattr(plan, "zone", "") or "")
+    if not zone:
+        zone = str((activity or {}).get("zone") or "")
+    if zone == "home_bed":
+        return "bedroom"
+    if zone.startswith("home"):
+        return "living"
+    place = str((activity or {}).get("place") or "")
+    if "卧" in place:
+        return "bedroom"
+    if place in ("家", "客厅"):
+        return "living"
+    return ""
+
+
 def _light_text(engine, plan=None):
     """按场景取光线描述：室外夜景不能写“室内暖灯”（测试桩只收 self 时回退）。"""
     outdoor = False
@@ -905,6 +922,15 @@ class PhotoEngine:
         extras = [where_line, motion, hand_line, light]
         if plan is not None:
             extras.append(plan.guard)
+            try:
+                housing = getattr(self.plugin, "housing", None)
+                if housing is not None and str(plan.zone).startswith("home"):
+                    room = home_room_for_plan(plan, activity) or "living"
+                    room_line = housing.room_scene_line(room)
+                    if room_line:
+                        extras.append(room_line)
+            except Exception as _amo_exc:
+                _note_swallowed("photo_engine.PhotoEngine._selfie_prompt_for.room", _amo_exc)
         else:
             extras.append(scene_guard(activity.get("zone")))
         extras.append(VIEW_SELFIE)
@@ -979,6 +1005,7 @@ class PhotoEngine:
     async def _generate(self, omni, prompt, selfie, pose=None, plan=None):
         refs = []
         pose_ref = ""
+        room_ref = ""
         if selfie:
             try:
                 outfit: dict[Any, Any] = {}
@@ -1004,6 +1031,17 @@ class PhotoEngine:
                 pose_ref = ""
             if pose_ref:
                 refs = [pose_ref] + list(refs)
+            # 在家自拍：按场景带客厅/卧室参考图（只参考家具、布局和光线）
+            try:
+                housing = getattr(self.plugin, "housing", None)
+                if housing is not None and plan is not None and str(plan.zone).startswith("home"):
+                    room = home_room_for_plan(plan) or "living"
+                    path = housing.room_image(room)
+                    if path and os.path.isfile(path):
+                        room_ref = path
+                        refs = list(refs) + [room_ref]
+            except Exception as exc:
+                logger.debug("[amo] 房间参考图准备失败: %s" % exc)
         args = {"prompt": prompt, "count": 1, "record_usage": True}
         if refs:
             args["refs"] = refs
@@ -1011,6 +1049,8 @@ class PhotoEngine:
             hint = "（服装参考：参考图最后几张是今天这套衣服的平铺图，衣服颜色和款式必须和它一致，不能改；长相和发型仍按人设三视图。"
             if pose_ref:
                 hint += "参考图第一张是姿势参考，只学动作和手的位置，不要照搬那张的脸和衣服。"
+            if room_ref:
+                hint += "最后一张是房间参考图，只参考家具、布局、光线和空间关系，不要照搬成空镜，不要复制图里的文字。"
             args["prompt"] = prompt + "\n" + hint + "）"
         if selfie:
             args["mode"] = "selfie"

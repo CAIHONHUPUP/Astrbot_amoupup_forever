@@ -866,6 +866,27 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
             logger.debug("[amo] 礼物面板数据失败: %s" % exc)
             return {"code": 0, "data": {"enabled": False, "wishes": [], "gifts": []}}
 
+    async def api_housing(self):
+        """面板「房屋」页：当前住处 + 房产/租房分页 + 场景图状态。"""
+        await self._ensure_ready()
+        housing = getattr(self, "housing", None)
+        if housing is None:
+            return {"code": 1, "msg": "房屋系统没加载"}
+        try:
+            home = housing.current()
+            return {"code": 0, "data": {
+                "current": home,
+                "overview": housing.card_text(),
+                "own": housing.card_text("房产"),
+                "rent": housing.card_text("租房"),
+                "homes": housing.homes(),
+                "image_dir": housing.image_dir(),
+                "images_needed": bool(home.get("images_needed")),
+            }}
+        except Exception as exc:
+            logger.debug("[amo] 房屋面板数据失败: %s" % exc)
+            return {"code": 1, "msg": "房屋数据读不出来"}
+
     async def api_weather(self):
         await self._ensure_ready()
         weather = await self.state.refresh_weather(force=True)

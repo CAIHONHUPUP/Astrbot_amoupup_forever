@@ -40,6 +40,21 @@ class LateNightEngine:
             day -= _dt.timedelta(days=1)
         return day.isoformat()
 
+    def _roll_night(self, data, now):
+        """进入新的一晚（18:00 后）清掉上一晚的哄睡/惩罚/生病标记。
+
+        以前 cleared/penalty_done/sick_done 写进 kv 后从不按天复位：
+        只要被哄睡一次，熬夜提示、次日疲惫、连续两晚感冒就永久失效。
+        """
+        night = self._day_of(now)
+        if now.hour < 18 or not data.get("date") or data.get("date") == night:
+            return data
+        data["date"] = night
+        for key in ("cleared", "penalty_done", "sick_done", "active", "late2", "staying"):
+            data.pop(key, None)
+        self._save(data)
+        return data
+
     def flags(self):
         try:
             data = self.db.kv_get("late_flags", {}) or {}
@@ -64,7 +79,7 @@ class LateNightEngine:
 
     def is_staying_up(self, now=None):
         now = now or _dt.datetime.now()
-        data = self._data()
+        data = self._roll_night(self._data(), now)
         if data.get("cleared"):
             return False
         if data.get("decided_date") == self._day_of(now) and data.get("staying") is False:
@@ -74,7 +89,7 @@ class LateNightEngine:
 
     def tick(self, now=None):
         now = now or _dt.datetime.now()
-        data = self._data()
+        data = self._roll_night(self._data(), now)
         if data.get("cleared"):
             return None
         hour_key = now.strftime("%Y%m%d%H")
@@ -123,7 +138,6 @@ class LateNightEngine:
         except Exception:
             pass
         # 第二天惩罚：疲惫 +30、皮肤差情绪 -10（只一次）
-        penalty_key = "late_penalty:" + str(data.get("date") or "")
         if data.get("date") and not data.get("penalty_done") and 8 <= now.hour < 20:
             yesterday = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
             if data.get("date") == yesterday and not data.get("cleared"):
@@ -140,7 +154,8 @@ class LateNightEngine:
     def soothe(self, reason=""):
         data = self._data()
         data.update({"active": False, "cleared": True, "penalty_done": True,
-                     "soothed_by": str(reason or ""), "soothed_at": now_ts()})
+                     "soothed_by": str(reason or ""), "soothed_at": now_ts(),
+                     "cleared_date": self._day_of(_dt.datetime.now())})
         try:
             self.db.kv_set("late_flags", {})
         except Exception:

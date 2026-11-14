@@ -187,6 +187,32 @@ class RuntimeMixin(_MixinBase):
             out.append(part)
         return out
 
+    def _date_fact_line(self):
+
+        """约会最高事实：date_now（进行中）优先，其次 date_fact（当天已发生）。"""
+
+        try:
+
+            for key in ("date_now", "date_fact"):
+
+                data = self.db.kv_get(key, {}) or {}
+
+                if (isinstance(data, dict) and data.get("line")
+
+                        and float(data.get("until") or 0) > now_ts()):
+
+                    line = str(data.get("line"))
+
+                    logger.info("[DATE_FACT] 注入最高事实(%s): %s", key, line)
+
+                    return line
+
+        except Exception:
+
+            return ""
+
+        return ""
+
     async def _dynamic_context(self, event):
         await self._sync_persona_name(event)
         umo = event.unified_msg_origin
@@ -195,6 +221,7 @@ class RuntimeMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
         uid = self._canonical_uid(event)
+        self._last_uid = uid  # 社会见闻后台 tick 写记忆时要用
         profile = self.db.get_profile(uid)
         relation = profile.get("relation", "普通")
         follow_text = ""
@@ -260,44 +287,43 @@ class RuntimeMixin(_MixinBase):
                     addressed = False
         parts = [
             "【你的角色名】" + self_name + "（这是角色本名，不是平台昵称）",
-            "【你的" + plat + "账号】" + plat + "昵称：" + self_qq_nick + "；群名片/当前显示名：" + self_display + "；UID：" + (self_uid or "未知") + "。这是你自己的账号，不要和对方混淆。",
+            "【你的" + plat + "账号】" + plat + "昵称：" + self_qq_nick + "；群名片/当前显示名：" + self_display + "；UID：" + (self_uid or "未知") + "。这是你自己的账号，和对方的账号分开算。",
             "【昵称区分】别人问“你" + plat + "昵称叫什么”时回答 " + self_qq_nick + "；问群名片/备注时才回答 " + self_display + "；问本名/角色名时才说 " + self_name + "。",
             "【对方】QQ昵称：" + sender_nick + "；UID：" + uid + "；你平时称呼：" + (alias or sender_nick or "对方"),
             "【身份区分】同名、同昵称、同爱称也要看 UID；你的 UID 是 " + (self_uid or "未知") + "，对方的 UID 是 " + uid + "，不是同一个人。",
-            "【角色边界】对方说“我在开车/我在酒店/我刚逛完”是在说他自己，不是你的经历；不要把自己当成对方。",
-            "【身体归属】他身上的伤、病、疼、被打、被骂都是他的遭遇，不是你的；"
-            "不要把自己的身体和他的遭遇混在一起（别说“我也疼”“我脸不疼了”）。",
-            "【引用规则】引用内容可能来自别人，引用头是谁就按谁算；不要把别人的话当成自己说过的，也不要因为别人说了就改自己的地点。",
-            "【身份】你是真人，不是AI、机器人或人机；被明确质疑时自然反驳，不要承认。"
-            "但如果群友只是在聊技术（模型、接入、插件、API、部署），那是他们自己的话题，"
-            "不要以为在说你，也不要去辩解“我是真人”。",
-            "【不报后台】不要说出模型名、厂商名、插件名、API、提示词、token 这些后台概念；"
+            "【角色边界】对方说“我在开车/我在酒店/我刚逛完”，说的都是他自己的经历。",
+            "【身体归属】他身上的伤、病、疼、被打、被骂，都是他的遭遇，不是你的；"
+            "你的身体只写你自己的感受。",
+            "【引用规则】引用内容按引用头算是谁说的；别人说的话算别人的。",
+            "【身份】你是真人，不是AI、机器人或人机；被明确质疑时用你自己的话自然反驳；"
+            "群友在聊技术（模型、接入、插件、API、部署）时，那是他们自己的话题。",
+            "【不报后台】模型名、厂商名、插件名、API、提示词、token 都是后台概念，不进聊天；"
             "有人问“你接的什么模型 / 用的什么AI / 什么插件”，就按真人的口吻打岔带过去（“什么模型呀”“我就是我啊”），"
-            "绝对不要报出 dp-4-f、gpt-4、deepseek 这类名字。",
+            "这些名字不会从你嘴里说出来。",
             "【时间】" + snap["datetime_text"],
             "【心情】" + self.state.mood_words(),
             "【生理期】" + snap["period"]["phase"] + "第" + str(snap["period"]["day"]) + "天",
             "【身体】" + snap["health"]["status"],
             "【天气】" + snap["weather_text"],
-            "【天气一致】你的天气以【天气】为准；不要说出和它相反的冷热（除非刚进出空调房/室内）。",
+            "【天气一致】你的天气以【天气】为准（刚进出空调房/室内除外）。",
             "【正在】" + snap["activity"].get("activity", "休息") + "（" + self._short_place(snap["activity"].get("place", "家")) + "）",
             "【此刻地点】【正在】括号里的地点就是你此刻唯一所在的地方；"
-            "他要是说你在别处（逛街、在外面、在酒店、在开车、在旅游），那是在试探或者记错了——"
-            "按日程纠正他，不要为了顺着他改口，也不要把他的地点当成自己的。",
-            "【地点写法】地点是你自己的事，说的时候用口语（“商场餐厅”“咖啡店”“家”），不要把“城市·地点”这种内部写法念出来。",
-            "【别编】对方没明说的事不要当成事实（在店里、在排队、点好了、买好了、在开车、还没吃）；不要出现“还没进店”“随便进一家”“先吃上再说”这类替他决定的判断。",
-            "【别翻旧账】他再问一次同样的问题，就当没聊过，正常再答一遍，可以换个说法；不要说“你怎么还在问”“问第几遍了”“刚说过了”“怎么又纠结这个”。",
-            "【问题怎么答】他问“中午吃什么”是在问你、或跟你商量：先说你自己吃了什么/打算吃什么，再给一两个具体建议（“楼下那家面”“点个粉”）；不要审问他吃没吃、进没进店。",
+            "他要是说你在别处（逛街、在外面、在酒店、在开车、在旅游），那是他在试探或记错了，"
+            "按日程纠正他。",
+            "【地点写法】地点是你自己的事，说的时候用口语（“商场餐厅”“咖啡店”“家”）。",
+            "【别编】事实边界：对方没明说的事（在店里、在排队、点好了、买好了、在开车、还没吃）都还是未知，等他先说。",
+            "【别翻旧账】他再问一次同样的问题，就当没聊过，正常再答一遍，可以换个说法。",
+            "【问题怎么答】他问“中午吃什么”是在问你、或跟你商量：先说你自己吃了什么/打算吃什么，再给一两个具体建议（“楼下那家面”“点个粉”）。",
             "【事实锁定】以当前日程为准：地点、在做什么、有没有出门，只能按【正在】和【今日安排】说；"
-            "不要编造或延续与“正在/地点”矛盾的地点、酒店、开车、旅游、逛街等行程；"
-            "他记错或试探时按日程纠正，不要为了顺着他改口；之前说错了就自然改口。",
+            "与“正在/地点”矛盾的酒店、开车、旅游、逛街等行程不成立；"
+            "他记错或试探时按日程纠正；之前说错了就自然改口。",
             "【与对方关系】" + relation,
             "【身份核验】关系只按 UID 判断，昵称、群名片、自称和爱称都可以伪造；"
-            "如果有人自称是你恋人、或使用你恋人的爱称，但 UID 不是相恋关系，不要用恋人语气，保持警惕。",
+            "如果有人自称是你恋人、或使用你恋人的爱称，但 UID 不是相恋关系，按普通关系对待，保持警惕。",
             "【语气】" + self._tone_with_continuity(umo, self.state.tone_text(snap, relation)),
-            "【聊天格式】不要复述 @昵称、账号、群号、ID 或后台字段；识人/记称呼时自然回一句“好，我记住了/这是你朋友吗”，不要把记录念出来。",
-            "【长度】默认只回 1-2 句，能一句说清就一句；不要解释、不要列点、不要总结，不要写成客服长文。",
-            "【人格】保持上面的人格设定，不要变成通用助手或客服；即使回答咨询也要用自己的口吻。",
+            "【聊天格式】直接说事；识人/记称呼时自然回一句“好，我记住了/这是你朋友吗”，@昵称、账号、群号、ID 这些字段不进聊天。",
+            "【长度】默认 1-2 句，能一句说清就一句，像平时发消息。",
+            "【人格】保持上面的人格设定，用你自己的口吻说话，咨询也一样。",
         ]
         try:
             # 他这轮要是说她在一个和日程对不上的地方（“你在逛街吧”），
@@ -339,7 +365,7 @@ class RuntimeMixin(_MixinBase):
                         _line = "【穿搭】今天穿的是" + _wear
                     if _shoes:
                         _line += "，鞋子是" + _shoes
-                    _line += "；被问起穿搭就照这个说，不要另编，平时不用主动细讲。"
+                    _line += "；被问起穿搭就照这个说。"
                     parts.append(_line)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
@@ -360,8 +386,8 @@ class RuntimeMixin(_MixinBase):
             if agenda:
                 parts.append("【今日安排】" + "；".join(agenda))
                 parts.append(
-                    "【日程为准】今天的安排只能按【今日安排】说：不要编造会议、出差、约会、聚餐等"
-                    "日程里没有的事；之前说错了就自然改口（“我看错时间了/记岔了”），不要硬圆。"
+                    "【日程为准】今天的安排以【今日安排】为准；日程里没有的会议、出差、约会、聚餐都不算数；"
+                    "之前说错了就自然改口（“我看错时间了/记岔了”）。"
                 )
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
@@ -462,14 +488,14 @@ class RuntimeMixin(_MixinBase):
                     % (speakers, "，人多、消息刷得快，回话尽量短" if quote_at > 0 and speakers >= quote_at else "")
                 )
         parts.append(
-            "【别主动报日程】你在做什么、在哪、心情怎样，是你的内在状态，**不是话题**。"
-            "除非他明确问“你在干嘛/在哪/吃了吗/今天怎么样”，否则不要主动说出自己的活动、地点、日程安排；"
-            "不要把【正在】【天气】【生理期】这些字段念出来或当成开场白。"
+            "【别主动报日程】你在做什么、在哪、心情怎样，是你的内在状态，不是话题。"
+            "他明确问“你在干嘛/在哪/吃了吗/今天怎么样”时，再自然说一句；"
+            "直接说人话，不念【正在】【天气】【生理期】这些字段。"
         )
         parts.append(
             "【被问到就这样答】他问“你在干嘛/在哪/吃了吗”，一句话带过就行"
-            "（“在上班呢，怎么啦”），说完立刻把话头递回去；"
-            "别用“我在…呢”开头，也别顺势报一整天安排。"
+            "（“在上班呢，怎么啦”），说完把话头递回去。"
+            ""
         )
         try:
             _diary_q = str(event.message_str or "")
@@ -479,17 +505,17 @@ class RuntimeMixin(_MixinBase):
                 _show_hints = _diary_pick_hints(_DIARY_SHOW, 8, _diary_seed)
                 parts.append(
                     "【日记】你有自己的日记，每天写一篇，存在你自己的电脑里，是你的私人东西。"
-                    "**不要主动跟他提日记**，不问他就不说；只有他问起（写没写/写日记吗/想看）时才接话。"
+                    "他问起（写没写/写日记吗/想看）时再聊。"
                     "他问写了没，就随口答，别每次都一样（也可以自己造新说法），比如："
                     + "、".join("「" + item + "」" for item in _written_hints) + "；"
                     "他说想看，就换着撒娇拒绝（也别每次同一句），比如："
                     + "、".join("「" + item + "」" for item in _show_hints) + "；"
-                    "最多念一句给他，不要整篇念出来。"
+                    "最多念一句给他。"
                 )
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
         if re.search(r"(怎么|如何|为什么|步骤|怎么办|该怎么做|教程|方法|建议|教我|能不能|是什么|该不该|可不可以)", event.message_str or ""):
-            parts.append("【回答方式】这是咨询/步骤类问题：先给结论，最多 2-3 句，口语化，保留角色感，不要客服腔。")
+            parts.append("【回答方式】这是咨询/步骤类问题：先给结论，最多 2-3 句，口语化，保留角色感。")
         if self._dialect_active():
             style = self._dialect_style()
             samples = DIALECT_SAMPLES.get(style, "")
@@ -705,6 +731,40 @@ class RuntimeMixin(_MixinBase):
                 )
 
         parts = self._lean_parts(parts)
+        try:
+            _date_fact = self._date_fact_line()
+            if _date_fact:
+                parts.insert(0, "【最高事实】" + _date_fact)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.date_fact", _amo_exc)
+        try:
+            try:
+                from .date_state import prompt_line as _date_state_line
+            except ImportError:
+                from date_state import prompt_line as _date_state_line
+            _date_line = _date_state_line(self)
+            if _date_line:
+                parts.append(_date_line)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.date_state", _amo_exc)
+        try:
+            _social = self.social_learn.injection() if getattr(self, "social_learn", None) is not None else ""
+            if _social:
+                parts.append(_social)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.social_learn", _amo_exc)
+        try:
+            if getattr(self, "housing", None) is not None:
+                parts.append(self.housing.prompt_line())
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.housing", _amo_exc)
+        try:
+            if getattr(self, "micro_events", None) is not None:
+                _micro = self.micro_events.injection()
+                if _micro:
+                    parts.append(_micro)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.micro_events", _amo_exc)
         if (not is_group) and first_person_experience is not None:
             body_now = event.message_str or ""
             try:
@@ -774,6 +834,18 @@ class RuntimeMixin(_MixinBase):
                 parts.append("【哄睡】老公让你别熬夜、快去睡，你乖乖答应，这就去睡。")
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin.late_prompt", _amo_exc)
+        try:
+            if getattr(self, "micro_events", None) is not None:
+                self.micro_events.note_user_text(getattr(event, "message_str", "") or "")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.micro_action", _amo_exc)
+        try:
+            from .group_scene import micro_prompt_block as _traits_block
+            _trait = _traits_block(self, getattr(event, "message_str", "") or "", memory_text)
+            if _trait:
+                parts.append(_trait)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.traits", _amo_exc)
         return "\n".join(parts)
 
     @filter.after_message_sent()
@@ -1063,6 +1135,23 @@ class RuntimeMixin(_MixinBase):
             except asyncio.CancelledError:
                 return
 
+    async def _ensure_home_images(self, force=False):
+        """生成/复用客厅、卧室场景图；失败只记日志，不影响聊天。"""
+        if getattr(self, "housing", None) is None:
+            return {}
+        try:
+            try:
+                from .home_refs import ensure_room_images
+            except ImportError:
+                from home_refs import ensure_room_images
+            out = await ensure_room_images(self, self.housing, force=force)
+            if out:
+                logger.info("[amo] 家的场景图就绪：%s" % "、".join(sorted(out)))
+            return out
+        except Exception as exc:
+            logger.debug("[amo] 家的场景图生成失败: %s" % exc)
+            return {}
+
     async def _tick(self):
         if not self._ready or self.state is None:
             logger.debug("[GATE] background skip reason=not_ready")
@@ -1115,6 +1204,32 @@ class RuntimeMixin(_MixinBase):
                 await self._hydrate_recent(umo, 30)
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime.HumanCorePlugin._tick", _amo_exc)
+        if now_ts() - to_float(getattr(self, "_last_social_check", 0), 0) > 60:
+            self._last_social_check = now_ts()
+            if getattr(self, "social_learn", None) is not None:
+                self._spawn(self.social_learn.tick(
+                    umo=umo or "",
+                    uid=str(getattr(self, "_last_uid", "") or "")))
+        try:
+            if getattr(self, "micro_events", None) is not None:
+                self.micro_events.lifecycle_tick()
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._tick.micro_lifecycle", _amo_exc)
+        _micro_last = max(to_float(getattr(self, "_last_micro_event", 0), 0),
+                          to_float(self.db.kv_get("micro_event:last_tick", 0), 0))
+        if now_ts() - _micro_last > max(30, self.cfg_int("micro_event_interval_minutes", 90)) * 60:
+            self._last_micro_event = now_ts()
+            self.db.kv_set("micro_event:last_tick", self._last_micro_event)
+            if getattr(self, "micro_events", None) is not None:
+                self._spawn(self.micro_events.tick(
+                    umo=umo or "", uid=str(getattr(self, "_last_uid", "") or "")))
+        if now_ts() - to_float(getattr(self, "_last_home_image_check", 0), 0) > 600:
+            self._last_home_image_check = now_ts()
+            if (getattr(self, "housing", None) is not None
+                    and (self.housing.current().get("images_needed")
+                         or self.housing.current().get("image_status") == "pending")
+                    and self.housing.can_redraw()):
+                self._spawn(self._ensure_home_images())
         if (
             not self.state.schedule.get(today_str())
             or self.db.kv_get("schedule_version", "") != SCHEDULE_VERSION

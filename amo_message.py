@@ -262,6 +262,26 @@ class MessageMixin(_MixinBase):
             _note_swallowed("amo_message.HumanCorePlugin._is_talking_to_me", _amo_exc)
         return False
 
+    _SOOTHE_WORDS = ("快去睡", "快睡", "去睡", "早点睡", "别熬夜", "不要熬夜",
+                     "睡觉吧", "睡吧", "晚安")
+
+    def _try_soothe(self, uid, text):
+        """他说“快去睡/早点睡/别熬夜”时，让熬夜系统记一笔「被哄睡」。
+
+        2026-11-15：这里原来调用了一个从未定义过的 _try_soothe，私聊消息
+        100% 抛 AttributeError，被 runtime 的兜底 except 吞掉 → 私聊完全不回复。
+        """
+        if not any(word in (text or "") for word in self._SOOTHE_WORDS):
+            return
+        late = getattr(getattr(self, "state", None), "late", None)
+        if late is None:
+            return
+        try:
+            if late.is_staying_up():
+                late.soothe("老公哄睡")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message.HumanCorePlugin._try_soothe", _amo_exc)
+
     async def _handle_message(self, event):
         if not self._ready or self.state is None:
             logger.warning("[amo] 还没初始化完成，这条消息先不处理（ready=%s）" % self._ready)

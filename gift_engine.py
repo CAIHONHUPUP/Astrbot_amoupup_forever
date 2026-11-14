@@ -931,6 +931,19 @@ class GiftEngine:
                 _note_swallowed("gift_engine.GiftEngine.add_gift", _amo_exc)
         if wish_id:
             self._mark_wish_gifted(wish_id, gift["id"])
+        if kind == "home":
+            housing = getattr(self.plugin, "housing", None)
+            if housing is not None:
+                try:
+                    home = housing.add_home(item, kind="own")
+                    housing.move_in(home["id"])
+                    spawn = getattr(self.plugin, "_spawn", None)
+                    ensure = getattr(self.plugin, "_ensure_home_images", None)
+                    if callable(spawn) and callable(ensure):
+                        spawn(ensure(force=True))
+                    logger.info("[amo] 送房：已写入房屋系统并搬入 %s" % item)
+                except Exception as _amo_exc:
+                    _note_swallowed("gift_engine.GiftEngine.add_gift.home", _amo_exc)
         return dict(gift)
 
     def recent_gifts(self, limit=8):

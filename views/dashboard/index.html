@@ -135,13 +135,12 @@
     .theme-bar .segmented { flex: 0 0 auto; }
     .tabs { display: flex; gap: 8px; padding: 4px; background: var(--card); border-radius: 14px; max-width: 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x; position: sticky; top: 0; z-index: 12; }
     .tabs::-webkit-scrollbar { display: none; }
-    .tabnav { position: relative; }
-    .tabnav-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 13; width: 22px; height: 30px; display: none; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 8px; background: var(--card); color: var(--pink); font-size: 16px; line-height: 1; cursor: pointer; box-shadow: 0 0 0 1px var(--line); opacity: .92; }
+    .tabnav { position: relative; display: flex; align-items: stretch; gap: 6px; }
+    .tabnav .tabs { flex: 1 1 auto; }
+    .tabnav-arrow { flex: 0 0 22px; width: 22px; height: auto; min-height: 30px; display: none; align-items: center; justify-content: center; align-self: stretch; padding: 0; border: 0; border-radius: 8px; background: var(--card); color: var(--pink); font-size: 16px; line-height: 1; cursor: pointer; box-shadow: 0 0 0 1px var(--line); opacity: .92; }
     .tabnav.has-overflow .tabnav-arrow { display: flex; }
-    .tabnav-arrow.left { left: 0; }
-    .tabnav-arrow.right { right: 0; }
     .tabnav-arrow[disabled] { opacity: .35; cursor: default; }
-    .tabnav.has-overflow .tabs { padding-left: 26px; padding-right: 26px; }
+    .tabnav.has-overflow .tabs { padding-left: 6px; padding-right: 6px; }
     .tab { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); text-align: center; padding: 9px 10px; border-radius: 10px; font-size: 13px; cursor: pointer; white-space: nowrap; min-width: 0; }
     .tab.active { background: var(--card); color: var(--pink); box-shadow: none; }
     .tab-panel { display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0; }
@@ -359,14 +358,15 @@
     box-shadow: 0 10px 30px rgba(14, 165, 233, .07);
   }
   .photo-nav {
-    display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 6px;
+    display: flex; gap: 6px; overflow-x: hidden; padding: 4px 2px 6px;
     margin: 0 0 4px; scrollbar-width: none;
   }
   .photo-nav::-webkit-scrollbar { display: none; }
   .photo-nav-btn {
-    flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px;
+    flex: 1 1 0; min-width: 0; border: 1px solid var(--line); border-radius: 999px;
     background: var(--card); color: var(--muted);
-    padding: 8px 13px; font-size: 13px; cursor: pointer; white-space: nowrap;
+    padding: 8px 6px; font-size: 12.5px; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
     transition: .18s ease; text-align: center;
   }
   .photo-nav-btn:hover { border-color: var(--pink); color: var(--pink); background: var(--hover); }
@@ -899,10 +899,10 @@
 
     <div id="tab-photo" class="tab-panel" hidden>
       <nav class="photo-nav" id="photoNav" role="tablist" aria-label="照片功能">
-        <button class="photo-nav-btn active" type="button" data-photo-pane="share">📷 分享与拍摄</button>
-        <button class="photo-nav-btn" type="button" data-photo-pane="generate">🪄 按提示词生成</button>
-        <button class="photo-nav-btn" type="button" data-photo-pane="persona">🧍 角色三视图</button>
-        <button class="photo-nav-btn" type="button" data-photo-pane="advanced">💾 保存与说明</button>
+        <button class="photo-nav-btn active" type="button" data-photo-pane="share">分享与拍摄</button>
+        <button class="photo-nav-btn" type="button" data-photo-pane="generate">按提示词生成</button>
+        <button class="photo-nav-btn" type="button" data-photo-pane="persona">角色三视图</button>
+        <button class="photo-nav-btn" type="button" data-photo-pane="advanced">保存与说明</button>
       </nav>
       <section class="card photo-pane" data-photo-pane="share">
         <div class="row between">
@@ -1609,7 +1609,7 @@
           (data.start || hour.start) + "-" + (data.end || hour.end),
           data.place || hour.place || "",
           data.mood ? "心情 " + data.mood : "",
-          data.stale ? "旧日程，重算中" : "",
+          "",
         ].filter(Boolean).join(" · ");
         const text = document.createElement("div");
         text.className = "diary-text";
@@ -2183,14 +2183,14 @@
       }
       years.forEach((year) => {
         const yearBox = document.createElement("details");
-        yearBox.open = year === years[0];
+        yearBox.open = false;
         const yearTitle = document.createElement("summary");
         const count = (year.months || []).reduce((n, m) => n + ((m.days || []).length), 0);
         yearTitle.textContent = year.year + " 年（" + count + " 篇）";
         yearBox.appendChild(yearTitle);
         (year.months || []).forEach((month) => {
           const monthBox = document.createElement("details");
-          monthBox.open = year === years[0] && month === (year.months || [])[0];
+          monthBox.open = false;
           const monthTitle = document.createElement("summary");
           monthTitle.textContent = month.month + " 月（" + ((month.days || []).length) + " 篇）";
           monthBox.appendChild(monthTitle);
@@ -2216,8 +2216,7 @@
       textEl.textContent = "读取中…";
       try {
         const data = objectFrom(await call("diary/read", { date })) || {};
-        const staleNote = data.stale ? "\n\n[这篇日记写完后日程又变了，正在按新日程重写]" : "";
-        textEl.textContent = (data.text || "（这篇是空的）") + staleNote;
+        textEl.textContent = data.text || "（这篇是空的）";
       } catch (error) {
         textEl.textContent = "读取失败：" + (error && error.message ? error.message : "接口未就绪");
       }
@@ -3628,7 +3627,7 @@
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.hidden = panel.id !== "tab-" + name;
       });
-      if (name === "world") loadWorld();
+      if (name === "world") { loadWorld(); }
       if (name === "schedule") loadSchedule();
       if (name === "profiles") loadProfiles();
       if (name === "gift") loadGift();
@@ -4442,7 +4441,7 @@
       }
       if (group === "私聊") {
         if (/debounce|防抖/.test(text)) return "防抖与合并";
-        if (/proactive|主动|问候|greeting|ritual/.test(text)) return "主动与问候";
+        if (/proactive|主动/.test(text)) return "主动消息";
         if (/delay|segment|分段|回复/.test(text)) return "回复节奏";
         return "其他私聊";
       }
