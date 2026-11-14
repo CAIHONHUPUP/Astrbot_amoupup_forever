@@ -115,9 +115,15 @@ class ActivityFallbackTests(unittest.TestCase):
         self.assertIn("category", activity)
 
     def test_stale_slot_when_hour_not_covered(self):
-        hour = max(0, minutes_now() // 60 - 3)
-        self.state.schedule = {today_str(): [_slot(hour, "很久以前的事", "家", "home", "rest")]}
-        activity, reason = self.state.current_activity_info()
+        import amo_human_state
+        original = amo_human_state.minutes_now
+        try:
+            # 固定“当前分钟”为 03:00；日程只排 00:00-01:00 → 这小时没覆盖，应走 stale_slot
+            amo_human_state.minutes_now = lambda *a, **k: 180
+            self.state.schedule = {today_str(): [_slot(0, "很久以前的事", "家", "home", "rest")]}
+            activity, reason = self.state.current_activity_info()
+        finally:
+            amo_human_state.minutes_now = original
         self.assertEqual(reason, "stale_slot")
         self.assertEqual(activity["_source"], "stale_slot")
 

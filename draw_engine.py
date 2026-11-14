@@ -521,7 +521,7 @@ class DrawEngine:
         if self._cfg_bool("draw_private_only", True) and not event.is_private_chat():
             return self._skip("不是私聊")
         if not self.is_owner(event):
-            return self._skip("不是主人/相恋关系")
+            return self._skip("不是老公/相恋关系")
         text = str(getattr(event, "message_str", "") or "").strip()
         reply_text = str(reply_text or "").strip()
         if not text:
@@ -764,7 +764,7 @@ class DrawEngine:
         if not self.enabled:
             return "画图没开（draw_enable=false）。"
         if not self.is_owner(event):
-            return "这个只给主人用哦。"
+            return "这个只给老公用哦。"
         text = str(text or "").strip()
         if not text:
             return self.diagnostics()

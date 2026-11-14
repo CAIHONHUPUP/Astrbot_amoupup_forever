@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from memory_hooks import AmoDataProvider, MemoryHub  # noqa: E402
 
-ROWS = [{"content": "主人喜欢喝美式咖啡", "importance": 0.8}]
+ROWS = [{"content": "老公喜欢喝美式咖啡", "importance": 0.8}]
 
 
 class FlakyMem:

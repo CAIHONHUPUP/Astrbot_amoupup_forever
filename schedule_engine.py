@@ -1917,3 +1917,48 @@ def _scenic_text(scenic):
         scenic.get("name", ""), scenic.get("city", ""), scenic.get("area", ""),
         scenic.get("duration", ""), projects,
     )
+
+
+JIT_HOURS = (8, 12, 15, 19, 23)
+
+
+def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0):
+    """到点即时决策：只给一个当前动作，不排未来。"""
+    hour = int(hour)
+    hunger = float(hunger)
+    cash_cents = int(cash_cents)
+    if sick:
+        if hour in (8, 12, 19):
+            if cash_cents >= 1000:
+                return {"action": "喝白粥、吃药休息", "place": "家", "zone": "home",
+                        "category": "life", "cost_cents": 1000,
+                        "diary": "生病了只能喝粥，好想吃火锅。"}
+            return {"action": "裹着被子躺着，没胃口", "place": "家", "zone": "home",
+                    "category": "rest", "cost_cents": 0, "diary": "生病又没钱，只能躺着。"}
+    if hour in (8, 12, 19) and hunger < 80:
+        if cash_cents >= 1500:
+            if hour == 12:
+                food, cost = "楼下吃碗牛肉面", 1500
+            elif hour == 8:
+                food, cost = "买个包子和豆浆", 800
+            else:
+                food, cost = "随便吃点家常菜", 2000
+            return {"action": "正在" + food, "place": "楼下小馆", "zone": "restaurant",
+                    "category": "meal", "cost_cents": cost,
+                    "diary": "有点饿，花了 %d 块%s。" % (cost // 100, food)}
+        if cash_cents >= 500:
+            return {"action": "在吃泡面", "place": "家", "zone": "home", "category": "meal",
+                    "cost_cents": 500, "diary": "没什么钱，泡面凑合一下。"}
+        return {"action": "饿着肚子喝水", "place": "家", "zone": "home", "category": "rest",
+                "cost_cents": 0, "diary": "肚子好饿，可是连泡面都买不起了。"}
+    if hour == 15:
+        if "郁闷" in str(mood_word) or "低落" in str(mood_word):
+            return {"action": "窝着发呆，不太想动", "place": "家", "zone": "home",
+                    "category": "rest", "cost_cents": 0, "diary": "下午有点丧，什么都不想做。"}
+        return {"action": "在忙手头的事，偶尔刷手机", "place": "", "zone": "home",
+                "category": "life", "cost_cents": 0, "diary": "下午慢慢过。"}
+    if hour == 23:
+        return {"action": "洗漱完准备睡了", "place": "家", "zone": "home",
+                "category": "sleep", "cost_cents": 0, "diary": "今天就这样吧，睡觉。"}
+    return {"action": "在忙自己的事", "place": "", "zone": "home",
+            "category": "life", "cost_cents": 0, "diary": ""}

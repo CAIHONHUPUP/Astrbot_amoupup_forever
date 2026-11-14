@@ -209,6 +209,14 @@ class HumanState:
                 logger.warning("[amo] 日程引擎初始化失败: %s" % exc)
         self.last_daily = self.db.kv_get("last_daily", "")
         self.last_health_roll = self.db.kv_get("last_health_roll", "")
+        try:
+            try:
+                from .amo_late_night import LateNightEngine
+            except ImportError:
+                from amo_late_night import LateNightEngine
+            self.late = LateNightEngine(self)
+        except Exception:
+            self.late = None
 
     # ---------- 心情 ----------
     def save_mood(self):
@@ -443,15 +451,14 @@ class HumanState:
                            "note": "", "kind": "", "treatment": "",
                            "severity": "", "base_hours": 0, "doctor": False}
         else:
+            try:
+                from .services.health_engine import resolve_hours, total_hours
+            except ImportError:  # 顶层/单文件加载
+                from services.health_engine import resolve_hours, total_hours
             severity = severity or self._severity_of(status)
-            if hours is None:
-                if severity == "serious":
-                    hours = random.uniform(72, 96)
-                else:
-                    hours = random.uniform(24, 48)
-            base = max(1.0, float(hours))
             doctor = bool(str(treatment or "").strip())
-            total = base * (1 if doctor else 2)
+            base = resolve_hours(hours, severity == "serious", random)
+            total = total_hours(base, doctor)
             self.health = {
                 "status": status, "kind": kind or str(status), "since": now_ts(),
                 "until": now_ts() + total * 3600, "note": note,
@@ -492,22 +499,26 @@ class HumanState:
         self.db.kv_set("last_health_roll", self.last_health_roll)
         if self.health.get("status") != "健康":
             return
-        prob = self.p.cfg_float("sick_prob", 0.02)
+        try:
+            from .services.health_engine import pick_illness, sick_probability
+        except ImportError:  # 顶层/单文件加载
+            from services.health_engine import pick_illness, sick_probability
         weather = self.weather or {}
-        if weather.get("tag") in ("rain", "storm", "snow"):
-            prob += 0.03
-        if to_float(weather.get("temp", 20), 20) < 8:
-            prob += 0.02
-        if self.period_info()["phase"] == "月经期":
-            prob += 0.02
-        if self.mood.get("疲惫", 0) > 65:
-            prob += 0.02
+        prob = sick_probability(
+            self.p.cfg_float("sick_prob", 0.02),
+            weather.get("tag"),
+            to_float(weather.get("temp", 20), 20),
+            self.period_info()["phase"] == "月经期",
+            self.mood.get("疲惫", 0),
+        )
+        try:
+            if self.late is not None and self.late.streak() >= 2:
+                prob = min(1.0, prob * 2)
+        except Exception:
+            pass
         if random.random() >= prob:
             return
-        status = random.choices(
-            ["轻微不适", "感冒", "低烧", "发烧", "肠胃炎", "疲惫"],
-            weights=[3, 4, 2, 1, 1, 2],
-        )[0]
+        status = pick_illness(random)
         if status == "疲惫":
             self.health = {"status": "疲惫", "kind": "疲惫", "since": now,
                            "until": now + 10 * 3600, "note": "没由来的累，只想躺着",
@@ -1143,7 +1154,14 @@ class HumanState:
     def schedule_tree(self, day=None):
         """一级 4 段、二级每小时；不再生成三级 10 分钟。"""
         day = str(day or today_str())
-        hourly = self._hourly_schedule(self.schedule.get(day) or self.db.get_schedule(day) or [])
+        raw = self.schedule.get(day) or self.db.get_schedule(day) or []
+        if self._jit_enabled():
+            now_min = minutes_now()
+            raw = [item for item in raw
+                   if str(item.get("category") or "") in ("appointment", "date")
+                   or item.get("appointment") or item.get("happened")
+                   or parse_hhmm(item.get("start")) <= now_min]
+        hourly = self._hourly_schedule(raw)
         if not hourly:
             return []
         now_min = minutes_now()
@@ -1315,6 +1333,12 @@ class HumanState:
         try:
             key = str(day)
             items = self.schedule.get(key) or self.db.get_schedule(key) or []
+            if self._jit_enabled() and key == today_str():
+                now_min = minutes_now()
+                items = [item for item in items
+                         if str(item.get("category") or "") in ("appointment", "date")
+                         or item.get("appointment") or item.get("happened")
+                         or parse_hhmm(item.get("start")) <= now_min]
             if not items:
                 return "那天还没有安排。"
             info = self._day_type_store().get(key) or {}
@@ -1343,6 +1367,127 @@ class HumanState:
             self._schedule_gen_locks[key] = lock
         return lock
 
+    # ---------- JIT 即时决策（盲盒模式） ----------
+    def _jit_enabled(self):
+        try:
+            return bool(self.p.cfg_bool("schedule_jit", True))
+        except Exception:
+            return True
+
+    def jit_action(self):
+        try:
+            data = self.db.kv_get("current_action", {}) or {}
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def current_action_text(self):
+        data = self.jit_action()
+        if not data:
+            return ""
+        try:
+            if float(data.get("until") or 0) <= now_ts():
+                return ""
+        except Exception:
+            return ""
+        return str(data.get("action") or "")
+
+    def _jit_items(self, day):
+        items = []
+        try:
+            items = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
+        except Exception:
+            items = []
+        now = minutes_now()
+        kept = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category") or "")
+            if (category in ("appointment", "date") or item.get("appointment")
+                    or item.get("happened") or parse_hhmm(item.get("start")) <= now):
+                kept.append(item)
+        return kept
+
+    def jit_tick(self, now=None):
+        """到点推演一次：只决定此刻做什么，不排以后。"""
+        if not self._jit_enabled():
+            return None
+        now = now or _now()
+        hour = int(now.hour)
+        if hour not in (8, 12, 15, 19, 23):
+            return None
+        day = now.date().isoformat()
+        flag = "jit:%s:%02d" % (day, hour)
+        try:
+            if self.db.kv_get(flag, False):
+                return None
+        except Exception:
+            pass
+        hunger = 100.0
+        try:
+            hunger = float(self.p.get_hunger())
+        except Exception:
+            pass
+        try:
+            cash = int(self.p.wallet.balance())
+        except Exception:
+            cash = 0
+        health = self.health_info() or {}
+        try:
+            from .schedule_engine import jit_plan
+        except ImportError:
+            from schedule_engine import jit_plan
+        plan = jit_plan(hour, hunger, cash, bool(health.get("sick")),
+                        str(self.mood.get("word") or ""))
+        try:
+            if self.late is not None and hour in (12, 15) and now.weekday() >= 5 and self.late.late_yesterday(now):
+                plan = {"action": "在家补觉，睡到自然醒", "place": "家", "zone": "home",
+                        "category": "rest", "cost_cents": 0,
+                        "diary": "昨晚熬夜，今天白天补觉。"}
+        except Exception:
+            pass
+        cost = int(plan.get("cost_cents") or 0)
+        paid = False
+        if cost:
+            try:
+                paid = bool(self.p.wallet.debit(cost, "JIT:%s" % plan.get("action"),
+                                                "jit:%s:%02d" % (day, hour)))
+            except Exception:
+                paid = False
+            if not paid:
+                plan = {"action": "没舍得花钱，先忍一忍", "place": "家", "zone": "home",
+                        "category": "rest", "cost_cents": 0, "diary": ""}
+        item = {"start": "%02d:00" % hour, "end": "%02d:00" % ((hour + 1) % 24),
+                "activity": plan.get("action"), "place": plan.get("place"),
+                "zone": plan.get("zone"), "category": plan.get("category"),
+                "source": "jit", "happened": True}
+        try:
+            items = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
+            self.commit_schedule_change(day, items + [item], old_items=items,
+                                        source="jit", reason="到点即时决策")
+        except Exception:
+            pass
+        self.db.kv_set("current_action", {"action": plan.get("action"),
+                                          "place": plan.get("place"),
+                                          "at": now_ts(),
+                                          "until": now_ts() + 3600,
+                                          "hour": hour})
+        self.db.kv_set(flag, True)
+        diary = str(plan.get("diary") or "")
+        if diary:
+            try:
+                self.db.kv_set("jit_diary:%s:%02d" % (day, hour), diary)
+                write = getattr(self.p, "_data_call", None)
+                if callable(write):
+                    import asyncio
+                    asyncio.get_running_loop().create_task(write(
+                        "remember", self.p._data_bot_id(), "amo", diary,
+                        kind="activity", importance=0.35))
+            except Exception:
+                pass
+        return item
+
     async def ensure_schedule(self, umo, force=False):
         """每天只生成一次主干；同一日期加锁，避免并发生成两份。"""
         async with self._schedule_gen_lock(today_str()):
@@ -1352,6 +1497,17 @@ class HumanState:
         """ensure_schedule 的锁内实现；点击二级卡片时再动态生成这一小时的日记。"""
         today = today_str()
         meta = day_meta(today)
+        if not force and self._jit_enabled():
+            # JIT 盲盒模式：只保留预约和已发生的流水，未来随机日常一律隐藏
+            items = self._jit_items(today)
+            existing = list(self.schedule.get(today) or self.db.get_schedule(today) or [])
+            if items != existing:
+                try:
+                    self.commit_schedule_change(today, items, old_items=existing,
+                                                source="jit_purge", reason="隐藏未来随机日程")
+                except Exception:
+                    pass
+            return self._hourly_schedule(items)
         if force:
             # /amo schedule regen、面板重生成：先丢掉当天缓存的 day_type，
             # 否则配置改成 weekend 之后还会读回旧的 homebody。
@@ -2069,6 +2225,14 @@ class HumanState:
         4. 昨天也没有 → 按小时兜底，并明确标记 no_schedule。
         """
         today = today_str()
+        jit = self.jit_action()
+        try:
+            if jit and float(jit.get("until") or 0) > now_ts():
+                return {"activity": jit.get("action"), "place": jit.get("place"),
+                        "zone": "home", "category": "life", "_source": "jit",
+                        "_reason": "到点即时决策"}, "jit"
+        except Exception:
+            pass
         try:
             items = self.schedule.get(today) or []
         except Exception:

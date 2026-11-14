@@ -48,6 +48,16 @@ class Wallet:
                 CREATE INDEX IF NOT EXISTS idx_wallet_ledger_ts ON wallet_ledger(ts DESC);
                 """
             )
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(wallet_ledger)")}
+            for col, ddl in (("category", "TEXT NOT NULL DEFAULT ''"),
+                             ("sub_category", "TEXT NOT NULL DEFAULT ''"),
+                             ("item_name", "TEXT NOT NULL DEFAULT ''"),
+                             ("trigger_reason", "TEXT NOT NULL DEFAULT ''")):
+                if col not in cols:
+                    conn.execute("ALTER TABLE wallet_ledger ADD COLUMN %s %s" % (col, ddl))
+            conn.execute("UPDATE wallet_ledger SET category='其他', sub_category='日常', "
+                         "item_name=reason, trigger_reason=reason "
+                         "WHERE category IS NULL OR category=''")
             for account in self.ACCOUNTS:
                 conn.execute(
                     "INSERT OR IGNORE INTO wallet_account(account, balance_cents, updated) VALUES(?,0,?)",
@@ -78,23 +88,28 @@ class Wallet:
         self._ensure()
         with self.db.lock:
             rows = self.db.conn.execute(
-                "SELECT idem, account, delta_cents, reason, ref, ts FROM wallet_ledger "
+                "SELECT idem, account, delta_cents, reason, ref, ts, category, sub_category, item_name, trigger_reason FROM wallet_ledger "
                 "ORDER BY ts DESC, rowid DESC LIMIT ?", (max(1, int(limit)),)
             ).fetchall()
         return [
             {"idem": r[0], "account": r[1], "delta_cents": int(r[2]),
-             "reason": r[3], "ref": r[4], "ts": float(r[5])}
+             "reason": r[3], "ref": r[4], "ts": float(r[5]),
+             "category": r[6] or "", "sub_category": r[7] or "",
+             "item_name": r[8] or "", "trigger_reason": r[9] or r[3]}
             for r in rows
         ]
 
     # ---------------- 写（唯一入口） ----------------
-    def _insert(self, account: str, delta: int, reason: str, idem: str, ref: str) -> bool:
+    def _insert(self, account: str, delta: int, reason: str, idem: str, ref: str,
+                category: str = "", sub_category: str = "", item_name: str = "",
+                trigger_reason: str = "") -> bool:
         """锁内写：先插流水，插进去才动余额。"""
         conn = self.db.conn
         cur = conn.execute(
-            "INSERT OR IGNORE INTO wallet_ledger(idem, account, delta_cents, reason, ref, ts) "
-            "VALUES(?,?,?,?,?,?)",
-            (str(idem), str(account), int(delta), str(reason or ""), str(ref or ""), time.time()),
+            "INSERT OR IGNORE INTO wallet_ledger(idem, account, delta_cents, reason, ref, ts, category, sub_category, item_name, trigger_reason) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (str(idem), str(account), int(delta), str(reason or ""), str(ref or ""), time.time(),
+             str(category or ""), str(sub_category or ""), str(item_name or ""), str(trigger_reason or reason or "")),
         )
         if int(cur.rowcount or 0) <= 0:
             return False
@@ -124,7 +139,8 @@ class Wallet:
             return self._insert(account, amount, reason, idem, ref)
 
     def debit(self, amount_cents: int, reason: str, idem: str, ref: str = "",
-              account: str = "cash") -> bool:
+              account: str = "cash", category: str = "", sub_category: str = "",
+              item_name: str = "", trigger_reason: str = "") -> bool:
         """扣款；余额不足或重复 idem 返回 False。"""
         self._ensure()
         amount = int(amount_cents)
@@ -136,7 +152,9 @@ class Wallet:
             ).fetchone()
             if int(row[0] if row else 0) < amount:
                 return False
-            return self._insert(account, -amount, reason, idem, ref)
+            return self._insert(account, -amount, reason, idem, ref,
+                                category=category, sub_category=sub_category,
+                                item_name=item_name, trigger_reason=trigger_reason)
 
     def snapshot(self) -> dict[str, Any]:
         return {"balance_cents": self.balance("cash"), "ledger": self.ledger(5)}

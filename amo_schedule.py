@@ -124,7 +124,7 @@ def diary_manual_target(now, requested):
 
 class ScheduleMixin(_MixinBase):
     def _schedule_change_allowed(self, event) -> bool:
-        """改日程是会落库的副作用：只认主人的私聊，群聊/其他人不算。"""
+        """改日程是会落库的副作用：只认老公的私聊，群聊/其他人不算。"""
         try:
             if not self.cfg_bool("schedule_change_enabled", True):
                 return False
@@ -153,7 +153,7 @@ class ScheduleMixin(_MixinBase):
             except Exception as _amo_exc:
                 _note_swallowed("amo_schedule._schedule_change_allowed", _amo_exc)
             return uid in owner_ids or sender in owner_ids
-        # 没单独配名单时，沿用礼物引擎的主人判定（gift_owner_ids / 恋人关系 / 管理员）
+        # 没单独配名单时，沿用礼物引擎的老公判定（gift_owner_ids / 恋人关系 / 管理员）
         gift = getattr(self, "gift", None)
         checker = getattr(gift, "is_owner", None) if gift is not None else None
         if callable(checker):
@@ -183,7 +183,7 @@ class ScheduleMixin(_MixinBase):
             logger.debug("[SCHED_CHANGE] skip reason=helper_missing")
             return
         try:
-            # 先做便宜的关键词识别，命中再查主人（is_owner 会读一次画像库，
+            # 先做便宜的关键词识别，命中再查老公（is_owner 会读一次画像库，
             # 放前面等于每条私聊都多一次 DB 查询）。
             change = detect_schedule_change(user_text)
             travel = any(word in str(user_text or "") for word in TRAVEL_WORDS)
@@ -240,11 +240,11 @@ class ScheduleMixin(_MixinBase):
                     treatment = "看医生"
                 try:
                     if current.get("sick") and status == str(current.get("status") or ""):
-                        # 已经病着，主人只是让她去看医生/不去：别把生病起点重置
+                        # 已经病着，老公只是让她去看医生/不去：别把生病起点重置
                         self.state.set_treatment(treatment)
                     else:
                         self.state.set_health(
-                            status, note="按主人的话生病请假", treatment=treatment)
+                            status, note="按老公的话生病请假", treatment=treatment)
                 except Exception as _amo_exc:
                     _note_swallowed("amo_schedule._apply_user_schedule_change", _amo_exc)
             if should_switch_to_pajamas is not None and should_switch_to_pajamas(change, user_text):
@@ -801,8 +801,6 @@ class ScheduleMixin(_MixinBase):
             return ""
         chat_lines = await self._diary_chat_lines(day)
         hourly_lines = self._diary_hourly_lines(day)
-        if not chat_lines and not hourly_lines:
-            return ""
         umo = self._last_umo or self._first_private_umo()
         try:
             persona = await self.llm.persona(umo)
@@ -816,6 +814,13 @@ class ScheduleMixin(_MixinBase):
             "文中的“我”指你自己（bot），用户是“他”；不要把“我”写成用户。"
         )
         prompt = _diary_build_prompt(day, chat_lines, hourly_lines)
+        if not chat_lines and not hourly_lines:
+            prompt += ("\n\n今天没有任何聊天、消费或外出记录，非常平淡。"
+                       "请结合她的日常状态写一篇碎碎念：可以吐槽无聊、想念老公、抱怨天气、"
+                       "分享刷剧感受；严禁编造素材里没有的消费或事件。")
+        prompt += ("\n\n硬性要求：即使今天很平淡也必须写，不允许空着不写；"
+                   "只能写上面素材包里真实发生的事，绝对不能编造没发生的消费、地点或经历；"
+                   "严禁“心情+5”这类数值；篇幅 200-400 字，语言每天要有变化。")
         try:
             wardrobe = getattr(self, "wardrobe", None)
             if wardrobe is not None:

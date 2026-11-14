@@ -68,7 +68,7 @@ def idle_archive_due(message_count: int, since_ts: int, now_ts: int,
 
 def build_prompt(date_label: str, body: str) -> str:
     return (
-        "下面是" + str(date_label or "最近") + "这段时间的聊天记录（[他] 是主人，[我] 是你自己）。\n"
+        "下面是" + str(date_label or "最近") + "这段时间的聊天记录（[他] 是老公，[我] 是你自己）。\n"
         "请把它压成 2-4 句长期记忆：写清这段聊到的事、约定、他的状态变化（工作/身体/情绪/计划）。\n"
         "每句必须带主体：写用户的用「他……」，写你自己的用「我……」；不要出现无主语的句子。\n"
         "只写事实，不写「今天/昨天/刚才」这类相对时间；不要复述原话；不确定的不要编。\n\n"

@@ -170,9 +170,18 @@ class TravelOverlayTests(BaseCase):
 
     def test_overlay_keeps_past_hours(self) -> None:
         today = today_str()
-        self.state.schedule = {today: [{"start": "00:00", "end": "01:00", "activity": "睡觉",
-                                        "place": "家", "category": "sleep"}]}
-        self.assertTrue(self.state.apply_travel_overlay("杭州"))
+        original = amo_human_state._now
+
+        def noonish(*args, **kwargs):
+            return original(*args, **kwargs).replace(hour=15, minute=0)
+
+        try:
+            amo_human_state._now = noonish
+            self.state.schedule = {today: [{"start": "00:00", "end": "01:00", "activity": "睡觉",
+                                            "place": "家", "category": "sleep"}]}
+            self.assertTrue(self.state.apply_travel_overlay("杭州"))
+        finally:
+            amo_human_state._now = original
         rows = self.state.schedule[today]
         self.assertEqual(rows[0]["activity"], "睡觉")
         self.assertTrue(any("杭州" in str(row.get("activity")) for row in rows))

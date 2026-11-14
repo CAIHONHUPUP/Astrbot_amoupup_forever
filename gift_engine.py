@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """礼物引擎。
 
-聊天里的虚拟礼物：她随口说「好想要 / 好喜欢」的东西记进心愿单；主人回一句
+聊天里的虚拟礼物：她随口说「好想要 / 好喜欢」的东西记进心愿单；老公回一句
 「送给你 / 买给你 / 那条围巾送你」，她下一句就会具体地收下，之后一直记得。
 
 和主脑的关系：
@@ -155,7 +155,7 @@ def valid_item(item: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 主人在送礼吗
+# 老公在送礼吗
 # ---------------------------------------------------------------------------
 
 GIFT_INTENT_RE = re.compile(
@@ -455,7 +455,7 @@ IMPOSSIBLE_WORDS = ("月亮", "星星", "太阳", "云", "风", "时间", "命",
 
 _SELF_OUTPUT_PREFIXES = (
     "她最近想要", "她收到的礼物", "还没有心愿和礼物",
-    "记下了：她收到了", "这个只给主人", "这个没记住", "用法：/送礼",
+    "记下了：她收到了", "这个只给老公", "这个没记住", "用法：/送礼",
 )
 
 
@@ -1132,7 +1132,7 @@ class GiftEngine:
         if not item:
             item, wish_id = await self._wish_from_recent_bot(umo)
         if not item or not valid_item(item):
-            logger.info("[amo] 主人说了送礼，但没识别出东西: %s" % text[:60])
+            logger.info("[amo] 老公说了送礼，但没识别出东西: %s" % text[:60])
             return GIFT_ASK_HINT.format(raw=text[:120])
         kind = self.classify(item)
         if any(word in item for word in FOOD_WORDS):

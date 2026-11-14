@@ -133,17 +133,17 @@ class DataSyncMixin(_MixinBase):
         return getattr(plugin, "mem", None) is not None or getattr(plugin, "store", None) is not None
     def _data_bot_id(self):
         return str(self.cfg_str("data_bot_id", "") or self.bot_name or "default")
-    async def _data_call(self, name, *args, **kwargs):
+    async def _data_call(self, method_name, *args, **kwargs):
         # 写操作失败必须看得见：以前一律 debug，聊天记录/记忆写不进去也没人知道
-        _loud = name in ("add_message", "remember", "save_message")
+        _loud = method_name in ("add_message", "remember", "save_message")
         _log_fail = logger.warning if _loud else logger.debug
         mem = self._data_mem()
-        func = getattr(mem, name, None) if mem is not None else None
+        func = getattr(mem, method_name, None) if mem is not None else None
         if not callable(func):
             # 旧版/半装的数据插件可能只暴露 store 门面（mem 上没有同名方法）。
             # 以前这里直接 return None，聊天记录会一句都不进终端，表现就是「她失忆」。
             store = self._data_store()
-            func = getattr(store, name, None) if store is not None else None
+            func = getattr(store, method_name, None) if store is not None else None
             if not callable(func):
                 return None
         try:
@@ -152,7 +152,7 @@ class DataSyncMixin(_MixinBase):
                 timeout=max(1.0, self.cfg_float("data_call_timeout_seconds", 15.0)),
             )
         except asyncio.TimeoutError:
-            logger.warning("[amo] 数据插件 %s 调用超时，先跳过（不影响这轮回复）" % name)
+            logger.warning("[amo] 数据插件 %s 调用超时，先跳过（不影响这轮回复）" % method_name)
             return None
         except TypeError:
             # 数据插件是旧版（还没有 platform / message_id 参数）时退一步，别把聊天记录整个丢掉
@@ -161,12 +161,12 @@ class DataSyncMixin(_MixinBase):
                 try:
                     return await func(*args, **trimmed)
                 except Exception as exc:
-                    _log_fail("[amo] 数据插件 %s 调用失败: %s" % (name, exc))
+                    _log_fail("[amo] 数据插件 %s 调用失败: %s" % (method_name, exc))
                     return None
-            _log_fail("[amo] 数据插件 %s 参数不匹配" % name)
+            _log_fail("[amo] 数据插件 %s 参数不匹配" % method_name)
             return None
         except Exception as exc:
-            _log_fail("[amo] 数据插件 %s 调用失败: %s" % (name, exc))
+            _log_fail("[amo] 数据插件 %s 调用失败: %s" % (method_name, exc))
             return None
     async def _push_profile_to_data(self, uid, profile=None, platform=""):
         """把本地画像推给数据插件（名字/称呼/关系/备注），顺带记下平台身份。
@@ -721,3 +721,26 @@ class DataSyncMixin(_MixinBase):
         if isinstance(result, dict):
             return bool(result.get("ok", True))
         return bool(result)
+
+    def _cleanup_auto_profiles(self, source, real_uids):
+        """删除记忆源自动创建、但不在真实画像列表里的历史空画像。"""
+        real = {str(uid) for uid in real_uids}
+        removed = 0
+        try:
+            for row in self.db.list_profiles(limit=1000):
+                uid = str(row.get("uid") or "")
+                if not uid or uid in real:
+                    continue
+                if str(row.get("platform") or "") not in ("angel_memory", "memory_companion"):
+                    continue
+                if to_int(row.get("msg_count"), 0) > 1:
+                    continue
+                if str(row.get("private_umo") or ""):
+                    continue
+                self.db.delete_profile(uid)
+                removed += 1
+            if removed:
+                logger.info("[amo] 已清理 %d 个非画像用户（%s）" % (removed, source))
+        except Exception as exc:
+            logger.debug("[amo] 清理非画像用户失败: %s" % exc)
+

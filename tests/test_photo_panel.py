@@ -33,7 +33,7 @@ class PhotoPanelTests(unittest.TestCase):
         self.assertIn('id="amo-skyblue-theme"', self.html)
         self.assertIn("--bg1: #eaf8ff", self.html)
         self.assertIn("background-attachment: fixed", self.html)
-        self.assertGreaterEqual(self.html.count('class="tab-ico"'), 16)
+        self.assertEqual(self.html.count('class="tab-ico"'), 0)
         self.assertIn('data-group="语音"', self.html)
         self.assertIn('data-group="心流"', self.html)
         self.assertLess(self.html.find('data-group="语音"'), self.html.find('data-group="心流"'))

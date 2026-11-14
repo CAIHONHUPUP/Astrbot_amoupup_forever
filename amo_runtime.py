@@ -722,6 +722,58 @@ class RuntimeMixin(_MixinBase):
             "他来找你，哪怕你在上班、在忙，也先接住；"
             "禁止说“你先忙 / 你去忙 / 忙你的 / 那你先忙 / 不打扰你了 / 晚点聊”。"
         )
+        try:
+            _hunger_line = self.hunger.prompt_line() if getattr(self, "hunger", None) else ""
+            if _hunger_line:
+                parts.append("【饥饿】" + _hunger_line)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.hunger", _amo_exc)
+        try:
+            _date_mood = self.db.kv_get("date_mood_line", {}) or {}
+            if isinstance(_date_mood, dict) and _date_mood.get("line") and float(_date_mood.get("until") or 0) > now_ts():
+                parts.append("【约会】" + str(_date_mood.get("line")))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.date", _amo_exc)
+        try:
+            _jit_action = self.state.current_action_text()
+            if _jit_action:
+                parts.append("【正在做】" + _jit_action)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.jit", _amo_exc)
+        try:
+            parts.append("【约会】老公提议吃饭/逛街/看电影时，调用 propose_date 答应并写进日程；"
+                         "他说去不了就调用 cancel_date；他说到了/开吃就调用 attend_date。")
+        except Exception:
+            pass
+        try:
+            _exp = self.db.kv_get("expense_summary", {}) or {}
+            if isinstance(_exp, dict) and _exp.get("line") and float(_exp.get("until") or 0) > now_ts():
+                parts.append("【账本】" + str(_exp.get("line")))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.expense", _amo_exc)
+        try:
+            _shop = self.db.kv_get("shopping_prompt", {}) or {}
+            if isinstance(_shop, dict) and _shop.get("line") and float(_shop.get("until") or 0) > now_ts():
+                parts.append("【购物】" + str(_shop.get("line")))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.shop", _amo_exc)
+        try:
+            _gift = self.db.kv_get("gift_line", {}) or {}
+            if isinstance(_gift, dict) and _gift.get("line") and float(_gift.get("until") or 0) > now_ts():
+                parts.append("【人情】" + str(_gift.get("line")))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.gift", _amo_exc)
+        try:
+            _late_line = self.state.late.prompt_line() if getattr(self.state, "late", None) else ""
+            if _late_line:
+                parts.append("【熬夜】" + _late_line)
+            _msg = str(getattr(event, "message_str", "") or "")
+            if getattr(self.state, "late", None) is not None and self.state.late.is_staying_up() and any(
+                    w in _msg for w in ("别熬夜", "快去睡", "早点睡", "睡觉去", "该睡了")):
+                self.state.late.soothe("老公哄睡")
+                parts.append("【哄睡】老公让你别熬夜、快去睡，你乖乖答应，这就去睡。")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin.late_prompt", _amo_exc)
         return "\n".join(parts)
 
     @filter.after_message_sent()
@@ -1138,6 +1190,15 @@ class RuntimeMixin(_MixinBase):
             await self._maybe_proactive()
         if now - self._last_ritual >= 60:
             await self._maybe_rituals()
+        try:
+            self.state.jit_tick(_now())
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin.jit_tick", _amo_exc)
+        try:
+            if getattr(self.state, "late", None) is not None:
+                self.state.late.tick(_now())
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin.late_tick", _amo_exc)
 
     async def _maybe_milestone_archive(self):
         """每 N 轮私聊压成一条「里程碑」记忆；原始聊天不删，只多一条归纳。"""

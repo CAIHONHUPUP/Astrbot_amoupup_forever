@@ -720,7 +720,7 @@ class CommandMixin(_MixinBase):
             yield event.plain_result("礼物功能还没开。")
             return
         if not self.gift.is_owner(event):
-            yield event.plain_result("这个只给主人看哦。")
+            yield event.plain_result("这个只给老公看哦。")
             return
         yield event.plain_result(self.gift.command_text())
 
@@ -731,7 +731,7 @@ class CommandMixin(_MixinBase):
             yield event.plain_result("礼物功能还没开。")
             return
         if not self.gift.is_owner(event):
-            yield event.plain_result("这个只给主人用哦。")
+            yield event.plain_result("这个只给老公用哦。")
             return
         # AstrBot 的 command handler 不保证把命令后面的参数注入 item；
         # 这里以 event.message_str 为准兜底，避免 /送礼 一条围巾 永远提示“用法”。

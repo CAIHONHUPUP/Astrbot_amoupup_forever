@@ -368,6 +368,30 @@ class RitualBehaviorTests(unittest.TestCase):
         self.patch_globals(fake._ritual_should_send.__func__)
         self.assertFalse(fake._ritual_should_send([QQ, LARK], "goodnight"))
 
+    def test_morning_ignores_late_night_chat(self):
+        night = datetime.datetime.fromtimestamp(NOW).replace(hour=1, minute=41, second=0).timestamp()
+        fake = make_self(self.methods, messages=[
+            {"role": "user", "content": "我先睡了", "created_at": night},
+        ])
+        self.patch_globals(fake._user_spoke_today.__func__)
+        self.assertFalse(asyncio.run(fake._user_spoke_today(UID, "morning")))
+
+    def test_morning_counts_chat_after_six(self):
+        morning = datetime.datetime.fromtimestamp(NOW).replace(hour=8, minute=5, second=0).timestamp()
+        fake = make_self(self.methods, messages=[
+            {"role": "user", "content": "我醒了", "created_at": morning},
+        ])
+        self.patch_globals(fake._user_spoke_today.__func__)
+        self.assertTrue(asyncio.run(fake._user_spoke_today(UID, "morning")))
+
+    def test_morning_ignores_system_json_event(self):
+        ts = datetime.datetime.fromtimestamp(NOW).replace(hour=8, minute=5, second=0).timestamp()
+        fake = make_self(self.methods, messages=[
+            {"role": "user", "content": '{"level":"auto","event_id":"live_1"}', "created_at": ts},
+        ])
+        self.patch_globals(fake._user_spoke_today.__func__)
+        self.assertFalse(asyncio.run(fake._user_spoke_today(UID, "morning")))
+
 
 if __name__ == "__main__":
     unittest.main()

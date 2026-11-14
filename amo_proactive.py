@@ -223,7 +223,11 @@ class ProactiveMixin(_MixinBase):
         if not uid:
             return False
         try:
-            start = _now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            base = _now().replace(hour=0, minute=0, second=0, microsecond=0)
+            if kind == "morning":
+                # 凌晨聊天不算「今天已经醒了」：早安只认 06:00 之后开口
+                base = base.replace(hour=max(0, min(23, self.cfg_int("ritual_morning_from_hour", 6))))
+            start = base.timestamp()
         except Exception:
             start = now_ts() - 86400
         rows: list[Any] = []
@@ -250,6 +254,10 @@ class ProactiveMixin(_MixinBase):
             if ts < start:
                 continue
             text = str((row or {}).get("content") or "")
+            stripped = text.lstrip()
+            if stripped.startswith("{") or '"event_id"' in text or '"level":"auto"' in text:
+                # 金融/系统事件也以 role=user 落库，不能算「他说话了」
+                continue
             if kind == "morning":
                 return True
             if kind == "lunch" and any(word in text for word in
@@ -646,3 +654,48 @@ class ProactiveMixin(_MixinBase):
                 self._mark_forced_hour(profile.get("uid"))
 
                 logger.debug("[amo] 主动私聊 -> %s (%s)" % (profile.get("name", ""), kind))
+
+    def _record_channel(self, uid, umo, platform):
+        """记下这个人各平台的会话地址，供主动消息选边。"""
+        if not uid or not umo:
+            return
+        try:
+            key = "channels:%s" % uid
+            data = self.db.kv_get(key, {}) or {}
+            if not isinstance(data, dict):
+                data = {}
+            data[str(platform or "?")] = {"umo": str(umo), "ts": now_ts()}
+            self.db.kv_set(key, data)
+        except Exception as exc:
+            logger.debug("[amo] 记录通道失败: %s" % exc)
+
+    def _mark_forced_hour(self, uid):
+        mark = today_str() + ":" + str(_now().hour)
+        self._last_proactive_activity[str(uid)] = mark
+        try:
+            self.db.kv_set(self._forced_hour_key(uid), mark)
+        except Exception as _amo_exc:
+            _note_swallowed("main.HumanCorePlugin._mark_forced_hour", _amo_exc)
+
+    def _forced_sent_this_hour(self, uid):
+        """「日常关心」每小时只强制一次；存数据库，热重载/重启都不清空。"""
+        mark = today_str() + ":" + str(_now().hour)
+        try:
+            return str(self.db.kv_get(self._forced_hour_key(uid), "")) == mark
+        except Exception as _amo_exc:
+            _note_swallowed("main.HumanCorePlugin._forced_sent_this_hour", _amo_exc)
+            return self._last_proactive_activity.get(str(uid)) == mark
+
+    def _forced_hour_key(self, uid):
+        return "proactive_forced_hour_" + str(uid or "")
+
+    def _set_depressed(self, uid):
+        hours = max(1, self.cfg_int("proactive_depressed_hours", 24))
+        self.db.kv_set("proactive_depressed_until_" + str(uid), now_ts() + hours * 3600)
+
+    def _depressed_active(self, uid):
+        return to_float(self.db.kv_get("proactive_depressed_until_" + str(uid), 0), 0) > now_ts()
+
+    def _pending_key(self, uid):
+        return "proactive_pending_" + str(uid)
+
