@@ -35,6 +35,11 @@ import uuid
 # 上架规范：logger 只能从 astrbot.api 导入，不允许回退到内置 logging
 from astrbot.api import logger
 
+try:  # 原子写 JSON（tmp + fsync + os.replace），三个模块共用一份
+    from .amo_fileio import atomic_write_json
+except ImportError:  # pragma: no cover - 直接按文件加载时
+    from amo_fileio import atomic_write_json
+
 # 统一时区：容器/服务器常在 UTC 跑，「今天/昨天」和礼物日志日期必须按配置时区算，
 # 不能用 time.localtime()（那是服务器本地时区）。
 from datetime import datetime as _dt
@@ -777,11 +782,7 @@ class GiftEngine:
         data = self._load()
         data["wishes"] = data["wishes"][-MAX_WISHES:]
         data["gifts"] = data["gifts"][-MAX_GIFTS:]
-        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, ensure_ascii=False, indent=1)
-        os.replace(tmp, self.path)
+        atomic_write_json(self.path, data, indent=1)
 
     def add_wish(self, item, raw="", umo="", uid="", source="chat"):
         item = self._enrich_item(clean_item(item), raw)

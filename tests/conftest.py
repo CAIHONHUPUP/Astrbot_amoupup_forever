@@ -22,7 +22,10 @@ if os.name == "nt" and not getattr(tempfile, "_amo_mkdtemp_patched", False):
     _names = tempfile._RandomNameSequence()
     _created = []
 
-    def _mkdtemp(suffix: str = "", prefix: str = "tmp", dir: str | None = None) -> str:
+    def _mkdtemp(suffix=None, prefix=None, dir=None) -> str:
+        # tempfile.TemporaryDirectory()/mkstemp 会显式传 prefix=None/suffix=None
+        suffix = suffix or ""
+        prefix = prefix or "tmp"
         base = dir or tempfile.gettempdir()
         for _ in range(200):
             path = os.path.join(base, prefix + next(_names) + suffix)

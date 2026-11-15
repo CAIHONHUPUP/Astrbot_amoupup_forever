@@ -22,8 +22,10 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import hashlib
 import os
+import random
 import re
 import time
 
@@ -87,10 +89,21 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             split_keywords,
         )
 
+try:  # 统一时钟（测试会钉死时间；不要在本文件里散落裸时间调用）
+    from .amo_shared import _now as _amo_now
+except Exception:  # pragma: no cover
+    try:
+        from amo_shared import _now as _amo_now
+    except Exception:
+        def _amo_now():
+            return _dt.datetime.fromtimestamp(time.time())
+
 try:  # 视角后缀：她出镜=自拍视角，她拍环境=她的拍摄视角（空镜）
-    from .photo_view import SCENERY_ONLY, looks_like_her, view_suffix
+    from .photo_view import (SCENERY_ONLY, SELFIE_FRAMING, SELFIE_NEGATIVE,
+                             SELFIE_STYLE, looks_like_her, view_suffix)
 except ImportError:  # 直接按文件加载时
-    from photo_view import SCENERY_ONLY, looks_like_her, view_suffix
+    from photo_view import (SCENERY_ONLY, SELFIE_FRAMING, SELFIE_NEGATIVE,
+                            SELFIE_STYLE, looks_like_her, view_suffix)
 
 try:  # 场景：日程地点 → 背景（在家=家里、逛街=商场、旅游=景区）
     from .photo_scene import PLACE_HINTS, scene_for
@@ -116,6 +129,165 @@ GENERATE_TIMEOUT_SECONDS = 180
 # data_url 是 base64，超过这个长度就不进 kv（否则数据库会被撑大）
 _MAX_CACHED_DATA_URL = 200000
 
+# 真实感/安全负面词（2026-11-15 用户要求：去 AI 塑料感 + 防封号）
+REALISM_POSITIVE = (
+    "第一人称手机实拍视角（first-person smartphone shot），手机镜头随手拍，"
+    "轻微噪点（slight film grain），随意的构图（casual composition），生活感（lifestyle），"
+    "光线不完美，不精修"
+)
+REALISM_NEGATIVE = (
+    "精修，CG，商业摄影，影棚打光，过度打光，完美构图，塑料感，3D渲染，"
+    "文字，水印，签名，NSFW，裸露，暴露，走光，suggestive，provocative"
+)
+#: 说了这些就等于「已经在拍照/要发照片」，没真发就必须由系统补一张
+PHOTO_CLAIM_WORDS = (
+    "拍好", "拍到了", "拍下", "按下快门", "快门", "咔嚓", "发你", "发给你", "给你看", "你看这张",
+    "拍一张", "拍个照", "拍张照", "拍拍照", "自拍", "合影", "照片", "拍了", "镜头",
+    "笑一个", "好看吗", "留念", "三二一", "三、二、一", "321", "比个耶",
+    "拍进去", "我拍", "拍给你", "拍一下", "拍个", "拍张", "发张", "给你发",
+)
+
+#: 世界观硬约束：他不在物理现场，所谓合影就是她举着手机自拍
+SELFIE_WORLDVIEW = (
+    "（重要：他不在画面里，你们隔着屏幕；所谓合影就是她举着手机自己拍，"
+    "画面里绝对不能出现第二个人、男人的手或肩膀）"
+)
+PHOTO_WORLDVIEW_NEGATIVE = (
+    "男人，男生，男性，第二个人，另一个人，情侣合影，双人合影，多人，旁观者，第三人称视角，"
+    "多出来的手，别人的肩膀，男人的手，男人的肩膀，两个女孩，两个人物，"
+    "man, male, second person, group photo, couple photo, third-person view, "
+    "extra arms, human shoulder, two people, other person"
+)
+SHOP_WORDS = ("火锅店", "烧烤店", "餐厅", "饭馆", "海底捞", "商场", "步行街", "咖啡馆",
+              "奶茶店", "店面", "店内", "店里", "门店", "摊")
+FOOD_WORDS = ("火锅", "烧烤", "烤肉", "自助", "海底捞", "麻辣烫", "砂锅", "串串")
+
+
+def _parse_minutes(value):
+    try:
+        hour, _, minute = str(value or "").partition(":")
+        return int(hour) * 60 + int(minute or 0)
+    except (TypeError, ValueError):
+        return None
+
+
+def _light_line(activity, now=None):
+    """按当前时刻 + 室内/室外给出光线，避免半夜画出大太阳。"""
+    now = now or _amo_now()
+    zone = str((activity or {}).get("zone") or "")
+    indoor = zone in ("home", "office", "restaurant", "hotel", "mall", "hospital")
+    hour = int(now.hour)
+    if hour >= 22 or hour < 6:
+        return "深夜暗光（nighttime dim lighting），" + ("室内暖光灯（warm indoor lighting）" if indoor else "街边路灯和车灯")
+    if hour < 8:
+        return "清晨的柔光"
+    if hour >= 18:
+        return "室内暖光灯（warm indoor lighting）" if indoor else "傍晚的暖色天光"
+    if hour >= 17:
+        return "傍晚偏暖的光线"
+    return "自然日光，室内窗边的光" if indoor else "自然日光"
+
+
+def _weather_line(state, activity):
+    """外面下雨/下雪时，室内要能看见窗外；拿不到天气就返回空。"""
+    try:
+        brief = state.weather_brief() if callable(getattr(state, "weather_brief", None)) else ""
+        desc = str(brief or "")
+    except Exception:
+        desc = ""
+    if not desc:
+        return ""
+    zone = str((activity or {}).get("zone") or "")
+    if any(word in desc for word in ("雨", "雪", "雨夹雪")):
+        if zone in ("home", "office", "hotel", "mall", "restaurant", "hospital"):
+            return "窗外在下雨（rain outside window），室内光线偏暗"
+        return "外面在下雨，路面湿漉漉"
+    return ""
+
+
+def _ground_topic(subject, activity):
+    """话题配图必须落回她此刻的真实环境；落不回去就给个跳过理由。"""
+    subject = str(subject or "").strip()
+    zone = str((activity or {}).get("zone") or "")
+    category = str((activity or {}).get("category") or "")
+    if not subject:
+        return "", "没有可画的画面"
+    if zone == "home" or category in ("rest", "sleep", "health", "meal"):
+        if any(word in subject for word in FOOD_WORDS):
+            return ("在家里的餐桌或茶几前，桌上放着外卖盒和手机，手机屏幕里是%s的画面，"
+                    "还没开吃，家里是暖黄的小灯" % next((w for w in FOOD_WORDS if w in subject), "吃的")), ""
+        if any(word in subject for word in SHOP_WORDS):
+            return "", "她在家里，画不了店里的场景（这轮不配图）"
+        if "家" not in subject and "窗外" not in subject:
+            return "在家里，" + subject, ""
+        return subject, ""
+    if category in ("work", "commute") and any(word in subject for word in FOOD_WORDS):
+        return "在工位/路上，手里拿着没吃完的外卖或者便利店的袋子，周围是工作环境", ""
+    return subject, ""
+
+
+PLAN_HINTS = ("今晚", "明天", "后天", "周末", "等会", "待会", "回头", "约好", "约了",
+              "计划", "下次", "改天", "一起去", "到时候")
+
+
+def _topic_is_plan(text):
+    """「今晚去吃火锅」是约定/期待，不是此刻的场景，不该自动配图。"""
+    body = str(text or "")
+    return any(word in body for word in PLAN_HINTS)
+
+
+def _topic_mood_ok(state):
+    """只有情绪很高或很低（很想分享/很难受）才配图，平淡聊天就纯文字。"""
+    try:
+        score = float(state.mood_score())
+    except Exception:
+        return True
+    return score >= 70 or score <= 30
+
+
+SEND_PHOTO_TOOL_NAME = "send_photo"
+SEND_PHOTO_TOOL_ARGS = [
+    {"type": "string", "name": "description",
+     "description": "想给他看的画面，一句话，比如「火锅店咕嘟冒泡的红油锅底」"},
+    {"type": "string", "name": "kind",
+     "description": "web=网图/网上截图（只是在聊计划或期待）；real=你自己的实拍（真的在吃/在家/在外面）"},
+]
+
+
+def make_send_photo_tool(plugin):
+    async def send_photo(event=None, description="", kind="web"):
+        engine = getattr(plugin, "draw", None)
+        if engine is None:
+            return "画图没开"
+        return engine.send_photo_now(event, description, kind=kind)
+    return send_photo
+
+
+def register_send_photo(plugin, manager):
+    """幂等注册 send_photo 工具：由大模型自己决定要不要发图。"""
+    if manager is None:
+        return False
+    try:
+        if manager.get_func(SEND_PHOTO_TOOL_NAME) is not None:
+            manager.remove_func(SEND_PHOTO_TOOL_NAME)
+        manager.add_func(
+            SEND_PHOTO_TOOL_NAME, SEND_PHOTO_TOOL_ARGS,
+            "发一张图给他：聊计划/期待时发网图（kind=web），自己真的在吃/在家时发实拍（kind=real）。"
+            "只有觉得发图更好玩/更浪漫/更馋人才调用，平时纯文字。",
+            make_send_photo_tool(plugin))
+        return True
+    except Exception:
+        return False
+
+
+def _topic_state_skip(activity):
+    """睡觉/生病时不接话题配图；上班只在明确要图时才画。"""
+    category = str((activity or {}).get("category") or "")
+    if category in ("sleep", "health"):
+        return "她在%s，话题不配图" % ("睡觉" if category == "sleep" else "生病休息")
+    return ""
+
+
 DEFAULT_TOPIC_KEYWORDS = (
     "吃什么,吃啥,吃点什么,想吃什么,去哪吃,在干嘛,在做什么,做什么,好饿,饿了,"
     "想喝,喝什么,喝啥,想玩,在忙什么"
@@ -123,7 +295,8 @@ DEFAULT_TOPIC_KEYWORDS = (
 
 DEFAULT_EXPLICIT_KEYWORDS = (
     "画一张,画个,画一下,画一幅,画张,给我画,帮我画,替我画,来一张,来张,发张图,发个图,"
-    "发一张,拍张,拍一张,拍照给我看看,拍给我看,照片给我看看,发张照片,自拍,画我,来点图"
+    "发一张,拍张,拍一张,拍照给我看看,拍给我看,照片给我看看,发张照片,自拍,画我,来点图,"
+    "拍张照,拍个照,拍张照片,来张照片,发个自拍,来张自拍,拍一张照片,发张自拍"
 )
 
 _EXPLICIT_CLEAN_RE = re.compile(
@@ -176,6 +349,31 @@ def clean_topic_prompt(text, max_chars=80):
     if len(text) > max_chars:
         text = text[:max_chars].rstrip("，,。.、 ")
     return text
+
+
+def build_selfie_prompt(scene, outfit, activity, state, extra="", light="", pose_text=""):
+    """动态拼装自拍提示词：环境/穿搭/体感/光线全部来自当前事实，不写死任何场景。"""
+    parts = ["第一人称手机前置镜头自拍（hand-held front camera selfie），画面里只有她一个人"]
+    scene = str(scene or "").strip()
+    if scene:
+        parts.append("背景是" + scene + "，要能看出这个地方，不要换成别的场景")
+    outfit = str(outfit or "").strip()
+    if outfit:
+        parts.append("女孩穿着" + outfit)
+    extra = str(extra or "").strip()
+    if extra:
+        parts.append(extra)
+    pose_text = str(pose_text or "").strip()
+    if pose_text:
+        parts.append(pose_text)
+    weather = _weather_line(state, activity)
+    if weather:
+        parts.append(weather)
+    parts.append("看着镜头微笑（looking at camera, smiling）")
+    parts.append(light or _light_line(activity))
+    parts.append("真实的手机抓拍画质，轻微噪点，随手拍不摆拍")
+    parts.append(SELFIE_WORLDVIEW)
+    return "，".join(part for part in parts if part)
 
 
 class DrawEngine:
@@ -509,8 +707,6 @@ class DrawEngine:
         except Exception as _amo_exc:
             _note_swallowed("draw_engine.DrawEngine.wants_photo", _amo_exc)
             return False
-        if self._mode() == "topic":
-            return False
         text = str(getattr(event, "message_str", "") or "")
         return any(kw and kw.lower() in text.lower() for kw in self._explicit_keywords())
 
@@ -529,7 +725,8 @@ class DrawEngine:
         selfie = "自拍" in text
         mode = self._mode()
         lowered = text.lower()
-        explicit_hit = mode in ("explicit", "both") and any(
+        # 他直接说「拍张照/发张自拍」→ 无论触发模式都 100% 执行，不吃概率
+        explicit_hit = any(
             kw and kw.lower() in lowered for kw in self._explicit_keywords()
         )
         topic_hit = mode in ("topic", "both") and any(
@@ -539,11 +736,80 @@ class DrawEngine:
             return self._skip("没命中触发词")
         if not reply_text:
             return self._skip("没有回复文本")
+        subject, source = self._decide_subject(event, text, reply_text, explicit_hit, selfie)
+        if subject is None:
+            return self._skip(source)
+        if explicit_hit and self._is_vague_request(text):
+            # 「你在公园吗/拍照给我看看」：拍她自己，用固定形象参考图
+            selfie = True
+        if not selfie and looks_like_her(text):
+            # 「拍张你在工位的照片」也要拍她本人 → 自拍视角、带固定形象；
+            # 「你看到的海/你眼里的窗外」是她的视角，人不出镜，保持空镜
+            selfie = True
+        # 物理状态校验：睡觉/生病不接话题配图；居家不能凭空画店里的场景
+        activity = self._activity()
+        if not explicit_hit:
+            skip = _topic_state_skip(activity)
+            if skip:
+                return self._skip(skip)
+            # 话题不强制配图：约定/计划、情绪平淡、概率没中 → 纯文字
+            if _topic_is_plan(text):
+                return self._skip("这是计划/约定，等真吃真去再拍")
+            if not _topic_mood_ok(getattr(self.plugin, "state", None)):
+                return self._skip("情绪平淡，纯文字聊天")
+            chance = max(0, min(100, self._cfg_int("draw_topic_prob", 20)))
+            if chance <= 0 or random.random() * 100 >= chance:
+                return self._skip("话题配图概率没中")
+            if not selfie:
+                subject, skip = _ground_topic(subject, activity)
+                if skip:
+                    return self._skip(skip)
+        photo_plan = None
+        if selfie:
+            prompt, photo_plan = self._selfie_prompt(event, text, subject)
+        else:
+            # 她拍的环境：空镜 + 她的视角，画面里不出现她本人
+            prefix = self._cfg_str("photo_prompt_prefix", "自然生活照，手机随手拍，")
+            extras = "，".join(item for item in (
+                _light_line(self._activity()),
+                _weather_line(getattr(self.plugin, "state", None), self._activity()),
+                SCENERY_ONLY, REALISM_POSITIVE, view_suffix(False),
+            ) if item)
+            prompt = (prefix + subject + "，" + extras).strip("，")
+        scene_text = " ".join(filter(None, [subject, reply_text, self._place_text()]))
+        keywords = self._scene_keywords(scene_text)
+        residual = self._scene_residual(scene_text, keywords)
+        cache_key = self._cache_key(prompt, keywords, selfie, residual)
+        uid = str(self.plugin._canonical_uid(event) or "")
+        umo = str(getattr(event, "unified_msg_origin", "") or "")
+        cached = self._cache_get(cache_key)
+        if cached:
+            # 同一个场景在别的平台再问：直接发同一张，不重新画、也不吃冷却
+            return {"prompt": prompt, "mode": source, "reason": "cache",
+                    "cached": cached, "cache_key": cache_key}
+        if umo and umo in self._inflight:
+            return self._skip("上一张还在画")
+        # 他自己点名要「照片/自拍」→ 不吃每小时/每天限额；纯画图与话题配图仍然受限
+        photo_direct = explicit_hit and any(
+            word in lowered for word in ("拍", "照片", "自拍", "合影", "留念", "镜头", "咔嚓"))
+        reason = "" if photo_direct else self._check_limits(uid)
+        if reason:
+            if self.debug:
+                logger.info("[amo] 画图跳过：%s（uid=%s）" % (reason, uid))
+            return None
+        last = self._last_prompt.get(uid)
+        if last and last[0] == prompt and time.monotonic() - last[1] < 120:
+            return self._skip("120 秒内同一句")
+        return {"prompt": prompt, "mode": source, "reason": "explicit" if explicit_hit else "topic",
+                "cache_key": cache_key, "selfie": selfie, "plan": photo_plan}
+
+    def _decide_subject(self, event, text, reply_text, explicit_hit, selfie):
+        # 显式画图：清理/问句兜底；话题画图：直接用回复文本
         if explicit_hit and any(word in reply_text for word in (
             "画好", "画了", "给你画", "这就画", "马上画", "稍等", "等我画", "发给你",
         )):
             # 模型已经自己调了画图工具，别重复画
-            return self._skip("模型回复里已经在画")
+            return None, "模型回复里已经在画"
         if explicit_hit:
             source = "explicit"
             cleaned = clean_explicit_prompt(text)
@@ -571,94 +837,76 @@ class DrawEngine:
         if not subject and selfie:
             subject = "自拍"
         if not subject:
-            return self._skip("没有可画的画面")
-        if explicit_hit and self._is_vague_request(text):
-            # 「你在公园吗/拍照给我看看」：拍她自己，用固定形象参考图
-            selfie = True
-        if not selfie and looks_like_her(text):
-            # 「拍张你在工位的照片」也要拍她本人 → 自拍视角、带固定形象；
-            # 「你看到的海/你眼里的窗外」是她的视角，人不出镜，保持空镜
-            selfie = True
-        photo_plan = None
-        if selfie:
-            # 照片语义：地点/姿势/守卫全部由日程计划决定；他说的地点只在日程不明时兜底
-            activity = self._activity()
-            explicit_place = ""
-            # 只认他这句话里说的地点；不要从她上一条/日程场景句里抠（「石板路」不是地点冲突）
-            for word in PLACE_HINTS:
-                if word and word in str(text or ""):
-                    explicit_place = word
-                    break
-            plan = resolve_plan(activity, mode="photo", explicit_place=explicit_place)
-            photo_plan = plan
-            if plan.explicit_conflict and self.debug_prompt:
-                logger.info(
-                    "[PHOTO_DEBUG] conflict=explicit_place:%s schedule_zone:%s → schedule_wins"
-                    % (explicit_place, plan.base_zone)
-                )
-            where = scene_for(activity) or (explicit_place if plan.source == "explicit_place" else "")
-            # 「发张自拍」：默认穿今天固定的那一套；他点名要别的衣服才按他的来
-            parts = ["自拍"]
-            outfit = ""
-            photo = getattr(self.plugin, "photo", None)
-            getter = getattr(photo, "outfit_today", None) if photo is not None else None
-            if callable(getter):
-                try:
-                    outfit = str(getter() or "")
-                except Exception as _amo_exc:
-                    _note_swallowed("draw_engine.DrawEngine.decide", _amo_exc)
-                    outfit = ""
-            explicit_clothes = any(word in str(subject or "") for word in (
-                "穿", "衣服", "裙", "衬衫", "毛衣", "外套", "卫衣", "裤", "鞋", "围巾", "帽子",
-            ))
-            locked_today = bool(outfit) and not explicit_clothes
-            if locked_today:
-                parts.append("穿着" + outfit)
-            if subject and subject != "自拍" and not plan.explicit_conflict:
-                # 他说的细节保留（衣服/话题），但和日程冲突的地点不写进画面
-                parts.append(subject)
-            if where:
-                parts.append("在" + where + "，背景要能看出这个地方、不要换成别的场景")
-            # 姿势：由场景规则决定（居家才允许用姿势库；公共场合不会随机到床姿）
-            library = getattr(self.plugin, "pose", None)
-            _pose, pose_text = pick_pose_for_plan(plan, library)
-            if pose_text and "姿势" not in str(subject or ""):
-                parts.append(pose_text)
-            parts.append(plan.guard)
-            parts.extend(["自然光", view_suffix(True), "生活感"])
-            if locked_today:
-                parts.append("人物长相参考模板，衣服锁定为上面的今日穿搭，不要换别的衣服，也不要照搬模板里的衣服")
-            else:
-                parts.append("人物长相参考模板，衣服颜色和款式以文字为准，不要照搬模板里的衣服")
-            prompt = "，".join(part for part in parts if part)
-            self._debug_log(activity, plan, prompt, pose_text)
+            return None, "没有可画的画面"
+        return subject, source
+
+    def _selfie_prompt(self, event, text, subject):
+        # 自拍：日程计划决定地点/姿势/守卫，衣服默认锁今日穿搭；返回 (prompt, plan)
+        # 照片语义：地点/姿势/守卫全部由日程计划决定；他说的地点只在日程不明时兜底
+        activity = self._activity()
+        explicit_place = ""
+        # 只认他这句话里说的地点；不要从她上一条/日程场景句里抠（「石板路」不是地点冲突）
+        for word in PLACE_HINTS:
+            if word and word in str(text or ""):
+                explicit_place = word
+                break
+        plan = resolve_plan(activity, mode="photo", explicit_place=explicit_place)
+        photo_plan = plan
+        if plan.explicit_conflict and self.debug_prompt:
+            logger.info(
+                "[PHOTO_DEBUG] conflict=explicit_place:%s schedule_zone:%s → schedule_wins"
+                % (explicit_place, plan.base_zone)
+            )
+        where = scene_for(activity) or (explicit_place if plan.source == "explicit_place" else "")
+        # 「发张自拍」：默认穿今天固定的那一套；他点名要别的衣服才按他的来
+        parts = ["第一人称手机前置镜头自拍（hand-held front camera selfie），画面里只有她一个人"]
+        outfit = ""
+        photo = getattr(self.plugin, "photo", None)
+        getter = getattr(photo, "outfit_today", None) if photo is not None else None
+        if callable(getter):
+            try:
+                outfit = str(getter() or "")
+            except Exception as _amo_exc:
+                _note_swallowed("draw_engine.DrawEngine.decide", _amo_exc)
+                outfit = ""
+        explicit_clothes = any(word in str(subject or "") for word in (
+            "穿", "衣服", "裙", "衬衫", "毛衣", "外套", "卫衣", "裤", "鞋", "围巾", "帽子",
+        ))
+        locked_today = bool(outfit) and not explicit_clothes
+        if locked_today:
+            parts.append("女孩穿着" + outfit)
+        if subject and subject != "自拍" and not plan.explicit_conflict:
+            # 他说的细节保留（衣服/话题），但和日程冲突的地点不写进画面
+            parts.append(subject)
+        if where:
+            parts.append("背景是" + where + "，要能看出这个地方、不要换成别的场景")
+        # 姿势：由场景规则决定（居家才允许用姿势库；公共场合不会随机到床姿）
+        library = getattr(self.plugin, "pose", None)
+        _pose, pose_text = pick_pose_for_plan(plan, library)
+        if pose_text and "姿势" not in str(subject or ""):
+            parts.append(pose_text)
+        state_line = ""
+        photo_engine = getattr(self.plugin, "photo", None)
+        hint_fn = getattr(photo_engine, "_selfie_state_hint", None)
+        if callable(hint_fn):
+            try:
+                state_line = hint_fn(activity, plan)
+            except Exception as _amo_exc:
+                _note_swallowed("draw_engine.DrawEngine.decide.selfie_state", _amo_exc)
+                state_line = ""
+        parts.append(plan.guard)
+        parts.extend([item for item in (state_line, SELFIE_WORLDVIEW, SELFIE_FRAMING, SELFIE_STYLE) if item])
+        parts.extend([_weather_line(getattr(self.plugin, "state", None), activity),
+                      _light_line(activity), "看着镜头微笑（looking at camera, smiling）",
+                      REALISM_POSITIVE, view_suffix(True), "真实的手机抓拍画质", "生活感"])
+        if locked_today:
+            parts.append("人物长相参考模板，衣服锁定为上面的今日穿搭，不要换别的衣服，也不要照搬模板里的衣服")
         else:
-            # 她拍的环境：空镜 + 她的视角，画面里不出现她本人
-            prefix = self._cfg_str("photo_prompt_prefix", "自然生活照，手机随手拍，")
-            prompt = (prefix + subject + "，" + SCENERY_ONLY + "，" + view_suffix(False)).strip("，")
-        scene_text = " ".join(filter(None, [subject, reply_text, self._place_text()]))
-        keywords = self._scene_keywords(scene_text)
-        residual = self._scene_residual(scene_text, keywords)
-        cache_key = self._cache_key(prompt, keywords, selfie, residual)
-        uid = str(self.plugin._canonical_uid(event) or "")
-        umo = str(getattr(event, "unified_msg_origin", "") or "")
-        cached = self._cache_get(cache_key)
-        if cached:
-            # 同一个场景在别的平台再问：直接发同一张，不重新画、也不吃冷却
-            return {"prompt": prompt, "mode": source, "reason": "cache",
-                    "cached": cached, "cache_key": cache_key}
-        if umo and umo in self._inflight:
-            return self._skip("上一张还在画")
-        reason = self._check_limits(uid)
-        if reason:
-            if self.debug:
-                logger.info("[amo] 画图跳过：%s（uid=%s）" % (reason, uid))
-            return None
-        last = self._last_prompt.get(uid)
-        if last and last[0] == prompt and time.monotonic() - last[1] < 120:
-            return self._skip("120 秒内同一句")
-        return {"prompt": prompt, "mode": source, "reason": "explicit" if explicit_hit else "topic",
-                "cache_key": cache_key, "selfie": selfie, "plan": photo_plan}
+            parts.append("人物长相参考模板，衣服颜色和款式以文字为准，不要照搬模板里的衣服")
+        prompt = "，".join(part for part in parts if part)
+        self._debug_log(activity, plan, prompt, pose_text)
+        return prompt, photo_plan
+
 
     def maybe_after_reply(self, event, reply_text):
         """on_decorating_result 里调用：判断 + 起一个后台任务，不阻塞。"""
@@ -717,10 +965,18 @@ class DrawEngine:
             _note_swallowed("draw_engine.DrawEngine.missing_omni_notice", _amo_exc)
             return ""
 
-    async def _notify_failure(self, event, reason=""):
-        """明确要图但生成/发送失败时，给一句人话；同一会话 10 分钟只提醒一次。"""
+    async def _notify_failure(self, event, reason="", explicit=False):
+        """明确要图但生成/发送失败时，给一句人话；话题自动配图失败就只记日志。
+
+        2026-11-15 用户反馈：他只是聊到吃的（话题自动配图），图没生成出来却收到
+        「这次没拍成，等会儿再给你拍」，像是她凭空承诺；自动配图失败不该出声。
+        """
         try:
             if event is None:
+                return
+            if not explicit:
+                logger.warning("[DRAW] failure_silent reason=%s（话题自动配图，不打扰）",
+                               str(reason or "")[:80])
                 return
             umo = str(getattr(event, "unified_msg_origin", "") or "")
             store = getattr(self, "_failure_notice_at", None)
@@ -759,6 +1015,72 @@ class DrawEngine:
             logger.warning("[amo] 缺画图插件提示发送失败: %s" % exc)
             return False
 
+    def send_photo_now(self, event, description, kind="web", force=False):
+        """大模型主动决定发图：web=网图/截图分享，real=她自己的实拍。"""
+        if not self.enabled:
+            return "画图没开（draw_enable=false）"
+        if not self.is_owner(event):
+            return "这个只给老公用哦"
+        text = str(description or "").strip() or "随手拍"
+        # 「自拍/合影/拍照」这类必须走她本人的实拍，不能被当成网图
+        if any(word in text for word in ("自拍", "合影", "拍照", "照片", "拍一张")):
+            kind = "real"
+        umo = str(getattr(event, "unified_msg_origin", "") or "")
+        if umo and umo in self._inflight:
+            return "上一张还在画，等它出来"
+        uid = str(self.plugin._canonical_uid(event) or "")
+        if not force and self._check_limits(uid):
+            return "这会儿先不发图啦，聊会儿天"
+        if str(kind or "web").lower() == "real":
+            activity = self._activity()
+            scene = scene_for(activity) if callable(scene_for) else ""
+            outfit = ""
+            try:
+                getter = getattr(getattr(self.plugin, "photo", None), "outfit_today", None)
+                outfit = str(getter() or "") if callable(getter) else ""
+            except Exception as _amo_exc:
+                _note_swallowed("draw_engine.DrawEngine.send_photo_now.outfit", _amo_exc)
+                outfit = ""
+            detail = text if (text and text != "随手拍") else ""
+            prompt = build_selfie_prompt(scene, outfit, activity,
+                                         getattr(self.plugin, "state", None),
+                                         extra=detail) + "，" + REALISM_POSITIVE
+            self._schedule(event, prompt, "tool", selfie=True)
+            try:
+                self._last_tool_photo_at = time.monotonic()
+            except Exception:  # cleanup: 时间戳失败不影响发图
+                pass
+            return "好呀，等我一下，我拍一张发你~"
+        prompt = ("网上找的图片，聊天里分享的网图/截图，不是她本人拍的，"
+                  "可以是店铺招牌、菜品图或梗图风格，画面里不出现她自己；" + text)
+        self._schedule(event, prompt, "tool", selfie=False)
+        try:
+            self._last_tool_photo_at = time.monotonic()
+        except Exception:  # cleanup: 时间戳失败不影响发图
+            pass
+        return "好呀，等我一下，我找张图发你~"
+
+    def enforce_photo_claim(self, event, text):
+        """兜底：回话说「拍好了/按下快门」却没调 send_photo → 真补一张自拍。
+
+        返回 (可能被改写的文本, 是否补了图)。
+        """
+        body = str(text or "")
+        if not body:
+            return body, False
+        if not any(word in body for word in PHOTO_CLAIM_WORDS):
+            return body, False
+        try:
+            last = float(getattr(self, "_last_tool_photo_at", 0) or 0)
+        except Exception:
+            last = 0.0
+        if last and time.monotonic() - last < 60:
+            return body, False
+        if not self.enabled:
+            return body, False
+        result = self.send_photo_now(event, "拍一张自拍发给他", kind="real", force=True)
+        return body, "拍一张" in result or "发你" in result
+
     def manual(self, event, text):
         """``/amo draw 描述``：跳过触发词，直接画（给测试用）。"""
         if not self.enabled:
@@ -795,14 +1117,14 @@ class DrawEngine:
         if self.debug:
             logger.info("[amo] 画图排队（%s%s）：%s" % (reason, "/缓存" if cached else "", prompt))
         if self._spawn(self._run(event, prompt, uid, umo, cached, cache_key, selfie,
-                                 photo_plan)) is None:
+                                 photo_plan, explicit=reason in ("explicit", "manual", "tool"))) is None:
             if umo:
                 self._inflight.discard(umo)
 
     async def _run(self, event, prompt, uid, umo, cached=None, cache_key="", selfie=False,
-                   photo_plan=None):
+                   photo_plan=None, explicit=False):
         try:
-            delay = max(0.0, self._cfg_float("draw_delay_seconds", 1.5))
+            delay = max(0.0, self._cfg_float("draw_delay_seconds", 3.0))
             if delay:
                 await asyncio.sleep(delay)
             if not self.enabled:
@@ -819,7 +1141,7 @@ class DrawEngine:
             image = await self._generate(event, prompt, selfie, plan=photo_plan)
             if not image:
                 self._stats["failed"] += 1
-                await self._notify_failure(event, self._last_error or "生成失败")
+                await self._notify_failure(event, self._last_error or "生成失败", explicit=explicit)
                 return
             photo_engine = getattr(self.plugin, "photo", None)
             localizer = getattr(photo_engine, "_localize", None)
@@ -834,14 +1156,14 @@ class DrawEngine:
                 self._stats["sent"] += 1
             else:
                 self._stats["failed"] += 1
-                await self._notify_failure(event, "发送失败")
+                await self._notify_failure(event, "发送失败", explicit=explicit)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             self._stats["failed"] += 1
             self._last_error = str(exc)
             logger.warning("[amo] 画图失败: %s" % exc)
-            await self._notify_failure(event, str(exc))
+            await self._notify_failure(event, str(exc), explicit=explicit)
         finally:
             if umo:
                 self._inflight.discard(umo)
@@ -860,6 +1182,9 @@ class DrawEngine:
         args = {"prompt": prompt, "count": 1, "event": event, "record_usage": True}
         if selfie:
             args["mode"] = "selfie"
+            args["negative_prompt"] = SELFIE_NEGATIVE + "，" + REALISM_NEGATIVE
+        else:
+            args["negative_prompt"] = "人物，人类，插画，二次元，" + REALISM_NEGATIVE
         if plan is not None:
             try:
                 scene_lock, pose_lock = locks_for_plan(plan)

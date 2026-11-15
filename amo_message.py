@@ -52,6 +52,77 @@ _FOOD_WORDS = ("汤", "面", "饭", "菜", "粉", "粥", "火锅", "汉堡", "�
                "外卖", "饺子", "包子", "便当", "寿司", "烧烤", "麻辣烫", "米线")
 
 
+_SLEEP_WORDS = ("睡", "午睡", "打盹", "眯", "躺", "休息", "补觉", "赖床")
+
+
+def topic_lock_block():
+    """讨论第三方时的代词锁定：他给的建议是对那件事说的，不是对她说的。
+
+    2026-11-15 线上：她在聊闺蜜的渣男男友，他顺着说「趁早分了」，她回
+    「分啥呀，我这儿正睡午觉呢」——把对第三方的建议当成了对自己的，还砸进后台状态。
+    """
+    return (
+        "【话题锁定】他这一段很可能在说别人的事（闺蜜/同事/朋友/网上的人）："
+        "他说“分了 / 骂他 / 别理他 / 这种人 / 太渣了”这类话，是对那件事、那个人说的，不是对你说的。"
+        "你要顺着这个话题继续聊（“对，赶紧分了”“这种人不值得”），"
+        "绝不把话拉回自己身上，也不要回“分啥呀 / 分谁”，更不要顺带报自己的状态。"
+    )
+
+
+def rest_state_block(activity="", category="", asked=False):
+    """她在睡觉/休息、但人正跟你聊天：别把“正在睡”当话题，顺滑衔接。
+
+    返回空串表示此刻不是休息状态，不用注入。
+    """
+    body = str(activity or "").strip()
+    cat = str(category or "").strip()
+    if cat not in ("sleep", "rest") and not any(word in body for word in _SLEEP_WORDS):
+        return ""
+    if asked:
+        how = "他问你在干嘛，就一句“在床上眯着呢”带过，"
+    else:
+        how = "别主动说“我正睡午觉 / 我在睡觉”这种把话题拉走的话，"
+    return (
+        "【状态衔接】你此刻在休息（在床上刷手机、半梦半醒地回消息），不是被谁叫醒的。"
+        + how
+        + "想提就带个小动作（翻个身、手机差点砸脸上），说完马上接着聊他那件事。"
+    )
+
+
+def continuity_block():
+    """连续聊天：不要演出“被突然打断/吓一跳”。"""
+    return (
+        "【连续对话】你们正在连续聊天，上一句就在几分钟内。"
+        "不要表现成突然被打断、被吵醒或者吓一跳，也不要说“吓我一跳”“你干嘛突然说话”。"
+        "只有半夜（0-6 点）突然来消息才可能有被打扰的感觉，普通对话里必须连贯接着聊。"
+    )
+
+
+_ASK_ACTIVITY_RE = re.compile(
+    r"(你在干嘛|在干嘛|干嘛呢|干什么呢|你在哪|在哪呢|吃了吗|吃没吃|吃了没|忙吗|忙不忙"
+    r"|在忙什么|上班吗|在上班|下班了吗|今天干嘛|做什么呢|干啥呢)"
+)
+
+
+def asks_about_activity(text):
+    """他这句是不是在问「你在干嘛/在哪/吃了吗」。"""
+    return bool(_ASK_ACTIVITY_RE.search(str(text or "")))
+
+
+def dialogue_guard_blocks(snap, asked=False):
+    """回复组装用：话题锁定 + 连续对话 +（在休息时）状态衔接。"""
+    parts = [topic_lock_block(), continuity_block()]
+    activity = (snap or {}).get("activity") or {}
+    rest = rest_state_block(
+        str(activity.get("activity") or ""),
+        str(activity.get("category") or ""),
+        asked,
+    )
+    if rest:
+        parts.append(rest)
+    return parts
+
+
 def strip_repeated_food_question(reply, user_text, bot_text):
     """他刚回答「中午吃什么」，就别再问「你点了吗 / 吃了吗」。
 
@@ -677,8 +748,62 @@ class MessageMixin(_MixinBase):
         logger.info("[amo] 直接发送 -> %s: %s" % (event.unified_msg_origin, text[:300]))
         return True
 
+    async def _rewrite_without_foreign(self, umo, text, dirty):
+        """回复里出现白名单外的名字：先让模型重写一遍；重写不干净就返回空。"""
+        try:
+            llm = getattr(self, "llm", None)
+            if llm is None or not hasattr(llm, "chat_raw"):
+                return ""
+            try:
+                from .amo_names import ROSTER_LINE, foreign_names
+            except ImportError:
+                from amo_names import ROSTER_LINE, foreign_names
+            system = ("你是她本人，只输出改写后的一句话，不要解释。\n" + ROSTER_LINE)
+            prompt = ("这句话里出现了不存在的名字（%s），保持原意重写，删掉这些名字、不要换新名字。\n原句：%s"
+                      % ("、".join(dirty), text))
+            out = str(await llm.chat_raw(umo, system, prompt) or "").strip()
+            if out and not foreign_names(out):
+                return out
+        except Exception as exc:
+            logger.debug("[amo] 人名重写失败: %s", exc)
+        return ""
+
     async def _send_to_umo(self, umo, text, quote_id=None, group=False):
         text = clean_reply(text, self.cfg_int("max_reply_chars", 220))
+        try:
+            try:
+                from .amo_names import foreign_names as _foreign_names, sanitize as _name_sanitize
+            except ImportError:
+                from amo_names import foreign_names as _foreign_names, sanitize as _name_sanitize
+            dirty = _foreign_names(text)
+            if dirty:
+                fixed = await self._rewrite_without_foreign(umo, text, dirty)
+                text = fixed or _name_sanitize(text)
+                logger.info("[amo] 白名单外人名已拦截: %s", dirty)
+        except Exception as exc:
+            logger.debug("[amo] 人名校验失败: %s", exc)
+        try:
+            guarded = await self._guard_zone_reply(text, umo)
+            if guarded and guarded != text:
+                text = guarded
+        except Exception as exc:
+            logger.debug("[amo] 发送前地点校验失败: %s", exc)
+        try:
+            wardrobe = getattr(self, "wardrobe", None)
+            if wardrobe is not None and hasattr(wardrobe, "home_outfit_guard"):
+                text = wardrobe.home_outfit_guard(text)
+        except Exception as exc:
+            _note_swallowed("amo_message.py.692", exc)
+        try:
+            from .amo_diary_guard import sanitize_privacy
+            text = sanitize_privacy(text)
+        except Exception as exc:
+            _note_swallowed("amo_message.py.697", exc)
+        try:
+            from .amo_date_context import guard_reply as _guard_date
+            text = _guard_date(text, self)
+        except Exception as exc:
+            logger.debug("[amo] 发送前约会校验失败: %s", exc)
         if looks_like_model_leak(text):
             text = "秘密，不告诉你。"
         if not text or not umo:
@@ -719,6 +844,66 @@ class MessageMixin(_MixinBase):
         self._remember_bot_message(umo, text)
         return True
 
+    async def _guard_zone_reply(self, text, umo="", system="", snapshot=None, user_text=""):
+        """地点黑名单：和当前状态冲突就先重生成，退一步再确定性改写。
+
+        Home 时出现「工位/公司/地铁/客户」这类词，说的就不是此刻的事；
+        聊天、主动消息、微型事件分享共用这一道闸。
+        """
+        value = str(text or "")
+        if not value:
+            return value
+        try:
+            from .amo_state_snapshot import (blacklist_hit, build_snapshot,
+                                             force_rewrite, snapshot_text)
+        except ImportError:
+            from amo_state_snapshot import (blacklist_hit, build_snapshot,
+                                            force_rewrite, snapshot_text)
+        try:
+            snapshot = snapshot or build_snapshot(self)
+        except Exception:
+            snapshot = {}
+        zone = str((snapshot or {}).get("zone") or "")
+        hits = blacklist_hit(value, zone)
+        if not hits:
+            return value
+        logger.warning("[amo] 地点黑名单拦下「%s」: %s", "、".join(hits), value[:80])
+        try:
+            block = snapshot_text(snapshot)
+        except Exception:
+            block = ""
+        llm = getattr(self, "llm", None)
+        if llm is None:
+            return force_rewrite(value, zone)
+        prompt = (
+            (block + "\n" if block else "")
+            + "你刚才想说的是：「" + value + "」\n"
+            "这句话和当前状态冲突：你现在不在" + "、".join(hits) + "。"
+            "请按当前状态重写这句话：保留原来的情绪和想表达的意思，"
+            "但不能出现" + "、".join(hits) + "，也不能把它们说成刚刚/今天发生。"
+            "只输出重写后的话。"
+        )
+        retry = ""
+        try:
+            if not system:
+                system = await llm.persona(umo)
+            limit = 220
+            try:
+                limit = self.cfg_int("max_reply_chars", 220)
+            except Exception:
+                limit = 220
+            retry = await llm.chat(umo, (block + "\n" + str(system or "")).strip(),
+                                   prompt, limit=limit)
+        except Exception as exc:
+            logger.debug("[amo] 地点黑名单重生成失败: %s", exc)
+            retry = ""
+        retry = str(retry or "").strip()
+        if retry and not blacklist_hit(retry, zone):
+            return retry
+        fixed = force_rewrite(value, zone)
+        logger.info("[amo] 地点黑名单兜底改写: %s -> %s", value[:60], fixed[:60])
+        return fixed
+
     @staticmethod
     def _short_place(place):
         """把「东莞·商场·餐厅」这种内部写法缩成口语里的「餐厅」。"""
@@ -738,3 +923,25 @@ class MessageMixin(_MixinBase):
             return value
         activity = place if isinstance(place, dict) else {"place": place}
         return _rewrite_reply(value, activity)
+
+    def _guard_consumption(self, text):
+        """消费防口嗨（2026-11-15）：嘴里说的每一笔消费，账本里必须查得到。
+
+        查不到就删掉那句/改写成事实；开了 chat_claim_charge 则先真扣钱再让她说。
+        """
+        value = str(text or "")
+        if not value:
+            return value
+        try:
+            try:
+                from .amo_fact_binder import guard as _claim_guard
+            except ImportError:
+                from amo_fact_binder import guard as _claim_guard
+            fixed, changed, reason = _claim_guard(value, self)
+        except Exception as exc:
+            _note_swallowed("amo_message._guard_consumption", exc)
+            return value
+        if changed:
+            logger.info("[CLAIM_GUARD] 编出来的消费已改掉（%s）：%s -> %s"
+                        % (reason, value[:60], (fixed or "")[:60]))
+        return fixed or value

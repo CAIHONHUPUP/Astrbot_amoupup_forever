@@ -176,12 +176,15 @@ class TravelMixin(_MixinBase):
             _note_swallowed("amo_travel.HumanCorePlugin._start_follow_trip", _amo_exc)
         if not tomorrow:
             self.db.kv_set("his_city", city)
-            hit = self._city_lookup(city)
-            if hit:
-                try:
-                    await self._switch_weather_city(hit)
-                except Exception as exc:
-                    logger.warning("[amo] 跟随天气切换失败: %s" % exc)
+            # 面板开关「跟着换城市时同时换天气城市」以前只写在 schema 里、代码从不读，
+            # 关掉也照样切天气；这里才是它该生效的地方（默认开＝原来行为不变）。
+            if self.cfg_bool("city_follow_weather", True):
+                hit = self._city_lookup(city)
+                if hit:
+                    try:
+                        await self._switch_weather_city(hit)
+                    except Exception as exc:
+                        logger.warning("[amo] 跟随天气切换失败: %s" % exc)
             try:
                 self.state.apply_follow_start(city, start_hour, spots, keep_past=True)
             except Exception as exc:
@@ -416,6 +419,14 @@ class TravelMixin(_MixinBase):
 
     async def _maybe_solo_return(self):
         """旅游最后一天到点回家：换天气、报平安、写记忆/日记。"""
+        # 约会中：别推「旅游回家/报平安」这类和现场冲突的消息
+        try:
+            _date_now = self.db.kv_get("date_now", {}) or {}
+            if isinstance(_date_now, dict) and str(_date_now.get("line") or "").strip():
+                if float(_date_now.get("until") or 0) > now_ts():
+                    return
+        except Exception as _amo_exc:
+            _note_swallowed("amo_travel._maybe_solo_return.dating", _amo_exc)
         trip = self.db.kv_get("wander_trip", {}) or {}
         if not isinstance(trip, dict) or not trip.get("city") or trip.get("announced"):
             return

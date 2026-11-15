@@ -55,6 +55,24 @@ class AmoDBTests(unittest.TestCase):
             else:
                 sys.modules[name] = module
 
+    def test_seed_dialects_table_shape(self) -> None:
+        # 2026-11-15 把 187 行词表搬成模块常量 DIALECT_SEEDS 后钉住形状：
+        # 187 条种子里有 2 条跨区重名（撇脱/稀罕），靠 term UNIQUE 去重成 185 条；
+        # 重复灌库不能翻倍。
+        from amo_db import DIALECT_SEEDS
+
+        rows = self.db.list_dialects()
+        self.assertEqual(len(DIALECT_SEEDS), 187)
+        self.assertEqual(len(rows), 185)
+        self.assertEqual(len({row["term"] for row in rows}), 185)
+        self.assertEqual(len({row["region"] for row in rows}), 8)
+        seen = {}
+        for term, _meaning, _region, _example in DIALECT_SEEDS:
+            seen[term] = seen.get(term, 0) + 1
+        self.assertEqual({t for t, n in seen.items() if n > 1}, {"撇脱", "稀罕"})
+        self.db._seed_dialects()
+        self.assertEqual(len(self.db.list_dialects()), 185)
+
     def test_db_lives_under_tmp(self) -> None:
         self.assertTrue(os.path.abspath(self.db.path).startswith(os.path.abspath(self.tmp)))
 

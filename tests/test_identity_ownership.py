@@ -24,10 +24,11 @@ from photo_view import SCENERY_ONLY, VIEW_POV, VIEW_SELFIE  # noqa: E402
 
 class ActionOwnershipTests(unittest.TestCase):
     def test_static_rules_name_bot_as_executor(self):
-        self.assertIn("执行者是你（bot）", ACTION_OWNERSHIP_RULES)
-        self.assertIn("用户说", ACTION_OWNERSHIP_RULES)
-        self.assertIn("不是你", ACTION_OWNERSHIP_RULES)
-        self.assertIn("画面主体是你自己", ACTION_OWNERSHIP_RULES)
+        text = "".join(ACTION_OWNERSHIP_RULES)
+        self.assertIn("执行者是你（bot）", text)
+        self.assertIn("用户说", text)
+        self.assertIn("不是你", text)
+        self.assertIn("画面主体是你自己", text)
 
     def test_photo_hint_has_executor_and_forbids_user_action(self):
         self.assertIn("执行者是你（bot）", PHOTO_REQUEST_RULE)

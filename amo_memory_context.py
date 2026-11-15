@@ -279,54 +279,7 @@ class RecallContextMixin(_MixinBase):
         if not memories:
             return [], ""
         lines = []
-        for item in memories:
-            source = str(item.get("source") or "")
-            subject = memory_subject(item)
-            if source == "amo_data":
-                label = "记忆"
-            elif source == "companion":
-                label = "陪伴记忆"
-            else:
-                tier = to_int(item.get("tier"))
-                label = "珍贵" if tier >= 2 else ("重要" if tier == 1 else "普通")
-            who = str(item.get("name") or "").strip()
-            prefix = (who + "：") if (who and source in ("hub", "amo_data")) else ""
-            if subject == "bot":
-                prefix = "[bot] "
-            # 老记忆里常有"今天/昨晚/刚才"这种相对说法：注入时补一个记录日期，
-            # 免得她把 11-04 的事当成"昨晚"（用户反馈过一次）。
-            body = str(item.get("content", ""))
-            # 单条记忆先截断：一条 4000 字摘要会吃光 1200 字注入预算，
-            # 后面的记忆一条都进不去（线上实测过，3 条长摘要召回次数全库最高）。
-            item_cap = self.cfg_int("memory_item_max_chars", 240)
-            item_cap = 0 if item_cap <= 0 else max(60, min(1000, item_cap))
-            if item_cap and len(body) > item_cap:
-                body = body[:item_cap].rstrip() + "…"
-            rel_words = ("今天", "今晚", "昨天", "昨晚", "刚才", "刚刚", "前天", "这会儿", "这两天")
-            created = to_int(item.get("created_at"))
-            if created and any(w in body for w in rel_words):
-                try:
-                    day = _clock_from_ts(created)
-                    if day.strftime("%Y-%m-%d") != _now().strftime("%Y-%m-%d"):
-                        body = "（记于 %s）%s" % (day.strftime("%m-%d"), body)
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
-            # 用户记忆默认补「他：」；bot 自己的记忆用 [bot]，不能标成用户。
-            if subject == "user" and not prefix and not body.startswith(("他", "她", "用户")):
-                prefix = "他："
-            # 记忆带来源平台时标出来：别把飞书说过的话当成 QQ 刚说的
-            src = str(item.get("platform") or "").strip()
-            src_label = ""
-            if src:
-                try:
-                    src_label = str(self._platform_label(src) or src)
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
-                    src_label = src
-            lines.append("· " + prefix + body + "（" + label
-                         + (" · 来源:" + src_label if src_label else "") + "）")
-        if lines:
-            lines.append("（记忆里出现的『今天/昨晚/刚才』是当时记下的说法，不是现在；对不上就以他刚说的为准。）")
+        _recall_format(self, item, lines, memories)
         text = "\n".join(lines)
         budget = self.cfg_int("memory_inject_max_chars", 1200)
         if budget > 0 and len(text) > budget:
@@ -334,3 +287,62 @@ class RecallContextMixin(_MixinBase):
             if "\n" in text:
                 text = text.rsplit("\n", 1)[0]
         return memories, text
+
+
+
+def _recall_format(self, item, lines, memories):
+    for item in memories:
+        source = str(item.get("source") or "")
+        subject = memory_subject(item)
+        if source == "amo_data":
+            label = "记忆"
+        elif source == "companion":
+            label = "陪伴记忆"
+        else:
+            tier = to_int(item.get("tier"))
+            label = "珍贵" if tier >= 2 else ("重要" if tier == 1 else "普通")
+        who = str(item.get("name") or "").strip()
+        prefix = (who + "：") if (who and source in ("hub", "amo_data")) else ""
+        if subject == "bot":
+            prefix = "[bot] "
+        # 老记忆里常有"今天/昨晚/刚才"这种相对说法：注入时补一个记录日期，
+        # 免得她把 11-04 的事当成"昨晚"（用户反馈过一次）。
+        body = str(item.get("content", ""))
+        # 单条记忆先截断：一条 4000 字摘要会吃光 1200 字注入预算，
+        # 后面的记忆一条都进不去（线上实测过，3 条长摘要召回次数全库最高）。
+        item_cap = self.cfg_int("memory_item_max_chars", 240)
+        item_cap = 0 if item_cap <= 0 else max(60, min(1000, item_cap))
+        if item_cap and len(body) > item_cap:
+            body = body[:item_cap].rstrip() + "…"
+        rel_words = ("今天", "今晚", "昨天", "昨晚", "刚才", "刚刚", "前天", "这会儿", "这两天")
+        created = to_int(item.get("created_at"))
+        if created:
+            try:
+                day = _clock_from_ts(created)
+                age = (_now().date() - day.date()).days
+                if age == 0:
+                    body = "[今天发生] " + body
+                elif age == 1:
+                    body = "[昨天] " + body
+                elif any(w in body for w in rel_words):
+                    body = "（记于 %s）%s" % (day.strftime("%m-%d"), body)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
+        # 用户记忆默认补「他：」；bot 自己的记忆用 [bot]，不能标成用户。
+        if subject == "user" and not prefix and not body.startswith(("他", "她", "用户")):
+            prefix = "他："
+        # 记忆带来源平台时标出来：别把飞书说过的话当成 QQ 刚说的
+        src = str(item.get("platform") or "").strip()
+        src_label = ""
+        if src:
+            try:
+                src_label = str(self._platform_label(src) or src)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
+                src_label = src
+        lines.append("· " + prefix + body + "（" + label
+                     + (" · 来源:" + src_label if src_label else "") + "）")
+    if lines:
+        lines.append("（记忆前的 [今天发生]/[昨天] 是记录时间。写职场、出门的事时，"
+                     "昨天或更早的必须说成「昨天」「以前」，不能说成刚刚。）")
+

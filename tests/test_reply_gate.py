@@ -21,7 +21,7 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import main  # noqa: E402
-from amo_shared import MOOD_BASE  # noqa: E402
+from amo_shared import MOOD_BASE, now_ts  # noqa: E402
 from main import ReplyGate  # noqa: E402
 
 QQ_UMO = "大肥鱼:FriendMessage:302578963"
@@ -92,7 +92,7 @@ class ActivityTests(unittest.TestCase):
 
     def test_prunes_old_entries(self) -> None:
         gate = ReplyGate(FakePlugin())
-        now = main.now_ts()
+        now = now_ts()
         gate.p._group_times["g"] = [now - 1000, now - 10, now - 5]
         self.assertAlmostEqual(gate.activity("g"), 2 / 5.0)
         self.assertEqual(gate.p._group_times["g"], [now - 10, now - 5])
@@ -152,7 +152,7 @@ class ScoreTests(unittest.TestCase):
         gate = ReplyGate(FakePlugin())
         snap = make_snap()
         cold = gate.score_group(GROUP, "g", "在吗", [], False, {}, snap)
-        gate.p._last_reply_at[GROUP] = main.now_ts() - 5
+        gate.p._last_reply_at[GROUP] = now_ts() - 5
         warm = gate.score_group(GROUP, "g", "在吗", [], False, {}, snap)
         self.assertLess(warm["willingness"], cold["willingness"])
 

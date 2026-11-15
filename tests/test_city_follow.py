@@ -206,7 +206,7 @@ class TravelEventsTests(unittest.TestCase):
     def test_home_variant(self) -> None:
         items = travel_events("东莞", 20, home=True)
         self.assertEqual(len(items), 4)
-        self.assertTrue(all(item["place"] == "他桌面上" for item in items))
+        self.assertTrue(all(item["place"] == "家" for item in items))
         self.assertNotIn("清远", str(items))
 
     def test_travel_action(self) -> None:

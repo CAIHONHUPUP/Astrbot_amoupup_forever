@@ -22,7 +22,7 @@ astrbot_stub.install()
 
 import main  # noqa: E402
 from amo_db import AmoDB  # noqa: E402
-from amo_shared import today_str  # noqa: E402
+from amo_shared import _now, today_str  # noqa: E402
 
 
 class FakeContext:
@@ -91,7 +91,7 @@ class ForcedHourTests(unittest.TestCase):
         cls._mark_forced_hour(self.plugin, "1")
         self.assertTrue(cls._forced_sent_this_hour(self.plugin, "1"))
         self.assertEqual(self.plugin.db.kv_get("proactive_forced_hour_1"), today_str() + ":"
-                         + str(main._now().hour))
+                         + str(_now().hour))
 
     def test_key_format(self) -> None:
         self.assertEqual(main.HumanCorePlugin._forced_hour_key(self.plugin, "9"), "proactive_forced_hour_9")

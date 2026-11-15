@@ -16,7 +16,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
-from main import AmoDB, HumanCorePlugin, WRITE_ROUTES  # noqa: E402
+from main import AmoDB, HumanCorePlugin  # noqa: E402
+from amo_routes import WRITE_ROUTES  # noqa: E402
 import amo_api  # noqa: E402
 
 

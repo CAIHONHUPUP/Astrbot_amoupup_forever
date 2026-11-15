@@ -26,6 +26,7 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import main  # noqa: E402
+import amo_shared  # noqa: E402
 from astrbot.api.star import Context  # noqa: E402
 
 READ_HANDLERS = (
@@ -82,8 +83,8 @@ class ApiReadTests(unittest.TestCase):
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
         self.plugin = self._build()
         asyncio.run(self.plugin._ensure_ready())
-        self._orig_request = main.web_request
-        main.web_request = FakeRequest({"q": "北京", "kind": "daily", "uid": "1001"})
+        self._orig_request = amo_shared.web_request
+        amo_shared.web_request = FakeRequest({"q": "北京", "kind": "daily", "uid": "1001"})
 
     def _build(self):
         plugin = main.HumanCorePlugin(Context(), {})
@@ -102,7 +103,7 @@ class ApiReadTests(unittest.TestCase):
         return plugin
 
     def tearDown(self):
-        main.web_request = self._orig_request
+        amo_shared.web_request = self._orig_request
         try:
             self.plugin.db.conn.close()
         except Exception:
@@ -116,7 +117,7 @@ class ApiReadTests(unittest.TestCase):
     def _call(self, name, query=None, body=None):
         if query is None:
             query = {"q": "北京", "kind": "daily", "uid": "1001"}
-        main.web_request = FakeRequest(query, body or {})
+        amo_shared.web_request = FakeRequest(query, body or {})
         handler = getattr(self.plugin, name)
         return asyncio.run(handler())
 
@@ -156,6 +157,22 @@ class ApiReadTests(unittest.TestCase):
         self.assertIn("手放腿上坐正", names)
         self.assertIn("双脚交叉坐", names)
         self.assertIn("with_ref", data)
+
+    def test_schedule_detail_missing_range_is_friendly(self):
+        result = self._call("api_schedule_detail", body={
+            "date": "2030-01-01", "start": "01:00", "end": "03:00",
+        })
+        self.assertEqual(result.get("code"), 0)
+        data = result.get("data") or {}
+        self.assertTrue(data.get("empty_message"))
+        self.assertNotIn("Traceback", json.dumps(result, ensure_ascii=False))
+
+    def test_schedule_rows_have_ids_and_cold_facts(self):
+        data = self._call("api_schedule")["data"]
+        for block in data.get("tree") or []:
+            self.assertIn("facts", block)
+            for child in block.get("children") or []:
+                self.assertTrue(child.get("id"))
 
     def test_schedule_returns_hourly_items(self):
         data = self._call("api_schedule")["data"]

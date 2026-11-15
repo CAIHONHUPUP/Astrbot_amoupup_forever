@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import asyncio
-import datetime as _dt
 import json
 import re
 import urllib.request

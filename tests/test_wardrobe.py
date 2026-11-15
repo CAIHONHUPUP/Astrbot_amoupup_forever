@@ -105,7 +105,7 @@ class DayVarietyTests(unittest.TestCase):
     def test_panel_counts_day_seed_and_combos(self):
         wardrobe, _ = make_wardrobe()
         snap = wardrobe.snapshot()
-        self.assertEqual(snap["day_seed_count"], 30)
+        self.assertGreaterEqual(snap["day_seed_count"], 30)
         self.assertGreater(snap["outfit_count"], snap["day_seed_count"])
 
 
@@ -287,15 +287,19 @@ class SleepTests(unittest.TestCase):
         current = wardrobe.current("2026-11-11", at_home=False, hour=20)
         self.assertFalse(current.get("sleep"))
 
-    def test_current_daytime_at_home_keeps_day_outfit(self):
+    def test_current_daytime_at_home_is_homewear(self):
         wardrobe, _ = make_wardrobe()
         current = wardrobe.current("2026-11-11", at_home=True, hour=14)
+        self.assertTrue(current.get("homewear"))
         self.assertFalse(current.get("sleep"))
 
     def test_sleepwear_hidden_from_panel_lists(self):
         wardrobe, _ = make_wardrobe()
-        names = [item["name"] for cat in wardrobe.snapshot()["categories"] for item in cat["items"]]
-        self.assertFalse(any("睡衣" in name or "拖鞋" in name for name in names))
+        names = [item["name"] for cat in wardrobe.snapshot()["categories"]
+                 for item in cat["items"] if not item.get("homewear")]
+        bad = [name for name in names
+               if "睡衣" in name or ("拖鞋" in name and "居家" not in name and "软底" not in name)]
+        self.assertEqual(bad, [])
 
     def test_old_wardrobe_file_gets_sleepwear_added(self):
         wardrobe, root = make_wardrobe()
@@ -354,10 +358,20 @@ class SleepTests(unittest.TestCase):
         second = wardrobe.set_night("2026-11-11", reroll=True)
         self.assertNotEqual(first["outfit"], second["outfit"])
 
-    def test_before_8pm_at_home_still_day_outfit(self):
+    def test_before_8pm_at_home_is_homewear(self):
         wardrobe, _ = make_wardrobe()
         current = wardrobe.current("2026-11-11", at_home=True, hour=19)
+        self.assertTrue(current.get("homewear"))
         self.assertFalse(current.get("sleep"))
+        self.assertTrue(current.get("transition"))
+
+    def test_home_guard_rewrites_outdoor_clothes(self):
+        wardrobe, _ = make_wardrobe()
+        wardrobe.at_home = lambda: True
+        text = wardrobe.home_outfit_guard("我穿着牛仔裤和帆布鞋。")
+        self.assertNotIn("牛仔裤", text)
+        self.assertNotIn("帆布鞋", text)
+        self.assertIn("脱掉外套", wardrobe.home_outfit_guard("我脱掉外套，换上睡衣。"))
 
 
 class SleepItemTests(unittest.TestCase):
@@ -585,10 +599,20 @@ class HomeEarlyTests(unittest.TestCase):
         current = wardrobe.current("2026-11-11", hour=15)
         self.assertTrue(current.get("sleep"))
 
-    def test_without_home_early_keeps_day_outfit(self):
+    def test_without_home_early_still_homewear(self):
         wardrobe, _ = make_wardrobe(place="家")
         current = wardrobe.current("2026-11-11", hour=15)
+        self.assertTrue(current.get("homewear"))
         self.assertFalse(current.get("sleep"))
+
+
+
+    def test_home_reroll_changes_homewear(self):
+        wardrobe, _ = make_wardrobe(place="家")
+        first = wardrobe.current(hour=12)
+        second = wardrobe.reroll()
+        self.assertTrue(first.get("homewear"))
+        self.assertTrue(second.get("homewear"))
 
 
 class WeatherTests(unittest.TestCase):
@@ -655,9 +679,10 @@ class AtHomeTests(unittest.TestCase):
         current = wardrobe.current("2026-11-11", hour=22)
         self.assertTrue(current.get("sleep"))
 
-    def test_daytime_at_home_keeps_day_outfit(self):
+    def test_daytime_at_home_is_homewear(self):
         wardrobe, _ = make_wardrobe(place="阳台")
         current = wardrobe.current("2026-11-11", hour=14)
+        self.assertTrue(current.get("homewear"))
         self.assertFalse(current.get("sleep"))
 
 

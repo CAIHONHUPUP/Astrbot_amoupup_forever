@@ -12,6 +12,7 @@ ROUTE_SPECS = (
     ("/diary/tree", "api_diary_tree", ("GET", "POST",)),
     ("/diary/read", "api_diary_read", ("GET", "POST",)),
     ("/diary/write", "api_diary_write", ("POST",)),
+    ("/diary/note", "api_diary_note", ("POST",)),
     ("/diary/open", "api_diary_open", ("GET", "POST",)),
     ("/diary/import", "api_diary_import", ("POST",)),
     ("/profiles", "api_profiles", ("GET", "POST",)),
@@ -48,6 +49,8 @@ ROUTE_SPECS = (
     ("/memory/delete", "api_memory_delete", ("GET", "POST",)),
     ("/memory_delete", "api_memory_delete", ("GET", "POST",)),
     ("/schedule", "api_schedule", ("GET", "POST",)),
+    ("/todo", "api_todo_list", ("GET", "POST")),
+    ("/todo_list", "api_todo_list", ("GET", "POST")),
     ("/schedule/detail", "api_schedule_detail", ("GET", "POST",)),
     ("/schedule_detail", "api_schedule_detail", ("GET", "POST",)),
     ("/mood/update", "api_mood_update", ("GET", "POST",)),
@@ -93,6 +96,10 @@ ROUTE_SPECS = (
     ("/say", "api_say", ("GET", "POST",)),
     ("/refresh_status", "api_refresh_status", ("GET",)),
 )
+
+
+#: 路由总数（增删接口后只改这里；quality_gate 与 tests/test_route_table 都读它）
+ROUTE_COUNT_EXPECTED = 88
 
 
 def build_routes(api):

@@ -401,9 +401,6 @@ def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
         if split_end <= split_start:
             split_start = split_end = None
 
-    def _hhmm(value):
-        return "%02d:%02d" % divmod(int(value), 60)
-
     out: list[dict[str, Any]] = []
     hit = False
     absorb_until = None
@@ -430,46 +427,70 @@ def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
             hit = True
             if (split_start is not None and split_end is not None
                     and target_start is not None and target_end is not None):
-                if split_start > target_start:
-                    before = dict(item)
-                    before["end"] = _hhmm(split_start)
-                    out.append(before)
-                visit = dict(item)
-                visit["start"] = _hhmm(split_start)
-                visit["end"] = _hhmm(split_end)
-                visit["activity"] = activity
-                visit["swim"] = False
-                if place:
-                    visit["place"] = place
-                if category:
-                    visit["category"] = category
-                visit["detail"] = (
-                    "打吊水，约%d分钟" % (split_end - split_start)
-                    if "打吊水" in activity else "看诊拿药，约%d分钟" % (split_end - split_start)
+                pieces, absorb_until = _split_visit(
+                    item, split_start, split_end, target_start, target_end,
+                    activity, place, category,
                 )
-                out.append(_sync_zone(visit, place, category))
-                if split_end < target_end:
-                    after = dict(item)
-                    after["start"] = _hhmm(split_end)
-                    out.append(after)
-                else:
-                    absorb_until = split_end
+                out.extend(pieces)
                 continue
-            new_item = dict(item)
-            new_item["activity"] = activity
-            new_item["swim"] = False
-            if place:
-                new_item["place"] = place
-            if category:
-                new_item["category"] = category
-            out.append(_sync_zone(new_item, place, category))
+            out.append(_replace_item(item, activity, place, category))
             continue
         if hit and sleeping:
-            new_item = dict(item)
-            new_item["activity"] = "睡觉"
-            new_item["place"] = "家"
-            new_item["category"] = "sleep"
-            out.append(_sync_zone(new_item, "家", "sleep"))
+            out.append(_sleep_item(item))
             continue
         out.append(item)
     return out
+
+def _hhmm(value):
+    return "%02d:%02d" % divmod(int(value), 60)
+
+
+def _replace_item(item, activity, place, category):
+    new_item = dict(item)
+    new_item["activity"] = activity
+    new_item["swim"] = False
+    if place:
+        new_item["place"] = place
+    if category:
+        new_item["category"] = category
+    return _sync_zone(new_item, place, category)
+
+
+def _sleep_item(item):
+    new_item = dict(item)
+    new_item["activity"] = "睡觉"
+    new_item["place"] = "家"
+    new_item["category"] = "sleep"
+    return _sync_zone(new_item, "家", "sleep")
+
+
+def _split_visit(item, split_start, split_end, target_start, target_end,
+                 activity, place, category):
+    """打吊水这类按时长拆：前段保留、中间改成活动、后段顺延；返回 (片段列表, absorb_until)。"""
+    out = []
+    absorb_until = None
+    if split_start > target_start:
+        before = dict(item)
+        before["end"] = _hhmm(split_start)
+        out.append(before)
+    visit = dict(item)
+    visit["start"] = _hhmm(split_start)
+    visit["end"] = _hhmm(split_end)
+    visit["activity"] = activity
+    visit["swim"] = False
+    if place:
+        visit["place"] = place
+    if category:
+        visit["category"] = category
+    minutes = split_end - split_start
+    visit["detail"] = ("打吊水，约%d分钟" % minutes if "打吊水" in activity
+                       else "看诊拿药，约%d分钟" % minutes)
+    out.append(_sync_zone(visit, place, category))
+    if split_end < target_end:
+        after = dict(item)
+        after["start"] = _hhmm(split_end)
+        out.append(after)
+    else:
+        absorb_until = split_end
+    return out, absorb_until
+

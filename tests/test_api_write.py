@@ -22,6 +22,7 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import main  # noqa: E402
+import amo_shared  # noqa: E402
 from astrbot.api.star import Context  # noqa: E402
 
 
@@ -48,7 +49,7 @@ class ApiWriteTests(unittest.TestCase):
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
         self.plugin = self._build()
         asyncio.run(self.plugin._ensure_ready())
-        self._orig_request = main.web_request
+        self._orig_request = amo_shared.web_request
 
     def _build(self):
         plugin = main.HumanCorePlugin(Context(), {})
@@ -67,7 +68,7 @@ class ApiWriteTests(unittest.TestCase):
         return plugin
 
     def tearDown(self):
-        main.web_request = self._orig_request
+        amo_shared.web_request = self._orig_request
         try:
             self.plugin.db.conn.close()
         except Exception:
@@ -79,7 +80,7 @@ class ApiWriteTests(unittest.TestCase):
                 sys.modules[name] = module
 
     def _call(self, name, body=None, query=None):
-        main.web_request = FakeRequest(query or {}, body or {})
+        amo_shared.web_request = FakeRequest(query or {}, body or {})
         return asyncio.run(getattr(self.plugin, name)())
 
     # ---------- 画像 ----------
@@ -159,13 +160,32 @@ class ApiWriteTests(unittest.TestCase):
     def test_diary_write_without_material(self):
         self.assertEqual(self._call("api_diary_write", {"date": "2026-11-09"}).get("code"), 1)
 
-    def test_diary_write_rejects_today(self):
-        # 今天的日记 22:00 自动写；面板「写昨天」只能补昨天及以前
+    def test_diary_write_rejects_today_before_ready(self):
+        # 22:30 前点开日记卡：不许临时调模型现编
         from amo_shared import today_str
 
+        self.plugin._diary_gate_open = lambda now: False
         result = self._call("api_diary_write", {"date": today_str()})
         self.assertEqual(result.get("code"), 1)
-        self.assertIn("22:00", result.get("msg") or "")
+        self.assertIn("还在过", result.get("msg") or "")
+
+    def test_diary_write_locked_returns_existing(self):
+        from amo_shared import today_str
+
+        day = today_str()
+        self.plugin._diary_gate_open = lambda now: True
+        self.plugin.db.kv_set("diary_locked:" + day, True)
+        result = self._call("api_diary_write", {"date": day})
+        self.assertEqual(result.get("code"), 0)
+        self.assertTrue(result.get("data", {}).get("locked"))
+
+    def test_diary_gate_opens_at_2230(self):
+        import datetime as dt
+
+        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 22, 29)))
+        self.assertTrue(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 22, 30)))
+        self.assertTrue(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 23, 40)))
+        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 17, 30)))
 
     # ---------- 穿搭 ----------
 

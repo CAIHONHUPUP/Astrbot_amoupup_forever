@@ -24,6 +24,11 @@ from datetime import date, timedelta
 
 from astrbot.api import logger
 
+try:  # 原子写 JSON（tmp + fsync + os.replace），三个模块共用一份
+    from .amo_fileio import atomic_write_json
+except ImportError:  # pragma: no cover - 直接按文件加载时
+    from amo_fileio import atomic_write_json
+
 try:  # 删衣服时把它那张参考图也删掉
     from .outfit_refs import item_ref_path as _item_ref_path
 except Exception:  # pragma: no cover - 直接按文件加载时
@@ -271,14 +276,27 @@ def is_swim_outfit(outfit):
 
 
 def is_day_item(item):
-    """白天衣柜只收普通衣服：睡衣和泳装都不参与白天随机。"""
+    """白天衣柜只收普通衣服：睡衣、泳装、居家便服都不参与白天随机。"""
     item = item or {}
-    return not item.get("sleep") and not item.get("swim")
+    return (not item.get("sleep") and not item.get("swim")
+            and not item.get("homewear"))
 
 
 def is_day_outfit(outfit):
     outfit = outfit or {}
     return not outfit.get("sleep") and not outfit.get("swim")
+
+
+HOME_SEED_VERSION = 3
+
+# 两套居家便服（CHANGELOG 2026-11-15「初始化补 2 套居家便服」）。只挂 home 标记，
+# 不新增分类；白天随机抽衣时会跳过它们，出门仍然穿外出服。
+HOME_TOPS = ("洗得发白的宽松大T恤", "纯棉长袖")
+HOME_BOTTOMS = ("灰色运动短裤", "米色居家长裤")
+HOME_SHOES = ("居家棉拖鞋", "软底室内拖鞋")
+HOME_EXTRA = ("白色纯棉短袖", "浅灰宽松T恤", "米色宽松针织开衫", "粉色珊瑚绒家居上衣",
+              "浅灰棉质家居裤", "黑色运动短裤", "米色针织家居裤", "深灰宽松卫裤",
+              "软底拖鞋", "棉质软底室内拖鞋")
 
 
 def color_family(name):
@@ -487,6 +505,10 @@ class Wardrobe:
                 self._ensure_swim(data)
                 data["swim_seed"] = SWIM_SEED_VERSION
                 self._save(data)
+            if data.get("home_seed") != HOME_SEED_VERSION:
+                self._ensure_home(data)
+                data["home_seed"] = HOME_SEED_VERSION
+                self._save(data)
             if data.get("dress_seed") != DRESS_SEED_VERSION:
                 self._migrate_dresses(data)
                 data["dress_seed"] = DRESS_SEED_VERSION
@@ -502,18 +524,10 @@ class Wardrobe:
         data = data if data is not None else self._data
         if data is None:
             return
-        tmp = self.path + ".tmp"
         try:
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(data, fh, ensure_ascii=False, indent=2)
-            os.replace(tmp, self.path)
+            atomic_write_json(self.path, data)
         except Exception as _amo_exc:
             _note_swallowed("wardrobe.Wardrobe._save", _amo_exc)
-            try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            except Exception:
-                pass
 
     def _seed(self):
         data = self._empty()
@@ -550,9 +564,38 @@ class Wardrobe:
         data["hotel_seed"] = HOTEL_SEED_VERSION
         self._ensure_swim(data)
         data["swim_seed"] = SWIM_SEED_VERSION
+        self._ensure_home(data)
+        data["home_seed"] = HOME_SEED_VERSION
         self._migrate_dresses(data)
         data["dress_seed"] = DRESS_SEED_VERSION
         return data
+
+    def _ensure_home(self, data):
+        """补上居家便服：只在“在家且非睡点”时穿，不进白天搭配/睡衣/泳装。"""
+        items = data.setdefault("items", [])
+        keep = set(HOME_TOPS) | set(HOME_BOTTOMS) | set(HOME_SHOES)
+        # 清掉早期占位/多余的居家单品，只保留原始两套（避免面板里堆一堆同义家居裤）
+        drop = [item for item in items
+                if item.get("homewear") and str(item.get("name") or "") not in keep]
+        if drop:
+            drop_ids = {item.get("id") for item in drop}
+            items[:] = [item for item in items if item.get("id") not in drop_ids]
+        have = {(item.get("category"), str(item.get("name") or ""))
+                for item in items if item.get("homewear")}
+        for category, names in (("top", HOME_TOPS), ("bottom", HOME_BOTTOMS),
+                                ("shoes", HOME_SHOES)):
+            for name in names:
+                if (category, name) in have:
+                    continue
+                items.append({
+                    "id": _new_id("i-"),
+                    "category": category,
+                    "name": name,
+                    "source": "seed",
+                    "gift_id": "",
+                    "created_at": time.time(),
+                    "homewear": True,
+                })
 
     def _ensure_day(self, data):
         """白天搭配：手工 + 同色系/同材质的自动组合（外套最多一件，长裙单穿）。"""
@@ -562,6 +605,16 @@ class Wardrobe:
         seed_names = {frozenset(name for name in (top, bottom, shoes) if name)
                       for top, bottom, shoes in SEED_OUTFITS}
         keys = ("coat", "top", "bottom", "skirt", "shoes")
+        changed = self._prune_day_outfits(outfits, by_id, seed_names, keys)
+        existing = {tuple(outfit.get(key) or "" for key in keys)
+                    for outfit in outfits if is_day_outfit(outfit)}
+        day_count = len([outfit for outfit in outfits if is_day_outfit(outfit)])
+        if day_count >= DAY_TARGET_OUTFITS:
+            return changed
+        return self._fill_day_outfits(items, outfits, existing, day_count, changed)
+
+    def _prune_day_outfits(self, outfits, by_id, seed_names, keys):
+        # 手工种子里若有「不同色系/材质」的组合，先剔掉（睡眠/泳装不归这里管）
         kept = []
         changed = False
         for outfit in outfits:
@@ -579,30 +632,18 @@ class Wardrobe:
             kept.append(outfit)
         if changed:
             outfits[:] = kept
-        existing = {tuple(outfit.get(key) or "" for key in keys)
-                    for outfit in outfits if is_day_outfit(outfit)}
-        day_count = len([outfit for outfit in outfits if is_day_outfit(outfit)])
-        if day_count >= DAY_TARGET_OUTFITS:
-            return changed
-        coats = [item for item in items if is_day_item(item) and item.get("category") == "coat"]
-        tops = [item for item in items if is_day_item(item) and item.get("category") == "top"]
-        bottoms = [item for item in items if is_day_item(item) and item.get("category") == "bottom"]
-        skirts = [item for item in items if is_day_item(item) and item.get("category") == "skirt"]
-        shoes_pool = [item for item in items if is_day_item(item)
-                      and item.get("category") == "shoes"]
-        dress_skirts = [item for item in skirts if is_dress(item.get("name"))]
-        short_skirts = [item for item in skirts if not is_dress(item.get("name"))]
-        added = changed
-        rng = random.Random("amo-wardrobe-day-extra")
-        tops = list(tops)
-        bottoms = list(bottoms)
-        short_skirts = list(short_skirts)
-        dress_skirts = list(dress_skirts)
-        shoes_pool = list(shoes_pool)
-        coats = list(coats)
-        for pool in (tops, bottoms, short_skirts, dress_skirts, shoes_pool, coats):
-            rng.shuffle(pool)
+        return changed
 
+    def _fill_day_outfits(self, items, outfits, existing, day_count, changed):
+        # 先保证每件上衣各进一套，再按 裤子/短裙/长裙/外套 组合到 DAY_TARGET_OUTFITS
+        pools = _day_item_pools(items)
+        coats = pools["coat"]
+        tops = pools["top"]
+        bottoms = pools["bottom"]
+        short_skirts = pools["short_skirt"]
+        dress_skirts = pools["dress_skirt"]
+        shoes_pool = pools["shoes"]
+        added = changed
         def add_combo(coat, top, bottom, skirt, shoe):
             nonlocal day_count, added
             if day_count >= DAY_TARGET_OUTFITS:
@@ -692,6 +733,7 @@ class Wardrobe:
             if day_count >= DAY_TARGET_OUTFITS:
                 break
         return added
+
 
     def _ensure_sleep(self, data):
         """补上睡衣：20 套手工搭配 + 自动组合到 SLEEP_TARGET_OUTFITS 套，每晚换着穿。"""
@@ -1033,6 +1075,26 @@ class Wardrobe:
             _note_swallowed("wardrobe.Wardrobe._weather_temp", _amo_exc)
             return 0.0
 
+    def _clean_enough(self, items, outfit):
+        """抽衣时排除 dirty / washing 的单品（洗衣引擎状态）。"""
+        for key in ("coat", "top", "bottom", "skirt", "shoes"):
+            item = items.get(outfit.get(key) or "") or {}
+            if str(item.get("clean_status") or "clean") in ("dirty", "washing"):
+                return False
+        return True
+
+    def _mark_worn(self, data, outfit):
+        """穿过即置 dirty；睡衣/家居服/泳装不参与。"""
+        try:
+            by_id = self._items_map(data)
+            for key in ("coat", "top", "bottom", "skirt", "shoes"):
+                item = by_id.get(outfit.get(key) or "")
+                if not item or item.get("sleep") or item.get("swim") or item.get("homewear"):
+                    continue
+                item["clean_status"] = "dirty"
+        except Exception as _amo_exc:
+            _note_swallowed("wardrobe.Wardrobe._mark_worn", _amo_exc)
+
     def _candidates(self, data):
         items = self._items_map(data)
 
@@ -1047,6 +1109,10 @@ class Wardrobe:
             return bool(outfit.get("top")) and bool(outfit.get("bottom"))
 
         outfits = [outfit for outfit in data.get("outfits", []) if usable(outfit)]
+        # 洗衣系统（2026-11-15）：正在洗 / 已经脏的单品不参与抽衣；全脏时兜底不空手
+        clean = [outfit for outfit in outfits if self._clean_enough(items, outfit)]
+        if clean:
+            outfits = clean
         keys = ("coat", "top", "bottom", "skirt", "shoes")
 
         def names_of(outfit):
@@ -1070,12 +1136,12 @@ class Wardrobe:
                 outfits = work_safe
         temp = self._weather_temp()
         if temp:
-            if temp >= 26:
+            if temp >= 28:
                 cool = [outfit for outfit in outfits
                         if not has(outfit, SUMMER_BAD_WORDS)]
                 if cool:
                     return cool
-            elif temp <= 10:
+            elif temp <= 15:
                 warm = [outfit for outfit in outfits
                         if not has(outfit, SUMMER_DRESS_WORDS)]
                 if temp <= 5:
@@ -1115,6 +1181,7 @@ class Wardrobe:
             outfit = self._outfit_by_id(data, entry.get("outfit"))
             if outfit is None:
                 outfit = self._pick(data, day)
+                self._mark_worn(data, outfit)
                 data.setdefault("daily", {})[day] = {
                     "outfit": outfit.get("id", ""),
                     "ts": time.time(),
@@ -1133,12 +1200,12 @@ class Wardrobe:
         if not temp:
             return outfits
         thick_words = ("法兰绒", "珊瑚绒", "加厚", "夹棉", "毛绒", "羊毛", "针织")
-        if temp >= 26:
+        if temp >= 28:
             cool = [outfit for outfit in outfits
                     if not any(word in str((self._items_map(data).get(outfit.get("top")) or {}).get("name") or "")
                                for word in thick_words)]
             return cool or outfits
-        if temp <= 10:
+        if temp <= 15:
             warm = [outfit for outfit in outfits
                     if any(word in "".join(str((self._items_map(data).get(outfit.get(key)) or {}).get("name") or "")
                                            for key in ("top", "bottom", "skirt"))
@@ -1475,6 +1542,8 @@ class Wardrobe:
             result = self.night(day, hour=hour, hotel=at_hotel)
             if result.get("pending"):
                 result = self.today(day)
+        elif at_home is True:
+            result = self.home_outfit(day, hour=hour)
         else:
             result = self.today(day)
         self._sync_sidecar(result)
@@ -1539,6 +1608,80 @@ class Wardrobe:
         """给聊天换装判断用：True 在家 / False 在外面 / None 不知道。"""
         return self._at_home()
 
+    def home_outfit(self, day="", hour=None):
+        """在家、还没到睡点的居家便服：从居家单品里按天挑一套（不进白天搭配）。"""
+        day = str(day or today_str())
+        try:
+            hour = int(hour if hour is not None else _clock_now().hour)
+        except Exception:
+            hour = 14
+        pick = 0
+        try:
+            pick = int(self.plugin.db.kv_get("home_pick:" + day, 0) or 0)
+        except Exception as _amo_exc:
+            _note_swallowed("wardrobe.Wardrobe.home_outfit.pick", _amo_exc)
+            pick = 0
+
+        def _pool(data, category):
+            return [item for item in (data.get("items") or [])
+                    if item.get("homewear") and item.get("category") == category]
+
+        with self._lock:
+            data = self._load()
+            tops = _pool(data, "top")
+            bottoms = _pool(data, "bottom")
+            shoes = _pool(data, "shoes")
+            if not tops or not bottoms:
+                self._ensure_home(data)
+                self._save(data)
+                tops = _pool(data, "top")
+                bottoms = _pool(data, "bottom")
+                shoes = _pool(data, "shoes")
+        rng = random.Random("amo-home:%s:%d" % (day, pick))
+        top = rng.choice(tops) if tops else None
+        bottom = rng.choice(bottoms) if bottoms else None
+        shoe = rng.choice(shoes) if shoes else None
+        top_name = str((top or {}).get("name") or "")
+        bottom_name = str((bottom or {}).get("name") or "")
+        shoe_name = str((shoe or {}).get("name") or "")
+        wear = "、".join([name for name in (top_name, bottom_name) if name])
+        text = "在家穿的居家便服" + ("：" + wear if wear else "")
+        if shoe_name:
+            text += "，" + shoe_name
+        transition = 18 <= hour < int(SLEEP_HOUR_FROM)
+        if transition:
+            text += "（外套和外面的鞋已经脱了）"
+        return {
+            "day": day,
+            "outfit": "home:%s:%s:%s" % ((top or {}).get("id", ""), (bottom or {}).get("id", ""),
+                                         (shoe or {}).get("id", "")),
+            "coat": "",
+            "top": top_name,
+            "bottom": bottom_name,
+            "skirt": "",
+            "shoes": shoe_name,
+            "text": text,
+            "homewear": True,
+            "sleep": False,
+            "hotel": False,
+            "transition": transition,
+        }
+
+    def home_outfit_guard(self, text):
+        """她在家时，把回复里“外面的衣服”改成居家服，避免自己拆自己台。"""
+        text = str(text or "")
+        try:
+            if self.at_home() is not True:
+                return text
+        except Exception:
+            return text
+        for word, repl in (("牛仔裤", "家居裤"), ("帆布鞋", "拖鞋"), ("运动鞋", "拖鞋"),
+                           ("高跟鞋", "拖鞋"), ("靴子", "拖鞋"), ("小皮鞋", "拖鞋")):
+            text = text.replace(word, repl)
+        # 外套：只有「脱掉/换下/收好」这类动作保留，其余改成居家服
+        text = re.sub(r"(?<!脱掉)(?<!换下)(?<!收好)外套", "居家服", text)
+        return text
+
     def _at_hotel(self):
         """现在是不是在酒店/民宿（出门旅游住店）。"""
         try:
@@ -1553,6 +1696,31 @@ class Wardrobe:
         return self._at_hotel()
 
     def reroll(self, day=""):
+        day = str(day or today_str())
+        result = self._reroll_day(day)
+        try:
+            if self.at_home() is True and self._at_hotel() is False and not self._at_swim():
+                before = ""
+                try:
+                    before = str(self.home_outfit(day).get("outfit") or "")
+                except Exception as _amo_exc:
+                    _note_swallowed("wardrobe.Wardrobe.reroll.home_before", _amo_exc)
+                for _ in range(4):
+                    try:
+                        cur = int(self.plugin.db.kv_get("home_pick:" + day, 0) or 0)
+                        self.plugin.db.kv_set("home_pick:" + day, cur + 1)
+                    except Exception as _amo_exc:
+                        _note_swallowed("wardrobe.Wardrobe.reroll.home_pick", _amo_exc)
+                        break
+                    picked = self.home_outfit(day)
+                    if str(picked.get("outfit") or "") != before:
+                        return picked
+                return self.home_outfit(day)
+        except Exception as _amo_exc:
+            _note_swallowed("wardrobe.Wardrobe.reroll.home", _amo_exc)
+        return result
+
+    def _reroll_day(self, day=""):
         day = str(day or today_str())
         with self._lock:
             data = self._load()
@@ -1737,82 +1905,7 @@ class Wardrobe:
                         and bool(entry.get("hotel")) == hotel
                         and bool(entry.get("swim")) == swim]
                   for key in CATEGORY_KEYS}
-        coats = by_cat.get("coat") or []
-        tops = by_cat.get("top") or []
-        bottoms = by_cat.get("bottom") or []
-        skirts = by_cat.get("skirt") or []
-        shoes_pool = by_cat.get("shoes") or []
-        dress_skirts = [entry for entry in skirts if is_dress(entry.get("name"))]
-        short_skirts = [entry for entry in skirts if not is_dress(entry.get("name"))]
-        category = item.get("category")
-        combos = []
-        if swim:
-            # 泳装只有「上衣 + 泳裤」两件，不配外套/裙子/鞋子；而且只跟自己这一套配
-            my_set = str(item.get("set") or "")
-            if category == "top":
-                for bottom in bottoms:
-                    if my_set and str(bottom.get("set") or "") == my_set:
-                        combos.append(("", item, bottom, "", ""))
-            elif category == "bottom":
-                for top in tops:
-                    if my_set and str(top.get("set") or "") == my_set:
-                        combos.append(("", top, item, "", ""))
-        elif category == "coat":
-            for top in tops:
-                for shoe in shoes_pool:
-                    for bottom in bottoms:
-                        combos.append((item, top, bottom, "", shoe))
-                    for skirt in short_skirts:
-                        combos.append((item, top, "", skirt, shoe))
-            for dress in dress_skirts:
-                for shoe in shoes_pool:
-                    combos.append((item, "", "", dress, shoe))
-        elif category == "top":
-            for coat in coats:
-                for shoe in shoes_pool:
-                    for bottom in bottoms:
-                        combos.append((coat, item, bottom, "", shoe))
-                    for skirt in short_skirts:
-                        combos.append((coat, item, "", skirt, shoe))
-            for shoe in shoes_pool:
-                for bottom in bottoms:
-                    combos.append(("", item, bottom, "", shoe))
-                for skirt in short_skirts:
-                    combos.append(("", item, "", skirt, shoe))
-        elif category == "bottom":
-            for top in tops:
-                for shoe in shoes_pool:
-                    combos.append(("", top, item, "", shoe))
-                    for coat in coats:
-                        combos.append((coat, top, item, "", shoe))
-        elif category == "skirt":
-            if is_dress(item.get("name")):
-                for shoe in shoes_pool:
-                    combos.append(("", "", "", item, shoe))
-                    for coat in coats:
-                        combos.append((coat, "", "", item, shoe))
-            else:
-                for top in tops:
-                    for shoe in shoes_pool:
-                        combos.append(("", top, "", item, shoe))
-                        for bottom in bottoms:
-                            combos.append(("", top, bottom, item, shoe))
-                            for coat in coats:
-                                combos.append((coat, top, bottom, item, shoe))
-        else:
-            for top in tops:
-                for bottom in bottoms:
-                    combos.append(("", top, bottom, "", item))
-                for skirt in short_skirts:
-                    combos.append(("", top, "", skirt, item))
-                    for bottom in bottoms:
-                        combos.append(("", top, bottom, skirt, item))
-            for coat in coats:
-                for top in tops:
-                    for bottom in bottoms:
-                        combos.append((coat, top, bottom, "", item))
-            for dress in dress_skirts:
-                combos.append(("", "", "", dress, item))
+        combos = _combo_candidates(item, by_cat, swim)
 
         def combo_names(entry):
             return tuple(str(part.get("name") or "") if part else "" for part in entry)
@@ -1886,16 +1979,7 @@ class Wardrobe:
         swim_window = self._swim_window(day_text)
         at_home = self._at_home()
         at_hotel = self._at_hotel()
-        day_ready = hour >= 8
-        night_ready = hour >= SLEEP_HOUR_FROM
-        # 酒店不算“临时外出”：住酒店仍用酒店睡衣；家里/外面才分。
-        night_out = bool(night_ready and at_home is False and not at_hotel)
-        if swim_now:
-            day_state = night_state = "swim"
-        else:
-            day_state = "ready" if day_ready else "pending8"
-            night_state = ("outing" if night_out else
-                           ("ready" if night_ready else "pending20"))
+        day_state, night_state, night_out, reason = _outfit_slots(hour, swim_now, at_home, at_hotel)
         if day_state == "ready":
             today = self.today(day_text)
         else:
@@ -1910,10 +1994,6 @@ class Wardrobe:
         else:
             night = {"pending": True, "state": "pending20",
                      "text": "20:00 后自动生成"}
-        reason = ("swim_scene" if swim_now else
-                  "before_8" if hour < 8 else
-                  "out_after_20" if night_out else
-                  "home_after_20" if night_ready else "daytime")
         logger.info(
             "[OUTFIT_DEBUG] time=%02d:%02d schedule=%s day_slot=%s night_slot=%s "
             "swim_slot=%s reason=%s",
@@ -1922,27 +2002,6 @@ class Wardrobe:
             day_state, night_state,
             "ready" if swim_now else "pending", reason,
         )
-
-        def category_list(sleep, hotel=False, swim=False):
-            result = []
-            for key, label in CATEGORY_LABELS:
-                items = [item for item in data.get("items", [])
-                         if item.get("category") == key
-                         and bool(item.get("sleep")) == sleep
-                         and bool(item.get("hotel")) == hotel
-                         and bool(item.get("swim")) == swim]
-                items.sort(key=lambda entry: float(entry.get("created_at") or 0))
-                result.append({
-                    "key": key,
-                    "label": label,
-                    "items": [{
-                        "id": item.get("id"),
-                        "name": item.get("name"),
-                        "source": item.get("source") or "manual",
-                        "gift_id": item.get("gift_id") or "",
-                    } for item in items],
-                })
-            return result
 
         # 泳装格：正在玩水就显示实际泳装；否则显示待泳/未来时段。
         if swim_now:
@@ -1960,11 +2019,11 @@ class Wardrobe:
             }
             swim_state = "pending"
         return {
-            "categories": category_list(False, False, False),
-            "sleep_categories": category_list(True, False, False),
-            "hotel_categories": category_list(True, True, False),
+            "categories": _wardrobe_category_list(data, False, False, False),
+            "sleep_categories": _wardrobe_category_list(data, True, False, False),
+            "hotel_categories": _wardrobe_category_list(data, True, True, False),
             # 泳装只有上衣（泳衣）和裤子（泳裤），鞋是横线
-            "swim_categories": category_list(False, False, True),
+            "swim_categories": _wardrobe_category_list(data, False, False, True),
             "swim_sets": self.swim_sets(data),
             "swim": swim_data,
             "at_swim": swim_now,
@@ -2023,7 +2082,7 @@ class Wardrobe:
                         self._synced = key
                         return
             except FileNotFoundError:
-                pass
+                pass  # cleanup
             tmp = self.sidecar_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as fh:
                 fh.write(raw)
@@ -2031,3 +2090,152 @@ class Wardrobe:
             self._synced = key
         except Exception as _amo_exc:
             _note_swallowed("wardrobe.Wardrobe._sync_sidecar", _amo_exc)
+
+
+def _combo_candidates(item, by_cat, swim):
+    """按新加单品的类别铺出所有候选组合；同色系/同材质过滤和打乱交给调用方。"""
+    coats = by_cat.get("coat") or []
+    tops = by_cat.get("top") or []
+    bottoms = by_cat.get("bottom") or []
+    skirts = by_cat.get("skirt") or []
+    shoes_pool = by_cat.get("shoes") or []
+    dress_skirts = [entry for entry in skirts if is_dress(entry.get("name"))]
+    short_skirts = [entry for entry in skirts if not is_dress(entry.get("name"))]
+    category = item.get("category")
+    combos = []
+    if swim:
+        # 泳装只有「上衣 + 泳裤」两件，不配外套/裙子/鞋子；而且只跟自己这一套配
+        my_set = str(item.get("set") or "")
+        if category == "top":
+            for bottom in bottoms:
+                if my_set and str(bottom.get("set") or "") == my_set:
+                    combos.append(("", item, bottom, "", ""))
+        elif category == "bottom":
+            for top in tops:
+                if my_set and str(top.get("set") or "") == my_set:
+                    combos.append(("", top, item, "", ""))
+    elif category == "coat":
+        for top in tops:
+            for shoe in shoes_pool:
+                for bottom in bottoms:
+                    combos.append((item, top, bottom, "", shoe))
+                for skirt in short_skirts:
+                    combos.append((item, top, "", skirt, shoe))
+        for dress in dress_skirts:
+            for shoe in shoes_pool:
+                combos.append((item, "", "", dress, shoe))
+    elif category == "top":
+        for coat in coats:
+            for shoe in shoes_pool:
+                for bottom in bottoms:
+                    combos.append((coat, item, bottom, "", shoe))
+                for skirt in short_skirts:
+                    combos.append((coat, item, "", skirt, shoe))
+        for shoe in shoes_pool:
+            for bottom in bottoms:
+                combos.append(("", item, bottom, "", shoe))
+            for skirt in short_skirts:
+                combos.append(("", item, "", skirt, shoe))
+    elif category == "bottom":
+        for top in tops:
+            for shoe in shoes_pool:
+                combos.append(("", top, item, "", shoe))
+                for coat in coats:
+                    combos.append((coat, top, item, "", shoe))
+    elif category == "skirt":
+        if is_dress(item.get("name")):
+            for shoe in shoes_pool:
+                combos.append(("", "", "", item, shoe))
+                for coat in coats:
+                    combos.append((coat, "", "", item, shoe))
+        else:
+            for top in tops:
+                for shoe in shoes_pool:
+                    combos.append(("", top, "", item, shoe))
+                    for bottom in bottoms:
+                        combos.append(("", top, bottom, item, shoe))
+                        for coat in coats:
+                            combos.append((coat, top, bottom, item, shoe))
+    else:
+        for top in tops:
+            for bottom in bottoms:
+                combos.append(("", top, bottom, "", item))
+            for skirt in short_skirts:
+                combos.append(("", top, "", skirt, item))
+                for bottom in bottoms:
+                    combos.append(("", top, bottom, skirt, item))
+        for coat in coats:
+            for top in tops:
+                for bottom in bottoms:
+                    combos.append((coat, top, bottom, "", item))
+        for dress in dress_skirts:
+            combos.append(("", "", "", dress, item))
+
+    return combos
+
+
+
+def _outfit_slots(hour, swim_now, at_home, at_hotel):
+    """算今天/今晚的档位：ready / pending8 / outing / pending20 / swim，外加日志用的 reason。"""
+    day_ready = hour >= 8
+    night_ready = hour >= SLEEP_HOUR_FROM
+    # 酒店不算“临时外出”：住酒店仍用酒店睡衣；家里/外面才分。
+    night_out = bool(night_ready and at_home is False and not at_hotel)
+    if swim_now:
+        day_state = night_state = "swim"
+    else:
+        day_state = "ready" if day_ready else "pending8"
+        night_state = ("outing" if night_out else
+                       ("ready" if night_ready else "pending20"))
+    reason = ("swim_scene" if swim_now else
+              "before_8" if hour < 8 else
+              "out_after_20" if night_out else
+              "home_after_20" if night_ready else "daytime")
+    return day_state, night_state, night_out, reason
+
+
+def _wardrobe_category_list(data, sleep, hotel=False, swim=False):
+    """按 sleep/hotel/swim 三态过滤出「上衣/裤子/裙子/鞋子」四栏（面板用）。"""
+    result = []
+    for key, label in CATEGORY_LABELS:
+        items = [item for item in data.get("items", [])
+                 if item.get("category") == key
+                 and bool(item.get("sleep")) == sleep
+                 and bool(item.get("hotel")) == hotel
+                 and bool(item.get("swim")) == swim]
+        items.sort(key=lambda entry: float(entry.get("created_at") or 0))
+        result.append({
+            "key": key,
+            "label": label,
+            "items": [{
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "source": item.get("source") or "manual",
+                "gift_id": item.get("gift_id") or "",
+            } for item in items],
+        })
+    return result
+
+
+
+def _day_item_pools(items):
+    """白天可用单品按类别分池；用固定种子的 rng 按原顺序打乱，保证每天组合稳定。"""
+    def pick(category):
+        return [item for item in items if is_day_item(item) and item.get("category") == category]
+
+    skirts = pick("skirt")
+    pools = {
+        "coat": pick("coat"),
+        "top": pick("top"),
+        "bottom": pick("bottom"),
+        "short_skirt": [item for item in skirts if not is_dress(item.get("name"))],
+        "dress_skirt": [item for item in skirts if is_dress(item.get("name"))],
+        "shoes": pick("shoes"),
+    }
+    rng = random.Random("amo-wardrobe-day-extra")
+    # 顺序必须和旧代码一致：top → bottom → short_skirt → dress_skirt → shoes → coat
+    for key in ("top", "bottom", "short_skirt", "dress_skirt", "shoes", "coat"):
+        rng.shuffle(pools[key])
+    return pools
+
+

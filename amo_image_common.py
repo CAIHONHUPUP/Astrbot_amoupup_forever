@@ -101,8 +101,8 @@ def spawn(plugin, coro, scope="amo_image_common.spawn"):
     except RuntimeError:
         try:
             coro.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            _note_swallowed("amo_image_common.py.104", exc)
         return None
 
 

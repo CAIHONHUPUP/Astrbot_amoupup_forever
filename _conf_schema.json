@@ -266,12 +266,6 @@
     "hint": "一条 4000 字的长摘要会吃光整块注入预算（默认 1200 字），后面的记忆一条都进不去；默认每条截到 240 字，超出用「…」收尾。",
     "default": 240
   },
-  "memory_bridge_timeout_seconds": {
-    "type": "float",
-    "description": "外挂记忆插件检索超时（秒）",
-    "hint": "调用牢记等插件的检索接口时的上限；超时自动退回旧的库内检索，不会卡住回复。",
-    "default": 3
-  },
   "chat_log_days": {
     "type": "int",
     "description": "原始聊天记录保留天数",
@@ -1056,11 +1050,17 @@
     "hint": "例如 {\"ou_cec66ea605ad17f62632fb044bc5f6ac\": \"302578963\"}；留空则读数据目录下的 uid_map.json。改完即时生效，无需重启。",
     "default": ""
   },
+  "proactive_primary_umo": {
+    "type": "string",
+    "description": "主动消息主频道（umo）",
+    "hint": "留空 = 最近一次跟他说话的平台；填了就固定发这个 umo。主动消息只发主频道，不会 QQ/飞书各发一遍。",
+    "default": ""
+  },
   "proactive_rotate_enabled": {
     "type": "bool",
-    "description": "主动消息跨平台轮换",
-    "hint": "开启后按最近说话的平台选边，都冷了就轮流；发送失败会自动改发另一个平台。关掉则只发最后说话的那个平台。",
-    "default": true
+    "description": "主动消息跨平台轮换（已废弃）",
+    "hint": "保留兼容旧配置；现在主动消息只发主频道，不再轮换。",
+    "default": false
   },
   "proactive_recent_minutes": {
     "type": "int",
@@ -1108,6 +1108,12 @@
     "type": "bool",
     "description": "用大模型润色主干文案",
     "hint": "只改写每小时 activity，不改时间/地点/类别；关闭后使用内置真人化文案。",
+    "default": true
+  },
+  "schedule_jit": {
+    "type": "bool",
+    "description": "盲盒日程（JIT 即时推演）",
+    "hint": "开启后日程只显示已经发生的时段和正在进行的这一小时；未来不预生成、不占位，到点才由 Tick 决定她做什么。默认开。",
     "default": true
   },
   "private_debounce_enabled": {
@@ -1318,12 +1324,6 @@
     "description": "日程活动影响心情的强度",
     "hint": "每小时按日程类别（上班/吃饭/休息/逛街/通勤）给真实心情加/减一点，0=关掉；默认 3，越大越明显。",
     "default": 3.0
-  },
-  "enable_auto_relation": {
-    "type": "bool",
-    "description": "自动记关系网",
-    "default": true,
-    "hint": "关掉后不再按聊天自动给别人建边/调关系；面板手动改的关系不受影响。"
   },
   "relation_stranger_edges": {
     "type": "bool",
@@ -1542,6 +1542,24 @@
     "description": "【照片】生图链路调试日志",
     "hint": "打开后每次生图打一行 [PHOTO_DEBUG]：日程、zone、姿势规则、守卫词和最终提示词；无日程/冲突/纠偏也会写明原因。",
     "default": false
+  },
+  "chat_claim_guard": {
+    "type": "bool",
+    "description": "【事实】消费防口嗨校验（聊天/主动消息）",
+    "hint": "发送前检查她说的每一笔消费（外卖、点单、买东西）在今天的账单里有没有对应扣款；查不到就删掉那句、改写成日程里真实发生的事。关掉后不再校验。",
+    "default": true
+  },
+  "chat_claim_charge": {
+    "type": "bool",
+    "description": "【事实】查不到消费时改为先真扣钱再说话",
+    "hint": "默认关：编出来的消费直接改写。打开后，她要是说点了外卖而账上没有，就先按 ¥25 真扣一笔再让她说（先扣钱后说话）。只有 chat_claim_guard 开着时才生效。",
+    "default": false
+  },
+  "claim_retry_times": {
+    "type": "int",
+    "description": "【事实】消费口嗨最多重试几次",
+    "hint": "回复里出现账本查不到的消费时，先带着“不许出现这些词”让模型重写，默认 2 次；还不行就用确定性改写兜底。填 0 表示不重试、直接改写。",
+    "default": 2
   },
   "schedule_day_types": {
     "type": "template_list",

@@ -4,153 +4,41 @@
 生理期 / 九维心情 / 世界观与日程 / 天气 / 健康 / 群聊插话阈值 /
 私聊判定 / 主动私聊 / 长期记忆与遗忘 / 防抖 / 分段与打字延迟 / 引用回复 / AI 润色"""
 
-from typing import TYPE_CHECKING, Any
-
-
-PLUGIN_VERSION = "7.1.1"
-
-try:
-    from .amo_feature_api import FeatureApiMixin
-except ImportError:
-    from amo_feature_api import FeatureApiMixin
-
-try:  # 包模式优先
-    from .compat import load
-except ImportError:  # 按文件直接加载
-    from compat import load
-
-_note_swallowed = load(".amo_observability", "amo_observability", "note")
-_watch_handshake = load(".amo_social_bridge", "amo_social_bridge", "handshake")
+from typing import Any
 
 import asyncio
 import os
 import random  # 测试会 patch main.random（群聊回复概率）
-import re
 
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .amo_api import ApiMixin
-    from .amo_commands import CommandMixin
-    from .amo_config import ConfigMixin
-    from .amo_kb import KbMixin
-    from .amo_llm import LlmMixin
-    from .amo_memory import MemoryMixin
-    from .amo_message import MessageMixin
-    from .amo_proactive import ProactiveMixin
-    from .amo_runtime import RuntimeMixin
-    from .amo_schedule import ScheduleMixin
-    from .amo_social import SocialMixin
-    from .amo_travel import TravelMixin
-    from .amo_usage import UsageMixin
-    from .clock import configure as _clock_configure
-    from .clock import current_name as _clock_name
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    for _mod, _name in (
-        ("amo_api", "ApiMixin"), ("amo_commands", "CommandMixin"), ("amo_config", "ConfigMixin"),
-        ("amo_kb", "KbMixin"), ("amo_llm", "LlmMixin"), ("amo_memory", "MemoryMixin"),
-        ("amo_message", "MessageMixin"), ("amo_proactive", "ProactiveMixin"),
-        ("amo_runtime", "RuntimeMixin"), ("amo_schedule", "ScheduleMixin"),
-        ("amo_social", "SocialMixin"), ("amo_travel", "TravelMixin"), ("amo_usage", "UsageMixin"),
-    ):
-        globals()[_name] = load("." + _mod, _mod, _name)
-    _clock_configure = load(".clock", "clock", "configure")
-    _clock_name = load(".clock", "clock", "current_name")
+PLUGIN_VERSION = "7.3.5"
 
-    _n = "Context"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "GiftEngine"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "HeartflowEngine"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "SegmentEngine"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "Star"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "_now"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "clamp"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "has_question"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "logger"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "looks_like_plain_command"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "now_ts"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "overlap"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "quiet_now"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "sentiment"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "to_float"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "to_int"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "today_str"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "tokens"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "truncate"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
-    _n = "web_request"; globals()[_n] = load(".amo_shared", "amo_shared", _n)
+try:  # 包模式优先（AstrBot 正常加载）
+    from .amo_bootstrap import (
+        AmoDB, ApiMixin, CommandMixin, ConfigMixin, Context,
+        DrawEngine, EventBus, FeatureApiMixin, GiftEngine, HeartflowEngine,
+        Housing, HumanState, HungerEngine, KbMixin, LLMService,
+        LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
+        PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
+        ScheduleMixin, SegmentEngine, SocialLearnEngine, SocialMixin, Star,
+        TravelMixin, UsageMixin, Wallet, Wardrobe,
+        WebRouteMixin, _align_handler_module_paths, _clock_configure, _clock_name, _note_swallowed,
+        _watch_handshake, logger, looks_like_plain_command,
+    )
+except ImportError:  # 按文件直接加载（离线单测 / 老加载方式）
+    from amo_bootstrap import (
+        AmoDB, ApiMixin, CommandMixin, ConfigMixin, Context,
+        DrawEngine, EventBus, FeatureApiMixin, GiftEngine, HeartflowEngine,
+        Housing, HumanState, HungerEngine, KbMixin, LLMService,
+        LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
+        PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
+        ScheduleMixin, SegmentEngine, SocialLearnEngine, SocialMixin, Star,
+        TravelMixin, UsageMixin, Wallet, Wardrobe,
+        WebRouteMixin, _align_handler_module_paths, _clock_configure, _clock_name, _note_swallowed,
+        _watch_handshake, logger, looks_like_plain_command,
+    )
 
-# ---- 三个大类（原先在 main.py，现各自独立成模块；这里再导出，外部 import 不变）----
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .amo_db import AmoDB
-    from .amo_human_state import HumanState
-    from .amo_llm_service import LLMService
-    from .amo_wallet import Wallet
-else:  # 运行时：包模式优先，按文件直接导入时退回绝对导入
-    AmoDB = load(".amo_db", "amo_db", "AmoDB")
-    HumanState = load(".amo_human_state", "amo_human_state", "HumanState")
-    HungerEngine = load(".amo_hunger", "amo_hunger", "HungerEngine")
-    LLMService = load(".amo_llm_service", "amo_llm_service", "LLMService")
-    Wallet = load(".amo_wallet", "amo_wallet", "Wallet")
-
-# ---- 画图 / 照片分享（本地功能，接万象画卷 OmniDraw）----
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .draw_engine import DrawEngine
-    from .photo_engine import PhotoEngine
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    DrawEngine = load(".draw_engine", "draw_engine", "DrawEngine")
-    PhotoEngine = load(".photo_engine", "photo_engine", "PhotoEngine")
-
-# ---- 穿搭衣柜（面板「穿搭」页 / 每日锁定一套）----
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .wardrobe import Wardrobe
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    Wardrobe = load(".wardrobe", "wardrobe", "Wardrobe")
-
-# ---- 进程内事件总线（日程/媒体等稳定事件）----
-EventBus = load(".amo_events", "amo_events", "EventBus")
-ScheduleChanged = load(".amo_events", "amo_events", "ScheduleChanged")
-
-# ---- 自拍姿势库（面板「姿势库」/ 自拍随机挑姿势）----
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .pose_library import PoseLibrary
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    PoseLibrary = load(".pose_library", "pose_library", "PoseLibrary")
-
-# ---- 社会见闻（刷热搜 → 自己的看法 → 临时记忆 → 聊天自然提起）----
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .social_learn_engine import SocialLearnEngine
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    SocialLearnEngine = load(".social_learn_engine", "social_learn_engine", "SocialLearnEngine")
-
-# ---- 房屋系统（住哪儿 / 装修 / 家具 / 场景参考图）----
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .housing import Housing
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    Housing = load(".housing", "housing", "Housing")
-
-# ---- 微型日常事件（每 1-2 小时推演一件小事）----
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .micro_events import MicroEventEngine
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    MicroEventEngine = load(".micro_events", "micro_events", "MicroEventEngine")
-
-
-# ---------------------------------------------------------------------------
-# 插话判定（ReplyGate 独立成模块，这里只再导出，外部 import 不变）
-# ---------------------------------------------------------------------------
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .amo_reply_gate import ReplyGate
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    ReplyGate = load(".amo_reply_gate", "amo_reply_gate", "ReplyGate")
-    _n = "WebRouteMixin"; globals()[_n] = load(".amo_routes", "amo_routes", _n)
-
-
-# ---------------------------------------------------------------------------
-# 插件主体
-# ---------------------------------------------------------------------------
-
-# 面板写操作路由：只注册 POST + 套 _web_guard。
-# 以前守卫按「methods 里有没有 GET」判断，而写接口全被注册成 GET+POST，于是守卫一次都没执行过。
-# 面板写路由 / handler 路径归一（独立模块）
-WRITE_ROUTES = load(".amo_routes", "amo_routes", "WRITE_ROUTES")
-_align_handler_module_paths = load(".amo_routes", "amo_routes", "align_handler_module_paths")
+# handler 装饰器必须留在 main.py：AstrBot 按 handler_module_path 派发，
+# 搬走会让 handler 静默失效（2026-11-11 那次 20 个 handler 全灭）。
 _align_handler_module_paths(__name__)
 
 
@@ -373,6 +261,20 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                     await self._sync_with_data_plugin()
             except Exception as exc:
                 logger.debug("[amo] 加载完成补同步失败: %s" % exc)
+            try:
+                from .laundry_engine import register_buy_appliance
+                manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)
+                if register_buy_appliance(self, manager):
+                    logger.info("[amo] LLM tool registered: buy_appliance")
+            except Exception as exc:
+                logger.debug("[amo] 注册 buy_appliance 工具失败: %s" % exc)
+            try:
+                from .draw_engine import register_send_photo
+                manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)
+                if register_send_photo(self, manager):
+                    logger.info("[amo] LLM tool registered: send_photo")
+            except Exception as exc:
+                logger.debug("[amo] 注册 send_photo 工具失败: %s" % exc)
 
     def _spawn(self, coro):
         try:
@@ -442,6 +344,11 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             self._migrate_diary_continuity()
             await asyncio.to_thread(self._merge_alias_profiles)
             self.state = HumanState(self)
+            try:
+                # 旧库里提前铺好的未来日程 → 待办表（只搬一次，之后未来事件直接进待办）
+                self.state.migrate_future_todos()
+            except Exception as _amo_exc:
+                _note_swallowed("main.HumanCorePlugin._ensure_ready.todo_migrate", _amo_exc)
             self.hunger = HungerEngine(self)
             try:
                 await self._sync_with_data_plugin()
@@ -565,6 +472,20 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
 
     async def initialize(self):
         await self._ensure_ready()
+        try:
+            from .laundry_engine import register_buy_appliance
+            manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)
+            ok = register_buy_appliance(self, manager)
+            logger.info("[amo] LLM tool buy_appliance: %s", "registered" if ok else "skipped")
+            from .ecommerce_engine import register_ecommerce_tools
+            ok2 = register_ecommerce_tools(self, manager)
+            logger.info("[amo] LLM tools online_order/add_to_cart/user_gift: %s",
+                        "registered" if ok2 else "skipped")
+            from .draw_engine import register_send_photo
+            ok3 = register_send_photo(self, manager)
+            logger.info("[amo] LLM tool send_photo: %s", "registered" if ok3 else "skipped")
+        except Exception as exc:
+            logger.warning("[amo] 注册 buy_appliance 工具失败: %s", exc)
 
 
 
@@ -844,11 +765,27 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
 
 
 
+# 把共同活动（聊天 → 日程 → 事实）挂到插件类上，原因同上
+try:  # 测试里 main 是当顶层模块导入的，两种都要能吃
+    from .amo_shared_activity import SharedActivityMixin  # noqa: E402
+except ImportError:  # pragma: no cover
+    from amo_shared_activity import SharedActivityMixin  # noqa: E402
+
+for _sa_name in dir(SharedActivityMixin):
+    # 私有辅助（_sa_kv/_sa_start/_sa_finish…）也要一起搬，公开方法里都在调它们
+    if _sa_name.startswith("_") and not _sa_name.startswith("_sa_"):
+        continue
+    try:
+        setattr(HumanCorePlugin, _sa_name, getattr(SharedActivityMixin, _sa_name))
+    except Exception as exc:
+        _note_swallowed("main.py.shared_activity", exc)
+
+
 # 把对外状态/事件 API 挂到插件类上（避免多继承影响 Star 初始化）
 for _feat_name in dir(FeatureApiMixin):
     if _feat_name.startswith("_"):
         continue
     try:
         setattr(HumanCorePlugin, _feat_name, getattr(FeatureApiMixin, _feat_name))
-    except Exception:
-        pass
+    except Exception as exc:
+        _note_swallowed("main.py.765", exc)

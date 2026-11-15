@@ -52,7 +52,9 @@ class Wallet:
             for col, ddl in (("category", "TEXT NOT NULL DEFAULT ''"),
                              ("sub_category", "TEXT NOT NULL DEFAULT ''"),
                              ("item_name", "TEXT NOT NULL DEFAULT ''"),
-                             ("trigger_reason", "TEXT NOT NULL DEFAULT ''")):
+                             ("trigger_reason", "TEXT NOT NULL DEFAULT ''"),
+                             ("actor", "TEXT NOT NULL DEFAULT ''"),
+                             ("fund_source", "TEXT NOT NULL DEFAULT ''")):
                 if col not in cols:
                     conn.execute("ALTER TABLE wallet_ledger ADD COLUMN %s %s" % (col, ddl))
             conn.execute("UPDATE wallet_ledger SET category='其他', sub_category='日常', "
@@ -88,28 +90,30 @@ class Wallet:
         self._ensure()
         with self.db.lock:
             rows = self.db.conn.execute(
-                "SELECT idem, account, delta_cents, reason, ref, ts, category, sub_category, item_name, trigger_reason FROM wallet_ledger "
+                "SELECT idem, account, delta_cents, reason, ref, ts, category, sub_category, item_name, trigger_reason, actor, fund_source FROM wallet_ledger "
                 "ORDER BY ts DESC, rowid DESC LIMIT ?", (max(1, int(limit)),)
             ).fetchall()
         return [
             {"idem": r[0], "account": r[1], "delta_cents": int(r[2]),
              "reason": r[3], "ref": r[4], "ts": float(r[5]),
              "category": r[6] or "", "sub_category": r[7] or "",
-             "item_name": r[8] or "", "trigger_reason": r[9] or r[3]}
+             "item_name": r[8] or "", "trigger_reason": r[9] or r[3],
+             "actor": r[10] or "", "fund_source": r[11] or ""}
             for r in rows
         ]
 
     # ---------------- 写（唯一入口） ----------------
     def _insert(self, account: str, delta: int, reason: str, idem: str, ref: str,
                 category: str = "", sub_category: str = "", item_name: str = "",
-                trigger_reason: str = "") -> bool:
+                trigger_reason: str = "", actor: str = "", fund_source: str = "") -> bool:
         """锁内写：先插流水，插进去才动余额。"""
         conn = self.db.conn
         cur = conn.execute(
-            "INSERT OR IGNORE INTO wallet_ledger(idem, account, delta_cents, reason, ref, ts, category, sub_category, item_name, trigger_reason) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO wallet_ledger(idem, account, delta_cents, reason, ref, ts, category, sub_category, item_name, trigger_reason, actor, fund_source) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (str(idem), str(account), int(delta), str(reason or ""), str(ref or ""), time.time(),
-             str(category or ""), str(sub_category or ""), str(item_name or ""), str(trigger_reason or reason or "")),
+             str(category or ""), str(sub_category or ""), str(item_name or ""), str(trigger_reason or reason or ""),
+             str(actor or ""), str(fund_source or "")),
         )
         if int(cur.rowcount or 0) <= 0:
             return False
@@ -129,18 +133,19 @@ class Wallet:
         return True
 
     def credit(self, amount_cents: int, reason: str, idem: str, ref: str = "",
-               account: str = "cash") -> bool:
+               account: str = "cash", actor: str = "", fund_source: str = "") -> bool:
         """入账；重复 idem 返回 False。"""
         self._ensure()
         amount = int(amount_cents)
         if amount <= 0:
             return False
         with self.db.lock:
-            return self._insert(account, amount, reason, idem, ref)
+            return self._insert(account, amount, reason, idem, ref,
+                                actor=actor, fund_source=fund_source)
 
     def debit(self, amount_cents: int, reason: str, idem: str, ref: str = "",
               account: str = "cash", category: str = "", sub_category: str = "",
-              item_name: str = "", trigger_reason: str = "") -> bool:
+              item_name: str = "", trigger_reason: str = "", actor: str = "", fund_source: str = "") -> bool:
         """扣款；余额不足或重复 idem 返回 False。"""
         self._ensure()
         amount = int(amount_cents)
@@ -154,7 +159,8 @@ class Wallet:
                 return False
             return self._insert(account, -amount, reason, idem, ref,
                                 category=category, sub_category=sub_category,
-                                item_name=item_name, trigger_reason=trigger_reason)
+                                item_name=item_name, trigger_reason=trigger_reason,
+                                actor=actor, fund_source=fund_source)
 
     def snapshot(self) -> dict[str, Any]:
         return {"balance_cents": self.balance("cash"), "ledger": self.ledger(5)}

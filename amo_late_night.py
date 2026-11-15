@@ -6,9 +6,9 @@ import datetime as _dt
 import random
 
 try:
-    from .amo_shared import now_ts, to_float
+    from .amo_shared import now_ts
 except ImportError:
-    from amo_shared import now_ts, to_float
+    from amo_shared import now_ts
 
 START_HOUR = 23
 START_MIN = 30

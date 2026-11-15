@@ -260,6 +260,7 @@ if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
         import_folder as _diary_import_folder,
         write_diary as _diary_write,
         read_diary as _diary_read,
+        append_note as _diary_append_note,
         list_tree as _diary_tree,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
@@ -272,6 +273,7 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             import_folder as _diary_import_folder,
             write_diary as _diary_write,
             read_diary as _diary_read,
+            append_note as _diary_append_note,
             list_tree as _diary_tree,
         )
     except Exception:
@@ -284,12 +286,14 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
                 import_folder as _diary_import_folder,
                 write_diary as _diary_write,
                 read_diary as _diary_read,
+                append_note as _diary_append_note,
                 list_tree as _diary_tree,
             )
         except Exception:
             _DIARY_DEFAULT_DIR = ""
             _diary_resolve_dir = None
             _diary_parse_day = _diary_write = _diary_read = _diary_tree = _diary_import_folder = None
+            _diary_append_note = None
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .milestone import (
@@ -1151,29 +1155,52 @@ def overlap(a: set, b: set) -> float:
 
 
 def json_extract_list(text: Any) -> list:
-    """给“要一个数组”的场景用：json_extract 会先匹配 "{"，
-    遇到 `[{...},{...}]` 只返回第一个对象，导致 extract_facts 永远拿到 dict → 返回 []。
-    """
-    if not text:
+    """给“要一个数组”的场景用：任何情况下都返回 list，绝不抛异常（解析失败返回 []）。"""
+    try:
+        if not text:
+            return []
+        raw = str(text).replace("\ufeff", "").replace("\u200b", "")
+        raw = re.sub(r"```[a-zA-Z0-9_-]*", "", raw).replace("```", "").strip()
+        if not raw:
+            return []
+        start = raw.find("[")
+        if start >= 0:
+            depth = 0
+            in_string = False
+            escaped = False
+            for index in range(start, len(raw)):
+                char = raw[index]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                    continue
+                if char == '"':
+                    in_string = True
+                elif char == "[":
+                    depth += 1
+                elif char == "]":
+                    depth -= 1
+                    if depth == 0:
+                        chunk = re.sub(r",\s*([}\]])", r"\1", raw[start:index + 1])
+                        try:
+                            data = json.loads(chunk)
+                            if isinstance(data, list):
+                                return data
+                        except Exception:
+                            break
+        data = json_extract(text)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return [data]
         return []
-    raw = str(text).strip()
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
-    start, end = raw.find("["), raw.rfind("]")
-    if start >= 0 and end > start:
-        chunk = re.sub(r",\s*([}\]])", r"\1", raw[start:end + 1])
-        try:
-            data = json.loads(chunk)
-            if isinstance(data, list):
-                return data
-        except Exception as _amo_exc:
-            _note_swallowed("amo_shared.json_extract_list", _amo_exc)
-    data = json_extract(text)
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        return [data]
-    return []
+    except Exception as _amo_exc:
+        _note_swallowed("amo_shared.json_extract_list", _amo_exc)
+        return []
 
 
 def json_extract(text: Any) -> Any:
@@ -1802,174 +1829,191 @@ def merge_uid_alias_data(conn: Any, alias_map: Any) -> dict:
         canon_uid = str(canon_uid or "")
         if not alias_uid or not canon_uid or alias_uid == canon_uid:
             continue
-        cur.execute("SELECT * FROM profiles WHERE uid=?", (alias_uid,))
-        alias_raw = cur.fetchone()
-        cur.execute("SELECT * FROM profiles WHERE uid=?", (canon_uid,))
-        canon_raw = cur.fetchone()
-
-        def as_dict(row):
-            if row is None:
-                return None
-            if hasattr(row, "keys"):
-                return dict(row)
-            return {col[0]: value for col, value in zip(cur.description, row)}
-
-        alias_row = as_dict(alias_raw)
-        canon_row = as_dict(canon_raw)
-        if alias_row is not None and canon_row is None:
-            # 只有别名档案：直接改主键，历史原样保留
-            cur.execute("UPDATE profiles SET uid=? WHERE uid=?", (canon_uid, alias_uid))
-            report["profiles"] += 1
-        elif alias_row is not None and canon_row is not None:
-            a = alias_row
-            b = canon_row
-            merged = dict(b)
-            merged["uid"] = canon_uid
-            for key in ("name", "birthday", "alias", "notes", "platform"):
-                if key not in profile_cols:
-                    continue
-                if key in ("alias", "notes"):
-                    parts = []
-                    for value in (b.get(key), a.get(key)):
-                        text = str(value or "").strip()
-                        if text and text not in parts:
-                            parts.append(text)
-                    merged[key] = " | ".join(parts)
-                else:
-                    merged[key] = b.get(key) or a.get(key) or ""
-            if "relation" in profile_cols:
-                canon_rel = str(b.get("relation") or "普通")
-                alias_rel = str(a.get("relation") or "普通")
-                merged["relation"] = canon_rel if canon_rel != "普通" else alias_rel
-            for key in ("affection", "msg_count", "proactive_count", "is_admin"):
-                if key in profile_cols:
-                    merged[key] = max(int(to_num(b.get(key))), int(to_num(a.get(key))))
-            for key in ("last_seen", "last_proactive", "relation_at"):
-                if key in profile_cols:
-                    merged[key] = max(to_num(b.get(key)), to_num(a.get(key)))
-            if "first_seen" in profile_cols:
-                values = [v for v in (to_num(b.get("first_seen")), to_num(a.get("first_seen"))) if v > 0]
-                merged["first_seen"] = min(values) if values else None
-            if "private_umo" in profile_cols:
-                merged["private_umo"] = b.get("private_umo") or a.get("private_umo") or ""
-            if "last_group" in profile_cols:
-                merged["last_group"] = b.get("last_group") or a.get("last_group") or ""
-            if "proactive_day" in profile_cols:
-                merged["proactive_day"] = b.get("proactive_day") or a.get("proactive_day") or ""
-            cols = [c for c in profile_cols if c in merged]
-            cur.execute("DELETE FROM profiles WHERE uid=?", (alias_uid,))
-            cur.execute(
-                "INSERT OR REPLACE INTO profiles(%s) VALUES(%s)"
-                % (",".join(cols), ",".join("?" * len(cols))),
-                [merged.get(c) for c in cols],
-            )
-            report["profiles"] += 1
-
-        # 消息：改归属 + 只对"别名带来的"那几条去重
-        try:
-            alias_msgs = [tuple(r) for r in cur.execute(
-                "SELECT umo, role, content, created_at FROM messages WHERE uid=?", (alias_uid,))]
-            cur.execute("UPDATE messages SET uid=? WHERE uid=?", (canon_uid, alias_uid))
-            report["messages"] += cur.rowcount or 0
-            for umo, role, content, created in alias_msgs:
-                cur.execute(
-                    "DELETE FROM messages WHERE umo=? AND uid=? AND role=? AND content=? AND created_at=? "
-                    "AND rowid NOT IN (SELECT MIN(rowid) FROM messages WHERE umo=? AND uid=? AND role=? AND content=? AND created_at=?)",
-                    (umo, canon_uid, role, content, created, umo, canon_uid, role, content, created),
-                )
-        except Exception as _amo_exc:
-            _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
-
-        # 主动记录
-        try:
-            alias_pro = [tuple(r) for r in cur.execute(
-                "SELECT kind, content, created FROM proactive_log WHERE uid=?", (alias_uid,))]
-            cur.execute("UPDATE proactive_log SET uid=? WHERE uid=?", (canon_uid, alias_uid))
-            report["proactive_log"] += cur.rowcount or 0
-            for kind, content, created in alias_pro:
-                cur.execute(
-                    "DELETE FROM proactive_log WHERE uid=? AND kind=? AND content=? AND created=? "
-                    "AND rowid NOT IN (SELECT MIN(rowid) FROM proactive_log WHERE uid=? AND kind=? AND content=? AND created=?)",
-                    (canon_uid, kind, content, created, canon_uid, kind, content, created),
-                )
-        except Exception as _amo_exc:
-            _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
-
-        # 关系网
-        try:
-            cur.execute("UPDATE OR IGNORE relation_network SET a_uid=? WHERE a_uid=?", (canon_uid, alias_uid))
-            cur.execute("UPDATE OR IGNORE relation_network SET b_uid=? WHERE b_uid=?", (canon_uid, alias_uid))
-            # OR IGNORE 遇到已存在的同一对关系会跳过，残留的别名行要显式删掉
-            cur.execute("DELETE FROM relation_network WHERE a_uid=? OR b_uid=?", (alias_uid, alias_uid))
-            # 两列各自 UPDATE 会把「a=friend,b=别名」变成「a=friend,b=主uid」，
-            # 与另一条「a=主uid,b=friend」方向相反 → 同一条关系留两份。
-            # 先按「无序对」去重（换方向时会撞唯一索引，必须先去重再换），再统一方向。
-            cur.execute(
-                "DELETE FROM relation_network WHERE rowid NOT IN (SELECT MIN(rowid) FROM relation_network "
-                "GROUP BY MIN(a_uid, b_uid), MAX(a_uid, b_uid))"
-            )
-            cur.execute("UPDATE OR IGNORE relation_network SET a_uid=b_uid, b_uid=a_uid WHERE a_uid > b_uid")
-            cur.execute("DELETE FROM relation_network WHERE a_uid=b_uid")
-            cur.execute(
-                "DELETE FROM relation_network WHERE rowid NOT IN "
-                "(SELECT MIN(rowid) FROM relation_network GROUP BY a_uid, b_uid)"
-            )
-            report["relations"] += 1
-        except Exception as _amo_exc:
-            _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
-
-        # kv：通道记录要合并成一份，其余带别名的键改名
-        try:
-            old_key = "channels:%s" % alias_uid
-            new_key = "channels:%s" % canon_uid
-            old_ch = cur.execute("SELECT value FROM kv WHERE key=?", (old_key,)).fetchone()
-            new_ch = cur.execute("SELECT value FROM kv WHERE key=?", (new_key,)).fetchone()
-
-            def load(raw):
-                try:
-                    return json.loads(raw[0] or "{}") if raw else {}
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_shared.merge_uid_alias_data.load", _amo_exc)
-                    return {}
-
-            merged_ch = load(new_ch) if isinstance(load(new_ch), dict) else {}
-            alias_ch = load(old_ch) if isinstance(load(old_ch), dict) else {}
-            for platform, value in alias_ch.items():
-                if not isinstance(value, dict):
-                    continue
-                current = merged_ch.get(platform)
-                if not isinstance(current, dict) or to_num(value.get("ts")) > to_num(current.get("ts")):
-                    merged_ch[platform] = value
-            if merged_ch:
-                cur.execute("UPDATE OR IGNORE kv SET key=? WHERE key=?", (new_key, old_key))
-                cur.execute("DELETE FROM kv WHERE key=?", (old_key,))
-                cur.execute("INSERT OR REPLACE INTO kv(key, value, updated) VALUES(?,?,?)",
-                            (new_key, json.dumps(merged_ch, ensure_ascii=False), time.time()))
-                report["kv"] += 1
-            else:
-                cur.execute("DELETE FROM kv WHERE key=?", (old_key,))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
-        try:
-            # 用 Python 侧的包含判断，避免 LIKE 里 '_' 被当成通配符误伤别的键
-            for row in list(cur.execute("SELECT key FROM kv")):
-                key = str(row[0] or "")
-                if alias_uid not in key:
-                    continue
-                new = key.replace(alias_uid, canon_uid)
-                if new == key:
-                    continue
-                cur.execute("UPDATE OR IGNORE kv SET key=? WHERE key=?", (new, key))
-                cur.execute("DELETE FROM kv WHERE key=?", (key,))
-                report["kv"] += 1
-        except Exception as _amo_exc:
-            _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
+        _merge_uid_profiles(cur, report, alias_uid, canon_uid, profile_cols, to_num)
+        _merge_uid_messages(cur, report, alias_uid, canon_uid)
+        _merge_uid_proactive(cur, report, alias_uid, canon_uid)
+        _merge_uid_relations(cur, report, alias_uid, canon_uid)
+        _merge_uid_kv(cur, report, alias_uid, canon_uid, to_num)
 
     try:
         conn.commit()
     except Exception as _amo_exc:
         _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
     return report
+
+def _merge_uid_profiles(cur, report, alias_uid, canon_uid, profile_cols, to_num):
+    """档案合并：只有别名 → 改主键；两边都有 → 逐字段取并集/最大值后 INSERT OR REPLACE。"""
+    cur.execute("SELECT * FROM profiles WHERE uid=?", (alias_uid,))
+    alias_raw = cur.fetchone()
+    cur.execute("SELECT * FROM profiles WHERE uid=?", (canon_uid,))
+    canon_raw = cur.fetchone()
+
+    def as_dict(row):
+        if row is None:
+            return None
+        if hasattr(row, "keys"):
+            return dict(row)
+        return {col[0]: value for col, value in zip(cur.description, row)}
+
+    alias_row = as_dict(alias_raw)
+    canon_row = as_dict(canon_raw)
+    if alias_row is not None and canon_row is None:
+        # 只有别名档案：直接改主键，历史原样保留
+        cur.execute("UPDATE profiles SET uid=? WHERE uid=?", (canon_uid, alias_uid))
+        report["profiles"] += 1
+    elif alias_row is not None and canon_row is not None:
+        a = alias_row
+        b = canon_row
+        merged = dict(b)
+        merged["uid"] = canon_uid
+        for key in ("name", "birthday", "alias", "notes", "platform"):
+            if key not in profile_cols:
+                continue
+            if key in ("alias", "notes"):
+                parts = []
+                for value in (b.get(key), a.get(key)):
+                    text = str(value or "").strip()
+                    if text and text not in parts:
+                        parts.append(text)
+                merged[key] = " | ".join(parts)
+            else:
+                merged[key] = b.get(key) or a.get(key) or ""
+        if "relation" in profile_cols:
+            canon_rel = str(b.get("relation") or "普通")
+            alias_rel = str(a.get("relation") or "普通")
+            merged["relation"] = canon_rel if canon_rel != "普通" else alias_rel
+        for key in ("affection", "msg_count", "proactive_count", "is_admin"):
+            if key in profile_cols:
+                merged[key] = max(int(to_num(b.get(key))), int(to_num(a.get(key))))
+        for key in ("last_seen", "last_proactive", "relation_at"):
+            if key in profile_cols:
+                merged[key] = max(to_num(b.get(key)), to_num(a.get(key)))
+        if "first_seen" in profile_cols:
+            values = [v for v in (to_num(b.get("first_seen")), to_num(a.get("first_seen"))) if v > 0]
+            merged["first_seen"] = min(values) if values else None
+        if "private_umo" in profile_cols:
+            merged["private_umo"] = b.get("private_umo") or a.get("private_umo") or ""
+        if "last_group" in profile_cols:
+            merged["last_group"] = b.get("last_group") or a.get("last_group") or ""
+        if "proactive_day" in profile_cols:
+            merged["proactive_day"] = b.get("proactive_day") or a.get("proactive_day") or ""
+        cols = [c for c in profile_cols if c in merged]
+        cur.execute("DELETE FROM profiles WHERE uid=?", (alias_uid,))
+        cur.execute(
+            "INSERT OR REPLACE INTO profiles(%s) VALUES(%s)"
+            % (",".join(cols), ",".join("?" * len(cols))),
+            [merged.get(c) for c in cols],
+        )
+        report["profiles"] += 1
+
+def _merge_uid_messages(cur, report, alias_uid, canon_uid):
+    """消息改归属，并只对别名带来的那几条去重（同内容同秒只留最早 rowid）。"""
+    # 消息：改归属 + 只对"别名带来的"那几条去重
+    try:
+        alias_msgs = [tuple(r) for r in cur.execute(
+            "SELECT umo, role, content, created_at FROM messages WHERE uid=?", (alias_uid,))]
+        cur.execute("UPDATE messages SET uid=? WHERE uid=?", (canon_uid, alias_uid))
+        report["messages"] += cur.rowcount or 0
+        for umo, role, content, created in alias_msgs:
+            cur.execute(
+                "DELETE FROM messages WHERE umo=? AND uid=? AND role=? AND content=? AND created_at=? "
+                "AND rowid NOT IN (SELECT MIN(rowid) FROM messages WHERE umo=? AND uid=? AND role=? AND content=? AND created_at=?)",
+                (umo, canon_uid, role, content, created, umo, canon_uid, role, content, created),
+            )
+    except Exception as _amo_exc:
+        _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
+
+def _merge_uid_proactive(cur, report, alias_uid, canon_uid):
+    """主动记录（proactive_log）改归属 + 去重。"""
+    # 主动记录
+    try:
+        alias_pro = [tuple(r) for r in cur.execute(
+            "SELECT kind, content, created FROM proactive_log WHERE uid=?", (alias_uid,))]
+        cur.execute("UPDATE proactive_log SET uid=? WHERE uid=?", (canon_uid, alias_uid))
+        report["proactive_log"] += cur.rowcount or 0
+        for kind, content, created in alias_pro:
+            cur.execute(
+                "DELETE FROM proactive_log WHERE uid=? AND kind=? AND content=? AND created=? "
+                "AND rowid NOT IN (SELECT MIN(rowid) FROM proactive_log WHERE uid=? AND kind=? AND content=? AND created=?)",
+                (canon_uid, kind, content, created, canon_uid, kind, content, created),
+            )
+    except Exception as _amo_exc:
+        _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
+
+def _merge_uid_relations(cur, report, alias_uid, canon_uid):
+    """关系网：两列各换主 uid，按无序对去重、统一方向、自环删掉。"""
+    # 关系网
+    try:
+        cur.execute("UPDATE OR IGNORE relation_network SET a_uid=? WHERE a_uid=?", (canon_uid, alias_uid))
+        cur.execute("UPDATE OR IGNORE relation_network SET b_uid=? WHERE b_uid=?", (canon_uid, alias_uid))
+        # OR IGNORE 遇到已存在的同一对关系会跳过，残留的别名行要显式删掉
+        cur.execute("DELETE FROM relation_network WHERE a_uid=? OR b_uid=?", (alias_uid, alias_uid))
+        # 两列各自 UPDATE 会把「a=friend,b=别名」变成「a=friend,b=主uid」，
+        # 与另一条「a=主uid,b=friend」方向相反 → 同一条关系留两份。
+        # 先按「无序对」去重（换方向时会撞唯一索引，必须先去重再换），再统一方向。
+        cur.execute(
+            "DELETE FROM relation_network WHERE rowid NOT IN (SELECT MIN(rowid) FROM relation_network "
+            "GROUP BY MIN(a_uid, b_uid), MAX(a_uid, b_uid))"
+        )
+        cur.execute("UPDATE OR IGNORE relation_network SET a_uid=b_uid, b_uid=a_uid WHERE a_uid > b_uid")
+        cur.execute("DELETE FROM relation_network WHERE a_uid=b_uid")
+        cur.execute(
+            "DELETE FROM relation_network WHERE rowid NOT IN "
+            "(SELECT MIN(rowid) FROM relation_network GROUP BY a_uid, b_uid)"
+        )
+        report["relations"] += 1
+    except Exception as _amo_exc:
+        _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
+
+def _merge_uid_kv(cur, report, alias_uid, canon_uid, to_num):
+    """kv：通道记录合并成一份，其余带别名的键改名。"""
+    # kv：通道记录要合并成一份，其余带别名的键改名
+    try:
+        old_key = "channels:%s" % alias_uid
+        new_key = "channels:%s" % canon_uid
+        old_ch = cur.execute("SELECT value FROM kv WHERE key=?", (old_key,)).fetchone()
+        new_ch = cur.execute("SELECT value FROM kv WHERE key=?", (new_key,)).fetchone()
+
+        def load(raw):
+            try:
+                return json.loads(raw[0] or "{}") if raw else {}
+            except Exception as _amo_exc:
+                _note_swallowed("amo_shared.merge_uid_alias_data.load", _amo_exc)
+                return {}
+
+        merged_ch = load(new_ch) if isinstance(load(new_ch), dict) else {}
+        alias_ch = load(old_ch) if isinstance(load(old_ch), dict) else {}
+        for platform, value in alias_ch.items():
+            if not isinstance(value, dict):
+                continue
+            current = merged_ch.get(platform)
+            if not isinstance(current, dict) or to_num(value.get("ts")) > to_num(current.get("ts")):
+                merged_ch[platform] = value
+        if merged_ch:
+            cur.execute("UPDATE OR IGNORE kv SET key=? WHERE key=?", (new_key, old_key))
+            cur.execute("DELETE FROM kv WHERE key=?", (old_key,))
+            cur.execute("INSERT OR REPLACE INTO kv(key, value, updated) VALUES(?,?,?)",
+                        (new_key, json.dumps(merged_ch, ensure_ascii=False), time.time()))
+            report["kv"] += 1
+        else:
+            cur.execute("DELETE FROM kv WHERE key=?", (old_key,))
+    except Exception as _amo_exc:
+        _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
+    try:
+        # 用 Python 侧的包含判断，避免 LIKE 里 '_' 被当成通配符误伤别的键
+        for row in list(cur.execute("SELECT key FROM kv")):
+            key = str(row[0] or "")
+            if alias_uid not in key:
+                continue
+            new = key.replace(alias_uid, canon_uid)
+            if new == key:
+                continue
+            cur.execute("UPDATE OR IGNORE kv SET key=? WHERE key=?", (new, key))
+            cur.execute("DELETE FROM kv WHERE key=?", (key,))
+            report["kv"] += 1
+    except Exception as _amo_exc:
+        _note_swallowed("amo_shared.merge_uid_alias_data", _amo_exc)
+
 
 
 

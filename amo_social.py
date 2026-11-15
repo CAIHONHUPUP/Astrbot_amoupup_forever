@@ -38,6 +38,11 @@ if TYPE_CHECKING:
 else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉别的 mixin 的真实实现
     _MixinBase = object
 
+try:  # 目标时区下的“现在”（判断是不是深夜）
+    from .clock import now as _now
+except ImportError:  # 直接按文件加载时
+    from clock import now as _now  # type: ignore[no-redef]
+
 
 class SocialMixin(_MixinBase):
     def _uid_alias_mapping(self):
@@ -842,6 +847,13 @@ class SocialMixin(_MixinBase):
         if not self._disturb_category(snap):
             return False
         if to_float(getattr(self, "_disturb_cooldown", {}).get(str(umo), 0), 0) > now_ts():
+            return False
+        # 2026-11-15：连续对话里绝不制造「突然被吓一跳」。
+        # 只有「深夜 0-6 点」或「她已经 3 小时没出过声」才允许被打扰感；
+        # 聊天中途（哪怕她在午睡/上班）一律不注入。
+        last_reply = to_float(getattr(self, "_last_reply_at", {}).get(str(umo), 0), 0)
+        quiet_for = now_ts() - last_reply if last_reply else 0.0
+        if not (0 <= _now().hour < 6) and quiet_for < 10800:
             return False
         threshold = max(1, self.cfg_int("disturb_reply_threshold", 3))
         return self._disturb_pressure(umo, uid, text, group=group) >= threshold

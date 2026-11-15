@@ -80,8 +80,18 @@
     .hero-score { color: var(--pink); font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .hero-score small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 2px; }
     canvas { display: block; margin: 2px auto 0; max-width: 100%; height: auto; }
-    .bars { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-top: 6px; }
-    .bar-row { display: grid; grid-template-columns: 34px 1fr 30px; align-items: center; gap: 7px; font-size: 12px; }
+    .bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-top: 10px; }
+    .bar-row { display: grid; grid-template-columns: 36px 1fr 26px; align-items: center; gap: 6px; font-size: 12px; }
+    .bar-row .emotion { grid-column: 2 / 4; font-size: 10px; color: var(--muted); margin-top: -3px; }
+    .mood-context { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .mood-narration { margin: 10px 2px 0; font-size: 13px; line-height: 1.7; color: var(--text); }
+    .mood-attribution { margin: 2px 2px 8px; font-size: 11px; line-height: 1.6; color: var(--muted); }
+    .mood-visual { display: flex; align-items: center; justify-content: center; gap: 6px; }
+    #moodTrend { width: 145px; height: 120px; }
+    .status-shell.mood-warm { background: linear-gradient(160deg, rgba(255,196,120,.20), rgba(255,255,255,.6)); }
+    .status-shell.mood-cold { background: linear-gradient(160deg, rgba(120,190,255,.22), rgba(255,255,255,.6)); }
+    .status-shell.mood-anger { box-shadow: 0 0 0 1px rgba(239,68,68,.35) inset; }
+    .status-shell.mood-extreme { border-color: rgba(239,68,68,.5); }
     .bar-row span:first-child { color: var(--muted); }
     .bar-row .num { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
     .track { height: 6px; background: var(--track); border-radius: 99px; overflow: hidden; }
@@ -133,15 +143,15 @@
     .toast.error { border-color: rgba(244, 63, 94, .45); color: #b42318; }
     .theme-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 0; }
     .theme-bar .segmented { flex: 0 0 auto; }
-    .tabs { display: flex; gap: 8px; padding: 4px; background: var(--card); border-radius: 14px; max-width: 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x; position: sticky; top: 0; z-index: 12; }
+    .tabs { --tab-h: 34px; display: flex; align-items: center; gap: 8px; padding: 4px; background: var(--card); border-radius: 14px; max-width: 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x; position: sticky; top: 0; z-index: 12; }
     .tabs::-webkit-scrollbar { display: none; }
-    .tabnav { position: relative; display: flex; align-items: stretch; gap: 6px; }
+    .tabnav { --tab-h: 34px; position: relative; display: flex; align-items: center; gap: 6px; }
     .tabnav .tabs { flex: 1 1 auto; }
-    .tabnav-arrow { flex: 0 0 22px; width: 22px; height: auto; min-height: 30px; display: none; align-items: center; justify-content: center; align-self: stretch; padding: 0; border: 0; border-radius: 8px; background: var(--card); color: var(--pink); font-size: 16px; line-height: 1; cursor: pointer; box-shadow: 0 0 0 1px var(--line); opacity: .92; }
+    .tabnav-arrow { flex: 0 0 22px; width: 22px; height: var(--tab-h); min-height: var(--tab-h); max-height: var(--tab-h); display: none; align-items: center; justify-content: center; align-self: center; padding: 0; border: 0; border-radius: 8px; background: var(--card); color: var(--pink); font-size: 16px; line-height: 1; cursor: pointer; box-shadow: 0 0 0 1px var(--line); opacity: .92; }
     .tabnav.has-overflow .tabnav-arrow { display: flex; }
     .tabnav-arrow[disabled] { opacity: .35; cursor: default; }
     .tabnav.has-overflow .tabs { padding-left: 6px; padding-right: 6px; }
-    .tab { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); text-align: center; padding: 9px 10px; border-radius: 10px; font-size: 13px; cursor: pointer; white-space: nowrap; min-width: 0; }
+    .tab { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); height: var(--tab-h); display: inline-flex; align-items: center; justify-content: center; text-align: center; padding: 0 10px; border-radius: 10px; font-size: 13px; cursor: pointer; white-space: nowrap; min-width: 0; }
     .tab.active { background: var(--card); color: var(--pink); box-shadow: none; }
     .tab-panel { display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0; }
     .diary-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
@@ -183,6 +193,13 @@
     .schedule-hour-row .chev { color: var(--muted); font-size: 12px; transition: transform .15s ease; }
     .schedule-hour.open .schedule-hour-row .chev { transform: rotate(90deg); color: var(--pink); }
     .schedule-event-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 99px; font-size: 10px; color: var(--pink); border: 1px solid rgba(232, 72, 154, .28); background: rgba(232, 72, 154, .08); white-space: nowrap; }
+    .schedule-doing-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 99px; font-size: 10px; color: #b45309; border: 1px solid rgba(180, 83, 9, .3); background: rgba(251, 191, 36, .14); white-space: nowrap; }
+    .schedule-blind { margin-top: 12px; padding: 14px 12px; text-align: center; color: var(--muted); font-size: 12px; border: 1px dashed var(--line); border-radius: 12px; background: rgba(148, 163, 184, .06); }
+    .day-btn.active { background: rgba(56, 189, 248, .18); border-color: #38bdf8; color: var(--text); font-weight: 600; }
+    .schedule-todo-card { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(56, 189, 248, .06); }
+    .schedule-todo-row { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-top: 1px dashed var(--line); }
+    .schedule-todo-row .time { min-width: 52px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .schedule-todo-row .a { font-size: 13px; }
     .schedule-diary { display: none; padding: 2px 2px 14px 114px; }
     .schedule-hour.open .schedule-diary { display: block; }
     .schedule-diary .diary-meta { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
@@ -386,16 +403,20 @@
   .photo-section-title[aria-expanded="false"] .chev { transform: rotate(-90deg); }
   /* 顶部导航：与能记一致的圆角长方形，宽度随文字自适应 */
   .tabs {
-    gap: 6px; padding: 10px 2px 0; background: transparent;
+    gap: 6px; padding: 4px 2px; background: transparent; align-items: center;
   }
   .tab {
-    flex: 0 0 auto; min-width: 0; width: auto; height: auto;
-    padding: 7px 13px; display: inline-flex; flex-direction: row;
+    flex: 0 0 auto; min-width: 0; width: auto; height: 34px;
+    box-sizing: border-box; padding: 0 13px; display: inline-flex; flex-direction: row;
     align-items: center; justify-content: center; gap: 0;
     border: 1px solid var(--line); border-radius: 11px;
     background: var(--card); color: var(--text);
     font-size: 13px; line-height: 1.4; font-family: inherit;
     box-shadow: 0 1px 2px rgba(30,80,130,.04);
+  }
+  .tabnav-arrow {
+    width: 22px; flex: 0 0 22px; height: 34px; min-height: 34px; max-height: 34px;
+    align-self: center; border-radius: 11px;
   }
   .tab:hover { border-color: #bfe3fa; background: var(--soft); color: var(--pink); }
   .tab.active {
@@ -584,10 +605,16 @@
           <div>
             <div class="label">当前心情</div>
             <div class="dominant" id="dominant">读取中…</div>
+            <div class="mood-context" id="moodContext">—</div>
           </div>
           <div class="hero-score"><span id="moodScore">--</span><small>/100</small></div>
         </div>
-        <canvas id="radar" width="300" height="300"></canvas>
+        <div class="mood-narration" id="moodNarration">读取中…</div>
+        <div class="mood-attribution" id="moodAttribution"></div>
+        <div class="mood-visual">
+          <canvas id="radar" width="300" height="300"></canvas>
+          <canvas id="moodTrend" width="290" height="240"></canvas>
+        </div>
         <div class="bars" id="moodBars"></div>
 
         <div class="status-grid">
@@ -639,8 +666,12 @@
         <div class="row between">
           <div class="label">日程一览</div>
         </div>
-        <div class="sub" id="scheduleDay"></div>
+        <div class="row between" style="gap:8px;align-items:center">
+          <div class="sub" id="scheduleDay" style="flex:1"></div>
+          <button class="ghost" id="btnTodoToggle" type="button" style="border-radius:12px;padding:6px 12px;min-width:0;width:auto;white-space:nowrap">点击查看明日待办</button>
+        </div>
         <div id="scheduleList" class="schedule-groups"><div class="sub">加载中…</div></div>
+        <div id="scheduleTodo" hidden style="margin-top:10px"></div>
       </section>
     </div>
 
@@ -713,7 +744,7 @@
             <button class="tab" id="wardrobeRefresh" type="button">刷新</button>
           </div>
         </div>
-        <div class="label" style="margin-top:12px">今日白天穿搭</div>
+        <div class="label" id="wardrobeTodayLabel" style="margin-top:12px">今日白天穿搭</div>
         <div id="wardrobeToday" class="profile-list"><div class="sub">加载中…</div></div>
         <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center">
           <button id="wardrobeSave" type="button">保存今日穿搭</button>
@@ -1300,13 +1331,13 @@
       return Array.from(new Set(list));
     }
 
-    async function bridgeCall(action, payload) {
+    async function bridgeCall(action, payload, forceGet) {
       const b = bridge();
       if (!b) return null;
       const errors = [];
       for (const route of routeCandidates(action)) {
         try {
-          const attempt = payload && typeof b.apiPost === "function"
+          const attempt = (!forceGet && payload && typeof b.apiPost === "function")
             ? b.apiPost(route, payload)
             : b.apiGet(route, payload || {});
           let result = await withTimeout(attempt, actionTimeout(action));
@@ -1338,7 +1369,7 @@
       return { __error: errors.find((item) => item.indexOf("404") < 0) || errors[0] || "桥接调用失败" };
     }
 
-    async function httpCall(action, payload) {
+    async function httpCall(action, payload, forceGet) {
       // 以前在 iframe 里直接抛错；现在 AstrBot 面板本身和插件页同源，
       // 桥接没有 apiPost（老版本）时仍然可以用 fetch 直接发 POST 兜底。
       const inFrame = window.parent && window.parent !== window;
@@ -1361,20 +1392,30 @@
       ];
       for (const base of bases) {
         for (const route of routeCandidates(action)) {
-          const url = base + "/" + route.replace(/^\/+/, "");
+          let url = base + "/" + route.replace(/^\/+/, "");
+          let body = payload ? JSON.stringify(payload) : undefined;
+          let method = payload ? "POST" : "GET";
+          if (forceGet && payload) {
+            const query = Object.keys(payload).map(function (key) {
+              return encodeURIComponent(key) + "=" + encodeURIComponent(payload[key]);
+            }).join("&");
+            url += (url.indexOf("?") >= 0 ? "&" : "?") + query;
+            body = undefined;
+            method = "GET";
+          }
           try {
             const response = await fetch(url, {
-              method: payload ? "POST" : "GET",
+              method: method,
+              headers: body ? headers : {},
               credentials: "include",
               cache: "no-store",
-              headers,
-              body: payload ? JSON.stringify(payload) : undefined,
+              body: body,
             });
             const text = await response.text();
             let data = null;
             try { data = text ? JSON.parse(text) : null; } catch (error) { data = null; }
             if (data && (data.code === 0 || data.data !== undefined || data.status === "ok")) return data;
-            const detail = (data && (data.message || data.msg)) || "";
+            const detail = safeDetail((data && (data.message || data.msg)) || "");
             errors.push({
               status: response.status,
               text: action + " 接口 " + response.status + (detail ? "：" + detail : ""),
@@ -1382,14 +1423,14 @@
           } catch (error) {
             errors.push({
               status: 0,
-              text: action + " 接口请求失败：" + (error.message || String(error)),
+              text: action + " 接口请求失败：" + safeDetail(error.message || String(error)),
             });
           }
         }
       }
       // 多个 base 会依次试；优先报真正出错的那个，而不是路由不存在造成的 404
       const meaningful = errors.find((item) => item.status !== 404) || errors[0];
-      throw new Error(meaningful ? meaningful.text : "无法连接插件接口");
+      throw new Error(safeDetail(meaningful ? meaningful.text : "无法连接插件接口") || "她迷糊了一下，这次没接上，再点一次试试。");
     }
 
     // 写操作在后端只接受 POST：这里强制带上 body，避免面板按钮变成 GET 被拒
@@ -1401,18 +1442,35 @@
       "wardrobe/add", "wardrobe/delete", "wardrobe/reroll", "wardrobe/today", "wardrobe/night",
     ]);
 
-    async function call(action, payload) {
+    async function call(action, payload, opts) {
+      const forceGet = !!(opts && opts.get);
       const body = (payload === undefined || payload === null)
-        ? (WRITE_ACTIONS.has(action) ? {} : payload)
+        ? (WRITE_ACTIONS.has(action) && !forceGet ? {} : payload)
         : payload;
-      const bridgeResult = await bridgeCall(action, body);
+      const bridgeResult = await bridgeCall(action, body, forceGet);
       if (bridgeResult && !bridgeResult.__error) return bridgeResult;
       if (window.parent && window.parent !== window) {
-        throw new Error((bridgeResult && bridgeResult.__error) || "页面桥接未就绪，请从插件详情→查看页面重新打开");
+        throw new Error(safeDetail((bridgeResult && bridgeResult.__error) || "页面桥接未就绪，请从插件详情→查看页面重新打开"));
       }
       return await httpCall(action, body);
     }
 
+
+    function safeDetail(text) {
+      const raw = String(text || "");
+      if (!raw) return "";
+      if (/Traceback|KeyError|TypeError|ValueError|AttributeError|Exception|NoneType|object has no attribute|python|Failed to fetch|NetworkError|接口请求失败|接口\s*\d{3}/i.test(raw)) {
+        return "她迷糊了，这次没接上，再试一次。";
+      }
+      return raw;
+    }
+
+    function friendlyError(error, fallback) {
+      const raw = String((error && error.message) || error || "");
+      const clean = safeDetail(raw);
+      if (clean !== raw) return clean;
+      return raw || fallback || "她迷糊了一下，这次没接上，再点一次试试。";
+    }
 
     function toast(message, isError) {
       const el = document.getElementById("toast");
@@ -1421,6 +1479,11 @@
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { el.className = "toast"; }, 2600);
     }
+
+    window.addEventListener("unhandledrejection", (event) => {
+      event.preventDefault();
+      toast(friendlyError(event.reason, "她迷糊了一下，这次没接上，再点一次试试。"), true);
+    });
 
     function normalize(data) {
       if (!data) return {};
@@ -1474,9 +1537,17 @@
       document.getElementById("moodScore").textContent = data.mood_score ? Math.round(data.mood_score) : "--";
 
       const mood = data.mood || {};
+      const activityNow = data.activity || {};
+      const placeNow = activityNow.place || (data.worldview && data.worldview.city) || "家";
+      const actNow = activityNow.activity || "待着";
+      document.getElementById("moodContext").textContent = placeNow + " · 正在" + actNow;
+      document.getElementById("moodNarration").textContent = data.mood_narration || "今天的心情有点说不清。";
+      document.getElementById("moodAttribution").textContent =
+        data.mood_attribution ? "【近期情绪归因】" + data.mood_attribution : "";
+      const coreKeys = pickCoreKeys(mood);
       const bars = document.getElementById("moodBars");
       bars.textContent = "";
-      MOOD_KEYS.forEach((key) => {
+      coreKeys.forEach((key) => {
         const value = Math.max(0, Math.min(100, Number(mood[key] || 0)));
         const row = document.createElement("div");
         row.className = "bar-row";
@@ -1487,21 +1558,28 @@
         const fill = document.createElement("span");
         fill.className = "fill";
         fill.style.width = value + "%";
-        fill.style.background = "linear-gradient(90deg, var(--pink), #f3a6c8)";
+        fill.style.background = barColor(key, value);
         track.appendChild(fill);
         const num = document.createElement("span");
         num.className = "num";
         num.textContent = String(Math.round(value));
+        const emotion = document.createElement("span");
+        emotion.className = "emotion";
+        emotion.textContent = emotionText(key, value);
         row.appendChild(name);
         row.appendChild(track);
         row.appendChild(num);
+        row.appendChild(emotion);
         bars.appendChild(row);
       });
-      drawRadar(mood);
+      drawRadar(mood, coreKeys);
+      drawTrend(data.mood_history || []);
+      applyMoodTheme(mood);
 
       const period = data.period || {};
+      const periodEmoji = period.phase && period.phase !== "非生理期" ? " 🩸" : "";
       document.getElementById("period").textContent = period.phase
-        ? period.phase + (period.day ? " · 第" + period.day + "天" : "")
+        ? period.phase + (period.day ? " · 第" + period.day + "天" : "") + periodEmoji
         : "—";
       const cycle = Number(period.cycle_days || 28);
       const periodDay = Number(period.day || 0);
@@ -1523,7 +1601,7 @@
       ].filter(Boolean).join(" · ");
 
       const health = data.health || {};
-      document.getElementById("health").textContent = health.status || "—";
+      document.getElementById("health").textContent = (health.status || "—") + (health.sick ? " 🤒" : "");
       document.getElementById("healthBar").style.width = (health.sick ? 35 : 100) + "%";
       document.getElementById("healthSub").textContent = [
         health.note || "",
@@ -1566,12 +1644,17 @@
     }
 
     let currentScheduleDay = "";
+    let scheduleDetailSeq = 0;
+    let lastDetailRow = null;
 
     function eventTagText(kind) {
-      if (kind === "overtime") return "突发事件 · 临时加班";
-      if (kind === "friend_dinner") return "突发事件 · 朋友聚餐";
-      if (kind === "business_trip") return "突发事件 · 临时外派";
-      return "突发事件";
+      if (kind === "overtime") return "小插曲 · 临时加班";
+      if (kind === "friend_dinner") return "小插曲 · 朋友聚餐";
+      if (kind === "business_trip") return "小插曲 · 临时外派";
+      if (kind === "date") return "小插曲 · 约会";
+      if (kind === "sick") return "小插曲 · 不舒服";
+      if (kind === "hospital") return "小插曲 · 去医院";
+      return kind ? "小插曲" : "";
     }
 
     async function toggleHourDiary(row, hour) {
@@ -1579,9 +1662,22 @@
         row.classList.remove("open");
         return;
       }
+      // 手风琴：展开这一小时就收起上一条；上一条的内容保留，重新点开直接出缓存，
+      // 以前这里是清空上一条的 diary 区域，导致它虽然收不起来却变成一块空白。
+      if (lastDetailRow && lastDetailRow !== row) {
+        lastDetailRow.classList.remove("open");
+        delete lastDetailRow.dataset.loading;
+      }
       row.classList.add("open");
       const box = row.querySelector(".schedule-diary");
       if (!box || box.dataset.loaded === "1" || row.dataset.loading === "1") return;
+      const clickNow = Date.now();
+      if (clickNow - Number(row.dataset.lastClick || 0) < 1000) return;
+      row.dataset.lastClick = String(clickNow);
+      const eventId = String(hour.id || (hour.start + "-" + hour.end));
+      row.dataset.eventId = eventId;
+      const requestSeq = ++scheduleDetailSeq;
+      lastDetailRow = row;
       row.dataset.loading = "1";
       box.textContent = "";
       const loading = document.createElement("div");
@@ -1589,14 +1685,45 @@
       loading.textContent = "这一小时的小日记正在生成";
       box.appendChild(loading);
       try {
-        const response = await call("schedule_detail", { date: currentScheduleDay, start: hour.start });
+        const response = await Promise.race([
+          call("schedule_detail", {
+            date: currentScheduleDay,
+            id: eventId,
+            start: hour.start,
+            end: hour.end,
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("网络开小差了")), 15000)),
+        ]);
         const data = objectFrom(response) || {};
+        // 只按“请求序号 + 这一行当前挂着的事件”判失效；接口回显的 id 可能是日程行 id，
+        // 以前把它当硬条件会把正常返回直接丢掉，卡片就空着。
+        if (requestSeq !== scheduleDetailSeq || String(row.dataset.eventId || "") !== eventId) {
+          delete row.dataset.loading;
+          if (!String(box.textContent || "").trim()) {
+            const stale = document.createElement("div");
+            stale.className = "diary-meta";
+            stale.textContent = "这一小时刚刷新过，点开再看一次吧。";
+            box.appendChild(stale);
+          }
+          return;
+        }
+        if (data.empty_message && !data.diary) {
+          box.textContent = "";
+          const empty = document.createElement("div");
+          empty.className = "diary-meta";
+          empty.textContent = String(data.empty_message);
+          box.appendChild(empty);
+          row.dataset.loaded = "1";
+          delete row.dataset.loading;
+          return;
+        }
         if (data.pending) {
           box.textContent = "";
           const pending = document.createElement("div");
           pending.className = "diary-meta";
-          pending.textContent = "这一小时还没过完，过点后再生成。";
+          pending.textContent = "这一小时还没过完呢，等她忙完再看吧~";
           box.appendChild(pending);
+          row.dataset.loaded = "1";
           delete row.dataset.loading;
           return;
         }
@@ -1609,7 +1736,7 @@
           (data.start || hour.start) + "-" + (data.end || hour.end),
           data.place || hour.place || "",
           data.mood ? "心情 " + data.mood : "",
-          "",
+          data.cached ? "已生成 · 直接读取" : "",
         ].filter(Boolean).join(" · ");
         const text = document.createElement("div");
         text.className = "diary-text";
@@ -1625,12 +1752,34 @@
         box.textContent = "";
         const err = document.createElement("div");
         err.className = "diary-error";
-        err.textContent = "生成失败：" + (error && error.message ? error.message : error) + "（再点一次重试）";
+        err.textContent = friendlyError(error, "她迷糊了，这段小记没接上，再点一次试试。");
         box.appendChild(err);
         delete box.dataset.loaded;
       }
     }
 
+    function schedulePeriodWord(hh) {
+      if (hh >= 5 && hh < 11) return "早上";
+      if (hh >= 11 && hh < 13) return "中午";
+      if (hh >= 13 && hh < 17) return "下午";
+      if (hh >= 17 && hh < 18) return "傍晚";
+      if (hh >= 18 && hh < 23) return "晚上";
+      return "夜里";
+    }
+    function dateHourLabel(dayStr, start, activity) {
+      var text = String(activity || "");
+      if (!/^和老公/.test(text)) return text;
+      var sel = String(dayStr || "").slice(0, 10);
+      var now = new Date();
+      var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+      var today = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+      var tm = new Date(now.getTime() + 86400000);
+      var tomorrow = tm.getFullYear() + "-" + pad(tm.getMonth() + 1) + "-" + pad(tm.getDate());
+      var hh = parseInt(String(start || "0").split(":")[0], 10) || 0;
+      if (sel === today) return "今天 " + String(start || "") + " " + text;
+      if (sel === tomorrow) return "明天" + schedulePeriodWord(hh) + " " + text;
+      return sel.slice(5) + " " + schedulePeriodWord(hh) + " " + text;
+    }
     function renderSchedule(data) {
       const box = document.getElementById("scheduleList");
       const day = document.getElementById("scheduleDay");
@@ -1639,14 +1788,18 @@
       currentScheduleDay = data.day || "";
       const context = data.context || {};
       const event = context.event || {};
-      const eventText = event.kind && event.kind !== "none" ? " · " + (event.title || "突发事件") : "";
+      const eventText = event.kind && event.kind !== "none" ? " · " + (event.title || "小插曲") : "";
       day.textContent = data.day
         ? "日期：" + data.day + (meta.label ? " · " + meta.label : "") + (meta.rest ? " · 休息日" : "") + eventText + " · 点开每小时卡片生成小日记"
         : "";
       const items = Array.isArray(data.items) ? data.items : [];
       const tree = Array.isArray(data.tree) ? data.tree : (Array.isArray(data.schedule_tree) ? data.schedule_tree : []);
-      if (!items.length || !tree.length) {
-        box.textContent = "暂无日程，点“刷新”或“重生日程”。";
+      const blind = String(data.blind || "");
+      if (!tree.length) {
+        const empty = document.createElement("div");
+        empty.className = "sub";
+        empty.textContent = blind || "暂无日程，点“刷新”或“重生日程”。";
+        box.appendChild(empty);
         return;
       }
       tree.forEach((block) => {
@@ -1659,17 +1812,21 @@
         time.textContent = (block.start || "") + "-" + (block.end || "");
         const label = document.createElement("span");
         label.className = "title";
-        label.textContent = block.title || block.activity || "";
+        const groupSummary = String(block.summary || "").trim();
+        label.textContent = groupSummary
+          ? (block.title ? block.title + " · " + groupSummary : groupSummary)
+          : (block.title || "");
         const place = document.createElement("span");
         place.className = "place";
-        place.textContent = block.activity && block.title && block.activity !== block.title ? " · " + block.activity : "";
+        place.textContent = "";
         summary.appendChild(time);
         summary.appendChild(label);
         summary.appendChild(place);
         details.appendChild(summary);
         (block.children || []).forEach((hour) => {
           const hourBox = document.createElement("div");
-          hourBox.className = "schedule-hour" + (hour.current ? " current" : "");
+          hourBox.className = "schedule-hour" + (hour.current ? " current" : "") + (hour.doing ? " doing" : "");
+          hourBox.dataset.eventId = hour.id || (hour.start + "-" + hour.end);
           hourBox.dataset.start = hour.start || "";
           hourBox.tabIndex = 0;
           hourBox.setAttribute("role", "button");
@@ -1681,12 +1838,18 @@
           hourTime.textContent = (hour.start || "") + "-" + (hour.end || "");
           const activity = document.createElement("span");
           activity.className = "a";
-          activity.textContent = hour.activity || "";
+          activity.textContent = dateHourLabel(data.day, hour.start, hour.activity || "");
           if (hour.event) {
             const tag = document.createElement("span");
             tag.className = "schedule-event-tag";
             tag.textContent = eventTagText(hour.event);
             activity.appendChild(tag);
+          }
+          if (hour.doing) {
+            const doingTag = document.createElement("span");
+            doingTag.className = "schedule-doing-tag";
+            doingTag.textContent = "进行中";
+            activity.appendChild(doingTag);
           }
           const metaText = [hour.place || "", hour.vehicle ? "开车" : "", hour.current ? "现在" : ""].filter(Boolean).join(" · ");
           const metaLine = document.createElement("span");
@@ -1716,18 +1879,199 @@
         });
         box.appendChild(details);
       });
-    }
-
-    async function loadSchedule() {
-      try {
-        const result = await call("schedule");
-        renderSchedule(objectFrom(result));
-      } catch (error) {
-        document.getElementById("scheduleList").textContent = "读取失败：" + (error.message || error);
+      if (blind) {
+        const hint = document.createElement("div");
+        hint.className = "schedule-blind";
+        hint.textContent = blind;
+        box.appendChild(hint);
       }
     }
 
-    function drawRadar(mood) {
+    function shiftScheduleDay(offset) {
+      // 0=今天 1=明天 2=后天（相对今天算，不依赖当前看的日期）
+      const base = new Date();
+      base.setDate(base.getDate() + Number(offset || 0));
+      const key = base.getFullYear() + "-" + pad2(base.getMonth() + 1) + "-" + pad2(base.getDate());
+      const label = document.getElementById("scheduleDay");
+      const word = Number(offset) === 1 ? "明天" : (Number(offset) === 2 ? "后天" : "今天");
+      document.querySelectorAll("[data-sched]").forEach((button) => {
+        button.classList.toggle("active", Number(button.dataset.sched || 0) === Number(offset || 0));
+      });
+      if (label) label.textContent = "正在看" + word + " " + key + " …";
+      const list = document.getElementById("scheduleList");
+      if (list) list.innerHTML = '<div class="sub">加载中…</div>';
+      if (typeof toast === "function") toast("已切到" + word + "（" + key + "）");
+      loadSchedule(key);
+    }
+    window.__schedJump = shiftScheduleDay;
+
+    function pad2(n) {
+      return (n < 10 ? "0" : "") + n;
+    }
+
+    function scheduleTodayKey() {
+      const now = new Date();
+      return now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
+    }
+
+    function dayKey(offset) {
+      const d = new Date();
+      d.setDate(d.getDate() + Number(offset || 0));
+      return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    }
+
+    const TODO_EMPTY = "明天暂时没有特别的安排，又是充满未知的一天哦~";
+
+    async function loadTodo() {
+      const box = document.getElementById("scheduleTodo");
+      const button = document.getElementById("btnTodoToggle");
+      if (!box) return;
+      if (!box.hidden) {
+        box.hidden = true;
+        if (button) button.textContent = "点击查看明日待办";
+        return;
+      }
+      box.hidden = false;
+      box.textContent = "加载中…";
+      if (button) button.textContent = "收起明日待办";
+      const day = dayKey(1);
+      let items = [];
+      try {
+        const result = objectFrom(await call("todo", { date: day }, { get: true }));
+        items = Array.isArray(result.items) ? result.items : [];
+      } catch (error) {
+        box.textContent = friendlyError(error, "明天的待办暂时没读到。");
+        return;
+      }
+      box.textContent = "";
+      const card = document.createElement("div");
+      card.className = "schedule-todo-card";
+      const head = document.createElement("div");
+      head.className = "label";
+      head.textContent = "明天 " + day + " 的待办";
+      card.appendChild(head);
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "sub";
+        empty.textContent = TODO_EMPTY;
+        card.appendChild(empty);
+      } else {
+        items.forEach((item) => {
+          const row = document.createElement("div");
+          row.className = "schedule-todo-row";
+          const time = document.createElement("span");
+          time.className = "time";
+          time.textContent = String(item.start || "") || "晚上";
+          const text = document.createElement("span");
+          text.className = "a";
+          const place = String(item.place || "");
+          text.textContent = String(item.activity || "安排") + (place ? "（" + place + "）" : "");
+          row.appendChild(time);
+          row.appendChild(text);
+          card.appendChild(row);
+        });
+      }
+      box.appendChild(card);
+    }
+
+    const todoToggleButton = document.getElementById("btnTodoToggle");
+    if (todoToggleButton) todoToggleButton.addEventListener("click", () => loadTodo());
+
+    async function loadSchedule(day) {
+      try {
+        const result = day
+          ? await call("schedule", { date: day }, { get: true })
+          : await call("schedule");
+        renderSchedule(objectFrom(result));
+      } catch (error) {
+        document.getElementById("scheduleList").textContent = friendlyError(error, "她迷糊了，日程暂时没接上，点刷新再试试。");
+      }
+    }
+
+    function pickCoreKeys(mood) {
+      return MOOD_KEYS.slice().sort((a, b) => {
+        const dv = Number(mood[b] || 0) - Number(mood[a] || 0);
+        return dv || MOOD_KEYS.indexOf(a) - MOOD_KEYS.indexOf(b);
+      }).slice(0, 6);
+    }
+
+    function emotionText(key, value) {
+      const v = Number(value || 0);
+      if (key === "开心") return v >= 80 ? "满脸笑意，想转圈圈" : (v >= 40 ? "心情不错" : "有点提不起劲");
+      if (key === "委屈") return v >= 60 ? "呜呜呜想哭" : (v >= 20 ? "眼眶有点红，想求抱抱" : "还算平静");
+      if (key === "生气") return v >= 60 ? "气鼓鼓，想摔手机" : (v >= 20 ? "嘟着嘴，不想理人" : "没在生气");
+      if (key === "依恋") return v >= 60 ? "像块小年糕一样黏人" : (v >= 30 ? "有点想他" : "各自忙");
+      if (key === "疲惫") return v >= 60 ? "累到不想说话" : (v >= 30 ? "有点乏" : "精神还不错");
+      if (key === "平静") return v >= 60 ? "心里还算安稳" : (v >= 30 ? "有点起伏" : "静不下来");
+      if (key === "兴奋") return v >= 60 ? "眼睛发亮" : "没什么波动";
+      return v >= 60 ? "情绪很满" : (v >= 30 ? "有一点" : "淡淡的");
+    }
+
+    function barColor(key, value) {
+      const v = Number(value || 0);
+      if (key === "开心" || key === "兴奋" || key === "平静" || key === "依恋") {
+        return v >= 60 ? "linear-gradient(90deg,#fb7185,#fbbf24)" : "linear-gradient(90deg,#38bdf8,#f9a8d4)";
+      }
+      if (key === "生气" || key === "暴躁") return "linear-gradient(90deg,#ef4444,#f87171)";
+      return "linear-gradient(90deg,#60a5fa,#818cf8)";
+    }
+
+    function applyMoodTheme(mood) {
+      const shell = document.querySelector(".status-shell");
+      if (!shell) return;
+      shell.classList.remove("mood-warm", "mood-cold", "mood-anger", "mood-extreme");
+      const happy = Math.max(Number(mood["开心"] || 0), Number(mood["兴奋"] || 0), Number(mood["平静"] || 0));
+      const sad = Math.max(Number(mood["疲惫"] || 0), Number(mood["委屈"] || 0), Number(mood["郁闷"] || 0));
+      const anger = Math.max(Number(mood["生气"] || 0), Number(mood["暴躁"] || 0));
+      shell.classList.add(happy >= sad ? "mood-warm" : "mood-cold");
+      if (anger >= 70) shell.classList.add("mood-anger");
+      if (sad > 80 || anger > 80 || happy > 90) shell.classList.add("mood-extreme");
+    }
+
+    function drawTrend(history) {
+      const canvas = document.getElementById("moodTrend");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      const size = 120;
+      canvas.style.width = "120px";
+      canvas.style.height = "100px";
+      canvas.width = size * dpr;
+      canvas.height = size * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size, 100);
+      const points = (history || []).slice(-7).map((row) => Math.max(0, Math.min(100, Number(row.score || 0))));
+      if (points.length < 2) {
+        ctx.fillStyle = "rgba(120,120,140,.6)";
+        ctx.font = "11px sans-serif";
+        ctx.fillText("趋势积累中", 18, 54);
+        return;
+      }
+      const pad = 10;
+      const step = (size - pad * 2) / (points.length - 1);
+      const y = (v) => 90 - (v / 100) * 70;
+      ctx.strokeStyle = "rgba(120,150,200,.25)";
+      ctx.beginPath();
+      ctx.moveTo(pad, y(50));
+      ctx.lineTo(size - pad, y(50));
+      ctx.stroke();
+      ctx.beginPath();
+      points.forEach((v, i) => { const x = pad + i * step; if (i === 0) ctx.moveTo(x, y(v)); else ctx.lineTo(x, y(v)); });
+      ctx.strokeStyle = "#fb7185";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      points.forEach((v, i) => {
+        ctx.beginPath();
+        ctx.arc(pad + i * step, y(v), 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#fb7185";
+        ctx.fill();
+      });
+      ctx.fillStyle = "rgba(120,120,140,.7)";
+      ctx.font = "10px sans-serif";
+      ctx.fillText("7日情绪", pad, 12);
+    }
+
+    function drawRadar(mood, keys = MOOD_KEYS) {
       const canvas = document.getElementById("radar");
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -1741,7 +2085,7 @@
       const cx = size / 2;
       const cy = size / 2;
       const radius = size * 0.29;
-      const count = MOOD_KEYS.length;
+      const count = keys.length;
       const angle = (i) => -Math.PI / 2 + (i * Math.PI * 2) / count;
       ctx.clearRect(0, 0, size, size);
 
@@ -1780,10 +2124,10 @@
       for (let i = 0; i < count; i += 1) {
         const x = cx + Math.cos(angle(i)) * (radius + 20);
         const y = cy + Math.sin(angle(i)) * (radius + 20);
-        ctx.fillText(MOOD_KEYS[i], x, y);
+        ctx.fillText(keys[i], x, y);
       }
 
-      const points = MOOD_KEYS.map((key, i) => {
+      const points = keys.map((key, i) => {
         const value = Math.max(0, Math.min(100, Number(mood[key] || 0)));
         const r = (radius * value) / 100;
         return [cx + Math.cos(angle(i)) * r, cy + Math.sin(angle(i)) * r];
@@ -2505,8 +2849,18 @@
           wardrobeSwimSel[key] = "";
         }
       });
-      const names = wardrobeNames(wardrobeSel);
+      const current = data.current || {};
+      const atHomeNow = Boolean(current.homewear || current.sleep || current.transition);
+      const shown = atHomeNow ? current : wardrobeSel;
+      const names = atHomeNow
+        ? { coat: current.coat || "", top: current.top || "", bottom: current.bottom || "",
+            skirt: current.skirt || "", shoes: current.shoes || "" }
+        : wardrobeNames(shown);
       const dayState = String(data.day_state || "");
+      const todayLabel = document.getElementById("wardrobeTodayLabel");
+      if (todayLabel) todayLabel.textContent = atHomeNow
+        ? (current.sleep ? "现在穿的（睡衣）" : "现在穿的（居家便服）")
+        : "今日白天穿搭";
       const nightState = String(data.night_state || "");
       const todayBox = document.getElementById("wardrobeToday");
       if (todayBox) {
@@ -2535,6 +2889,11 @@
         else if (wardrobeDirty) meta.textContent = "还没保存 · 点「保存今日穿搭」才锁定";
         else if (dayState === "pending8") meta.textContent = "8 点自动生成";
         else if (dayState === "swim") meta.textContent = "正在使用泳装";
+        else if (atHomeNow) {
+          meta.textContent = current.sleep
+            ? "现在在家 · 已换上睡衣"
+            : "现在在家 · 居家便服" + (current.transition ? "（刚到家，脱了外套和鞋）" : "");
+        }
         else {
           const dayCount = Number(data.outfit_count) || 0;
           const daySeed = Number(data.day_seed_count) || 0;

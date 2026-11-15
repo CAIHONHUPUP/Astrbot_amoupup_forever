@@ -6,7 +6,6 @@ import asyncio
 import base64
 import json
 import os
-import time
 
 
 def fallback_text(item):
@@ -110,9 +109,5 @@ async def ensure_after_add(plugin, item):
         try:
             plugin.logger.info("[衣橱] 参考图回退：%s" % result.get("fallback"))
         except Exception:
-            pass
-        try:
-            from . import wardrobe
-        except ImportError:
             pass
     return result

@@ -352,14 +352,20 @@ class ScheduleTests(StateTestCase):
             self.assertEqual(rows[index]["end"], rows[index + 1]["start"])
 
     def test_schedule_tree(self) -> None:
+        import amo_shared
+
         day = today_str()
-        # 用全天日程，避免测试在 00:00 跑时被 JIT 的“只显示已开始时段”过滤成空
+        if amo_shared.minutes_now() == 0:
+            self.skipTest("0 点整还没有已经过去的分钟")
+        # 全天日程按自然跨度展开；当前这一小时标 doing，未来不预生成
         self.state.schedule = {day: [{"start": "00:00", "end": "24:00", "activity": "上班",
                                       "place": "公司", "category": "work"}]}
         tree = self.state.schedule_tree(day)
-        self.assertEqual(len(tree), 4)
-        self.assertEqual(tree[0]["title"], "深夜")
-        self.assertEqual(sum(len(block["children"]) for block in tree), 24)
+        children = [child for block in tree for child in block["children"]]
+        self.assertTrue(children)
+        self.assertEqual(children[0]["start"], "00:00")
+        self.assertTrue(children[0]["doing"])
+        self.assertFalse(any(block["start"] == "18:00" for block in tree))
 
     def test_schedule_context_default(self) -> None:
         self.assertEqual(self.state.schedule_context(), {})
@@ -391,6 +397,248 @@ class ScheduleTests(StateTestCase):
         self.assertEqual(HumanState.busy_level({"category": "commute"}), 0.6)
         self.assertEqual(HumanState.busy_level({"category": "meal"}), 0.3)
         self.assertEqual(HumanState.busy_level({}), 0.1)
+
+
+class JitBlindBoxTests(StateTestCase):
+    """盲盒日程：未来不预生成、当前小时 doing、睡眠事后合并、重启补空档。"""
+
+    def test_future_hours_are_not_fabricated(self) -> None:
+        import amo_human_state
+        from unittest.mock import patch
+
+        day = today_str()
+        self.state.schedule = {day: [
+            {"start": "13:00", "end": "14:00", "activity": "休息", "place": "家", "category": "rest"},
+            {"start": "16:00", "end": "17:00", "activity": "休息", "place": "家", "category": "rest"},
+        ]}
+        with patch.object(amo_human_state, "minutes_now", return_value=14 * 60):
+            tree = self.state.schedule_tree(day)
+        children = [child for block in tree for child in block["children"]]
+        starts = [child["start"] for child in children]
+        self.assertIn("13:00", starts)
+        self.assertNotIn("16:00", starts)
+        self.assertFalse(any(block["start"] == "18:00" for block in tree))
+        self.assertEqual(children[0]["start"], "00:00")
+        self.assertEqual(children[-1]["end"], "14:00")
+        for left, right in zip(children, children[1:]):
+            self.assertEqual(left["end"], right["start"])
+
+    def test_empty_hours_fill_continuous_past(self) -> None:
+        import amo_human_state
+        from unittest.mock import patch
+
+        day = today_str()
+        self.state.schedule = {day: [
+            {"start": "08:00", "end": "09:00", "activity": "吃早饭", "place": "家", "category": "meal"},
+        ]}
+        with patch.object(amo_human_state, "minutes_now", return_value=12 * 60):
+            tree = self.state.schedule_tree(day)
+        children = [child for block in tree for child in block["children"]]
+        self.assertGreater(len(children), 1)
+        self.assertIn("吃早饭", [child["activity"] for child in children])
+        self.assertEqual(children[0]["start"], "00:00")
+        self.assertEqual(children[-1]["end"], "12:00")
+        for left, right in zip(children, children[1:]):
+            self.assertEqual(left["end"], right["start"])
+
+    def test_current_hour_is_doing(self) -> None:
+        import amo_human_state
+        from unittest.mock import patch
+
+        day = today_str()
+        self.state.schedule = {day: [
+            {"start": "14:00", "end": "15:00", "activity": "上班", "place": "公司", "category": "work"},
+        ]}
+        with patch.object(amo_human_state, "minutes_now", return_value=14 * 60 + 20):
+            tree = self.state.schedule_tree(day)
+        child = [c for block in tree for c in block["children"] if c["doing"]][0]
+        self.assertTrue(child["current"])
+        self.assertTrue(child["doing"])
+        self.assertEqual(child["end"], "15:00")
+
+    def test_consecutive_rest_is_merged(self) -> None:
+        import amo_human_state
+        from unittest.mock import patch
+
+        day = today_str()
+        self.state.schedule = {day: [
+            {"start": "13:00", "end": "14:00", "activity": "休息", "place": "家", "category": "rest"},
+            {"start": "14:00", "end": "15:00", "activity": "休息", "place": "家", "category": "rest"},
+            {"start": "15:00", "end": "16:00", "activity": "休息", "place": "家", "category": "rest"},
+        ]}
+        with patch.object(amo_human_state, "minutes_now", return_value=16 * 60):
+            tree = self.state.schedule_tree(day)
+        children = [child for block in tree for child in block["children"]]
+        rest = [child for child in children if child["activity"] == "休息"]
+        self.assertEqual(len(rest), 1)
+        self.assertEqual(rest[0]["start"], "13:00")
+        self.assertEqual(rest[0]["end"], "16:00")
+
+    def test_finance_activity_and_event_tag_are_humanized(self) -> None:
+        import amo_human_state
+        from unittest.mock import patch
+
+        day = today_str()
+        self.state.schedule = {day: [
+            {"start": "09:18", "end": "09:28", "activity": "财务·支出", "place": "家",
+             "category": "finance", "detail": "支出 ¥41.95，夜宵：小蛋糕",
+             "event": "情绪由开心变为平静"},
+        ]}
+        with patch.object(amo_human_state, "minutes_now", return_value=12 * 60):
+            tree = self.state.schedule_tree(day)
+        children = [child for block in tree for child in block["children"]]
+        hit = [child for child in children if child["start"] == "09:18"][0]
+        self.assertEqual(hit["end"], "09:28")
+        self.assertIn("小蛋糕", hit["activity"])
+        self.assertIn("41.95", hit["activity"])
+        self.assertEqual(hit["event"], "")
+
+    def test_finance_activity_translates_salary_and_expense(self) -> None:
+        self.assertEqual(
+            HumanState._finance_activity("财务·工资到账", "工资到账 ¥7,212.64，工资"),
+            "工资到账（¥7,212.64）",
+        )
+        self.assertEqual(
+            HumanState._finance_activity("财务·支出", "支出 ¥41.95，夜宵：小蛋糕"),
+            "买了小蛋糕（花销 ¥41.95）",
+        )
+
+    def test_block_carries_cold_facts_not_hardcoded_names(self) -> None:
+        import amo_human_state
+        from unittest.mock import patch
+
+        day = today_str()
+        self.state.schedule = {day: [
+            {"start": "08:00", "end": "09:00", "activity": "吃早饭", "place": "家", "category": "meal"},
+        ]}
+        with patch.object(amo_human_state, "minutes_now", return_value=12 * 60):
+            tree = self.state.schedule_tree(day)
+        self.assertTrue(tree)
+        for block in tree:
+            self.assertEqual(block.get("activity"), "")
+            self.assertTrue(block.get("facts", {}).get("events"))
+            self.assertNotIn("summary", block)
+            for child in block.get("children") or []:
+                self.assertTrue(child.get("id"))
+
+    def test_llm_generates_four_char_block_summary_and_caches(self) -> None:
+        import amo_human_state
+        from unittest.mock import patch
+
+        class FakeLLM:
+            def __init__(self):
+                self.calls = 0
+
+            async def chat_raw(self, umo, system, prompt):
+                self.calls += 1
+                return "迷糊休息"
+
+        day = today_str()
+        self.state.schedule = {day: [
+            {"start": "08:00", "end": "09:00", "activity": "吃早饭", "place": "家", "category": "meal"},
+        ]}
+        with patch.object(amo_human_state, "minutes_now", return_value=12 * 60):
+            tree = self.state.schedule_tree(day)
+        llm = FakeLLM()
+        self.state.p.llm = llm
+        asyncio.run(self.state.enrich_schedule_tree(day, tree, ""))
+        self.assertTrue(all(block.get("summary") == "迷糊休息" for block in tree))
+        first_calls = llm.calls
+        asyncio.run(self.state.enrich_schedule_tree(day, tree, ""))
+        self.assertEqual(llm.calls, first_calls)
+
+    def test_future_day_is_empty(self) -> None:
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        self.state.schedule = {tomorrow: [
+            {"start": "09:00", "end": "10:00", "activity": "上班", "place": "公司", "category": "work"},
+        ]}
+        self.assertEqual(self.state.schedule_tree(tomorrow), [])
+
+    def test_past_day_keeps_full_history(self) -> None:
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        self.state.schedule = {yesterday: [
+            {"start": "09:00", "end": "10:00", "activity": "上班", "place": "公司", "category": "work"},
+        ]}
+        tree = self.state.schedule_tree(yesterday)
+        starts = [child["start"] for block in tree for child in block["children"]]
+        self.assertEqual(len(tree), 4)
+        self.assertIn("23:00", starts)
+
+    def test_blind_hint(self) -> None:
+        self.assertIn("还没过完", self.state.schedule_blind_hint(today_str()))
+        self.assertEqual(self.state.schedule_blind_hint((date.today() - timedelta(days=1)).isoformat()), "")
+        self.assertTrue(self.state.schedule_blind_hint((date.today() + timedelta(days=1)).isoformat()))
+
+    def test_sleep_merges_after_waking(self) -> None:
+        from datetime import datetime as dt
+
+        previous = (date.today() - timedelta(days=1)).isoformat()
+        self.state.schedule = {previous: [
+            {"start": "23:00", "end": "24:00", "activity": "入睡", "category": "sleep",
+             "source": "jit", "open_sleep": True},
+        ]}
+        self.plugin.db.kv_set("sleep_open", {"day": previous, "start": "23:00"})
+        result = self.state._finish_open_sleep(dt.combine(date.today(), dt.min.time()).replace(hour=7, minute=10))
+        self.assertEqual(result.get("wake"), "07:00")
+        previous_rows = self.state.schedule[previous]
+        self.assertEqual(previous_rows[0]["activity"], "睡觉")
+        self.assertFalse(previous_rows[0].get("open_sleep"))
+        today_rows = self.state.schedule[today_str()]
+        sleep_rows = [row for row in today_rows if row.get("category") == "sleep"]
+        self.assertEqual(len(sleep_rows), 1)
+        self.assertEqual(sleep_rows[0]["start"], "00:00")
+        self.assertEqual(sleep_rows[0]["end"], "07:00")
+        self.assertEqual(sleep_rows[0]["sleep_from"], "23:00")
+        self.assertEqual(self.plugin.db.kv_get("sleep_open"), {})
+
+    def test_restart_backfills_gap(self) -> None:
+        from datetime import datetime as dt
+
+        day = today_str()
+        self.state.schedule = {day: []}
+        last = dt.combine(date.today(), dt.min.time()).replace(hour=15, minute=5)
+        now = dt.combine(date.today(), dt.min.time()).replace(hour=15, minute=30)
+        rows = self.state._jit_backfill_gap(now, last)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["start"], "15:00")
+        self.assertEqual(rows[0]["end"], "16:00")
+        self.assertEqual(rows[0]["activity"], "未记录")
+        self.assertEqual(self.state.schedule[day][0]["source"], "jit_recover")
+
+    def test_normalize_place_whitelist(self) -> None:
+        import amo_human_state
+
+        self.assertEqual(amo_human_state.normalize_place("他桌面上"), "家")
+        for place in ("家", "卧室", "客厅", "公司", "楼下小馆", "地铁", "商场"):
+            self.assertEqual(amo_human_state.normalize_place(place), place)
+        self.assertEqual(amo_human_state.normalize_place("某个奇怪的地方", "home"), "家")
+        self.assertEqual(amo_human_state.normalize_place("路上", "road"), "路上")
+
+    def test_cross_hour_event_keeps_one_span(self) -> None:
+        import amo_human_state
+        from unittest.mock import patch
+
+        day = today_str()
+        self.state.schedule = {day: [
+            {"start": "14:50", "end": "15:20", "activity": "逛街", "place": "商场",
+             "category": "play", "zone": "mall"},
+        ]}
+        with patch.object(amo_human_state, "minutes_now", return_value=16 * 60):
+            tree = self.state.schedule_tree(day)
+        rows = [child for block in tree for child in block["children"]]
+        hit = [child for child in rows if child["start"] == "14:50"]
+        self.assertEqual(len(hit), 1)
+        self.assertEqual(hit[0]["end"], "15:20")
+        self.assertEqual(hit[0]["activity"], "逛街")
+
+    def test_jit_tick_runs_every_hour(self) -> None:
+        from datetime import datetime as dt
+
+        day = today_str()
+        self.state.schedule = {day: []}
+        self.state.jit_tick(dt.combine(date.today(), dt.min.time()).replace(hour=10, minute=5))
+        rows = self.state.schedule[day]
+        self.assertTrue(any(row.get("start") == "10:00" for row in rows))
 
 
 class SnapshotTests(StateTestCase):

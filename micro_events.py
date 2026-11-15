@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import random
+import re
 
 try:
     from .amo_shared import logger
@@ -25,69 +26,171 @@ except ImportError:  # 直接按文件加载时
     logger = logging.getLogger(__name__)
     from clock import now as _now
 
+try:
+    from .amo_state_snapshot import build_snapshot, snapshot_text
+except ImportError:  # 直接按文件加载时
+    from amo_state_snapshot import build_snapshot, snapshot_text
+
+try:
+    from .amo_state_context import (StateConflict, build_state_context,
+                                    event_conflict, format_event_memory)
+except ImportError:  # 直接按文件加载时
+    from amo_state_context import (StateConflict, build_state_context,
+                                   event_conflict, format_event_memory)
+
+try:  # 事实绑定（2026-11-15）：日程说做饭，就别再抽"点外卖"
+    from .amo_fact_binder import COOK_WORDS as _COOK_WORDS
+    from .amo_fact_binder import facts_lines as _facts_lines
+    from .amo_fact_binder import guard as _fact_guard
+    from .amo_fact_binder import ledger_today as _ledger_today
+    from .amo_fact_binder import meal_facts as _meal_facts
+    from .amo_fact_binder import schedule_items as _schedule_items
+except ImportError:  # 直接按文件加载时
+    from amo_fact_binder import facts_lines as _facts_lines
+    from amo_fact_binder import guard as _fact_guard
+    from amo_fact_binder import ledger_today as _ledger_today
+    from amo_fact_binder import meal_facts as _meal_facts
+    from amo_fact_binder import schedule_items as _schedule_items
+
 BANDS = ("dawn", "morning", "forenoon", "noon", "afternoon", "evening", "night")
 
+#: 事件标签（2026-11-15）：每个事件必须带 zone: / time:，可选 health:。
+#: health:>60 表示要健康才发生，health:<=60 表示只在她虚弱时发生。
+#: 新加事件漏打标签，validate_pool() 会在导入时直接报错。
 POOL = (
-    # 凌晨（0-6 点）：只能失眠/噩梦/饿
+    # 凌晨（0-6 点）：只能失眠/噩梦/起夜/喝水；夜宵/刷手机只到 24:00
     {"key": "insomnia", "band": ("dawn",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:00:00-06:00"),
      "text": "凌晨还睡不着，翻来覆去刷手机", "mood": {"疲惫": 6, "焦虑": 4}},
     {"key": "nightmare", "band": ("dawn",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:00:00-06:00"),
      "text": "做了个噩梦，醒来有点心慌", "mood": {"害怕": 8, "委屈": 4}},
-    {"key": "late_snack", "band": ("dawn", "night"), "scene": "private", "cost": 1500,
+    {"key": "late_snack", "band": ("night",), "scene": "private", "cost": 1500,
+     "tags": ("zone:home", "time:22:00-24:00"),
      "text": "肚子饿了，点了份夜宵", "mood": {"开心": 5, "满足": 4}},
-    # 早上（6-9 点）
+    {"key": "phone_night", "band": ("night",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:22:00-24:00"),
+     "text": "躺床上刷手机，刷到眼睛发涩", "mood": {"疲惫": 3, "满足": 2}},
+    {"key": "drink_water", "band": ("night", "dawn"), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:22:00-06:00"),
+     "text": "起来倒了杯水，嗓子有点干", "mood": {"放松": 2}},
+    {"key": "night_toilet", "band": ("dawn",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:00:00-06:00"),
+     "text": "起夜上了个厕所，回来接着睡", "mood": {"放松": 1}},
+    # 早上（6-9 点）：洗漱/早饭/通勤
+    {"key": "wash_up", "band": ("morning",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:06:00-09:00"),
+     "text": "洗漱完对着镜子发了会儿呆", "mood": {"放松": 3}},
+    {"key": "make_breakfast", "band": ("morning",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:06:00-09:00", "health:>60"),
+     "text": "煎了个鸡蛋当早饭", "mood": {"满足": 4}},
     {"key": "subway", "band": ("morning",), "scene": "both", "cost": 500,
+     "tags": ("zone:road", "time:06:30-09:30", "health:>60"),
      "text": "早上挤地铁，差点被门夹到", "mood": {"疲惫": 3, "郁闷": 3}},
     {"key": "breakfast", "band": ("morning",), "scene": "both", "cost": 800,
+     "tags": ("zone:home", "time:06:00-09:00"),
      "text": "买了豆浆和包子当早饭", "mood": {"开心": 3}},
-    # 上午（9-12 点）
+    # 上午（9-12 点）：职场
+    {"key": "paid_poop", "band": ("forenoon", "afternoon"), "scene": "private", "cost": 0,
+     "tags": ("zone:office", "time:09:00-18:00", "health:>60"),
+     "text": "带薪去洗手间摸鱼刷手机", "mood": {"放松": 4, "开心": 2}},
     {"key": "weird_client", "band": ("forenoon",), "scene": "private", "cost": 0,
+     "tags": ("zone:office", "time:09:00-12:00", "health:>60"),
      "text": "遇到一个特别难缠的客户，气得半死", "mood": {"生气": 8, "疲惫": 4}},
     {"key": "boss_scold", "band": ("forenoon", "afternoon"), "scene": "private", "cost": 0,
+     "tags": ("zone:office", "time:09:00-18:00", "health:>60"),
      "text": "被老板当众说了一顿，情绪很低落", "mood": {"委屈": 10, "郁闷": 8, "开心": -10}},
     {"key": "desk_slack", "band": ("forenoon", "afternoon"), "scene": "both", "cost": 0,
+     "tags": ("zone:office", "time:09:00-18:00", "health:>60"),
      "text": "在工位上摸鱼刷了会儿手机", "mood": {"开心": 2}},
     # 中午（12-14 点）
+    {"key": "colleague_lunch", "band": ("noon",), "scene": "private", "cost": 0,
+     "tags": ("zone:office", "time:11:30-14:00", "health:>60"),
+     "text": "同事拉着我一起去吃午饭", "mood": {"开心": 4}, "social": True},
     {"key": "tea_time", "band": ("noon", "afternoon"), "scene": "both", "cost": 1500,
+     "tags": ("zone:office", "time:12:00-18:00", "health:>60"),
      "text": "公司下午茶发了杯奶茶", "mood": {"开心": 6, "满足": 4}},
+    {"key": "cook_feast", "band": ("noon",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:11:00-13:00", "health:>60"),
+     "text": "做了顿丰盛的午饭，厨房忙了半天", "mood": {"满足": 6, "疲惫": 3}},
     {"key": "takeout", "band": ("noon", "evening"), "scene": "private", "cost": 2500,
+     "tags": ("zone:home", "time:11:00-14:00", "time:17:00-21:00"),
      "text": "今天不想做饭，点了个外卖", "mood": {"开心": 3, "懒": 3}},
     # 下午（14-18 点）
     {"key": "fat_cat", "band": ("afternoon", "evening"), "scene": "both", "cost": 0,
+     "tags": ("zone:road", "time:15:00-21:00", "health:>60"),
      "text": "下班路上看到一只很胖的橘猫", "mood": {"开心": 8, "兴奋": 5}},
     {"key": "fruit_tea", "band": ("afternoon",), "scene": "both", "cost": 1500,
+     "tags": ("zone:mall,road", "time:14:00-18:00", "health:>60"),
      "text": "买了一杯 15 块钱的果茶", "mood": {"开心": 4}},
     {"key": "egg_price", "band": ("afternoon", "evening"), "scene": "private", "cost": 0,
+     "tags": ("zone:mall", "time:16:00-21:00", "health:>60"),
      "text": "去超市发现鸡蛋又涨价了", "mood": {"郁闷": 5, "委屈": 3}},
-    # 傍晚/晚上（18-24 点）
-    {"key": "sunset", "band": ("evening",), "scene": "both", "cost": 0,
-     "text": "下班路上看到很好看的晚霞", "mood": {"开心": 7, "温柔": 3}},
-    {"key": "cook_fail", "band": ("evening",), "scene": "private", "cost": 0,
-     "text": "想自己做饭，结果把菜炒糊了", "mood": {"郁闷": 4, "委屈": 2}},
-    {"key": "drama", "band": ("evening", "night"), "scene": "both", "cost": 0,
-     "text": "追的剧更新了，看到关键处卡住", "mood": {"开心": 5, "焦虑": 2}},
-    # 社交（NPC 微弱互动，私聊）
-    {"key": "bff_vent", "band": ("afternoon", "evening"), "scene": "private", "cost": 0,
-     "text": "闺蜜发微信跟我吐槽她男朋友", "mood": {"开心": 3, "无奈": 2}, "social": True},
-    {"key": "mom_call", "band": ("evening",), "scene": "private", "cost": 0,
-     "text": "妈妈打电话来问周末回不回家吃饭", "mood": {"温暖": 5, "依恋": 3}, "social": True},
-    {"key": "colleague_lunch", "band": ("noon",), "scene": "private", "cost": 0,
-     "text": "同事拉着我一起去吃午饭", "mood": {"开心": 4}, "social": True},
-    # 日常/上下文连贯
+    {"key": "sofa_show", "band": ("forenoon", "afternoon"), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:09:00-18:00"),
+     "text": "窝在沙发上看了会儿综艺", "mood": {"开心": 4, "放松": 3}},
+    {"key": "sun_window", "band": ("forenoon",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:09:00-12:00"),
+     "text": "站在窗边晒了会儿太阳", "mood": {"放松": 4, "温暖": 2}},
+    {"key": "clean_up", "band": ("forenoon", "afternoon"), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:10:00-18:00", "health:>60"),
+     "text": "把家里大扫除了一遍，累得直不起腰", "mood": {"满足": 5, "疲惫": 4}},
+    {"key": "yoga", "band": ("morning",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:07:00-09:00", "health:>60"),
+     "text": "跟着视频做了会儿瑜伽", "mood": {"放松": 5, "满足": 2}},
     {"key": "mall_shopping", "band": ("afternoon", "evening"), "scene": "both", "cost": 0,
+     "tags": ("zone:mall", "time:10:00-21:00", "health:>60"),
      "text": "在商场逛了一会儿，试了两件衣服", "mood": {"开心": 5, "兴奋": 3}},
     {"key": "rest_after_shopping", "band": ("afternoon", "evening", "night"), "scene": "private",
-     "cost": 0, "after": ("mall_shopping",), "text": "逛累了，坐在商场长椅上歇脚，脚有点酸",
-     "mood": {"疲惫": 5, "满足": 4}},
+     "cost": 0, "after": ("mall_shopping",),
+     "tags": ("zone:mall", "time:12:00-22:00", "health:>60"),
+     "text": "逛累了，坐在商场长椅上歇脚，脚有点酸", "mood": {"疲惫": 5, "满足": 4}},
+    # 傍晚/晚上（18-24 点）
+    {"key": "sunset", "band": ("evening",), "scene": "both", "cost": 0,
+     "tags": ("zone:road", "time:17:30-19:30", "health:>60"),
+     "text": "下班路上看到很好看的晚霞", "mood": {"开心": 7, "温柔": 3}},
+    {"key": "cook_fail", "band": ("evening",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:17:00-21:00", "health:>60"),
+     "text": "想自己做饭，结果把菜炒糊了", "mood": {"郁闷": 4, "委屈": 2}},
+    {"key": "drama", "band": ("evening", "night"), "scene": "both", "cost": 0,
+     "tags": ("zone:home", "time:19:00-23:00"),
+     "text": "追的剧更新了，看到关键处卡住", "mood": {"开心": 5, "焦虑": 2}},
     {"key": "funny_video", "band": ("evening", "night"), "scene": "both", "cost": 0,
+     "tags": ("zone:home", "time:19:00-23:00"),
      "text": "刷到一个很搞笑的视频，笑出声", "mood": {"开心": 6}},
+    {"key": "bff_vent", "band": ("afternoon", "evening"), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:14:00-22:00"),
+     "text": "闺蜜发微信跟我吐槽她男朋友", "mood": {"开心": 3, "无奈": 2}, "social": True},
+    {"key": "mom_call", "band": ("evening",), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:18:00-22:00"),
+     "text": "妈妈打电话来问周末回不回家吃饭", "mood": {"温暖": 5, "依恋": 3}, "social": True},
+    {"key": "shower", "band": ("evening", "night"), "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:20:00-23:30"),
+     "text": "洗了个热水澡，浑身放松", "mood": {"放松": 6, "舒服": 4}},
     {"key": "rain_umbrella", "band": ("afternoon", "evening"), "scene": "both", "cost": 0,
+     "tags": ("zone:road", "time:14:00-20:00", "health:>60"),
      "text": "突然下雨，躲在便利店门口等雨停", "mood": {"郁闷": 4}},
+    # 生病虚弱（只有 health<=60 才发生）
+    {"key": "sick_water", "band": ("dawn", "morning", "forenoon", "noon", "afternoon", "evening", "night"),
+     "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:00:00-23:59", "health:<=60"),
+     "text": "撑着起来倒了杯热水，把药吃了", "mood": {"委屈": 3, "疲惫": 4}},
+    {"key": "sick_blanket", "band": ("dawn", "morning", "forenoon", "noon", "afternoon", "evening", "night"),
+     "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:00:00-23:59", "health:<=60"),
+     "text": "裹紧被子缩在床上，鼻子还是堵", "mood": {"委屈": 5, "疲惫": 6}},
+    {"key": "sick_nap", "band": ("dawn", "morning", "forenoon", "noon", "afternoon", "evening", "night"),
+     "scene": "private", "cost": 0,
+     "tags": ("zone:home", "time:00:00-23:59", "health:<=60"),
+     "text": "睡睡醒醒，下午又昏睡了一觉", "mood": {"疲惫": 6}},
+    {"key": "sick_takeout", "band": ("noon", "evening"), "scene": "private", "cost": 2000,
+     "tags": ("zone:home", "time:11:00-13:00", "time:17:00-20:00", "health:<=60"),
+     "text": "没力气做饭，点了份清淡的外卖", "mood": {"委屈": 2, "懒": 3}},
+    # 日常/上下文连贯
     {"key": "broke_water", "band": ("dawn", "morning", "forenoon", "noon", "afternoon", "evening", "night"),
      "scene": "private", "cost": 0, "requires_broke": True,
+     "tags": ("zone:home", "time:00:00-23:59"),
      "text": "口渴了，但连一瓶矿泉水都舍不得买", "mood": {"委屈": 5}},
-    {"key": "shower", "band": ("evening", "night"), "scene": "private", "cost": 0,
-     "text": "洗了个热水澡，浑身放松", "mood": {"放松": 6, "舒服": 4}},
 )
 
 PUBLIC_KEYS = {"subway", "breakfast", "desk_slack", "tea_time", "fat_cat",
@@ -95,8 +198,168 @@ PUBLIC_KEYS = {"subway", "breakfast", "desk_slack", "tea_time", "fat_cat",
                "funny_video", "rain_umbrella"}
 FOOD_KEYS = {"late_snack", "takeout", "breakfast", "tea_time", "fruit_tea",
              "colleague_lunch", "broke_water"}
+#: 这一餐已经在家吃过了，就别再抽"做饭/外卖"这类重复的吃饭事件（2026-11-15）
+MEAL_KEYS = {"takeout", "sick_takeout", "cook_feast", "colleague_lunch"}
 FOOD_COOLDOWN_SECONDS = 2 * 3600
 QUIET_HOURS = (23, 30, 7, 30)
+
+TAG_ZONE = "zone:"
+TAG_TIME = "time:"
+TAG_HEALTH = "health:"
+
+_TIME_RE = re.compile(r"^\d{1,2}:\d{2}-\d{1,2}:\d{2}$")
+_HEALTH_RE = re.compile(r"^(>=|<=|>|<|=)\s*(\d+)$")
+
+
+def _tag_values(tags, prefix):
+    return [str(tag)[len(prefix):].strip() for tag in (tags or ())
+            if str(tag).startswith(prefix)]
+
+
+def event_zones(event):
+    zones = set()
+    for value in _tag_values(event.get("tags"), TAG_ZONE):
+        zones.update(part.strip() for part in value.split(",") if part.strip())
+    return zones
+
+
+def _hhmm_minutes(text):
+    """'12:30' -> 750；解析不了返回 -1（2026-11-15 判定这一餐吃没吃）。"""
+    try:
+        hour, minute = [int(x) for x in str(text or "").split(":")[:2]]
+        return hour * 60 + minute
+    except Exception:
+        return -1
+
+
+def in_time_window(now, window):
+    """HH:MM-HH:MM；22:00-06:00 这种跨午夜也算。"""
+    text = str(window or "")
+    if "-" not in text:
+        return True
+    start, end = text.split("-", 1)
+    try:
+        sh, sm = [int(x) for x in start.split(":")]
+        eh, em = [int(x) for x in end.split(":")]
+    except Exception:
+        return True
+    cur = int(now.hour) * 60 + int(now.minute)
+    begin, finish = sh * 60 + sm, eh * 60 + em
+    if begin == finish:
+        return True
+    if begin < finish:
+        return begin <= cur < finish
+    return cur >= begin or cur < finish
+
+
+def health_allowed(tags, score):
+    rules = _tag_values(tags, TAG_HEALTH)
+    if not rules:
+        return True
+    for rule in rules:
+        matched = _HEALTH_RE.match(rule)
+        if not matched:
+            continue
+        op, value = matched.group(1), int(matched.group(2))
+        ok = ((op == ">" and score > value) or (op == ">=" and score >= value)
+              or (op == "<" and score < value) or (op == "<=" and score <= value)
+              or (op == "=" and score == value))
+        if ok:
+            return True
+    return False
+
+
+def event_allowed(event, now, snapshot=None):
+    """按快照过滤：地点、时间窗、健康。没有快照时只走老规则（兼容旧调用）。"""
+    # 时间窗先判、且不依赖快照：启动初期 / 热重载后快照为空的那几秒，
+    # 夜里的事件（夜宵、失眠）照样不能在白天被抽中（2026-11-15 修）。
+    windows = _tag_values(event.get("tags"), TAG_TIME)
+    if windows and not any(in_time_window(now, window) for window in windows):
+        return False
+    if not snapshot:
+        return True
+    zone = str(snapshot.get("zone") or "")
+    zones = event_zones(event)
+    if zones and "any" not in zones and zone not in ("", "unknown") and zone not in zones:
+        return False
+    health = snapshot.get("health") or {}
+    score = health.get("score")
+    if score is None:
+        score = 40 if health.get("sick") else 100
+    return health_allowed(event.get("tags"), int(score))
+
+
+def _window_bounds(window):
+    """“HH:MM-HH:MM” → (start_min, end_min)；格式/取值不合法返回 None。"""
+    text = str(window or "").strip()
+    if not _TIME_RE.match(text):
+        return None
+    start_text, end_text = text.split("-", 1)
+    try:
+        sh, sm = start_text.split(":")
+        eh, em = end_text.split(":")
+        start = int(sh) * 60 + int(sm)
+        end = int(eh) * 60 + int(em)
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= int(sh) < 24 and 0 <= int(sm) < 60):
+        return None
+    if not (0 <= int(eh) <= 24 and 0 <= int(em) < 60):
+        return None
+    return start, end
+
+
+def validate_pool(pool=None):
+    """每个事件必须打 zone/time 标签；新加事件漏标签在导入时就报错。
+
+    2026-11-15 加严：除了“有没有标签”，还查四件以前会静默出错的事——
+    key 重复（抽中两个同名事件）、文案为空（记忆里出现空条目）、
+    time 窗口越界/零长度（99:99、10:00-10:00 这类永远不命中的窗口）、
+    zone 里有空 token（“zone:home, ”会解析出空字符串）。
+    """
+    problems = []
+    seen_keys = set()
+    for event in (pool or POOL):
+        tags = event.get("tags")
+        key = event.get("key")
+        if not key:
+            problems.append("有事件缺少 key")
+        elif key in seen_keys:
+            problems.append("%s 的 key 重复" % key)
+        else:
+            seen_keys.add(key)
+        if not str(event.get("text") or "").strip():
+            problems.append("%s 没有文案" % key)
+        if not tags:
+            problems.append("%s 没有 tags" % key)
+            continue
+        zones = event_zones(event)
+        if not zones:
+            problems.append("%s 缺少 zone: 标签" % key)
+        for value in _tag_values(tags, TAG_ZONE):
+            tokens = [part.strip() for part in str(value).split(",")]
+            if any(not token for token in tokens):
+                problems.append("%s 的 zone 标签有空项：%s" % (key, value))
+        windows = _tag_values(tags, TAG_TIME)
+        if not windows:
+            problems.append("%s 缺少 time: 标签" % key)
+        for window in windows:
+            bounds = _window_bounds(window)
+            if bounds is None:
+                problems.append("%s 的 time 标签格式/取值不对：%s" % (key, window))
+                continue
+            start, end = bounds
+            if start == end:
+                problems.append("%s 的 time 窗口长度为零：%s" % (key, window))
+        for rule in _tag_values(tags, TAG_HEALTH):
+            if not _HEALTH_RE.match(rule):
+                problems.append("%s 的 health 标签格式不对：%s" % (key, rule))
+    if problems:
+        raise ValueError("事件池标签不合格：\n" + "\n".join(problems))
+    return True
+
+
+validate_pool()
 
 
 def band_of(hour):
@@ -122,7 +385,8 @@ def is_quiet(hour, minute):
 
 
 def pick_event(now, cash_cents, recent_keys=(), scene="private", rng=None,
-               force_social=False, last_key="", food_locked=False):
+               force_social=False, last_key="", food_locked=False, snapshot=None,
+               state=None, meal_done=False):
     """按时间/场景/余额/24h 去重抽一个事件；返回 None 表示这次无事发生。"""
     rng = rng or random
     band = band_of(now.hour)
@@ -131,6 +395,10 @@ def pick_event(now, cash_cents, recent_keys=(), scene="private", rng=None,
     for event in POOL:
         if band not in event.get("band", ()):
             continue
+        if state and event_conflict(event, state):
+            continue
+        if snapshot and not event_allowed(event, now, snapshot):
+            continue
         if scene == "group" and event["key"] not in PUBLIC_KEYS:
             continue
         if int(event.get("cost") or 0) > int(cash_cents or 0):
@@ -138,6 +406,9 @@ def pick_event(now, cash_cents, recent_keys=(), scene="private", rng=None,
         if event["key"] in recent:
             continue
         if food_locked and event["key"] in FOOD_KEYS:
+            continue
+        if meal_done and event["key"] in MEAL_KEYS:
+            # 日程已经写了这一餐在家做饭/吃过了，再来一次"点外卖"就是自相矛盾
             continue
         if event.get("requires_broke") and int(cash_cents or 0) >= 1500:
             continue
@@ -184,6 +455,21 @@ class MicroEventEngine:
 
     def _today(self, now=None):
         return (now or _now()).strftime("%Y-%m-%d")
+
+    def _meal_done(self, now):
+        """今天这一餐是不是已经在家做/吃过了（2026-11-15）。
+
+        线上事故：日程 12:00「在家做饭」，13:32 微型事件又抽到 takeout 并扣了 25 元，
+        结果聊天里她说「懒得做饭，点了个外卖」——同一天两套饭。
+        """
+        # 日程 + 账本一起看：日程写了做饭，或者账上有一笔"自己做饭"，都算这一餐吃过了
+        try:
+            items = _schedule_items(self.p, self._today(now))
+            ledger = _ledger_today(self.p, now)
+            facts = _meal_facts(items, ledger, now)
+        except Exception:
+            return False
+        return bool(facts.get("cooked"))
 
     def _recent_keys(self):
         rows = self._kv_get("micro_event:recent", {}) or {}
@@ -232,11 +518,14 @@ class MicroEventEngine:
                 score += int(float(mood.get(key) or 0) * weight)
             except Exception:
                 pass
+        # 分享欲是累积的：事件里每遇上一件高兴事 +5，攒在 micro_event:share_drive。
+        # 以前这里读的是另一个从没人写过的键（share_boost），累积等于没有；
+        # 但也不能把存值直接加进 45 的基准（会滚雪球），所以取「心情分」和「存值」里大的那个。
         try:
-            score += int(self._kv_get("micro_event:share_boost", 0) or 0)
-        except Exception:
-            pass
-        return max(0, min(100, score))
+            stored = int(self._kv_get("micro_event:share_drive", 0) or 0)
+        except (TypeError, ValueError):
+            stored = 0
+        return max(0, min(100, max(score, stored)))
 
     # ---------- 应用事件 ----------
     async def _pay(self, event, now):
@@ -269,14 +558,25 @@ class MicroEventEngine:
                 self._set_bias("high")
         return delta
 
-    async def _write_memory(self, text, umo, uid):
+    async def _write_memory(self, event, ctx, umo, uid):
+        """统一记忆管道：先硬校验状态，再交给 generate_memory_text 生成事实句。"""
         if not uid:
             return False
         writer = getattr(self.p, "_write_memory_checked", None)
         if writer is None:
             return False
         try:
-            return bool(await writer(uid, "[生活小事] " + text, kind="event", tier=0, subject="bot"))
+            maker = getattr(self.p, "generate_memory_text", None)
+            if callable(maker):
+                text = await maker(event, ctx)
+            else:
+                text = format_event_memory(event, ctx)
+            if not text:
+                return False
+            return bool(await writer(uid, text, kind="event", tier=0, subject="bot"))
+        except StateConflict as exc:
+            logger.warning("[amo] 记忆写入拦截（状态冲突）：%s" % exc)
+            return False
         except Exception:
             return False
 
@@ -418,24 +718,64 @@ class MicroEventEngine:
         return ("【昨晚的代价】昨晚你吃了%s，今天早上有点懊悔，觉得脸圆了一圈/肠胃不太舒服；"
                 "可以自然提一句，但别演成大病。" % food)
 
-    async def _share(self, event, umo, uid, profile):
-        """分享欲 >50：主动发一条关于这件小事的消息。"""
+    async def _share(self, event, umo, uid, profile, snapshot=None):
+        """分享欲 >50：主动发一条关于这件小事的消息（带当前状态快照）。"""
         text = str(event.get("text") or "")
         if not text or not umo:
             return False
+        try:
+            snapshot = snapshot or build_snapshot(self.p)
+        except Exception:
+            snapshot = {}
+        state_block = ""
+        try:
+            state_block = snapshot_text(snapshot)
+        except Exception:
+            state_block = ""
         persona = ""
         try:
             persona = await self.p.llm.persona(umo)
         except Exception:
             persona = ""
-        prompt = ("刚刚发生了一件小事：%s。你现在想主动跟老公分享，"
-                  "1-2 句，像发微信，带点你的情绪；只输出要说的话。" % text)
+        facts_block = ""
+        try:
+            facts_block = "\n".join(_facts_lines(self.p))
+        except Exception:
+            facts_block = ""
+        prompt = ((state_block + "\n") if state_block else "") + (
+            (facts_block + "\n") if facts_block else ""
+        ) + (
+            "刚刚发生了一件小事：%s。你现在想主动跟老公分享，"
+            "1-2 句，像发微信，带点你的情绪。"
+            "这件事必须发生在【当前状态】里的地点和身体状态里；"
+            "如果这件小事和此刻对不上，就按此刻改写（比如把“工位上”改成“书桌前”），"
+            "如果这件小事和【绝对事实】或【今天的账单】对不上（比如日程写的是在家做饭，"
+            "这件小事却是点外卖），一律按【绝对事实】说，绝不许说自己没做过的事、没花过的钱；"
+            "不许说自己不在的地方，也不许把以前的事说成刚刚。只输出要说的话。"
+            % text
+        )
         try:
             line = await self.p.llm.chat(umo, persona or "你就是这个角色本人。", prompt, limit=80)
         except Exception:
             line = ""
         line = str(line or "").strip()
         if not line:
+            return False
+        guard = getattr(self.p, "_guard_zone_reply", None)
+        if callable(guard):
+            try:
+                line = str(await guard(line, umo, snapshot=snapshot) or "").strip()
+            except Exception:
+                pass
+        if not line:
+            return False
+        try:
+            line, _claim_changed, _claim_why = _fact_guard(line, self.p)
+            if _claim_changed:
+                logger.info("[CLAIM_GUARD] 分享消息里编出来的消费已改掉（%s）" % _claim_why)
+        except Exception as exc:
+            logger.debug("[amo] 分享消息消费校验失败: %s" % exc)
+        if not str(line or "").strip():
             return False
         try:
             sent = await self.p._send_proactive_lines(profile or {}, umo, line)
@@ -457,6 +797,11 @@ class MicroEventEngine:
             return {"ok": False, "reason": "busy", "action": action}
         scene = "group" if ":GroupMessage:" in str(umo or "") else "private"
         try:
+            snapshot = build_snapshot(self.p, now)
+            ctx = build_state_context(self.p, now)
+        except Exception:
+            snapshot, ctx = {}, {}
+        try:
             cash = int(self.p.wallet.balance())
         except Exception:
             cash = 0
@@ -475,9 +820,11 @@ class MicroEventEngine:
         last_record = self._kv_get("micro_event:last", {}) or {}
         last_key = str(last_record.get("key") or "") if isinstance(last_record, dict) else ""
         food_locked = now.timestamp() < float(self._kv_get("micro_event:food_cooldown_until", 0) or 0)
+        meal_done = self._meal_done(now)
         event = pick_event(now, cash, self._recent_keys(), scene=scene, rng=rng,
                            force_social=force_social, last_key=last_key,
-                           food_locked=food_locked)
+                           food_locked=food_locked, snapshot=snapshot, state=ctx,
+                           meal_done=meal_done)
         if event is not None and event.get("key") == "late_snack":
             event = dict(event)
             if cash > 100000:
@@ -502,7 +849,7 @@ class MicroEventEngine:
         self._remember_key(event["key"], now)
         if event.get("social"):
             self._kv_set("micro_event:social_day", today)
-        await self._write_memory(str(event.get("text") or ""), umo, uid)
+        await self._write_memory(event, ctx, umo, uid)
         self._mount_action(event, now, cash)
         record = {"text": str(event.get("text") or ""), "ts": now.timestamp(),
                   "day": today, "key": event["key"], "mood": delta,
@@ -521,7 +868,11 @@ class MicroEventEngine:
                 profile = self.p.db.get_profile(uid) if uid else {}
             except Exception:
                 profile = {}
-            shared = await self._share(event, umo, uid, profile)
+            shared = await self._share(event, umo, uid, profile, snapshot=snapshot)
+            if shared:
+                # 分享出去就把攒的那份清回基准，下一轮重新攒；
+                # 不重置的话每件小事都 +5，几天后永远 >50、每件小事都要发消息。
+                self._kv_set("micro_event:share_drive", 45)
         return {"ok": True, "event": record, "share_drive": drive, "shared": shared}
 
     def injection(self, now=None):

@@ -82,6 +82,98 @@ def _align_place(text, snap):
         return str(text or "")
 
 
+
+async def _proactive_context_block(self, umo, profile, system):
+    # 记忆 / 关系网 / 旅游中；返回 (system, memory_text)
+    memory_text = ""
+    try:
+        uid = str(profile.get("uid") or "")
+        if uid:
+            _, memory_text = await self.p._recall(uid, "", None)
+    except Exception as _amo_exc:
+        _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
+        memory_text = ""
+    if memory_text:
+        system = system + "\n【关于他的记忆】\n" + memory_text
+    try:
+        relation_network = self.p._relation_network_text(str(profile.get("uid") or ""))
+    except Exception as _amo_exc:
+        _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
+        relation_network = ""
+    if relation_network:
+        system = system + "\n【关系网】\n" + relation_network
+    try:
+        trip = self.p.db.kv_get("wander_trip", {}) or {}
+        if (
+            isinstance(trip, dict) and trip.get("city") and not trip.get("announced")
+            and str(trip.get("day") or "") <= today_str() <= str(trip.get("return_day") or "")
+        ):
+            spots = trip.get("spots") or []
+            spot = str(spots[0]) if spots else ""
+            system = system + (
+                "\n【旅游中】你现在一个人在 " + str(trip["city"]) + " 旅游"
+                + ("，今天去了" + spot if spot else "")
+                + "。主动跟他分享今天看到的、吃到的、天气；别报公司/上班，也别编景点。"
+            )
+    except Exception as _amo_exc:
+        _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
+    return system, memory_text
+
+def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_hint=""):
+    if kind == "decide":
+        return ("没有人要求你发消息。事实：" + str(facts or "")
+                + " 想找他聊就主动发 1-2 句口语化的话；不想发、没话说、或者觉得会打扰他，"
+                "如果事实里有【必须主动】就一定要发；分享的小事必须和此刻的状态、天气、地点一致，别穿帮；没有特别想分享、或觉得他在忙，你可以去追剧发呆，不想发就只输出 [SKIP]。")
+    if kind == "unwell":
+        health = snap.get("health") or {}
+        detail = str(health.get("note") or health.get("status") or "不太舒服")
+        return ("你现在确实生病了（" + detail + "），主动跟" + name
+                + "说你不太舒服，可以撒个娇、让他关心你；不要装没事，也别夸张成重病。")
+    if kind == "birthday":
+        return ("今天是他生日，用你平时对他的称呼自然地祝他生日快乐，"
+                "语气符合你的人设，不要提 AI/模型/日程。")
+    if _pg_compose_task is None:
+        return "你突然想起" + name + "，想主动发一条消息。"
+    event_text = ""
+    if kind == "share":
+        try:
+            event_text = self.p.state.interesting_event()
+        except Exception as _amo_exc:
+            _note_swallowed("amo_llm_service.LLMService.gen_proactive.build_task", _amo_exc)
+            event_text = ""
+    try:
+        dialect_enabled = bool(self.p._dialect_active())
+    except Exception as _amo_exc:
+        _note_swallowed("amo_llm_service.LLMService.gen_proactive.build_task", _amo_exc)
+        dialect_enabled = False
+    return _pg_compose_task(
+        kind=kind,
+        name=name,
+        unanswered_text=analysis["unanswered_text"],
+        unanswered_seconds=analysis["unanswered_seconds"],
+        window_seconds=window,
+        recent_bot_texts=analysis["recent_bot_texts"],
+        interesting_event=event_text,
+        duplicate_hint=duplicate_hint,
+        dialect_style=self.p.cfg_str("dialect_style", ""),
+        dialect_enabled=dialect_enabled,
+    )
+
+def _proactive_prompt(self, kind, task, facts, analysis, memory_text):
+    if kind == "decide":
+        prompt = ("这是私聊。请根据事实自己判断要不要主动找他："
+                  "要发就 1 到 2 句口语化的话；不发就只输出 [SKIP]，不要解释。\n事实："
+                  + str(facts or ""))
+    else:
+        prompt = "这是私聊。请以角色身份主动发一条消息，" + task + " 1 到 2 句，口语化。"
+    if analysis["context_text"]:
+        prompt = "最近私聊记录：\n" + analysis["context_text"] + "\n\n" + prompt
+    if memory_text:
+        prompt = "你记得关于他的事：\n" + memory_text + "\n\n" + prompt
+    return prompt
+
+
+
 class LLMService:
     def __init__(self, plugin):
         self.p = plugin
@@ -139,6 +231,16 @@ class LLMService:
             return None
 
     async def chat_raw(self, umo, system, prompt, contexts=None):
+        try:
+            from .amo_state_snapshot import SNAPSHOT_MARK as _MARK
+            from .amo_state_snapshot import build_snapshot as _build_snapshot
+            from .amo_state_snapshot import snapshot_text as _snapshot_text
+            if _MARK not in str(system or ""):
+                _block = _snapshot_text(_build_snapshot(self.p))
+                if _block:
+                    system = _block + "\n" + str(system or "")
+        except Exception as exc:
+            _note_swallowed("amo_llm_service.py.150", exc)
         provider = await self.provider(umo)
         if provider is None:
             return ""
@@ -228,6 +330,8 @@ class LLMService:
         system = "你是一个世界观设定师。只输出 JSON，不要输出其他文字。"
         prompt = (
             "根据下面的人格设定，为这个角色生成一个真实可信的现代生活世界观。\n"
+            "设定：她已经和老公同居在东莞的一间出租屋，不是住在他电脑里，也不是跨次元；"
+            "QQ/飞书只是他不在家时的联系方式。\n"
             "人格设定：\n" + truncate(persona, 1500) + "\n\n"
             "输出 JSON 对象，字段：name(角色名), age(整数), city(城市), occupation(职业), "
             "workplace(工作或学习地点), personality(性格一句话), hobbies(字符串数组), "
@@ -269,6 +373,13 @@ class LLMService:
             "也不要编出没发生过的会议/加班/行程。"
         )
         try:
+            from .amo_date_context import prompt_block as _date_prompt_block
+            _date_text = _date_prompt_block(self.p)
+            if _date_text:
+                system = system + "\n" + _date_text
+        except Exception as exc:
+            _note_swallowed("amo_llm_service.py.286", exc)
+        try:
             rows = self.p._recent(umo, 12)
         except Exception as _amo_exc:
             _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
@@ -303,94 +414,10 @@ class LLMService:
             )
         window = max(0, self.p.cfg_int("proactive_unanswered_window_minutes", 30)) * 60
         limit = self.p.cfg_int("max_reply_chars", 220)
-        # 记忆只来自外挂记忆插件；主动消息也带上，免得她说得像个陌生人
-        memory_text = ""
-        try:
-            uid = str(profile.get("uid") or "")
-            if uid:
-                _, memory_text = await self.p._recall(uid, "", None)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
-            memory_text = ""
-        if memory_text:
-            system = system + "\n【关于他的记忆】\n" + memory_text
-        try:
-            relation_network = self.p._relation_network_text(str(profile.get("uid") or ""))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
-            relation_network = ""
-        if relation_network:
-            system = system + "\n【关系网】\n" + relation_network
-        try:
-            trip = self.p.db.kv_get("wander_trip", {}) or {}
-            if (
-                isinstance(trip, dict) and trip.get("city") and not trip.get("announced")
-                and str(trip.get("day") or "") <= today_str() <= str(trip.get("return_day") or "")
-            ):
-                spots = trip.get("spots") or []
-                spot = str(spots[0]) if spots else ""
-                system = system + (
-                    "\n【旅游中】你现在一个人在 " + str(trip["city"]) + " 旅游"
-                    + ("，今天去了" + spot if spot else "")
-                    + "。主动跟他分享今天看到的、吃到的、天气；别报公司/上班，也别编景点。"
-                )
-        except Exception as _amo_exc:
-            _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
-
-        def build_task(duplicate_hint=""):
-            if kind == "decide":
-                return ("没有人要求你发消息。事实：" + str(facts or "")
-                        + " 想找他聊就主动发 1-2 句口语化的话；不想发、没话说、或者觉得会打扰他，"
-                        "如果事实里有【必须主动】就一定要发；分享的小事必须和此刻的状态、天气、地点一致，别穿帮；没有特别想分享、或觉得他在忙，你可以去追剧发呆，不想发就只输出 [SKIP]。")
-            if kind == "unwell":
-                health = snap.get("health") or {}
-                detail = str(health.get("note") or health.get("status") or "不太舒服")
-                return ("你现在确实生病了（" + detail + "），主动跟" + name
-                        + "说你不太舒服，可以撒个娇、让他关心你；不要装没事，也别夸张成重病。")
-            if kind == "birthday":
-                return ("今天是他生日，用你平时对他的称呼自然地祝他生日快乐，"
-                        "语气符合你的人设，不要提 AI/模型/日程。")
-            if _pg_compose_task is None:
-                return "你突然想起" + name + "，想主动发一条消息。"
-            event_text = ""
-            if kind == "share":
-                try:
-                    event_text = self.p.state.interesting_event()
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_llm_service.LLMService.gen_proactive.build_task", _amo_exc)
-                    event_text = ""
-            try:
-                dialect_enabled = bool(self.p._dialect_active())
-            except Exception as _amo_exc:
-                _note_swallowed("amo_llm_service.LLMService.gen_proactive.build_task", _amo_exc)
-                dialect_enabled = False
-            return _pg_compose_task(
-                kind=kind,
-                name=name,
-                unanswered_text=analysis["unanswered_text"],
-                unanswered_seconds=analysis["unanswered_seconds"],
-                window_seconds=window,
-                recent_bot_texts=analysis["recent_bot_texts"],
-                interesting_event=event_text,
-                duplicate_hint=duplicate_hint,
-                dialect_style=self.p.cfg_str("dialect_style", ""),
-                dialect_enabled=dialect_enabled,
-            )
-
-        def build_prompt(task):
-            if kind == "decide":
-                prompt = ("这是私聊。请根据事实自己判断要不要主动找他："
-                          "要发就 1 到 2 句口语化的话；不发就只输出 [SKIP]，不要解释。\n事实："
-                          + str(facts or ""))
-            else:
-                prompt = "这是私聊。请以角色身份主动发一条消息，" + task + " 1 到 2 句，口语化。"
-            if analysis["context_text"]:
-                prompt = "最近私聊记录：\n" + analysis["context_text"] + "\n\n" + prompt
-            if memory_text:
-                prompt = "你记得关于他的事：\n" + memory_text + "\n\n" + prompt
-            return prompt
-
-        text = await self.chat(umo, system, build_prompt(build_task()), limit=limit)
+        system, memory_text = await _proactive_context_block(self, umo, profile, system)
+        task = _proactive_task(self, kind, name, snap, facts, analysis, window)
+        prompt = _proactive_prompt(self, kind, task, facts, analysis, memory_text)
+        text = await self.chat(umo, system, prompt, limit=limit)
         text = str(text or "").strip()
         if not text or "[SKIP]" in text.upper():
             return ""
@@ -402,7 +429,7 @@ class LLMService:
         if not hit:
             return text
         retry = await self.chat(
-            umo, system, build_prompt(build_task(duplicate_hint=hit[0])), limit=limit,
+            umo, system, _proactive_prompt(self, kind, _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_hint=hit[0]), facts, analysis, memory_text), limit=limit,
         )
         retry = _align_place(retry, snap)
         if retry and not _pg_near_duplicate(retry, analysis["recent_bot_texts"], threshold):

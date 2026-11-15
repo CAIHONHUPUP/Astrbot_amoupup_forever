@@ -365,6 +365,7 @@ class SwimSegmentsTests(unittest.TestCase):
         wardrobe, _ = make_wardrobe(place="家", activity="回家洗澡")
         day = wardrobe.current(hour=17)
         self.assertFalse(day.get("swim"))
+        self.assertTrue(day.get("homewear"))
         self.assertFalse(day.get("sleep"))
         night = wardrobe.current(hour=20)
         self.assertTrue(night.get("sleep"))

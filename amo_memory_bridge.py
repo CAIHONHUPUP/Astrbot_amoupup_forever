@@ -92,6 +92,91 @@ class BridgeMixin(_MixinBase):
 
         return _Runtime()
 
+    async def generate_memory_text(self, event, state_context=None):
+        """统一记忆生成管道：硬校验 → 状态前缀 → （可选）LLM 口语化；冲突直接拦掉。"""
+        try:
+            from .amo_state_context import (StateConflict, build_state_context,
+                                            format_event_memory, memory_prefix)
+            from .amo_state_snapshot import blacklist_hit
+        except ImportError:
+            from amo_state_context import (StateConflict, build_state_context,
+                                           format_event_memory, memory_prefix)
+            from amo_state_snapshot import blacklist_hit
+        ctx = state_context or build_state_context(self)
+        try:
+            fact = format_event_memory(event, ctx)
+        except StateConflict as exc:
+            logger.warning("[amo] 记忆写入拦截（状态冲突）：%s" % exc)
+            raise
+        text = str((event or {}).get("text") or "")
+        llm = getattr(self, "llm", None)
+        if llm is None:
+            return fact
+        where = {"home": "在家", "office": "在公司", "road": "在路上"}.get(
+            str(ctx.get("zone") or ""), "在家")
+        health = "生病休息" if ctx.get("is_sick") else "状态正常"
+        prompt = (
+            "你目前" + where + "（" + health + "）。以下是后台触发的随机小事件：[" + text + "]。\n"
+            "请立刻审查：如果该事件与你当前的物理位置或健康状态冲突，只回复 DROP；\n"
+            "如果不冲突，请转换成符合你当前状态的口语化表达（30 字以内，第一人称），"
+            "并以 " + memory_prefix(ctx) + " 开头，只输出这一句。"
+        )
+        try:
+            line = await llm.chat("", "你就是这个角色本人，只输出要写进记忆的一句话。", prompt, limit=80)
+        except Exception:
+            return fact
+        line = str(line or "").strip()
+        if not line or "DROP" in line.upper():
+            logger.warning("[amo] 记忆写入拦截（模型判定冲突）：%s" % text[:60])
+            return ""
+        if blacklist_hit(line, str(ctx.get("zone") or "")):
+            return fact
+        return line if line.startswith("[") else (memory_prefix(ctx) + " " + line)
+
+    async def _audit_memories(self):
+        """凌晨审查：把当天和当前物理状态矛盾的记忆物理删除。"""
+        try:
+            from .amo_state_context import build_state_context
+            from .amo_state_snapshot import blacklist_hit
+        except ImportError:
+            from amo_state_context import build_state_context
+            from amo_state_snapshot import blacklist_hit
+        uid = str(getattr(self, "_last_uid", "") or "")
+        lister = getattr(self, "_data_mem_list", None)
+        if not uid or not callable(lister):
+            return 0
+        ctx = build_state_context(self)
+        zone = str(ctx.get("zone") or "")
+        if zone != "home":
+            return 0
+        try:
+            rows = await lister(uid, "", 80)
+        except Exception as exc:
+            logger.debug("[amo] 记忆审查读取失败: %s" % exc)
+            return 0
+        deleted = 0
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            content = str(row.get("content") or "")
+            mid = int(row.get("id") or 0)
+            if not content or not mid:
+                continue
+            # 只审事件流水；日记摘要/里程碑是"她说过的话"，不能按地点词误删。
+            kind = str(row.get("kind") or "")
+            if kind not in ("event",) and not content.startswith(
+                    ("[生活小事]", "[在家", "[生病在家", "[在公司]", "[在路上]")):
+                continue
+            if not blacklist_hit(content, zone):
+                continue
+            try:
+                if await self._data_call("delete_memory", self._data_bot_id(), mid):
+                    deleted += 1
+                    logger.warning("[amo] 记忆审查删除冲突记录 #%d：%s" % (mid, content[:60]))
+            except Exception:
+                continue
+        return deleted
+
     async def _write_memory_checked(self, uid, content, kind="fact", tier=1,
                                     scope="private", group_id="", subject="user", platform=""):
         """写一条记忆并返回是否真的成功；subject=user/bot 区分主体。"""

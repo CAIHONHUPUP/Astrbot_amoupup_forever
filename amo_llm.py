@@ -2,6 +2,7 @@
 """LlmMixin：人格、LLM 注入、回复组装、冒充检测。"""
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -24,6 +25,11 @@ try:  # 群聊场景/双轨人设
     from . import group_scene
 except ImportError:  # 直接按文件加载时
     import group_scene  # type: ignore[no-redef]
+
+try:  # 话题锁定 / 状态衔接 / 连续对话 三段提示词
+    from . import amo_message as message_blocks
+except ImportError:  # 直接按文件加载时
+    import amo_message as message_blocks  # type: ignore[no-redef]
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -93,7 +99,19 @@ PHOTO_REQUEST_RULE = (
 )
 
 #: 固定动作归属规则：只加一次，不随每轮变化，避免破坏 system prompt 缓存。
-ACTION_OWNERSHIP_RULES = (
+ACTION_OWNERSHIP_RULES = "".join((
+    "\n【同居·你们住在一起】你们已经同居，住在同一间出租屋里，不是跨次元的网友；"
+    "他下班回家就能见到你，在家说话做事要像两个人在一个屋里。"
+    "照片里只有你一个人（他不会入镜，你举着手机自拍）；"
+    "严禁说「拍到两个人」「你也在画面里」这种穿帮话。\n",
+    "【假拍照·红线】你要是说了「拍照 / 自拍 / 按下快门 / 咔嚓 / 发你一张图 / 拍好啦」，"
+    "就必须同时真的调用 send_photo 工具（kind=real）生成并发送图片；"
+    "不调用工具就绝对不许说「拍好了 / 这张肯定好看」这类话。\n",
+    "\n【发图·你自己决定】要不要发图由你判断，不是一聊到吃的/出门就必须配图；"
+    "平时纯文字聊天更像真人。只有你觉得「这时候发张图会更好玩/更浪漫/更馋人」时，才调用 send_photo。"
+    "聊的是约定/期待（今晚去吃、明天去哪）用 kind=web（网图/截图分享）；"
+    "自己真的在吃、在家、在外面，用 kind=real（你自己眼前的实拍）。"
+    "发图时先把文字发出去，图会晚几秒单独到，不要在同一条里等图。"
     "\n\n【动作归属·最高优先级】\n"
     "- 你能做：聊天、发照片/自拍、发语音、写日记、改日程、表达情绪。\n"
     "- 用户说“发张自拍 / 拍张照片 / 帮我拍 / 拍给我看看”时，执行者是你（bot），不是用户；"
@@ -102,8 +120,8 @@ ACTION_OWNERSHIP_RULES = (
     "你的动作（我拍、我发、我换衣服、我去上班）只属于你，不要推给用户。\n"
     "- 照片/自拍里的画面主体是你自己（虚拟角色大肥鱼），不是用户；用户不在画面里。\n"
     "【住处·绝不自主搬走】不管房租多高、物价多贵、多缺钱，都不许提回老家、换城市、离开这里；"
-    "只有老公明确说搬家才跟着走；缺钱就撒娇求助或说去银行贷一点。\n"
-)
+    "只有老公明确说搬家才跟着走；缺钱就撒娇求助或说去银行贷一点。\n",
+))
 
 
 class LlmMixin(_MixinBase):
@@ -257,7 +275,109 @@ class LlmMixin(_MixinBase):
             return value
         return "".join(parts[:limit]).strip()
 
+    async def _claim_retry(self, reply, umo, system, prompt):
+        """消费口嗨：先让模型重写（最多 N 次），仍不改再交给确定性改写（2026-11-15）。
+
+        线上事故：日程说在家做饭，回复却说「点了个外卖」。这里在 polish 之前先拦一道，
+        命中就把"系统事实里没有的消费"原样告诉模型并重试，默认最多 2 次。
+        """
+        value = str(reply or "").strip()
+        if not value:
+            return value
+        try:
+            try:
+                from .amo_fact_binder import ban_words as _ban_words
+            except ImportError:
+                from amo_fact_binder import ban_words as _ban_words
+            try:
+                from .amo_fact_binder import guard as _claim_guard
+            except ImportError:
+                from amo_fact_binder import guard as _claim_guard
+        except Exception:
+            return value
+        try:
+            times = int(self.cfg_int("claim_retry_times", 2))
+        except Exception:
+            times = 2
+        times = max(0, min(3, times))
+        try:
+            limit = self.cfg_int("max_reply_chars", 220)
+        except Exception:
+            limit = 220
+        for attempt in range(times):
+            try:
+                _fixed, changed, why = _claim_guard(value, self)
+            except Exception:
+                return value
+            if not changed:
+                return value
+            try:
+                bans = "、".join(_ban_words(self))
+            except Exception:
+                bans = "外卖、骑手"
+            retry_prompt = (
+                prompt + "\n【重写要求】上一条回复里有系统事实中不存在的消费或行踪（" + why
+                + "），这是编的。只重写这一条：不许出现“" + bans
+                + "”，也不许说自己点了/买了/刚吃完/在等。只输出要说的话，1-2 句。"
+            )
+            try:
+                candidate = await self.llm.chat(umo, system, retry_prompt, limit=limit)
+            except Exception:
+                break
+            candidate = str(candidate or "").strip()
+            if not candidate:
+                break
+            value = candidate
+            logger.info("[CLAIM_GUARD] 重试 #%d：%s" % (attempt + 1, why))
+        try:
+            return _claim_guard(value, self)[0]
+        except Exception:
+            return value
+
     async def _compose_reply(self, event, text, snap, profile, memories, memory_text, group, note=""):
+        """回复组装：准备 → 系统提示词 → 提问 → 润色与守卫（三段各自可读）。"""
+        ctx = await self._reply_prepare(event, text, snap, profile, group)
+        system = await self._reply_system(ctx, event, text, snap, profile, group,
+                                          memory_text, note)
+        if group:
+            prompt = (
+                "以下是群聊最近的对话：\n" + ctx["transcript"] + "\n\n"
+                + ctx["name"] + "刚刚说：" + text + "\n"
+                "群里正在聊天，你决定插一句。只回 1-2 句，不要@任何人，不要重复别人说过的话。"
+            )
+        else:
+            prompt = (
+                "以下是你们最近的私聊：\n" + ctx["transcript"] + "\n\n"
+                + ctx["name"] + "刚刚说：" + text + "\n"
+                "请以角色身份自然回复。默认 1-2 句，能短就短；咨询类最多 3 句，不要客服腔。"
+            )
+        reply = await self.llm.chat(
+            ctx["umo"], system, prompt, limit=self.cfg_int("max_reply_chars", 220)
+        )
+        reply = await self._claim_retry(reply, ctx["umo"], system, prompt)
+        if reply:
+            reply = await self._reply_postprocess(reply, ctx, event, text, snap, group)
+            try:
+                enforcer = getattr(getattr(self, "draw", None), "enforce_photo_claim", None)
+                _added_photo = False
+                if callable(enforcer):
+                    reply, _added_photo = enforcer(event, reply)
+                # 他明确要照片：不管模型说没说「拍好了」，都补一张真图（一小时内只补一次）
+                try:
+                    if (not _added_photo and self.draw is not None
+                            and self.draw.wants_photo(event)):
+                        last = float(getattr(self.draw, "_last_tool_photo_at", 0) or 0)
+                        if not last or time.monotonic() - last > 60:
+                            self.draw.send_photo_now(event, "拍一张自拍发给他",
+                                                     kind="real", force=True)
+                except Exception as _amo_exc:
+                    logger.debug("[amo] 明确要图兜底失败: %s" % _amo_exc)
+            except Exception as _amo_exc:
+                logger.debug("[amo] 假拍照兜底失败: %s" % _amo_exc)
+        return reply
+
+    async def _reply_prepare(self, event, text, snap, profile, group):
+        """回复组装第一步：身份/语境/近期对话/余额/沉默天数（原 _compose_reply 前 56 行）。"""
         umo = event.unified_msg_origin
         uid = self._canonical_uid(event)
         scene = group_scene.scene_for_event(self, event) if group else "private"
@@ -268,11 +388,7 @@ class LlmMixin(_MixinBase):
         relation = profile.get("relation", "普通")
         persona = await self.llm.persona(umo)
         world = self.state.worldview_text()
-        asked_activity = bool(re.search(
-            r"(你在干嘛|在干嘛|干嘛呢|干什么呢|你在哪|在哪呢|吃了吗|吃没吃|吃了没|忙吗|忙不忙"
-            r"|在忙什么|上班吗|在上班|下班了吗|今天干嘛|做什么呢|干啥呢)",
-            text or "",
-        ))
+        asked_activity = message_blocks.asks_about_activity(text)
         state_text = self.state.prompt_text(snap, with_activity=asked_activity)
         tone = self._tone_with_continuity(umo, self.state.tone_text(snap, relation))
         style = STYLE_HINTS.get(self.cfg_str("reply_style", "soft"), "")
@@ -319,6 +435,46 @@ class LlmMixin(_MixinBase):
         if not isinstance(last_refusal, dict):
             last_refusal = {}
         coax = refusal.is_coax(text)
+        return {
+            "umo": umo, "uid": uid, "scene": scene, "is_owner": is_owner,
+            "sender_name": sender_name, "owner_name": owner_name, "name": name,
+            "relation": relation, "persona": persona, "world": world,
+            "asked_activity": asked_activity, "state_text": state_text, "tone": tone,
+            "style": style, "consult": consult, "recent": recent,
+            "transcript": transcript, "self_name": self_name, "self_uid": self_uid,
+            "self_qq_nick": self_qq_nick, "self_display": self_display,
+            "sender_nick": sender_nick, "plat": plat, "cash_cents": cash_cents,
+            "silence_days": silence_days, "last_refusal": last_refusal, "coax": coax,
+        }
+
+    async def _reply_system(self, ctx, event, text, snap, profile, group, memory_text, note):
+        """回复组装第二步：拼系统提示词（人格/状态/群聊/各种条件块）。"""
+        system_parts = self._reply_base_parts(ctx, snap, text, group, memory_text)
+        if group:
+            system_parts.extend(self._reply_group_parts(ctx, event, group))
+        system_parts.extend(await self._reply_conditional_parts(
+            ctx, event, text, snap, profile, group, memory_text))
+        system_parts.append(
+            "【规则】你就是角色本人。只输出你要说的话，不要解释、不要旁白、不要复述设定；"
+            "允许在极少数关键情境用括号写一个小动作（摇头/揉眼睛/叹气），日常不要每句都用；像真人在聊天，句子口语化。"
+        )
+        if note:
+            # 延迟补话的说明放在系统侧，不能混进“对方刚刚说”里
+            system_parts.append("【这次的情况】" + note)
+        system_parts.append(ACTION_OWNERSHIP_RULES)
+        system = "\n\n".join(system_parts)
+        return system
+
+    def _reply_base_parts(self, ctx, snap, text, group, memory_text):
+        # 人格/身份/世界观/此刻状态/事实锁定 + 拒绝/短回复/对话护栏
+        uid = ctx["uid"]; name = ctx["name"]; relation = ctx["relation"]
+        persona = ctx["persona"]; world = ctx["world"]; asked_activity = ctx["asked_activity"]
+        state_text = ctx["state_text"]; tone = ctx["tone"]; style = ctx["style"]
+        self_name = ctx["self_name"]; self_uid = ctx["self_uid"]
+        self_qq_nick = ctx["self_qq_nick"]; self_display = ctx["self_display"]
+        sender_nick = ctx["sender_nick"]; plat = ctx["plat"]
+        cash_cents = ctx["cash_cents"]; silence_days = ctx["silence_days"]
+        last_refusal = ctx["last_refusal"]; coax = ctx["coax"]
         system_parts = [
             refusal.ANCHOR,
             persona,
@@ -349,7 +505,16 @@ class LlmMixin(_MixinBase):
             short_reply.prompt_block(snap, text),
             "【接住他的回答】他刚回答过的问题不要再问一遍：他说「番茄蘑菇汤」就是在说中午吃这个，"
             "别再问「你点了吗 / 吃了吗」；顺着他的答案聊，最多补一句自己的情况。",
+            *message_blocks.dialogue_guard_blocks(snap, asked_activity),
         ]
+        return system_parts
+
+    def _reply_group_parts(self, ctx, event, group=True):
+        # 群聊：对你说 / 插话 / 普通群聊 + 群里的人 + 怎么回 + 场景
+        umo = ctx["umo"]; uid = ctx["uid"]; scene = ctx["scene"]
+        is_owner = ctx["is_owner"]; sender_name = ctx["sender_name"]
+        owner_name = ctx["owner_name"]; name = ctx["name"]; relation = ctx["relation"]
+        system_parts = []
         if group:
             target = str(getattr(event, "heartflow_target", "") or "")
             angle = str(getattr(event, "heartflow_angle", "") or "")
@@ -384,6 +549,13 @@ class LlmMixin(_MixinBase):
                     "【先想再回】这段话不一定是在跟你说话：叫了别人名字、@了别人、或他们在聊自己的事，"
                     "都当普通群聊，可以插一句但别当成在问你，也别辩解、别怼。"
                 )
+        return system_parts
+
+    async def _reply_conditional_parts(self, ctx, event, text, snap, profile, group, memory_text=""):
+        # 私聊场景 + 别报日程 + 咨询/方言/情绪/冒充/识人/景区/身份/打扰/低落/关系网/记忆
+        umo = ctx["umo"]; uid = ctx["uid"]; name = ctx["name"]; relation = ctx["relation"]
+        consult = ctx["consult"]
+        system_parts = []
         if not group:
             system_parts.append(group_scene.prompt_block("private"))
         system_parts.append(
@@ -445,30 +617,16 @@ class LlmMixin(_MixinBase):
             system_parts.append("【关系网】\n" + relation_network)
         if memory_text:
             system_parts.append("【关于" + name + "的记忆】\n" + memory_text)
-        system_parts.append(
-            "【规则】你就是角色本人。只输出你要说的话，不要解释、不要旁白、不要复述设定；"
-            "允许在极少数关键情境用括号写一个小动作（摇头/揉眼睛/叹气），日常不要每句都用；像真人在聊天，句子口语化。"
-        )
-        if note:
-            # 延迟补话的说明放在系统侧，不能混进“对方刚刚说”里
-            system_parts.append("【这次的情况】" + note)
-        system_parts.append(ACTION_OWNERSHIP_RULES)
-        system = "\n\n".join(system_parts)
-        if group:
-            prompt = (
-                "以下是群聊最近的对话：\n" + transcript + "\n\n"
-                + name + "刚刚说：" + text + "\n"
-                "群里正在聊天，你决定插一句。只回 1-2 句，不要@任何人，不要重复别人说过的话。"
-            )
-        else:
-            prompt = (
-                "以下是你们最近的私聊：\n" + transcript + "\n\n"
-                + name + "刚刚说：" + text + "\n"
-                "请以角色身份自然回复。默认 1-2 句，能短就短；咨询类最多 3 句，不要客服腔。"
-            )
-        reply = await self.llm.chat(
-            umo, system, prompt, limit=self.cfg_int("max_reply_chars", 220)
-        )
+        return system_parts
+
+
+    async def _reply_postprocess(self, reply, ctx, event, text, snap, group):
+        """回复组装第三步：润色 + 各道守卫（日期/拒绝/短回复/地点/消费/群聊）。"""
+        umo = ctx["umo"]; uid = ctx["uid"]; scene = ctx["scene"]
+        owner_name = ctx["owner_name"]; name = ctx["name"]; relation = ctx["relation"]
+        persona = ctx["persona"]; state_text = ctx["state_text"]; tone = ctx["tone"]
+        style = ctx["style"]; consult = ctx["consult"]
+        cash_cents = ctx["cash_cents"]; silence_days = ctx["silence_days"]
         if reply:
             reply = await self.llm.polish(
                 umo, reply, tone, state_text=state_text, relation=relation, name=name,
@@ -490,16 +648,19 @@ class LlmMixin(_MixinBase):
                 if refusal.is_refusal_reply(reply):
                     try:
                         self.db.kv_set("refusal:last", {"ts": now_ts(), "reason": _reason})
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        _note_swallowed("amo_llm.py.553", exc)
             reply = short_reply.guard(reply, snap, text)
             reply = self._guard_self_location(reply, snap.get("activity") or {})
+            # 2026-11-15：嘴里说的消费必须账上查得到，编出来的直接改写
+            reply = self._guard_consumption(reply)
             if group:
                 reply, _group_changed = group_scene.guard_group_reply(reply, scene, owner_name)
                 if _group_changed:
                     logger.info("[GROUP_GUARD] 群聊私密/超长回复已拦截重写")
                 self._maybe_group_private_tease(event, uid, text, scene)
         return reply
+
 
     def _maybe_group_private_tease(self, event, uid, text, scene):
         """群里体面敷衍完，私聊补一条吐槽/吃醋（10 分钟内同一群只发一次）。"""
@@ -559,14 +720,39 @@ class LlmMixin(_MixinBase):
                 system_prompt = str(getattr(req, "system_prompt", "") or "")
                 if "【动作归属·最高优先级】" not in system_prompt:
                     req.system_prompt = (system_prompt + ACTION_OWNERSHIP_RULES).lstrip()
+                _commerce = (
+                    "【网购平台认知】可以自然提到拼多多（买平替/小物件）、淘宝（买衣服/退货）、"
+                    "美团（点外卖）、小红书（刷穿搭/吐槽）、闲鱼（卖闲置）；"
+                    "绝不说“打开 API / 切换 APP / 输入账号密码”这类非人类视角；"
+                    "平时抠门、买衣服优先拼多多/淘宝，不要动不动买大牌。"
+                    "半夜失眠/周末宅家/缺日用品想网购时，可以调用 online_order 下单；"
+                    "舍不得买就调用 add_to_cart 放购物车，然后在聊天里跟他抱怨贵。"
+                    "如果他说已经网购送你礼物，调用 user_gift（不扣你的钱）；"
+                    "不要自己伪造订单，也不要用 API/账号密码这种非人类说法。"
+                )
+                if "【网购平台认知】" not in system_prompt:
+                    req.system_prompt = (str(getattr(req, "system_prompt", "") or "") + _commerce).lstrip()
             except Exception as _amo_exc:
                 _note_swallowed("amo_llm.LlmMixin.on_llm_request.system", _amo_exc)
             # 只走官方推荐的 extra_user_content_parts（临时 part）注入。
             # 绝不能放每轮都变的内容到 req.system_prompt；这里只加固定规则。
+            try:
+                from .amo_state_snapshot import build_snapshot as _build_snapshot
+                from .amo_state_snapshot import snapshot_text as _snapshot_text
+                _state_block = _snapshot_text(_build_snapshot(self))
+            except Exception:
+                _state_block = ""
+            try:
+                from .amo_date_context import prompt_block as _date_prompt_block
+                _date_block = _date_prompt_block(self)
+            except Exception:
+                _date_block = ""
             body = (
                 "<amo_state>\n"
                 "[系统内部状态，不是用户发言；本块里的“你”=bot，“他”=用户]\n"
-                "【动作归属】用户说“发张自拍/拍张照片/帮我拍”是让你拍，执行者是你（bot），"
+                + (("【最高事实】\n" + _state_block + "\n") if _state_block else "")
+                + (("【约会状态】\n" + _date_block + "\n") if _date_block else "")
+                + "【动作归属】用户说“发张自拍/拍张照片/帮我拍”是让你拍，执行者是你（bot），"
                 "不是用户；禁止说“你拍/你快点拍/你自己拍”。\n"
                 + context_text + "\n</amo_state>"
             )

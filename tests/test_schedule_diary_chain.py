@@ -241,9 +241,34 @@ class EditTests(BaseCase):
 
 
 class DiaryGenerationTests(BaseCase):
-    def test_empty_schedule_does_not_fabricate_hours(self):
+    def setUp(self):
+        super().setUp()
+        # 把「现在」钉到当天 21:30：所有「上一小时已结束」的断言都与跑测时刻无关。
+        fixed = datetime.datetime.combine(datetime.date.today(), datetime.time(21, 30))
+        self._clock = mock.patch.object(amo_human_state, "_now", return_value=fixed)
+        self._clock.start()
+
+    def tearDown(self):
+        self._clock.stop()
+        super().tearDown()
+
+    def test_empty_schedule_fills_past_defaults_only(self):
+        import amo_shared
+
         self.assertEqual(HumanState._hourly_schedule([]), [])
-        self.assertEqual(self.state.schedule_tree(self.day), [])
+        tree = self.state.schedule_tree(self.day)
+        if amo_shared.minutes_now() == 0:
+            self.assertEqual(tree, [])
+            return
+        children = [child for block in tree for child in block["children"]]
+        self.assertTrue(children)
+        self.assertEqual(children[0]["start"], "00:00")
+        last_end = children[-1]["end"]
+        last_min = int(last_end[:2]) * 60 + int(last_end[3:])
+        # 晚上最后一段允许并到 23:00（避免 10 分钟碎片），其余不能超过此刻
+        self.assertLessEqual(last_min, max(amo_shared.minutes_now(), 23 * 60))
+        tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+        self.assertEqual(self.state.schedule_tree(tomorrow), [])
 
     def test_future_hour_is_pending_and_not_saved(self):
         items = self.hourly()
@@ -299,6 +324,19 @@ class DiaryGenerationTests(BaseCase):
         record = self.plugin.db.get_diary_record(self.day, item["start"])
         self.assertIsNotNone(record)
         self.assertEqual(record["status"], "valid")
+
+    def test_second_click_reads_cache_without_llm(self):
+        if amo_human_state._now().hour == 0:
+            self.skipTest("0 点后今天还没有过完的小时")
+        items = self.hourly()
+        self.install_schedule(items)
+        hour = amo_human_state._now().hour - 1
+        item = items[hour]
+        first = asyncio.run(self.state.expand_hour(self.day, item, items))
+        self.assertFalse(first.get("cached"))
+        second = asyncio.run(self.state.expand_hour(self.day, item, items))
+        self.assertTrue(second.get("cached"))
+        self.assertEqual(self.engine.calls, 1)
 
     def test_version_changed_during_generation_is_discarded(self):
         if amo_human_state._now().hour == 0:
@@ -642,10 +680,8 @@ class SchedulerTests(unittest.TestCase):
 
         sched = asyncio.run(run_once())
         record = plugin.db.get_diary_record(day, "00:00")
-        self.assertIsNotNone(record)
-        self.assertEqual(record["status"], "valid")
-        self.assertEqual(state.engine.calls, 1)
-        self.assertEqual(len(sched._spawned), 1)
+        self.assertIsNone(record)
+        self.assertEqual(state.engine.calls, 0)
 
 
 if __name__ == "__main__":

@@ -160,6 +160,21 @@ def read_diary(root: str, day: date) -> str:
     return ""
 
 
+def append_note(root: str, day: date, note: str) -> str:
+    """在已定稿日记末尾追加“补记”，绝不覆盖正文。"""
+    body = str(note or "").strip()
+    path = diary_path(root, day)
+    current = read_diary(root, day)
+    if not current or not body:
+        return ""
+    content = current.rstrip() + "\n\n【补记】" + body + "\n"
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fp:
+        fp.write(content)
+    os.replace(tmp, path)
+    return path
+
+
 def list_tree(root: str) -> Dict[str, Any]:
     """按 年 → 月 → 日 汇总已写的日记。"""
     base = diary_root(root)

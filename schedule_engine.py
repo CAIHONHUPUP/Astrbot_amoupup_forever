@@ -412,28 +412,88 @@ def fmt_hhmm(minutes):
     return "%02d:%02d" % (minutes // 60, minutes % 60)
 
 
-def json_extract(raw):
-    """从模型输出里尽量抠出 JSON，容忍 ```json 包裹和前后废话。"""
-    text = str(raw or "").strip()
+logger = __import__("logging").getLogger("astrbot_amoupup_forever.schedule_engine")
+
+SAFE_EVENT = {"event": "日常发呆", "location": "家", "cost": 0}
+
+
+def _strip_fences(text):
+    """去掉 ```json / ``` 包裹、BOM、零宽字符。"""
+    text = str(text or "").replace("\ufeff", "").replace("\u200b", "").replace("\u200c", "")
+    text = re.sub(r"```[a-zA-Z0-9_-]*", "", text)
+    return text.replace("```", "").strip()
+
+
+def _balanced(text, opener, closer):
+    """从第一个 opener 开始做括号配对，返回最外层完整片段（忽略字符串里的括号）。"""
+    start = text.find(opener)
+    if start < 0:
+        return ""
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1]
+    return ""
+
+
+def json_extract(raw, fallback=None):
+    """从模型输出里抠 JSON：去 Markdown、去掉前后废话、容忍尾逗号；失败返回 fallback，绝不抛异常。"""
+    text = _strip_fences(raw)
     if not text:
-        return None
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
-    text = re.sub(r"\s*```$", "", text)
-    for opener, closer in (("[", "]"), ("{", "}")):
-        start = text.find(opener)
-        end = text.rfind(closer)
-        if start >= 0 and end > start:
-            chunk = text[start:end + 1]
+        return fallback
+    candidates = []
+    for opener, closer in (("{", "}"), ("[", "]")):
+        chunk = _balanced(text, opener, closer)
+        if chunk:
+            candidates.append(chunk)
+    candidates.append(text)
+    for chunk in candidates:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        cleaned = re.sub(r",\s*([}\]])", r"\1", chunk)
+        cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", cleaned)
+        for attempt in (cleaned, re.sub(r"'([^']*)'", r'"\1"', cleaned)):
             try:
-                return json.loads(chunk)
-            except Exception as _amo_exc:
-                _note_swallowed("schedule_engine.json_extract", _amo_exc)
+                return json.loads(attempt)
+            except Exception:
                 continue
-    try:
-        return json.loads(text)
-    except Exception as _amo_exc:
-        _note_swallowed("schedule_engine.json_extract", _amo_exc)
-        return None
+    logger.warning("[JSON_PARSE] 模型返回的不是合法 JSON（已降级为兜底）：%s", text[:120])
+    return fallback
+
+
+def diary_presence_rules(together=False):
+    """小日记的第 7/8 条：约会这一小时不许把老公写成“微信上的网友”。"""
+    if together:
+        return (
+            "【物理场景事实·最高优先级】这一小时你们在一起：老公就在你对面，面对面坐在一起；"
+            "这不是网恋、不是异地。聊天记录只是你们当面说的话，不能拿来判断“人在不在”。\n"
+            "7. 只能写面对面的细节（他给你夹菜、你抬头看他、一起走一起回家）；"
+            "严禁写「他在微信上跟我说」「他不在我身边」「我一个人吃」。\n"
+            "8. 面对面的互动（他抱我、他来看我、他给我夹菜）是事实，可以照写；素材里没有的动作不要编。\n"
+        )
+    return (
+        "7. 素材包里没写他出现，就不能写他出现；严禁虚构打电话/拥抱/送药/来陪你；\n"
+        "8. 可以写「想他/想被抱抱」，但不能写成「他抱了我/他打电话来」；"
+        "线上聊天只能写「在微信/飞书上聊了几句」；\n"
+    )
 
 
 class ScheduleEngine:
@@ -1636,15 +1696,15 @@ class ScheduleEngine:
             _scenic_text(scenic),
             "\n".join(lines),
         )
-        try:
-            raw = await asyncio.wait_for(llm.chat_raw(umo, system, prompt), timeout=15)
-        except Exception as _amo_exc:
-            _note_swallowed("schedule_engine.ScheduleEngine.enrich", _amo_exc)
-            return items
-        data = json_extract(raw)
+        data = await self.llm_json(llm, umo, system, prompt, timeout=15)
         if isinstance(data, dict):
             data = data.get("activities") or data.get("items") or data.get("schedule")
         if not isinstance(data, list) or len(data) != len(items):
+            # JSON 不合法：保留冷数据，空 activity 用中性事实兜底，不抛异常
+            for item in items:
+                if not str(item.get("activity") or "").strip():
+                    item["activity"] = str(SAFE_EVENT.get("event") or "日常发呆")
+                    item.setdefault("category", "rest")
             return items
         for item, value in zip(items, data):
             text = ""
@@ -1662,6 +1722,98 @@ class ScheduleEngine:
         # activity 被改写过，detail 可能已经和它对不上，统一按新活动重新挑。
         self._align_zone_with_activity(items)
         return self._repair_details(items, ctx)
+
+    @staticmethod
+    def _fix_home_diary(text):
+        """同居在家：不能写「隔着微信/手机聊」——他就在屋里，要写成当面的。"""
+        body = str(text or "")
+        for old, new in (
+            ("在微信上跟老公聊了几句", "跟他随口说了几句"),
+            ("微信上跟老公聊了几句", "跟他随口说了几句"),
+            ("在微信上跟他说了几句", "跟他随口说了几句"),
+            ("在微信上聊了几句", "跟他随口说了几句"),
+            ("微信里", "当面"),
+            ("微信上", "当面"),
+            ("隔着屏幕", "当面"),
+        ):
+            body = body.replace(old, new)
+        return body
+
+    @staticmethod
+    def _interaction_material(lines):
+        """把「他：/我：」聊天行整理成自然读的互动素材，空列表返回空串。"""
+        try:
+            rows = []
+            for line in lines or []:
+                text = str(line or "").strip()
+                if not text or "：" not in text:
+                    continue
+                who, said = text.split("：", 1)
+                said = said.strip().strip('"“”')
+                if not said:
+                    continue
+                rows.append(("他" if who.strip() != "我" else "我", said))
+            if not rows:
+                return ""
+            sentences = []
+            index = 0
+            while index < len(rows) and len(sentences) < 8:
+                who, said = rows[index]
+                if who == "他":
+                    nxt = rows[index + 1] if index + 1 < len(rows) else None
+                    if nxt and nxt[0] == "我":
+                        sentences.append('老公对你说：“%s”。你回复了：“%s”。' % (said, nxt[1]))
+                        index += 2
+                        continue
+                    sentences.append('老公说：“%s”。' % said)
+                else:
+                    sentences.append('你说：“%s”。' % said)
+                index += 1
+            return "在约会期间，" + "".join(sentences[-6:])
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _fix_date_diary(text):
+        """约会这一小时：把「隔着手机/一个人」的穿帮措辞改回面对面。"""
+        body = str(text or "")
+        for old, new in (
+            ("在微信上跟老公聊了几句", "跟他面对面聊了几句"),
+            ("微信上跟老公聊", "当面跟他聊"),
+            ("在微信上", "面对面"),
+            ("微信里", "当面"),
+            ("隔着屏幕", "面对面"),
+            ("我一个人", "我们"),
+            ("一个人点了", "我们点了"),
+            ("一个人点", "我们点"),
+            ("一个人吃", "我们一起吃"),
+            ("一个人", "我"),
+            ("等他回来", "他就在我对面"),
+        ):
+            body = body.replace(old, new)
+        return body
+
+    async def llm_json(self, llm, umo, system, prompt, fallback=None, timeout=20):
+        """大模型返回 JSON：解析失败→严格重试一次→仍失败返回 fallback，绝不抛异常。"""
+        raw = ""
+        try:
+            raw = await asyncio.wait_for(llm.chat_raw(umo, system, prompt), timeout=timeout)
+        except Exception as _amo_exc:
+            _note_swallowed("schedule_engine.llm_json.first", _amo_exc)
+        data = json_extract(raw)
+        if data is not None:
+            return data
+        logger.warning("[JSON_PARSE] 首次 JSON 解析失败，触发严格重试")
+        try:
+            strict = prompt + "\n\n刚才格式错了，请严格只输出 JSON，不要任何其他文字！"
+            raw = await asyncio.wait_for(llm.chat_raw(umo, system, strict), timeout=timeout)
+        except Exception as _amo_exc:
+            _note_swallowed("schedule_engine.llm_json.retry", _amo_exc)
+            return fallback
+        data = json_extract(raw, fallback)
+        if data is None:
+            logger.warning("[JSON_PARSE] 严格重试仍失败，使用安全兜底")
+        return data
 
     # ------------------------------------------------------------------
     # 8. 动态日记
@@ -1701,16 +1853,88 @@ class ScheduleEngine:
             return self._clean_diary(text)
 
         system = "你就是这个角色本人。你在写只给自己看的第一人称小日记，只输出 JSON。"
-        prompt = self._diary_prompt(ctx, item, prev_item, next_item, prev_diary)
+        # 约会这一小时只可能是「老公」：模型偶尔会把名单里的别人串进来，先挡掉
+        if "老公" in str(item.get("activity") or ""):
+            _others = ("柳如烟", "白凝冰", "季博达", "方圆", "沈幼微")
+            _orig_parse = _parse
+
+            def _parse(raw):
+                text = _orig_parse(raw)
+                for other in _others:
+                    text = text.replace(other, "老公")
+                return text
+        _act = str(item.get("activity") or "")
+        is_date = (str(item.get("category") or "") == "social"
+                   and ("老公" in _act or "约会" in _act))
+        prompt = self._diary_prompt(ctx, item, prev_item, next_item, prev_diary,
+                                    together=is_date)
+        _chat_hour = [str(x) for x in (ctx.get("chat_lines_hour") or []) if str(x).strip()]
+        _material = self._interaction_material(_chat_hour)
+        if _material:
+            prompt += ("\n\n【互动素材】" + _material + "\n"
+                       "请结合你们的真实聊天记录和物理场景，以第一人称写小日记。"
+                       "严禁凭空捏造没说过的话，情感必须基于这些原话；聊天只能当素材，不要逐句复述。\n")
+        else:
+            prompt += ("\n\n【互动素材】这一小时你们没怎么发消息，可能只是在默默吃饭/待着。"
+                       "不要编造对话，只写物理场景和情绪（比如「虽然没怎么说话，但一起吃饭很安心」）。\n")
+        _place_text = str(item.get("place") or "")
+        _at_home = any(word in _place_text for word in ("家", "卧室", "客厅", "沙发", "床", "出租屋"))
+        if _at_home and not is_date:
+            prompt += ("\n\n【同居·他在家】你们已经同居，这一小时他在你身边/同一个屋里。"
+                       "不要写「微信上聊了几句」「隔着屏幕」「他不在」这类话，"
+                       "要写当面说话、递东西、一起窝着的细节。\n")
+        if is_date:
+            prompt += (
+                "\n\n【这一小时你们在一起】你和老公正在约会，他就在你对面/身边。"
+                "只能写面对面的细节（给他夹菜、看他吃、一起说话）。"
+                "严禁出现「微信/手机/视频/隔着屏幕/一个人/等他回来」这类措辞，"
+                "你们不是隔着手机聊天。\n"
+            )
         raw = ""
         try:
             raw = await asyncio.wait_for(llm.chat_raw(umo, system, prompt), timeout=60)
+            # 下一小时的关键词漏进这一小时：直接截断，绝不把两段拼成一段
+            _text = _parse(raw)
+            _next_act = str((next_item or {}).get("activity") or "")
+            _cur_act = str(item.get("activity") or "")
+            for _kw in ("火锅", "逛街", "喜酒", "聚餐", "电影", "商场", "医院", "景区", "火锅店"):
+                if _kw in _next_act and _kw not in _cur_act and _kw in _text:
+                    _idx = _text.find(_kw)
+                    _cut = max(_text.rfind("。", 0, _idx), _text.rfind("，", 0, _idx))
+                    if _cut > 20:
+                        raw = _text[:_cut + 1]
+                        if raw.endswith("，"):
+                            raw = raw[:-1] + "。"
+                    break
         except Exception as _amo_exc:
             _note_swallowed("schedule_engine.ScheduleEngine.generate_diary", _amo_exc)
             raw = ""
         diary = _parse(raw)
+        if is_date:
+            diary = self._fix_date_diary(diary)
+        elif (any(w in str(item.get("place") or "") for w in ("家", "卧室", "客厅", "沙发", "床"))
+              or any(w in diary for w in ("到家", "沙发", "睡衣", "卧室", "被窝"))):
+            diary = self._fix_home_diary(diary)
+        if len(diary) < 20:
+            # JSON 崩了/被截断：严格重试一次，再不行走本地兜底，绝不让这一小时空白
+            try:
+                strict = prompt + "\n\n刚才格式错了，请严格只输出 JSON，不要任何其他文字！"
+                raw = await asyncio.wait_for(llm.chat_raw(umo, system, strict), timeout=30)
+                diary = _parse(raw)
+            except Exception as _amo_exc:
+                _note_swallowed("schedule_engine.generate_diary.retry", _amo_exc)
         if len(diary) < 20:
             diary = self.fallback_diary(ctx, item, prev_item)
+        facts = ctx.get("fact_pool") or []
+        if facts:
+            diary = self._sanitize_hour_diary(diary, facts)
+            if not await self._audit_hour_diary(diary, facts, llm, umo):
+                strict = (prompt + "\n【审计失败】上一版写了事实列表之外的事，必须严格只写白名单里的事件。\n")
+                try:
+                    raw = await asyncio.wait_for(llm.chat_raw(umo, system, strict), timeout=60)
+                    diary = self._sanitize_hour_diary(_parse(raw), facts)
+                except Exception as _amo_exc:
+                    _note_swallowed("schedule_engine.ScheduleEngine.generate_diary.audit", _amo_exc)
         if prev_diary and self._diary_contradicts(prev_diary, diary):
             strict = (
                 prompt
@@ -1734,63 +1958,36 @@ class ScheduleEngine:
             "activity": item.get("activity") or "",
         }
 
-    def _diary_prompt(self, ctx, item, prev_item, next_item, prev_diary=""):
+    def diary_presence_rules(self, together=False):
+        return diary_presence_rules(together)
+
+    def _diary_prompt(self, ctx, item, prev_item, next_item, prev_diary="", together=False):
         event = ctx.get("event") or {}
         scenic = ctx.get("scenic") or {}
-        prev_text = "无"
-        if prev_item:
-            prev_text = "%s-%s 在%s，%s，心情%s" % (
-                prev_item.get("start"), prev_item.get("end"), prev_item.get("place"),
-                prev_item.get("activity"), prev_item.get("mood") or "平静",
-            )
-        next_text = "无"
-        if next_item:
-            next_text = "%s-%s 去%s，%s" % (
-                next_item.get("start"), next_item.get("end"), next_item.get("place"),
-                next_item.get("activity"),
-            )
-        prev_diary_text = str(prev_diary or "").strip()[:500] or "（还没有生成上一小时日记）"
-        car_line = ""
-        if item.get("vehicle"):
-            car_line = "这一小时是开%s；必须写清堵车、找停车位或路上的细节。" % item.get("vehicle")
-        if item.get("detail"):
-            car_line = (car_line + " 可以用的细节：%s。" % item.get("detail")).strip()
-        asset_line = ""
-        assets = str(ctx.get("assets") or "").strip()
-        if assets:
-            asset_line = ("他送你的东西：%s。写这一小时时可以自然戴/用/开，"
-                          "但不要每段都提，也不要写你还想要更大的。" % assets)
-        allow_gift = False
+        (prev_text, next_text, prev_diary_text, car_line,
+         asset_line, worn_line, gift_line, outfit_line) = _diary_material_lines(
+            self, ctx, item, prev_item, next_item, prev_diary)
         try:
-            hour = int(str(item.get("start") or "")[:2])
-            allow_gift = hour in self._gift_mention_hours(ctx)
-        except (TypeError, ValueError):
-            allow_gift = False
-        worn_line = ""
-        worn = str(ctx.get("worn") or "").strip()
-        if worn:
-            if allow_gift:
-                worn_line = "你今天身上/包里有：%s（他送的）。这一小时可以自然带一句，只提一句，别写成交代行踪。" % worn
-            else:
-                worn_line = "这一小时不要主动提他送的东西（今天已经提过了）；除非上一小时写了、这一小时要承接。"
-        outfit_line = ""
-        outfit = str(ctx.get("outfit") or "").strip()
-        if outfit:
-            outfit_line = ("你今天穿的是：%s（今天锁定的这一套，日记里写到衣服只能写它，不能另编）。" % outfit)
-        gift_line = ""
-        gift_log = str(ctx.get("gift_log") or "").strip()
-        if gift_log and allow_gift:
-            gift_line = ("他送过你的东西（日期）：%s。这一小时可以自然带一句；"
-                         "日期不是今天的，不要写成今天送的。" % gift_log)
-        return (
-            "角色设定：\n" + _brief_world(ctx.get("world") or {}) + "\n"
+            from .amo_diary_guard import fact_rules
+        except ImportError:
+            from amo_diary_guard import fact_rules
+        _base = (
+            fact_rules(together) + "\n"
+            + diary_presence_rules(together)
+            + "角色设定：\n" + _brief_world(ctx.get("world") or {}) + "\n"
             "今天：%s，%s；天气：%s；所在地：%s。\n"
             "身体：%s；生理期：%s；昨日：%s。\n"
             "此刻十维情绪：%s。\n"
             "上一小时：%s\n"
             "上一小时已经写下的小日记（必须承接，不能矛盾）：\n%s\n"
             "这一小时：%s-%s，%s，在%s（%s），心情%s。\n"
+            "【事实唯一·最高优先级】这一小时只发生这一件事：地点=%s、动作=%s。"
+            "如果这条日程刚被约会/新事件覆盖，之前写过、想过的一切作废，"
+            "绝不许把旧场景（比如在家做饭、屋里香不香）和现在的地点动作拼在一起；"
+            "地点和动作只能有一个，冲突时以后者为准。\n"
             "下一小时：%s\n"
+            "【时间边界·必须遵守】这一小时只写到本段结束（%s）为止；之后发生的事、下一小时的日程，"
+            "一个字都不能写进来，哪怕只隔几分钟，也不能把两段拼成一段。\n"
             "突发事件：%s\n"
             "景区信息：%s\n"
             "%s\n"
@@ -1805,10 +2002,19 @@ class ScheduleEngine:
             "4. 如果是周末开车出去玩，要提到车、堵车、停车位；\n"
             "5. 口语化、生动，像真人发朋友圈，不写旁白，也不提日程/AI/模型；\n"
             "6. 承接上一小时日记：上一小时出现的人、地点、动作保持一致；\n"
-            "7. 上一小时写了他已经进门/在家/在陪你，这一小时就按他在家写；\n"
-            "8. 上一小时没写他出现，这一小时他就不会凭空出现；真的要出现，写清开门/回来/打电话；\n"
             "9. 只写这一小时的新细节，不重复上一小时说过的整段；\n"
-            "10. 只输出 JSON：{\"diary\":\"...\"}。"
+            "10. 只写这一小时（今天）：不许写明天、不许把昨天的事当今天；"
+            "这一小时只有给出的日程是事实，不能添加电话/见面/新买衣服；\n"
+            "11. 聊天只能间接转述（“他提醒我多喝水”），不许主客体反转；"
+            "这一小时素材没有的互动不能写，平台名统一写“微信”；\n"
+            "12. 这一小时只写当下：可以写体感/即时情绪，禁止跨时空想念（吃包子突然好想老公）、"
+            "禁止虚构不在场的人（想让他送热水但他没来）、禁止总结句（今天真倒霉）；\n"
+            "13. 这一小时无事发生就写“发呆、放空、刷剧”或留空，不要没话找话；\n"
+            "14. 睡眠时段（23:30-07:00）不写小时日记；\n"
+            "15. 允许复合情绪（发工资开心但感冒难受），别把情绪写扁平；\n"
+            "16. 不许把账本金额抄进日记：基本/奖金/扣款/实发/余额的具体数字一律不写，"
+            "只写“发工资了”“余额多了一点”这种感受；\n"
+            "17. 只输出 JSON：{\"diary\":\"...\"}。"
         ) % (
             ctx.get("day"), (ctx.get("meta") or {}).get("label") or "普通一天",
             _weather_text(ctx.get("weather") or {}), ctx.get("location") or _city_of(ctx) or "未设置",
@@ -1820,7 +2026,9 @@ class ScheduleEngine:
             prev_diary_text,
             item.get("start"), item.get("end"), item.get("activity"),
             item.get("place"), item.get("zone"), item.get("mood") or "平静",
+            item.get("place"), item.get("activity"),
             next_text,
+            item.get("end"),
             event.get("note") or "无",
             _scenic_text(scenic),
             car_line,
@@ -1829,10 +2037,87 @@ class ScheduleEngine:
             gift_line,
             outfit_line,
         )
+        facts = ctx.get("fact_pool") or []
+        if facts:
+            lines = []
+            for idx, fact in enumerate(facts[:40], 1):
+                if isinstance(fact, dict):
+                    type_text = str(fact.get("type") or "事实")
+                    detail = str(fact.get("detail") or "")
+                    ledger_like = (any(key in type_text for key in ("收入", "支出", "账单"))
+                                   or "发工资" in detail)
+                    if ledger_like:
+                        # 账本金额不进日记：只留一句人话，情绪让模型自己写
+                        if "工资" in detail:
+                            detail = "发工资了，账户里多了一笔钱"
+                        elif "支出" in type_text:
+                            detail = "花了一笔钱（具体吃什么、买什么看日程）"
+                        else:
+                            detail = "有一笔进出账"
+                        type_text = "账本"
+                    lines.append("%d. [%s] %s%s" % (
+                        idx, type_text,
+                        (str(fact.get("time")) + " ") if fact.get("time") and type_text != "账本" else "",
+                        detail))
+            _base += ("\n【今天真实发生的事件（白名单）】\n" + "\n".join(lines)
+                      + "\n你只能扩写上面的内容。上面没写的电话、见面、去公司、聊天，一律不能写。\n")
+        return _base
+
+    @staticmethod
+    def _sanitize_hour_diary(text, facts):
+        value = str(text or "")
+        joined = " ".join(str(f.get("detail") or "") for f in facts if isinstance(f, dict))
+        has_phone = any(w in joined for w in ("电话", "通话", "语音"))
+        has_meet = any(w in joined for w in ("见面", "约会", "来家里", "一起吃饭"))
+        has_chat = any(w in joined for w in ("聊天", "微信", "飞书"))
+        location = ""
+        for f in facts:
+            if isinstance(f, dict) and f.get("type") == "状态" and "现在在" in str(f.get("detail") or ""):
+                location = str(f.get("detail") or "")
+        home = "家" in location
+        sentences = re.split(r"(?<=[。！？!?\n])", value)
+        kept = []
+        for sentence in sentences:
+            s = sentence.strip()
+            if not s:
+                continue
+            if not has_phone and any(w in s for w in ("打电话", "通电话", "听见他声音", "视频通话")):
+                continue
+            if not has_meet and any(w in s for w in ("他抱我", "他摸我头", "他来找我", "一起吃饭")):
+                continue
+            if not has_chat and any(w in s for w in ("微信", "飞书")) and any(
+                    w in s for w in ("聊", "回", "消息", "说")):
+                continue
+            if home and any(w in s for w in ("工位", "公司", "地铁")):
+                continue
+            kept.append(s)
+        return "".join(kept)[:600]
+
+    async def _audit_hour_diary(self, text, facts, llm, umo):
+        if not facts or llm is None:
+            return True
+        lines = "\n".join(str(f.get("detail") or "") for f in facts if isinstance(f, dict))[:2500]
+        prompt = ("事实列表：\n%s\n\n日记：\n%s\n\n日记里有没有事实列表之外的动作或事件？"
+                  "只输出 True 或 False。" % (lines, text))
+        try:
+            answer = await asyncio.wait_for(
+                llm.chat_raw(umo, "你是事实审计员，只输出 True/False。", prompt), timeout=25)
+            return "false" not in str(answer or "").lower()
+        except Exception:
+            return True
 
     @staticmethod
     def _clean_diary(text):
         text = str(text or "").strip()
+        if text.startswith("{"):
+            _data = json_extract(text)
+            if isinstance(_data, dict):
+                text = str(_data.get("diary") or _data.get("text") or "").strip()
+            if text.startswith("{"):
+                _m = re.search(r'"diary"\s*:\s*"(.*)"\s*}\s*$', text, re.S)
+                if _m:
+                    text = _m.group(1)
+            text = text.strip().strip('"').strip("“”").strip()
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
         text = re.sub(r"\s*```$", "", text)
         text = text.strip().strip('"').strip("“”").strip()
@@ -1922,7 +2207,7 @@ def _scenic_text(scenic):
 JIT_HOURS = (8, 12, 15, 19, 23)
 
 
-def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0):
+def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, weekday=None):
     """到点即时决策：只给一个当前动作，不排未来。"""
     hour = int(hour)
     hunger = float(hunger)
@@ -1935,6 +2220,12 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0):
                         "diary": "生病了只能喝粥，好想吃火锅。"}
             return {"action": "裹着被子躺着，没胃口", "place": "家", "zone": "home",
                     "category": "rest", "cost_cents": 0, "diary": "生病又没钱，只能躺着。"}
+    if weekday is not None and int(weekday) >= 5 and hour in (8, 12, 15, 19):
+        if hour == 15:
+            return {"action": "窝在沙发上刷手机，没什么安排", "place": "家", "zone": "home",
+                    "category": "rest", "cost_cents": 0, "diary": "周末下午，慢慢过。"}
+        return {"action": "在家收拾屋子，看看剧", "place": "家", "zone": "home",
+                "category": "life", "cost_cents": 0, "diary": "周末在家，不着急。"}
     if hour in (8, 12, 19) and hunger < 80:
         if cash_cents >= 1500:
             if hour == 12:
@@ -1962,3 +2253,54 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0):
                 "category": "sleep", "cost_cents": 0, "diary": "今天就这样吧，睡觉。"}
     return {"action": "在忙自己的事", "place": "", "zone": "home",
             "category": "life", "cost_cents": 0, "diary": ""}
+
+
+def _diary_material_lines(self, ctx, item, prev_item, next_item, prev_diary=""):
+    """小日记提示词里的素材行：上/下一小时、车、礼物、穿着。模块级函数，假 self 也能直接调。"""
+    prev_text = "无"
+    if prev_item:
+        prev_text = "%s-%s 在%s，%s，心情%s" % (
+            prev_item.get("start"), prev_item.get("end"), prev_item.get("place"),
+            prev_item.get("activity"), prev_item.get("mood") or "平静",
+        )
+    next_text = "无"
+    if next_item:
+        next_text = "%s-%s 去%s，%s" % (
+            next_item.get("start"), next_item.get("end"), next_item.get("place"),
+            next_item.get("activity"),
+        )
+    prev_diary_text = str(prev_diary or "").strip()[:500] or "（还没有生成上一小时日记）"
+    car_line = ""
+    if item.get("vehicle"):
+        car_line = "这一小时是开%s；必须写清堵车、找停车位或路上的细节。" % item.get("vehicle")
+    if item.get("detail"):
+        car_line = (car_line + " 可以用的细节：%s。" % item.get("detail")).strip()
+    asset_line = ""
+    assets = str(ctx.get("assets") or "").strip()
+    if assets:
+        asset_line = ("他送你的东西：%s。写这一小时时可以自然戴/用/开，"
+                      "但不要每段都提，也不要写你还想要更大的。" % assets)
+    allow_gift = False
+    try:
+        hour = int(str(item.get("start") or "")[:2])
+        allow_gift = hour in self._gift_mention_hours(ctx)
+    except (TypeError, ValueError):
+        allow_gift = False
+    worn_line = ""
+    worn = str(ctx.get("worn") or "").strip()
+    if worn:
+        if allow_gift:
+            worn_line = "你今天身上/包里有：%s（他送的）。这一小时可以自然带一句，只提一句，别写成交代行踪。" % worn
+        else:
+            worn_line = "这一小时不要主动提他送的东西（今天已经提过了）；除非上一小时写了、这一小时要承接。"
+    outfit_line = ""
+    outfit = str(ctx.get("outfit") or "").strip()
+    if outfit:
+        outfit_line = ("你今天穿的是：%s（今天锁定的这一套，日记里写到衣服只能写它，不能另编）。" % outfit)
+    gift_line = ""
+    gift_log = str(ctx.get("gift_log") or "").strip()
+    if gift_log and allow_gift:
+        gift_line = ("他送过你的东西（日期）：%s。这一小时可以自然带一句；"
+                     "日期不是今天的，不要写成今天送的。" % gift_log)
+    return prev_text, next_text, prev_diary_text, car_line, asset_line, worn_line, gift_line, outfit_line
+

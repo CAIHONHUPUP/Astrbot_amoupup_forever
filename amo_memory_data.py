@@ -309,9 +309,11 @@ class DataSyncMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_memory.HumanCorePlugin._sync_profiles_to_data", _amo_exc)
             remote_rows = []
+        # lister 只在「mem 门面不可用」时才补；先给默认值，不然 _sync_profiles_to_data_part 会 UnboundLocal
+        lister: Any = None
         if not remote_rows:
             # mem 门面不可用的旧版：直接读 DataStore
-            lister: Any = getattr(self._data_store(), "list_profiles", None)
+            lister = getattr(self._data_store(), "list_profiles", None)
             if callable(lister):
                 try:
                     remote_rows = await asyncio.to_thread(lambda: lister(bot_id, "", 500)) or []
@@ -367,36 +369,7 @@ class DataSyncMixin(_MixinBase):
             else:
                 failed += 1
         # 推完再查一次，拿到“真的写进去了多少条”
-        after: list[Any] = []
-        try:
-            after = await self._data_call("list_profiles", bot_id, "", 500) or []
-        except Exception as _amo_exc:
-            _note_swallowed("amo_memory.HumanCorePlugin._sync_profiles_to_data", _amo_exc)
-            after = []
-        if not after:
-            lister = getattr(self._data_store(), "list_profiles", None)
-            if callable(lister):
-                try:
-                    after = await asyncio.to_thread(lambda: lister(bot_id, "", 500)) or []
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_memory.HumanCorePlugin._sync_profiles_to_data", _amo_exc)
-                    after = []
-        total = max(len(after), len(remote))
-        message = (
-            "[amo] 画像同步：本地 %d 条 / 数据插件 %d 条，本次补推 %d 条，拉回 %d 条，失败 %d 条"
-            % (len(local), total, pushed, pulled, failed)
-        )
-        if failed:
-            logger.warning(message)
-            if failed >= len(local) and local:
-                logger.warning(
-                    "[amo] 画像一条都没写进去：先确认 Astrbot_amoupup_data 已启用且版本 >= 2.0.4"
-                )
-        elif pushed or not getattr(self, "_profile_sync_logged", False):
-            self._profile_sync_logged = True
-            logger.info(message)
-        else:
-            logger.debug(message)
+        await _sync_profiles_to_data_part(self, bot_id, failed, lister, local, pulled, pushed, remote)
         return pushed
     def _apply_remote_profile(self, uid, remote_row, local_profile):
         """把数据插件面板改过的画像字段拉回本地（不标记成本地手动修改）。"""
@@ -743,4 +716,38 @@ class DataSyncMixin(_MixinBase):
                 logger.info("[amo] 已清理 %d 个非画像用户（%s）" % (removed, source))
         except Exception as exc:
             logger.debug("[amo] 清理非画像用户失败: %s" % exc)
+
+
+
+async def _sync_profiles_to_data_part(self, bot_id, failed, lister, local, pulled, pushed, remote):
+    after: list[Any] = []
+    try:
+        after = await self._data_call("list_profiles", bot_id, "", 500) or []
+    except Exception as _amo_exc:
+        _note_swallowed("amo_memory.HumanCorePlugin._sync_profiles_to_data", _amo_exc)
+        after = []
+    if not after:
+        lister = getattr(self._data_store(), "list_profiles", None)
+        if callable(lister):
+            try:
+                after = await asyncio.to_thread(lambda: lister(bot_id, "", 500)) or []
+            except Exception as _amo_exc:
+                _note_swallowed("amo_memory.HumanCorePlugin._sync_profiles_to_data", _amo_exc)
+                after = []
+    total = max(len(after), len(remote))
+    message = (
+        "[amo] 画像同步：本地 %d 条 / 数据插件 %d 条，本次补推 %d 条，拉回 %d 条，失败 %d 条"
+        % (len(local), total, pushed, pulled, failed)
+    )
+    if failed:
+        logger.warning(message)
+        if failed >= len(local) and local:
+            logger.warning(
+                "[amo] 画像一条都没写进去：先确认 Astrbot_amoupup_data 已启用且版本 >= 2.0.4"
+            )
+    elif pushed or not getattr(self, "_profile_sync_logged", False):
+        self._profile_sync_logged = True
+        logger.info(message)
+    else:
+        logger.debug(message)
 

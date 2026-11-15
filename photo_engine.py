@@ -99,9 +99,11 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         )
 
 try:  # 视角后缀：她出镜=自拍视角，她拍环境=她的拍摄视角（空镜）
-    from .photo_view import SCENERY_ONLY, VIEW_POV, VIEW_SELFIE
+    from .photo_view import (ROOM_NO_BODY, SCENERY_ONLY, SELFIE_FRAMING,
+                             SELFIE_NEGATIVE, SELFIE_STYLE, VIEW_POV, VIEW_SELFIE)
 except ImportError:  # 直接按文件加载时
-    from photo_view import SCENERY_ONLY, VIEW_POV, VIEW_SELFIE
+    from photo_view import (ROOM_NO_BODY, SCENERY_ONLY, SELFIE_FRAMING,
+                            SELFIE_NEGATIVE, SELFIE_STYLE, VIEW_POV, VIEW_SELFIE)
 
 try:  # 场景规则表（照片严格跟随日程的唯一真值）
     from .photo_rules import (
@@ -153,6 +155,38 @@ def _light_text(engine, plan=None):
             return "自然光"
     except Exception:
         return "自然光"
+
+
+
+def selfie_state_hint(engine, activity, plan=None):
+    """自拍时按当前处境补细节：生病躺床 / 刚洗完澡 / 睡衣。"""
+    parts = []
+    try:
+        health = engine.plugin.state.health_info() or {}
+    except Exception:
+        health = {}
+    if health.get("sick"):
+        parts.append("有点生病，素颜，头发有点乱，慵懒")
+    act = str((activity or {}).get("activity") or "")
+    zone = str(getattr(plan, "zone", "") or (activity or {}).get("zone") or "")
+    if zone == "home_bed" or any(w in act for w in ("睡", "躺", "休息", "被窝")):
+        parts.append("躺在床上，盖着被子，慵懒")
+    if any(w in act for w in ("洗澡", "洗完", "沐浴")):
+        parts.append("刚洗完澡，头发微湿")
+    try:
+        outfit = str(engine.outfit_today() or "")
+    except Exception:
+        outfit = ""
+    if "睡" in outfit:
+        parts.append("穿着睡衣")
+    if "真丝" in outfit:
+        parts.append("真丝睡衣的质感")
+    seen, out = set(), []
+    for item in parts:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return "，".join(out)
 
 
 def _log_photo_debug(engine, activity, plan, final_prompt, pose_text=""):
@@ -590,8 +624,8 @@ class PhotoEngine:
                     if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
                         os.remove(path)
                         removed += 1
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _note_swallowed("photo_engine.py.627", exc)
             self.plugin.db.kv_set("photo_cache_cleanup", time.time())
         except Exception as _amo_exc:
             _note_swallowed("photo_engine.PhotoEngine.cleanup_cache", _amo_exc)
@@ -846,8 +880,8 @@ class PhotoEngine:
             # 日常：只留地点，不带「她在做什么」（否则和空镜打架）
             head = prefix + (where or "日常") + "，生活空镜，生活感，背景就是这个地点"
         light = _light_text(self, plan)
-        # 她拍的空镜里她本人不出镜，但最多露出的手/袖口仍要跟今天的穿搭一致
-        outfit_line = "她今天穿的是%s，画面边缘露出的手或袖口必须和这套一致" % self.outfit_today()
+        # 空镜就是空镜：不再允许"画面边缘露出手/袖口"，否则会生成"空房间+一只手"
+        outfit_line = ROOM_NO_BODY
         extras = [head, light, outfit_line]
         if plan is not None:
             extras.append(plan.guard)
@@ -885,6 +919,21 @@ class PhotoEngine:
             _note_swallowed("photo_engine.PhotoEngine._pose_ref", _amo_exc)
             return ""
 
+    def _selfie_outfit_text(self, zone):
+        """床/沙发/睡衣场景去掉鞋和硬外套，避免自拍穿鞋上床。"""
+        worn = {}
+        try:
+            wardrobe = getattr(self.plugin, "wardrobe", None)
+            if wardrobe is not None:
+                worn = wardrobe.current() or {}
+        except Exception:
+            worn = {}
+        keys = ("top", "skirt", "bottom")
+        if zone not in ("home_bed", "home_sofa"):
+            keys = ("coat", "top", "skirt", "bottom", "shoes")
+        parts = [str(worn.get(key) or "").strip() for key in keys]
+        return "、".join(part for part in parts if part) or self.outfit_today()
+
     def _selfie_prompt_for(self, kind, scene, activity, pose=None, plan=None, pose_text=""):
         activity = dict(activity or {})
         if plan is None:
@@ -919,7 +968,26 @@ class PhotoEngine:
         hand_line = ("只有一只手举手机，另一只手自然垂下、不要出现在镜头前，不要多手或手腕错位；"
                      "手机本体和摄像头不要入镜，不要出现手机背面或镜头对着画面")
         where_line = "在%s，背景要能看出这个地方、不要换成别的场景" % (where or "不指定具体地点")
+        zone = str(getattr(plan, "zone", "") or "")
+        bed = zone in ("home_bed", "home_sofa") or any(
+            word in (where + act) for word in ("床", "被窝", "沙发"))
+        if hasattr(self, "_selfie_outfit_text"):
+            outfit_text = self._selfie_outfit_text(zone if zone else ("home_bed" if bed else ""))
+        else:
+            outfit_text = self.outfit_today()
         extras = [where_line, motion, hand_line, light]
+        if bed:
+            extras.append("她正躺在/坐在床上或沙发上，脚上没有穿鞋，光着脚或穿着袜子，"
+                          "脚盖在被子里；画面里绝对不要出现鞋")
+        else:
+            try:
+                worn = (self.plugin.wardrobe.current() or {}) if getattr(self.plugin, "wardrobe", None) else {}
+            except Exception:
+                worn = {}
+            if worn.get("sleep"):
+                extras.append("穿着松软睡衣，没有外套、没有牛仔裤、没有硬挺的裤子")
+            elif worn.get("homewear"):
+                extras.append("穿着宽松居家便服，盘腿或瘫坐，姿态松弛")
         if plan is not None:
             extras.append(plan.guard)
             try:
@@ -933,13 +1001,24 @@ class PhotoEngine:
                 _note_swallowed("photo_engine.PhotoEngine._selfie_prompt_for.room", _amo_exc)
         else:
             extras.append(scene_guard(activity.get("zone")))
+        state_line = ""
+        try:
+            state_line = selfie_state_hint(self, activity, plan)
+        except Exception:
+            state_line = ""
         extras.append(VIEW_SELFIE)
-        prompt = "自拍，穿着%s，衣服就这一套、不要换成别的，%s，生活感" % (
-            self.outfit_today(), "，".join(part for part in extras if part)
+        extras.append(state_line)
+        extras.append(SELFIE_FRAMING)
+        extras.append(SELFIE_STYLE)
+        prompt = "自拍，第一人称自拍，举着手机自拍，穿着%s，衣服就这一套、不要换成别的，%s，生活感" % (
+            outfit_text, "，".join(part for part in extras if part)
         )
         if plan is not None:
             _log_photo_debug(self, activity, plan, prompt, pose_text)
         return prompt
+
+    def _selfie_state_hint(self, activity, plan=None):
+        return selfie_state_hint(self, activity, plan)
 
     def _find_omni(self):
         return find_omni(self.plugin, self, "photo_engine.PhotoEngine._find_omni")
@@ -1012,8 +1091,10 @@ class PhotoEngine:
                 wardrobe = getattr(self.plugin, "wardrobe", None)
                 if wardrobe is not None:
                     outfit = wardrobe.current() or {}
-                names = [outfit.get(key) for key in ("coat", "top", "skirt", "bottom", "shoes")
-                         if outfit.get(key)]
+                zone = str(getattr(plan, "zone", "") or "")
+                keys = ("top", "skirt", "bottom") if zone in ("home_bed", "home_sofa") else (
+                    "coat", "top", "skirt", "bottom", "shoes")
+                names = [outfit.get(key) for key in keys if outfit.get(key)]
                 if not names:
                     text = str(self.outfit_today() or "")
                     names = [part.strip() for part in text.split("，") if part.strip()]
@@ -1031,17 +1112,7 @@ class PhotoEngine:
                 pose_ref = ""
             if pose_ref:
                 refs = [pose_ref] + list(refs)
-            # 在家自拍：按场景带客厅/卧室参考图（只参考家具、布局和光线）
-            try:
-                housing = getattr(self.plugin, "housing", None)
-                if housing is not None and plan is not None and str(plan.zone).startswith("home"):
-                    room = home_room_for_plan(plan) or "living"
-                    path = housing.room_image(room)
-                    if path and os.path.isfile(path):
-                        room_ref = path
-                        refs = list(refs) + [room_ref]
-            except Exception as exc:
-                logger.debug("[amo] 房间参考图准备失败: %s" % exc)
+            # 自拍不再带房间参考图：房间图会把构图往"空房间"带，正是那次"床+一只手"的来源
         args = {"prompt": prompt, "count": 1, "record_usage": True}
         if refs:
             args["refs"] = refs
@@ -1054,6 +1125,10 @@ class PhotoEngine:
             args["prompt"] = prompt + "\n" + hint + "）"
         if selfie:
             args["mode"] = "selfie"
+            negative = SELFIE_NEGATIVE
+            if str(getattr(plan, "zone", "") or "") in ("home_bed", "home_sofa"):
+                negative += "，床上的鞋，室内穿鞋，鞋踩床单，被窝里出现鞋"
+            args["negative_prompt"] = negative
         # 场景/姿势锁：交给万象画卷副脑，解析后强制回填，避免它把日程场景改写掉
         scene_lock = pose_lock = ""
         if plan is not None:
@@ -1141,9 +1216,21 @@ class PhotoEngine:
         item = await self._generate(omni, prompt, selfie, pose=pose,
                                     plan=plan if lock_scene else None)
         if not item and selfie:
-            # 自拍链路失败（没参考图/节点不支持）→ 退回空镜，别让这一次白掷；
-            # 注意不能退回 selfie 提示词，那样会画出一张「没有她的自拍」
-            item = await self._generate(omni, self._prompt_for("scenery", scene, activity), False)
+            # 自拍失败绝不能退回空镜：那会发出"空房间+一只手"的灵异照片。
+            # 用简化自拍提示词重试一次（不带姿势/房间参考），仍失败就这次不发。
+            try:
+                retry_prompt = self._selfie_prompt_for(
+                    kind, scene, activity, pose=None,
+                    plan=plan if lock_scene else None)
+            except Exception:
+                retry_prompt = prompt
+            logger.warning("[amo] 自拍没出来，改用简化自拍提示词重试一次（不再用空镜兜底）")
+            item = await self._generate(omni, retry_prompt, True, pose=None,
+                                        plan=plan if lock_scene else None)
+        if not item and selfie:
+            logger.warning("[amo] 自拍重试仍失败，本次不发照片（空镜兜底已禁用）")
+            self._stats["failed"] += 1
+            return False
         if not item:
             self._stats["failed"] += 1
             return False
@@ -1723,15 +1810,15 @@ class PhotoEngine:
                         and os.path.join(target_dir, name) != target):
                     try:
                         os.remove(os.path.join(target_dir, name))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        _note_swallowed("photo_engine.py.1813", exc)
             os.replace(temp, target)
         except Exception as exc:
             try:
                 if os.path.exists(temp):
                     os.remove(temp)
-            except Exception:
-                pass
+            except Exception as exc:
+                _note_swallowed("photo_engine.py.1820", exc)
             return "保存模板失败：%s" % exc
         mapping = self._template_map()
         mapping[view] = target
@@ -1771,8 +1858,8 @@ class PhotoEngine:
                 if path and os.path.exists(path):
                     os.remove(path)
                     removed.append(path)
-            except Exception:
-                pass
+            except Exception as exc:
+                _note_swallowed("photo_engine.py.1861", exc)
         self._save_template_map(mapping)
         enabled = self._enabled_map()
         if view in self.VIEWS:

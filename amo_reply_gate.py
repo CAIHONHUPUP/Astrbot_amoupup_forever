@@ -65,92 +65,12 @@ class ReplyGate:
     def score_group(self, umo, group_id, text, recent, directed, profile, snap):
         rec = [m for m in recent if m.get("role") == "user"][-6:]
         rec_text = " ".join([m.get("content", "") for m in rec])
-        relevance = overlap(tokens(text), tokens(rec_text)) * 100.0
-        if has_question(text):
-            relevance += 12
-        if "你" in text or any(alias and alias in text for alias in self.p.bot_aliases):
-            relevance += 10
-        if directed:
-            relevance += 28
-        relevance = clamp(relevance)
-
-        mood = snap["mood"]
-        willingness = 50.0
-        willingness += (mood["开心"] - 50) * 0.30
-        willingness += (mood["兴奋"] - 50) * 0.22
-        willingness += (mood["平静"] - 50) * 0.10
-        willingness -= (mood["疲惫"] - 50) * 0.35
-        willingness -= (mood["郁闷"] - 50) * 0.28
-        willingness -= (mood["生气"] - 50) * 0.22
-        willingness += (mood["依恋"] - 50) * 0.15
-        relation = profile.get("relation", "普通")
-        willingness += {"相恋": 22, "熟识": 10, "抵触": -30, "仇恨": -55}.get(relation, 0)
-        phase = snap["period"]["phase"]
-        willingness += {"排卵期": 6, "卵泡期": 3, "黄体期": -6, "月经期": -10}.get(phase, 0)
-        if snap["health"]["sick"]:
-            willingness -= 15
-        hour = _now().hour
-        if hour < 6:
-            willingness -= 25
-        last_reply = self.p._last_reply_at.get(umo, 0)
-        if last_reply and now_ts() - last_reply < 25:
-            willingness -= 22
-        willingness = clamp(willingness)
-
-        social = 72.0
-        if len(text) < 2:
-            social -= 20
-        if re.search(r"https?://|www\.", text):
-            social -= 35
-        if re.search(r"(加群|代购|广告|优惠|返利|扫码|兼职)", text):
-            social -= 45
-        senti = sentiment(text)
-        if senti["insult"]:
-            social -= 40
-        blocked = [word.strip() for word in self.p.cfg_str("blocked_words", "").split(",") if word.strip()]
-        if any(word in text for word in blocked):
-            social -= 50
-        if directed:
-            social += 10
-        if has_question(text):
-            social += 5
-        social = clamp(social)
-
-        timing = 60.0
-        dt = now_ts() - last_reply if last_reply else 99999
-        if dt < 15:
-            timing -= 40
-        elif dt < 45:
-            timing -= 20
-        elif dt < 120:
-            timing -= 5
-        elif dt > 300:
-            timing += 15
-        category = snap["activity"].get("category")
-        if category == "sleep":
-            timing -= 55
-        elif category in ("work", "study"):
-            timing -= 18
-        rate = self.activity(group_id)
-        if 2.0 <= rate <= 12.0:
-            timing += 10
-        elif rate > 20.0:
-            timing -= 12
-        if quiet_now(self.p.cfg_str("quiet_hours", "23:30-07:30")):
-            timing -= 25
-        timing = clamp(timing)
-
+        relevance = _gate_relevance(self, text, rec_text, directed)
+        willingness = _gate_willingness(self, umo, snap, profile)
+        social = _gate_social(self, text, directed)
+        timing = _gate_timing(self, umo, snap, group_id)
         last_two = [m for m in recent if m.get("role") == "user"][-2:]
-        coherence = overlap(
-            tokens(text), tokens(" ".join([m.get("content", "") for m in last_two]))
-        ) * 100.0
-        if directed:
-            coherence += 18
-        if re.search(r"(这个|那个|刚才|刚刚|上面|你说|你刚才)", text):
-            coherence += 10
-        if len(text) < 4:
-            coherence -= 10
-        coherence = clamp(coherence)
+        coherence = _gate_coherence(self, text, last_two, directed)
 
         weights = [
             self.p.cfg_float("gate_w_relevance", 0.30),
@@ -309,3 +229,100 @@ class ReplyGate:
         except Exception as _amo_exc:
             _note_swallowed("main.ReplyGate.private_probability", _amo_exc)
         return clamp(probability, 0.0, 1.0)
+
+def _gate_relevance(self, text, rec_text, directed):
+    relevance = overlap(tokens(text), tokens(rec_text)) * 100.0
+    if has_question(text):
+        relevance += 12
+    if "你" in text or any(alias and alias in text for alias in self.p.bot_aliases):
+        relevance += 10
+    if directed:
+        relevance += 28
+    return clamp(relevance)
+
+
+def _gate_willingness(self, umo, snap, profile):
+    mood = snap["mood"]
+    willingness = 50.0
+    willingness += (mood["开心"] - 50) * 0.30
+    willingness += (mood["兴奋"] - 50) * 0.22
+    willingness += (mood["平静"] - 50) * 0.10
+    willingness -= (mood["疲惫"] - 50) * 0.35
+    willingness -= (mood["郁闷"] - 50) * 0.28
+    willingness -= (mood["生气"] - 50) * 0.22
+    willingness += (mood["依恋"] - 50) * 0.15
+    relation = profile.get("relation", "普通")
+    willingness += {"相恋": 22, "熟识": 10, "抵触": -30, "仇恨": -55}.get(relation, 0)
+    phase = snap["period"]["phase"]
+    willingness += {"排卵期": 6, "卵泡期": 3, "黄体期": -6, "月经期": -10}.get(phase, 0)
+    if snap["health"]["sick"]:
+        willingness -= 15
+    hour = _now().hour
+    if hour < 6:
+        willingness -= 25
+    last_reply = self.p._last_reply_at.get(umo, 0)
+    if last_reply and now_ts() - last_reply < 25:
+        willingness -= 22
+    return clamp(willingness)
+
+
+def _gate_social(self, text, directed):
+    social = 72.0
+    if len(text) < 2:
+        social -= 20
+    if re.search(r"https?://|www\.", text):
+        social -= 35
+    if re.search(r"(加群|代购|广告|优惠|返利|扫码|兼职)", text):
+        social -= 45
+    senti = sentiment(text)
+    if senti["insult"]:
+        social -= 40
+    blocked = [word.strip() for word in self.p.cfg_str("blocked_words", "").split(",") if word.strip()]
+    if any(word in text for word in blocked):
+        social -= 50
+    if directed:
+        social += 10
+    if has_question(text):
+        social += 5
+    return clamp(social)
+
+
+def _gate_timing(self, umo, snap, group_id):
+    last_reply = self.p._last_reply_at.get(umo, 0)
+    timing = 60.0
+    dt = now_ts() - last_reply if last_reply else 99999
+    if dt < 15:
+        timing -= 40
+    elif dt < 45:
+        timing -= 20
+    elif dt < 120:
+        timing -= 5
+    elif dt > 300:
+        timing += 15
+    category = snap["activity"].get("category")
+    if category == "sleep":
+        timing -= 55
+    elif category in ("work", "study"):
+        timing -= 18
+    rate = self.activity(group_id)
+    if 2.0 <= rate <= 12.0:
+        timing += 10
+    elif rate > 20.0:
+        timing -= 12
+    if quiet_now(self.p.cfg_str("quiet_hours", "23:30-07:30")):
+        timing -= 25
+    return clamp(timing)
+
+
+def _gate_coherence(self, text, last_two, directed):
+    coherence = overlap(
+        tokens(text), tokens(" ".join([m.get("content", "") for m in last_two]))
+    ) * 100.0
+    if directed:
+        coherence += 18
+    if re.search(r"(这个|那个|刚才|刚刚|上面|你说|你刚才)", text):
+        coherence += 10
+    if len(text) < 4:
+        coherence -= 10
+    return clamp(coherence)
+

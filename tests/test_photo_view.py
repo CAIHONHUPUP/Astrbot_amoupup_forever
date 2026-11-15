@@ -22,6 +22,8 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 from photo_engine import PhotoEngine  # noqa: E402
+from photo_view import (ROOM_NO_BODY, SELFIE_FRAMING, SELFIE_NEGATIVE,
+                        SELFIE_STYLE)
 from photo_view import (  # noqa: E402
     SCENERY_ONLY,
     VIEW_POV,
@@ -63,6 +65,14 @@ class LooksLikeHerTests(unittest.TestCase):
 class _FakePhotoEngine:
     """只喂提示词构造需要的几个依赖，不碰数据库/网络。"""
 
+    def __init__(self):
+        class _State:
+            def health_info(self):
+                return {"status": "感冒", "sick": True}
+        class _Plugin:
+            state = _State()
+        self.plugin = _Plugin()
+
     def _cfg_str(self, key, default=""):
         return {"photo_prompt_prefix": "手机随手拍，真实自然，生活感，"}.get(key, default)
 
@@ -98,15 +108,62 @@ class PhotoPromptViewTests(unittest.TestCase):
         self.assertNotIn("眯二十分钟", prompt)
         self.assertIn("工位", prompt)
 
-    def test_scenery_keeps_today_outfit_on_sleeve(self):
+    def test_scenery_never_shows_a_hand_or_body_part(self):
+        # 2026-11-15：空镜里不再允许露手/袖口（那是"空房间+一只手"的来源）
         prompt = PhotoEngine._prompt_for(self.engine, "daily", "", self.activity)
-        self.assertIn("今天穿的是", prompt)
+        self.assertIn(ROOM_NO_BODY, prompt)
+        self.assertNotIn("露出的手", prompt)
+        self.assertNotIn("今天穿的是", prompt)
 
     def test_scenery_allows_passersby_but_not_her(self):
         prompt = PhotoEngine._prompt_for(self.engine, "daily", "", self.activity)
         self.assertIn("路人", prompt)
         self.assertIn("不出现她本人", prompt)
 
+    def test_selfie_prompt_has_camera_style_and_framing(self):
+        prompt = PhotoEngine._selfie_prompt_for(self.engine, "outfit", "家", self.activity)
+        self.assertIn("第一人称自拍", prompt)
+        self.assertIn(SELFIE_FRAMING, prompt)
+        self.assertIn(SELFIE_STYLE, prompt)
+        self.assertIn("前置摄像头", prompt)
+
+    def test_selfie_prompt_uses_sick_state(self):
+        bed = {"place": "卧室", "activity": "躺在床上休息", "zone": "home_bed"}
+        prompt = PhotoEngine._selfie_prompt_for(self.engine, "outfit", "卧室", bed)
+        self.assertIn("盖着被子", prompt)
+        self.assertIn("素颜", prompt)
+        self.assertIn("头发有点乱", prompt)
+
+
+    def test_bed_selfie_has_no_shoes_fact(self):
+        activity = {"place": "卧室", "activity": "躺在床上", "zone": "home_bed"}
+        prompt = PhotoEngine._selfie_prompt_for(self.engine, "outfit", "卧室", activity)
+        self.assertIn("脚上没有穿鞋", prompt)
+        self.assertIn("不要出现鞋", prompt)
+
+    def test_bed_selfie_negative_blocks_shoes(self):
+        self.assertIn("床上的鞋", SELFIE_NEGATIVE)
+        self.assertIn("室内穿鞋", SELFIE_NEGATIVE)
+
+    def test_selfie_negative_never_bans_people(self):
+        self.assertIn("多只手", SELFIE_NEGATIVE)
+        self.assertNotIn("人物", SELFIE_NEGATIVE)
+        self.assertNotIn("人类", SELFIE_NEGATIVE)
+        self.assertIn("空房间", SELFIE_NEGATIVE)
+
+
+    def test_selfie_failure_never_falls_back_to_empty_room(self):
+        import inspect
+        source = inspect.getsource(PhotoEngine._share)
+        self.assertIn("空镜兜底已禁用", source)
+        self.assertNotIn('_prompt_for("scenery"', source)
+
+    def test_draw_engine_uses_selfie_framing_and_negative(self):
+        import inspect
+        import draw_engine
+        source = inspect.getsource(draw_engine.DrawEngine)
+        self.assertIn("SELFIE_FRAMING", source)
+        self.assertIn("SELFIE_NEGATIVE", source)
     def test_outfit_fallback_has_no_face(self):
         # 自拍失败时的兜底：没有参考图就别硬画脸
         prompt = PhotoEngine._prompt_for(self.engine, "outfit", "", self.activity)

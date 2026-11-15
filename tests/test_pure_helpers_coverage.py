@@ -38,7 +38,13 @@ class DiaryWindowTests(unittest.TestCase):
         self.assertTrue(diary_in_window(dt.datetime(2026, 11, 12, 22, 0), 22, 0, 30))
         self.assertTrue(diary_in_window(dt.datetime(2026, 11, 12, 22, 30), 22, 0, 30))
         self.assertFalse(diary_in_window(dt.datetime(2026, 11, 12, 22, 31), 22, 0, 30))
+        # 早于日记时间也不算在窗口内：以前只有上界，10:00 会被判成「在窗口里」
+        self.assertFalse(diary_in_window(dt.datetime(2026, 11, 12, 10, 0), 22, 0, 30))
+        self.assertFalse(diary_in_window(dt.datetime(2026, 11, 12, 0, 10), 22, 0, 30))
         self.assertFalse(diary_in_window("bad", 22, 0, 30))
+        # 跨零点的窗口仍可用
+        self.assertTrue(diary_in_window(dt.datetime(2026, 11, 12, 23, 50), 23, 45, 30))
+        self.assertTrue(diary_in_window(dt.datetime(2026, 11, 13, 0, 5), 23, 45, 30))
 
     def test_manual_target_only_yesterday_or_before(self):
         now = dt.datetime(2026, 11, 12, 12, 0)

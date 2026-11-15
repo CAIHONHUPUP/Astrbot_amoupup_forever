@@ -43,7 +43,8 @@ WRITE_ROUTES = frozenset({
     "/wardrobe/night",
     "/poses/save",
     "/poses/refs",
-    "/diary/write", "/diary/import", "/diary/open",
+    "/diary/write",
+    "/diary/note", "/diary/import", "/diary/open",
     "/refresh_status",
 })
 
@@ -106,8 +107,8 @@ class WebRouteMixin:
         try:
             self.context.register_web_api(route, handler, methods, desc)
             return True
-        except TypeError:
-            pass
+        except TypeError as exc:
+            _note_swallowed("amo_routes.py.110", exc)
         except Exception as exc:
             logger.warning("[WEB_REG] route=%s ok=0 error=%s", route, exc)
             return False
@@ -146,7 +147,7 @@ class WebRouteMixin:
 
 
 class _RequestProxy:
-    """让测试/旧代码 patch main.web_request 仍然生效（请求对象由 main 暴露）。"""
+    """让测试 patch ``amo_shared.web_request`` 生效（请求对象以 amo_shared 为准）。"""
 
     def __init__(self, fallback):
         self._fallback = fallback
@@ -154,7 +155,7 @@ class _RequestProxy:
     def _target(self):
         import sys
 
-        for name in ("main", "data.plugins.Astrbot_amoupup_forever.main"):
+        for name in ("amo_shared", "data.plugins.Astrbot_amoupup_forever.amo_shared"):
             module = sys.modules.get(name)
             if module is not None and "web_request" in vars(module):
                 return vars(module)["web_request"]

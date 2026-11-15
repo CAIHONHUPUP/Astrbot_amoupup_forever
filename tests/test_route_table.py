@@ -14,6 +14,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+from amo_route_table import ROUTE_COUNT_EXPECTED, ROUTE_SPECS, build_routes  # noqa: E402
+
 from amo_api import ApiMixin  # noqa: E402
 from amo_route_table import ROUTE_SPECS, build_routes  # noqa: E402
 
@@ -31,7 +33,7 @@ class FakeApi:
 
 class RouteTableTests(unittest.TestCase):
     def test_route_count_and_unique_paths(self):
-        self.assertEqual(len(ROUTE_SPECS), 85)
+        self.assertEqual(len(ROUTE_SPECS), ROUTE_COUNT_EXPECTED)
         paths = [item[0] for item in ROUTE_SPECS]
         self.assertEqual(len(paths), len(set(paths)))
 

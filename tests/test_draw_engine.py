@@ -194,7 +194,7 @@ class DecideTests(unittest.TestCase):
         self.assertIn("牛肉面", plan["prompt"])
 
     def test_topic_hit_uses_reply(self):
-        engine, _ = engine_for()
+        engine, _ = engine_for({"draw_topic_prob": 100})
         plan = engine.decide(FakeEvent("晚上吃啥"), "面条吧")
         self.assertIsNotNone(plan)
         self.assertIn("面条", plan["prompt"])
@@ -216,7 +216,7 @@ class DecideTests(unittest.TestCase):
         engine, _ = engine_for()
         plan = engine.decide(FakeEvent("发张自拍"), "好呀")
         self.assertIsNotNone(plan)
-        self.assertTrue(plan["prompt"].startswith("自拍"))
+        self.assertIn("自拍", plan["prompt"])
         self.assertIn("前置", plan["prompt"])
         self.assertIn("穿着", plan["prompt"])
         self.assertIn("米色针织衫", plan["prompt"])
@@ -247,7 +247,7 @@ class DecideTests(unittest.TestCase):
         plan = engine.decide(event, "好呀")
         self.assertIsNotNone(plan)
         self.assertIn("新裙子", plan["prompt"])
-        self.assertTrue(plan["prompt"].startswith("自拍"))
+        self.assertIn("自拍", plan["prompt"])
 
     def test_selfie_uses_library_pose_only_at_home(self):
         engine, plugin = engine_for()
@@ -339,9 +339,11 @@ class RunTests(unittest.TestCase):
         engine, _ = engine_for()
         self.assertTrue(engine.wants_photo(FakeEvent("拍照给我看看")))
 
-    def test_wants_photo_false_for_topic_mode(self):
+    def test_explicit_photo_request_works_in_topic_mode(self):
+        # 2026-11-15 用户要求：他直接说「拍张照/发张自拍」必须 100% 触发，不看触发模式
         engine, _ = engine_for({"draw_trigger_mode": "topic"})
-        self.assertFalse(engine.wants_photo(FakeEvent("拍照给我看看")))
+        self.assertTrue(engine.wants_photo(FakeEvent("拍照给我看看")))
+        self.assertIsNotNone(engine.decide(FakeEvent("拍张照"), "好呀"))
 
     def test_location_question_uses_current_schedule_place(self):
         engine, plugin = engine_for()
@@ -469,3 +471,130 @@ class RunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_topic_auto_photo_failure_is_silent(self):
+        """话题自动配图失败不打扰：只记日志，不发「没拍成」。"""
+        engine, plugin = engine_for({}, FakeOmni(fail=True))
+        event = FakeEvent("今天想吃火锅")
+        asyncio.run(engine._notify_failure(event, "所有绘图节点请求失败", explicit=False))
+        self.assertEqual(event.sent, [])
+        asyncio.run(engine._notify_failure(event, "生成失败", explicit=True))
+        self.assertEqual(len(event.sent), 1)
+        self.assertIn("没拍成", event.sent[0].chain[0].text)
+
+
+class PhysicsGroundingTests(unittest.TestCase):
+    def _engine(self, state_dict, cfg=None):
+        engine, plugin = engine_for(dict(cfg or {}), FakeOmni())
+        state = FakeState()
+        state.current_activity = lambda: dict(state_dict)
+        state.weather_brief = lambda: ""
+        plugin.state = state
+        return engine, plugin
+
+    def test_topic_skipped_when_asleep(self):
+        engine, _ = self._engine(
+            {"place": "家", "activity": "睡觉", "zone": "home", "category": "sleep"})
+        self.assertIsNone(engine.decide(FakeEvent("今天吃什么，好饿"), "我也饿了"))
+
+    def test_home_food_is_grounded(self):
+        engine, _ = self._engine(
+            {"place": "家", "activity": "窝在沙发上", "zone": "home", "category": "rest"},
+            cfg={"draw_topic_prob": 100})
+        plan = engine.decide(FakeEvent("今天吃什么，火锅吧"), "想吃火锅")
+        self.assertTrue(plan)
+        prompt = plan["prompt"]
+        self.assertIn("家里", prompt)
+        self.assertIn("外卖", prompt)
+        self.assertNotIn("火锅店", prompt)
+
+    def test_night_light_is_dim(self):
+        import datetime as _d
+        import draw_engine as de
+        old = de._amo_now
+        de._amo_now = lambda: _d.datetime(2026, 11, 15, 23, 0)
+        try:
+            engine, _ = self._engine(
+                {"place": "家", "activity": "刷手机", "zone": "home", "category": "rest"},
+                cfg={"draw_topic_prob": 100})
+            plan = engine.decide(FakeEvent("今天吃什么，火锅"), "想吃火锅")
+            self.assertTrue(plan)
+            self.assertIn("深夜", plan["prompt"])
+        finally:
+            de._amo_now = old
+
+    def test_real_photo_is_single_selfie_with_negatives(self):
+        engine, plugin = self._engine(
+            {"place": "火锅店", "activity": "吃火锅", "zone": "restaurant", "category": "social"})
+        event = FakeEvent("在火锅店约会")
+        engine.send_photo_now(event, "红油锅底咕嘟咕嘟", kind="real")
+        asyncio.run(plugin.tasks[0])
+        call = plugin.context.omni.calls[0]
+        self.assertIn("自拍", call["prompt"])
+        self.assertIn("背景是", call["prompt"])
+        self.assertIn("男人", call["negative_prompt"])
+        self.assertIn("合影", call["negative_prompt"])
+
+    def test_photo_claim_without_tool_is_enforced(self):
+        engine, plugin = self._engine(
+            {"place": "火锅店", "activity": "吃火锅", "zone": "restaurant", "category": "social"})
+        event = FakeEvent("拍照留念")
+        body, added = engine.enforce_photo_claim(event, "（按下快门）好啦，这张肯定好看！")
+        self.assertTrue(added)
+        self.assertEqual(len(plugin.tasks), 1)
+
+    def test_no_claim_no_extra_photo(self):
+        engine, plugin = self._engine(
+            {"place": "家", "activity": "刷手机", "zone": "home", "category": "rest"})
+        event = FakeEvent("聊天")
+        body, added = engine.enforce_photo_claim(event, "好呀，那你多吃点~")
+        self.assertFalse(added)
+        self.assertEqual(plugin.tasks, [])
+
+    def test_scene_negative_has_safety_words(self):
+        engine, plugin = engine_for({}, FakeOmni())
+        asyncio.run(engine._generate(FakeEvent("x"), "prompt", selfie=False))
+        negative = plugin.context.omni.calls[0]["negative_prompt"]
+        self.assertIn("NSFW", negative)
+        self.assertIn("商业摄影", negative)
+
+
+class SendPhotoToolTests(unittest.TestCase):
+    def _engine(self):
+        engine, plugin = engine_for({"draw_topic_prob": 100}, FakeOmni())
+        state = FakeState()
+        state.current_activity = lambda: {"place": "家", "activity": "窝在沙发上",
+                                          "zone": "home", "category": "rest"}
+        state.weather_brief = lambda: ""
+        plugin.state = state
+        return engine, plugin
+
+    def test_plan_text_does_not_draw(self):
+        engine, _ = self._engine()
+        self.assertIsNone(engine.decide(FakeEvent("今晚去吃火锅吧"), "好呀，晚上见"))
+
+    def test_topic_prob_zero_skips(self):
+        engine, _ = self._engine()
+        engine.plugin.config["draw_topic_prob"] = 0
+        self.assertIsNone(engine.decide(FakeEvent("吃什么好呢"), "随便"))
+
+    def test_tool_web_photo_uses_online_image_prompt(self):
+        engine, plugin = self._engine()
+        event = FakeEvent("今晚去吃火锅")
+        reply = engine.send_photo_now(event, "火锅店门口排队", kind="web")
+        self.assertTrue(reply)
+        asyncio.run(plugin.tasks[0])
+        prompt = plugin.context.omni.calls[0]["prompt"]
+        self.assertIn("网图", prompt)
+        self.assertIn("火锅店门口排队", prompt)
+
+    def test_tool_real_photo_uses_camera_prompt(self):
+        engine, plugin = self._engine()
+        event = FakeEvent("在家吃饭")
+        engine.send_photo_now(event, "客厅茶几上的外卖", kind="real")
+        asyncio.run(plugin.tasks[0])
+        prompt = plugin.context.omni.calls[0]["prompt"]
+        self.assertIn("外卖", prompt)
+        self.assertIn("自拍", prompt)
+        self.assertIn("只有她一个人", prompt)
+

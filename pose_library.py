@@ -23,6 +23,11 @@ import time
 
 from astrbot.api import logger
 
+try:  # 原子写 JSON（tmp + fsync + os.replace），三个模块共用一份
+    from .amo_fileio import atomic_write_json
+except ImportError:  # pragma: no cover - 直接按文件加载时
+    from amo_fileio import atomic_write_json
+
 try:  # 复用服装参考图的解码/转 PNG，避免两份实现漂移
     from .outfit_refs import _as_png, _decode_item
 except Exception:  # pragma: no cover
@@ -194,12 +199,8 @@ class PoseLibrary:
     def _save(self, data=None):
         data = data if isinstance(data, dict) else self._load()
         with self._lock:
-            tmp = self.path + ".tmp"
             try:
-                os.makedirs(os.path.dirname(self.path), exist_ok=True)
-                with open(tmp, "w", encoding="utf-8") as fh:
-                    json.dump(data, fh, ensure_ascii=False, indent=2)
-                os.replace(tmp, self.path)
+                atomic_write_json(self.path, data)
                 self._data = data
                 return True
             except Exception as exc:

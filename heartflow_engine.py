@@ -380,17 +380,17 @@ def _extract_json(text: str) -> Dict[str, Any]:
     try:
         result = json.loads(text)
         if isinstance(result, dict): return result
-    except json.JSONDecodeError: pass
+    except json.JSONDecodeError: pass  # cleanup
     if m := RE_CODE_BLOCK.search(text):
         try:
             result = json.loads(m.group(1).strip())
             if isinstance(result, dict): return result
-        except json.JSONDecodeError: pass
+        except json.JSONDecodeError: pass  # cleanup
     if m := RE_BRACE.search(text):
         try:
             result = json.loads(m.group())
             if isinstance(result, dict): return result
-        except json.JSONDecodeError: pass
+        except json.JSONDecodeError: pass  # cleanup
     for candidate in reversed(RE_ALL_BRACES.findall(text)):
         try:
             result = json.loads(candidate)
@@ -867,7 +867,7 @@ class HeartflowEngine:
                 self._delayed_restore_judgment(chat_id)
             )
         except RuntimeError:
-            pass
+            pass  # cleanup
 
     async def _delayed_restore_judgment(self, chat_id: str) -> None:
         """延迟恢复判断（超时保护）"""
@@ -878,7 +878,7 @@ class HeartflowEngine:
                 logger.warning(f"[心流] ⚠️ 判断暂停后台超时，自动恢复: {chat_id}")
                 self._set_judgment_paused(chat_id, paused=False)
         except asyncio.CancelledError:
-            pass
+            pass  # cleanup
         except Exception as e:
             logger.error(f"[心流] 暂停恢复异常: {e}")
 
@@ -1341,6 +1341,44 @@ class HeartflowEngine:
                 continuity=float(self.score_max), reasoning="消息直接呼叫机器人名字/别名",
                 should_reply=True, confidence=1.0, overall_score=1.0, target="bot",
             )
+        provider = await self._resolve_judge_provider(event)
+        if not provider:
+            return JudgeResult(should_reply=False, reasoning="提供商未配置或不存在")
+
+        dynamic_threshold, activity, _ = self._get_dynamic_threshold(event.unified_msg_origin)
+        activity_desc = self._get_activity_description(activity)
+        judge_prompt, system_inst, contexts = self._build_judge_prompt(
+            event, dynamic_threshold, activity, activity_desc,
+        )
+
+        judge_timeout = float(getattr(self, "judge_timeout", 20.0) or 20.0)
+        for attempt in range(self.judge_max_retries + 1):
+            try:
+                try:
+                    resp = await asyncio.wait_for(
+                        provider.text_chat(
+                            prompt=judge_prompt,
+                            contexts=contexts,
+                            system_prompt=system_inst,
+                            image_urls=[]
+                        ),
+                        timeout=judge_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("[心流] 判定模型 %.0fs 无响应（这次不回复）" % judge_timeout)
+                    return JudgeResult(should_reply=False, reasoning="判定超时")
+                data = _extract_json(resp.completion_text.strip())
+                return self._judge_result_from_data(event, data, dynamic_threshold, activity, activity_desc)
+            except (json.JSONDecodeError, ValueError):
+                if attempt == self.judge_max_retries:
+                    return JudgeResult(should_reply=False, reasoning="JSON解析失败")
+            except Exception as e:
+                logger.error(f"[心流] 评分模式判断异常: {e}")
+                return JudgeResult(should_reply=False, reasoning=f"异常: {str(e)}")
+        return JudgeResult(should_reply=False, reasoning="未知错误")
+
+    async def _resolve_judge_provider(self, event: AstrMessageEvent):
+        """判定用哪个模型：指定 → 自动挑 → 当前会话默认；都没有就 None。"""
         provider = None
         if self.judge_provider_name:
             provider = self.context.get_provider_by_id(self.judge_provider_name)
@@ -1352,16 +1390,14 @@ class HeartflowEngine:
             except Exception as _amo_exc:
                 _note_swallowed("heartflow_engine.HeartflowEngine.judge_with_tiny_model", _amo_exc)
                 provider = None
-        if not provider:
-            return JudgeResult(should_reply=False, reasoning="提供商未配置或不存在")
+        return provider
 
+    def _build_judge_prompt(self, event: AstrMessageEvent, dynamic_threshold, activity, activity_desc: str):
+        """拼评分提示词、系统约束和上下文；返回 (judge_prompt, system_inst, contexts)。"""
         scoring_rules = _build_rules_section(self.judge_rules)
         prompt_template = BASE_JUDGE_PROMPT
         reasoning_part = ', "reasoning": "简短分析原因"' if self.judge_include_reasoning else ""
         mid_score = (self.score_min + self.score_max) / 2
-        dynamic_threshold, activity, _ = self._get_dynamic_threshold(event.unified_msg_origin)
-        activity_desc = self._get_activity_description(activity)
-
         fmt_kwargs = dict(
             chat_id=event.unified_msg_origin,
             minutes_since_reply=self._get_minutes_since_last_reply(event.unified_msg_origin),
@@ -1388,69 +1424,49 @@ class HeartflowEngine:
 
         system_inst = f"你是群聊机器人决策系统，严格返回JSON，不要输出其他内容。所有分数必须在{int(self.score_min)}到{int(self.score_max)}之间，不能为0。"
         contexts = self._build_optimized_contexts(self._get_raw_history_for_context(event))
+        return judge_prompt, system_inst, contexts
 
-        judge_timeout = float(getattr(self, "judge_timeout", 20.0) or 20.0)
-        for attempt in range(self.judge_max_retries + 1):
-            try:
-                try:
-                    resp = await asyncio.wait_for(
-                        provider.text_chat(
-                            prompt=judge_prompt,
-                            contexts=contexts,
-                            system_prompt=system_inst,
-                            image_urls=[]
-                        ),
-                        timeout=judge_timeout,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("[心流] 判定模型 %.0fs 无响应（这次不回复）" % judge_timeout)
-                    return JudgeResult(should_reply=False, reasoning="判定超时")
-                data = _extract_json(resp.completion_text.strip())
-                scores = {
-                    "relevance": safe_extract_score(data, "relevance", self.score_min, self.score_max),
-                    "willingness": safe_extract_score(data, "willingness", self.score_min, self.score_max),
-                    "social": safe_extract_score(data, "social", self.score_min, self.score_max),
-                    "timing": safe_extract_score(data, "timing", self.score_min, self.score_max),
-                    "continuity": safe_extract_score(data, "continuity", self.score_min, self.score_max),
-                }
-                normalized_scores = {k: (v - self.score_min) / (self.score_max - self.score_min) for k, v in scores.items()}
-                overall = sum(normalized_scores[k] * self.weights[k] for k in self.weights)
-                should_reply = overall >= dynamic_threshold
-                target = _normalize_target(data.get("target"))
-                thought = str(data.get("thought") or "").strip()
-                mention = bool(data.get("is_mentioning_bot", False))
-                if mention:
-                    target = "bot"
-                context_type = _normalize_context_type(data.get("context_type"))
-                topic = str(data.get("topic") or "").strip()[:20]
-                style = _normalize_style(data.get("reply_style"))
-                force = bool(getattr(event, "amo_force_reply", False))
-                # 模型说“这次别说话”才压掉；如果是被点名/@，仍按对机器人说处理
-                if style == "none" and not force and not mention and target != "bot":
-                    should_reply = False
-                avg_absolute_score = sum(scores.values()) / len(scores)
-                dim_order = ["relevance", "willingness", "social", "timing", "continuity"]
-                dim_scores = " | ".join([f"{dim}:{scores[dim]:.1f}" for dim in dim_order])
-                who = {"bot": "对机器人说", "other": "对某个群友说", "all": "对全群说", "unknown": "看不出对谁说"}.get(target, "未判定对象")
-                extra = " | 类型:%s | 话题:%s | 风格:%s" % (context_type or "?", topic or "?", style or "?")
+    def _judge_result_from_data(self, event: AstrMessageEvent, data: Dict[str, Any], dynamic_threshold, activity, activity_desc: str) -> JudgeResult:
+        """模型 JSON → JudgeResult（五维归一 + 阈值 + 定向 + 一条日志）。"""
+        scores = {
+            "relevance": safe_extract_score(data, "relevance", self.score_min, self.score_max),
+            "willingness": safe_extract_score(data, "willingness", self.score_min, self.score_max),
+            "social": safe_extract_score(data, "social", self.score_min, self.score_max),
+            "timing": safe_extract_score(data, "timing", self.score_min, self.score_max),
+            "continuity": safe_extract_score(data, "continuity", self.score_min, self.score_max),
+        }
+        normalized_scores = {k: (v - self.score_min) / (self.score_max - self.score_min) for k, v in scores.items()}
+        overall = sum(normalized_scores[k] * self.weights[k] for k in self.weights)
+        should_reply = overall >= dynamic_threshold
+        target = _normalize_target(data.get("target"))
+        thought = str(data.get("thought") or "").strip()
+        mention = bool(data.get("is_mentioning_bot", False))
+        if mention:
+            target = "bot"
+        context_type = _normalize_context_type(data.get("context_type"))
+        topic = str(data.get("topic") or "").strip()[:20]
+        style = _normalize_style(data.get("reply_style"))
+        force = bool(getattr(event, "amo_force_reply", False))
+        # 模型说“这次别说话”才压掉；如果是被点名/@，仍按对机器人说处理
+        if style == "none" and not force and not mention and target != "bot":
+            should_reply = False
+        avg_absolute_score = sum(scores.values()) / len(scores)
+        dim_order = ["relevance", "willingness", "social", "timing", "continuity"]
+        dim_scores = " | ".join([f"{dim}:{scores[dim]:.1f}" for dim in dim_order])
+        who = {"bot": "对机器人说", "other": "对某个群友说", "all": "对全群说", "unknown": "看不出对谁说"}.get(target, "未判定对象")
+        extra = " | 类型:%s | 话题:%s | 风格:%s" % (context_type or "?", topic or "?", style or "?")
 
-                if should_reply:
-                    logger.info(f"[心流] 📊 评分模式: {overall:.3f}/{dynamic_threshold:.2f} (均分:{avg_absolute_score:.1f}分) | ✅触发 | {who}{extra} | 活跃度:{activity_desc}({activity:.0%}) | {thought or data.get('reasoning', '')} | 各维度: {dim_scores}")
-                else:
-                    logger.info(f"[心流] 📊 评分模式: {overall:.3f}/{dynamic_threshold:.2f} (均分:{avg_absolute_score:.1f}分) | ❌跳过 | {who}{extra} | 活跃度:{activity_desc}({activity:.0%}) | {thought or data.get('reasoning', '')} | 各维度: {dim_scores}")
-                return JudgeResult(
-                    **scores, reasoning=data.get("reasoning", "") or thought,
-                    should_reply=should_reply, confidence=overall, overall_score=overall,
-                    target=target or "unknown", is_mentioning_bot=mention,
-                    context_type=context_type, topic=topic, reply_style=style,
-                )
-            except (json.JSONDecodeError, ValueError):
-                if attempt == self.judge_max_retries:
-                    return JudgeResult(should_reply=False, reasoning="JSON解析失败")
-            except Exception as e:
-                logger.error(f"[心流] 评分模式判断异常: {e}")
-                return JudgeResult(should_reply=False, reasoning=f"异常: {str(e)}")
-        return JudgeResult(should_reply=False, reasoning="未知错误")
+        if should_reply:
+            logger.info(f"[心流] 📊 评分模式: {overall:.3f}/{dynamic_threshold:.2f} (均分:{avg_absolute_score:.1f}分) | ✅触发 | {who}{extra} | 活跃度:{activity_desc}({activity:.0%}) | {thought or data.get('reasoning', '')} | 各维度: {dim_scores}")
+        else:
+            logger.info(f"[心流] 📊 评分模式: {overall:.3f}/{dynamic_threshold:.2f} (均分:{avg_absolute_score:.1f}分) | ❌跳过 | {who}{extra} | 活跃度:{activity_desc}({activity:.0%}) | {thought or data.get('reasoning', '')} | 各维度: {dim_scores}")
+        return JudgeResult(
+            **scores, reasoning=data.get("reasoning", "") or thought,
+            should_reply=should_reply, confidence=overall, overall_score=overall,
+            target=target or "unknown", is_mentioning_bot=mention,
+            context_type=context_type, topic=topic, reply_style=style,
+        )
+
 
     async def judge_immersive_mode(self, event: AstrMessageEvent) -> JudgeResult:
         """沉浸模式下的判断（更严格）"""
@@ -1471,60 +1487,14 @@ class HeartflowEngine:
                 continuity=float(self.score_max), reasoning="消息直接呼叫机器人名字/别名",
                 should_reply=True, confidence=1.0, overall_score=1.0, target="bot",
             )
-        provider = None
-        if self.judge_provider_name:
-            provider = self.context.get_provider_by_id(self.judge_provider_name)
-        if not provider:
-            provider = self._auto_pick_judge_provider()
-        if not provider:
-            try:
-                provider = await self.context.get_using_provider_async(event.unified_msg_origin)
-            except Exception as _amo_exc:
-                _note_swallowed("heartflow_engine.HeartflowEngine.judge_immersive_mode", _amo_exc)
-                provider = None
-        if not provider:
-            return JudgeResult(should_reply=False, reasoning="提供商未配置或不存在")
+        provider = await self._resolve_judge_provider(event)
 
         remaining = self._get_immersive_mode_remaining(event.unified_msg_origin)
         _, activity, _ = self._get_dynamic_threshold(event.unified_msg_origin)
         activity_desc = self._get_activity_description(activity)
-        system_inst = "你是严格的群聊机器人判断系统，严格返回JSON，不要输出其他内容。"
-        immersive_reasoning_part = ', "reasoning": "简短原因"' if self.judge_include_reasoning else ""
-        contexts = self._build_optimized_contexts(self._get_raw_history_for_context(event))
-        
-        judge_prompt = f"""
-## 机器人身份
-机器人名字：{self.bot_name or "机器人"}
-机器人别名：{"、".join(self.bot_aliases) or "无"}
-如果当前消息包含这些名字或别名，就是在叫机器人，不是叫其他群友。
-
-## ⚠️ 最高优先级：追踪机器人自己的发言
-对话历史（contexts）中，role 为 assistant 的消息是【机器人自己】之前说的话，role 为 user 的消息是群友说的话（带 [昵称] 前缀）。
-先找到机器人最近说了什么，再判断当前消息与机器人发言的关系。
-
-## 沉浸模式判断规则
-先按顺序推理：① 从对话历史还原最近谁在跟谁说话 ② 判断当前这条在对谁说（bot / other / all / unknown）
-③ 再决定要不要说话。
-
-你的默认倾向是 **不回复**。只有在以下情况之一时才回复：
-1. 消息直接 @ 了机器人或提到机器人名字
-2. 消息明确向机器人提问
-3. 消息是机器人发起的对话的延续
-4. 消息内容与机器人刚聊的话题直接相关
-5. 群聊中出现冷场，机器人的回复能自然活跃气氛
-6. 群里正聊得热闹、话题轻松，机器人插一句能接上（仅当关闭“只在被叫到时回复”时才成立）
-
-## 当前状态
-- 模式: 沉浸模式 | 剩余: {remaining}秒 | 活跃度: {activity_desc} ({activity:.0%})
-
-## 待判断消息
-[{event.get_sender_name()}] {event.message_str}
-
-## 严格判断
-根据上述规则严格判断。沉默也是好的选择，但不要因为“没叫我”就一律沉默。
-严格返回 JSON：
-{{"should_reply": true或false, "target": "bot|other|all|unknown", "thought": "一句话说明在对谁说"{immersive_reasoning_part}}}
-"""
+        judge_prompt, system_inst, contexts = _build_immersive_prompt(
+            self, event, remaining, activity, activity_desc,
+        )
         judge_timeout = float(getattr(self, "judge_timeout", 20.0) or 20.0)
         for attempt in range(self.judge_max_retries + 1):
             try:
@@ -1569,26 +1539,7 @@ class HeartflowEngine:
         state = self._get_chat_state(umo)
 
         # 检查是否处于防抖状态（针对特定用户）
-        debounce_key = f"{umo}:{event.get_sender_id()}"
-        debounce_state = self._debounce_states.get(debounce_key)
-        
-        if debounce_state and debounce_state.get("active"):
-            # 防抖期间：只处理触发者的消息，其他人忽略
-            if debounce_state.get("trigger_sender_id") == str(event.get_sender_id()):
-                # 触发者发的消息：追加文本（非文本用占位符），不重置计时
-                text_content = event.message_str.strip() if event.message_str else "[非文本消息]"
-                # 防抖期间的可能无限追加：留最近 30 条就够合并用了
-                if len(debounce_state["pending_msgs"]) < 30:
-                    debounce_state["pending_msgs"].append(text_content)
-                self._log_detail(f"[心流] ⏳ 防抖中收到触发者消息，已追加: {umo}")
-            else:
-                # 其他人发的消息：完全忽略
-                self._log_detail(f"[心流] ⏳ 防抖中收到他人消息，已忽略: {umo}")
-            
-            # 无论谁发的，都记录原始消息（保持小模型上下文完整）
-            self._record_raw_message(event, is_bot=False)
-            self._cleanup_old_messages(umo)
-            state.total_messages += 1
+        if self._absorb_debounced_message(event, umo, state):
             return
 
         if not self._should_process_message(event):
@@ -1602,144 +1553,188 @@ class HeartflowEngine:
             res = await self.judge_immersive_mode(event) if is_immersive else await self.judge_with_tiny_model(event)
 
             if res.should_reply:
-                mode_name = "immersive" if is_immersive else "score"
-                # 心流判定通过后，再检索一次上下文：这条到底是不是在跟机器人说。
-                # 开了“只在被叫到时回复”：不是冲她说的就不开口（下面的闸会拦住）；
-                # 关掉时才回到“随机挑个角度插进他们的话题里”。
-                # 优先级：模型的语义判定 > 上下文检索的软证据；只有硬证据（叫名字 / @）才覆盖模型。
-                target = res.target or "unknown"
-                hinted, hard = self._retrieve_addressing(event)
-                if hard:
-                    target = hinted
-                elif target in ("", "unknown") and hinted:
-                    target = hinted
-                style = res.reply_style or ""
-                if hard and target == "other":
-                    # 模型把“你……”认成机器人，但上下文明确显示上一条 @ 的是别人：
-                    # 先撤掉“点名”标记，再决定是插话还是不接。
-                    res.is_mentioning_bot = False
-                    if res.context_type == "mention_bot":
-                        res.context_type = "other"
-                    if style == "answer":
-                        style = "comment"
-                    _text = event.message_str or ""
-                    if self._should_veto_side_question(target, hard, _text):
-                        # 两个人在一问一答，她插进去只会像“没问你，去玩吧你”
-                        logger.info("[心流] 🔇 这条明确在对别人说（上一条 @ 了别人），不接：%s" % _text[:40])
-                        state.total_messages += 1
-                        return
-                verdict, verdict_reason = addressing_verdict(
-                    target=target,
-                    mentioning_bot=bool(res.is_mentioning_bot),
-                    hard=bool(hard),
-                    soft=bool(not hard and hinted == "bot"),
-                    only_when_addressed=self.only_when_addressed,
-                    forced=bool(getattr(event, "amo_force_reply", False)),
-                )
-                if not verdict:
-                    logger.info(
-                        "[心流] 🔇 没点名她，不搭话（%s）| target=%s | %s",
-                        verdict_reason, target or "?", (event.message_str or "")[:40],
-                    )
-                    state.total_messages += 1
-                    return
-                if style == "none":
-                    style = "comment" if target != "bot" else "answer"
-
-                # 回复方式：以模型的 context_type / reply_style 为主，target 兜底。
-                # 「AI好强」这类感慨 → knowledge_comment → 插话；
-                # 「你觉得AI强吗」→ 对机器人说 / question → 直接回答。
-                if getattr(event, "amo_force_reply", False) or target == "bot" or res.is_mentioning_bot:
-                    mode_hint = "direct"
-                elif res.context_type == "knowledge_comment":
-                    mode_hint = "interject"
-                elif style == "answer":
-                    mode_hint = "direct"
-                elif res.context_type == "question" and target in ("all", "unknown"):
-                    # 群里公开提问，机器人正面答一句是自然的
-                    mode_hint = "direct"
-                else:
-                    mode_hint = "interject"
-
-                setattr(event, "heartflow_target", target)
-                setattr(event, "heartflow_thought", res.reasoning or "")
-                setattr(event, "heartflow_context_type", res.context_type or "")
-                setattr(event, "heartflow_topic", res.topic or "")
-                setattr(event, "heartflow_reply_style", style)
-                if style == "quote":
-                    # 人多、指代不清时，她判断“引用着说更清楚”
-                    setattr(event, "amo_quote_hint", True)
-
-                if mode_hint == "direct":
-                    setattr(event, "heartflow_mode_hint", "direct")
-                    logger.info(
-                        "[心流] 🎯 对象:%s(%s) 类型:%s → 按这条消息直接回（%s）"
-                        % (target, "硬证据" if hard else "模型判定", res.context_type or "?", (res.reasoning or "")[:40])
-                    )
-                else:
-                    angle = random.choice(INTERJECT_ANGLES)
-                    setattr(event, "heartflow_mode_hint", "interject")
-                    setattr(event, "heartflow_angle", angle)
-                    logger.info(
-                        "[心流] 💬 对象:%s 类型:%s 话题:%s → 插话角度「%s」"
-                        % (target, res.context_type or "?", res.topic or "?", angle)
-                    )
-                state.pending_heartflow_reply = True
-                state.pending_heartflow_mode = mode_name
-                self._set_judgment_paused(umo, paused=True)
-
-                if self.enable_debounce:
-                    # 启动针对当前触发者的防抖
-                    debounce_key = f"{umo}:{event.get_sender_id()}"
-                    with self._lock:
-                        self._debounce_states[debounce_key] = {
-                            "active": True,
-                            "start_time": time.time(),  # 固定起始时间，不重置
-                            "pending_msgs": [event.message_str.strip() or "[非文本消息]"],
-                            "cancelled": False,
-                            "trigger_sender_id": str(event.get_sender_id()),
-                        }
-                    logger.info(f"[心流] ⏳ 触发防抖等待 ({self.debounce_delay}s) | 触发者: {event.get_sender_name()}")
-
-                    # 防抖等待 + 清理放 try/finally：等待期间被取消/抛异常也不会留下 active=True 的死状态
-                    try:
-                        while True:
-                            with self._lock:
-                                debounce_state = self._debounce_states.get(debounce_key)
-                            if not debounce_state:
-                                break
-                            elapsed = time.time() - debounce_state["start_time"]
-                            # 达到基础延迟立即触发，或达到最大等待时间强制触发
-                            if elapsed >= self.debounce_delay or elapsed >= self.max_debounce_wait or debounce_state.get("cancelled"):
-                                break
-                            await asyncio.sleep(min(self.debounce_delay - elapsed, 0.5))
-
-                        # 检查是否被取消
-                        with self._lock:
-                            debounce_state = self._debounce_states.get(debounce_key)
-                            cancelled = bool(debounce_state and debounce_state.get("cancelled"))
-                        if cancelled:
-                            logger.debug(f"[心流] 🚫 防抖被取消: {umo}")
-                            self._set_judgment_paused(umo, paused=False)
-                            return
-
-                        # 合并消息（只有触发者的消息）
-                        final_msgs = debounce_state["pending_msgs"] if debounce_state else [event.message_str]
-                        event.message_str = "\n".join(final_msgs)
-                        logger.debug(f"[心流] ✅ 防抖结束，准备回复（合并{len(final_msgs)}条）")
-                    finally:
-                        with self._lock:
-                            self._debounce_states.pop(debounce_key, None)
-
-                event.is_at_or_wake_command = True
-                setattr(event, "heartflow_triggered", True)
-                setattr(event, "heartflow_mode", mode_name)
-                self._activate_immersive_mode(umo)
-                logger.info(f"[心流] 🎯 心流触发: {event.message_str[:50]}... | 模式: {'🌊沉浸' if is_immersive else '📊评分'}")
+                # 判定通过 → 定向/插话 + 防抖 + 打触发标记（total_messages 在里面按分支结算）
+                await self._prepare_heartflow_reply(event, umo, state, res, is_immersive)
+                return
 
             state.total_messages += 1
         except Exception as e:
             logger.error(f"[心流] 处理异常: {e}\n{traceback.format_exc()}")
+
+    def _absorb_debounced_message(self, event: AstrMessageEvent, umo: str, state: ChatState) -> bool:
+        """防抖进行中：只收触发者的消息，其他人忽略；True＝这条已处理。"""
+        debounce_key = f"{umo}:{event.get_sender_id()}"
+        debounce_state = self._debounce_states.get(debounce_key)
+        if not (debounce_state and debounce_state.get("active")):
+            return False
+        # 防抖期间：只处理触发者的消息，其他人忽略
+        if debounce_state.get("trigger_sender_id") == str(event.get_sender_id()):
+            # 触发者发的消息：追加文本（非文本用占位符），不重置计时
+            text_content = event.message_str.strip() if event.message_str else "[非文本消息]"
+            # 防抖期间的可能无限追加：留最近 30 条就够合并用了
+            if len(debounce_state["pending_msgs"]) < 30:
+                debounce_state["pending_msgs"].append(text_content)
+            self._log_detail(f"[心流] ⏳ 防抖中收到触发者消息，已追加: {umo}")
+        else:
+            # 其他人发的消息：完全忽略
+            self._log_detail(f"[心流] ⏳ 防抖中收到他人消息，已忽略: {umo}")
+
+        # 无论谁发的，都记录原始消息（保持小模型上下文完整）
+        self._record_raw_message(event, is_bot=False)
+        self._cleanup_old_messages(umo)
+        state.total_messages += 1
+        return True
+
+    def _decide_reply_target(self, event: AstrMessageEvent, res: JudgeResult):
+        """判定这条是不是冲她说的：返回 (target, hard, style, mode_hint)；None＝不接。"""
+        # 心流判定通过后，再检索一次上下文：这条到底是不是在跟机器人说。
+        # 开了“只在被叫到时回复”：不是冲她说的就不开口（下面的闸会拦住）；
+        # 关掉时才回到“随机挑个角度插进他们的话题里”。
+        # 优先级：模型的语义判定 > 上下文检索的软证据；只有硬证据（叫名字 / @）才覆盖模型。
+        target = res.target or "unknown"
+        hinted, hard = self._retrieve_addressing(event)
+        if hard:
+            target = hinted
+        elif target in ("", "unknown") and hinted:
+            target = hinted
+        style = res.reply_style or ""
+        if hard and target == "other":
+            # 模型把“你……”认成机器人，但上下文明确显示上一条 @ 的是别人：
+            # 先撤掉“点名”标记，再决定是插话还是不接。
+            res.is_mentioning_bot = False
+            if res.context_type == "mention_bot":
+                res.context_type = "other"
+            if style == "answer":
+                style = "comment"
+            _text = event.message_str or ""
+            if self._should_veto_side_question(target, hard, _text):
+                # 两个人在一问一答，她插进去只会像“没问你，去玩吧你”
+                logger.info("[心流] 🔇 这条明确在对别人说（上一条 @ 了别人），不接：%s" % _text[:40])
+                return None
+        verdict, verdict_reason = addressing_verdict(
+            target=target,
+            mentioning_bot=bool(res.is_mentioning_bot),
+            hard=bool(hard),
+            soft=bool(not hard and hinted == "bot"),
+            only_when_addressed=self.only_when_addressed,
+            forced=bool(getattr(event, "amo_force_reply", False)),
+        )
+        if not verdict:
+            logger.info(
+                "[心流] 🔇 没点名她，不搭话（%s）| target=%s | %s",
+                verdict_reason, target or "?", (event.message_str or "")[:40],
+            )
+            return None
+        if style == "none":
+            style = "comment" if target != "bot" else "answer"
+
+        # 回复方式：以模型的 context_type / reply_style 为主，target 兜底。
+        # 「AI好强」这类感慨 → knowledge_comment → 插话；
+        # 「你觉得AI强吗」→ 对机器人说 / question → 直接回答。
+        if getattr(event, "amo_force_reply", False) or target == "bot" or res.is_mentioning_bot:
+            mode_hint = "direct"
+        elif res.context_type == "knowledge_comment":
+            mode_hint = "interject"
+        elif style == "answer":
+            mode_hint = "direct"
+        elif res.context_type == "question" and target in ("all", "unknown"):
+            # 群里公开提问，机器人正面答一句是自然的
+            mode_hint = "direct"
+        else:
+            mode_hint = "interject"
+        return target, hard, style, mode_hint
+
+    async def _prepare_heartflow_reply(self, event: AstrMessageEvent, umo: str, state: ChatState, res: JudgeResult, is_immersive: bool) -> None:
+        """判定通过：写请求头 → 防抖合并 → 打触发标记。"""
+        mode_name = "immersive" if is_immersive else "score"
+        decision = self._decide_reply_target(event, res)
+        if decision is None:
+            state.total_messages += 1
+            return
+        target, hard, style, mode_hint = decision
+
+        setattr(event, "heartflow_target", target)
+        setattr(event, "heartflow_thought", res.reasoning or "")
+        setattr(event, "heartflow_context_type", res.context_type or "")
+        setattr(event, "heartflow_topic", res.topic or "")
+        setattr(event, "heartflow_reply_style", style)
+        if style == "quote":
+            # 人多、指代不清时，她判断“引用着说更清楚”
+            setattr(event, "amo_quote_hint", True)
+
+        if mode_hint == "direct":
+            setattr(event, "heartflow_mode_hint", "direct")
+            logger.info(
+                "[心流] 🎯 对象:%s(%s) 类型:%s → 按这条消息直接回（%s）"
+                % (target, "硬证据" if hard else "模型判定", res.context_type or "?", (res.reasoning or "")[:40])
+            )
+        else:
+            angle = random.choice(INTERJECT_ANGLES)
+            setattr(event, "heartflow_mode_hint", "interject")
+            setattr(event, "heartflow_angle", angle)
+            logger.info(
+                "[心流] 💬 对象:%s 类型:%s 话题:%s → 插话角度「%s」"
+                % (target, res.context_type or "?", res.topic or "?", angle)
+            )
+        state.pending_heartflow_reply = True
+        state.pending_heartflow_mode = mode_name
+        self._set_judgment_paused(umo, paused=True)
+
+        if self.enable_debounce:
+            # 启动针对当前触发者的防抖；等待期间被取消就不回复，也不计这条消息
+            if not await self._await_debounce(event, umo):
+                self._set_judgment_paused(umo, paused=False)
+                return
+
+        event.is_at_or_wake_command = True
+        setattr(event, "heartflow_triggered", True)
+        setattr(event, "heartflow_mode", mode_name)
+        self._activate_immersive_mode(umo)
+        logger.info(f"[心流] 🎯 心流触发: {event.message_str[:50]}... | 模式: {'🌊沉浸' if is_immersive else '📊评分'}")
+        state.total_messages += 1
+
+    async def _await_debounce(self, event: AstrMessageEvent, umo: str) -> bool:
+        """等防抖窗口结束并合并触发者的消息；False＝等待期间被取消。"""
+        debounce_key = f"{umo}:{event.get_sender_id()}"
+        with self._lock:
+            self._debounce_states[debounce_key] = {
+                "active": True,
+                "start_time": time.time(),  # 固定起始时间，不重置
+                "pending_msgs": [event.message_str.strip() or "[非文本消息]"],
+                "cancelled": False,
+                "trigger_sender_id": str(event.get_sender_id()),
+            }
+        logger.info(f"[心流] ⏳ 触发防抖等待 ({self.debounce_delay}s) | 触发者: {event.get_sender_name()}")
+
+        # 防抖等待 + 清理放 try/finally：等待期间被取消/抛异常也不会留下 active=True 的死状态
+        try:
+            while True:
+                with self._lock:
+                    debounce_state = self._debounce_states.get(debounce_key)
+                if not debounce_state:
+                    break
+                elapsed = time.time() - debounce_state["start_time"]
+                # 达到基础延迟立即触发，或达到最大等待时间强制触发
+                if elapsed >= self.debounce_delay or elapsed >= self.max_debounce_wait or debounce_state.get("cancelled"):
+                    break
+                await asyncio.sleep(min(self.debounce_delay - elapsed, 0.5))
+
+            # 检查是否被取消
+            with self._lock:
+                debounce_state = self._debounce_states.get(debounce_key)
+                cancelled = bool(debounce_state and debounce_state.get("cancelled"))
+            if cancelled:
+                logger.debug(f"[心流] 🚫 防抖被取消: {umo}")
+                return False
+
+            # 合并消息（只有触发者的消息）
+            final_msgs = debounce_state["pending_msgs"] if debounce_state else [event.message_str]
+            event.message_str = "\n".join(final_msgs)
+            logger.debug(f"[心流] ✅ 防抖结束，准备回复（合并{len(final_msgs)}条）")
+            return True
+        finally:
+            with self._lock:
+                self._debounce_states.pop(debounce_key, None)
 
     async def on_llm_response(self, event: AstrMessageEvent, resp: LLMResponse):
         """记录大模型回复到本地缓冲（供小模型下次判断参考）"""
@@ -1927,3 +1922,46 @@ class HeartflowEngine:
         self._pause_restore_tasks.clear()
         self._debounce_states.clear()
         logger.debug("[心流] 心流插件已卸载，后台任务已清理")
+
+
+def _build_immersive_prompt(self, event, remaining, activity, activity_desc):
+    """沉浸模式提示词 + 系统约束 + 上下文；返回 (judge_prompt, system_inst, contexts)。"""
+    system_inst = "你是严格的群聊机器人判断系统，严格返回JSON，不要输出其他内容。"
+    immersive_reasoning_part = ', "reasoning": "简短原因"' if self.judge_include_reasoning else ""
+    contexts = self._build_optimized_contexts(self._get_raw_history_for_context(event))
+    
+    judge_prompt = f"""
+## 机器人身份
+机器人名字：{self.bot_name or "机器人"}
+机器人别名：{"、".join(self.bot_aliases) or "无"}
+如果当前消息包含这些名字或别名，就是在叫机器人，不是叫其他群友。
+
+## ⚠️ 最高优先级：追踪机器人自己的发言
+对话历史（contexts）中，role 为 assistant 的消息是【机器人自己】之前说的话，role 为 user 的消息是群友说的话（带 [昵称] 前缀）。
+先找到机器人最近说了什么，再判断当前消息与机器人发言的关系。
+
+## 沉浸模式判断规则
+先按顺序推理：① 从对话历史还原最近谁在跟谁说话 ② 判断当前这条在对谁说（bot / other / all / unknown）
+③ 再决定要不要说话。
+
+你的默认倾向是 **不回复**。只有在以下情况之一时才回复：
+1. 消息直接 @ 了机器人或提到机器人名字
+2. 消息明确向机器人提问
+3. 消息是机器人发起的对话的延续
+4. 消息内容与机器人刚聊的话题直接相关
+5. 群聊中出现冷场，机器人的回复能自然活跃气氛
+6. 群里正聊得热闹、话题轻松，机器人插一句能接上（仅当关闭“只在被叫到时回复”时才成立）
+
+## 当前状态
+- 模式: 沉浸模式 | 剩余: {remaining}秒 | 活跃度: {activity_desc} ({activity:.0%})
+
+## 待判断消息
+[{event.get_sender_name()}] {event.message_str}
+
+## 严格判断
+根据上述规则严格判断。沉默也是好的选择，但不要因为“没叫我”就一律沉默。
+严格返回 JSON：
+{{"should_reply": true或false, "target": "bot|other|all|unknown", "thought": "一句话说明在对谁说"{immersive_reasoning_part}}}
+"""
+    return judge_prompt, system_inst, contexts
+

@@ -24,6 +24,9 @@ class FutureSlotTests(unittest.TestCase):
 
     def test_past_day(self):
         self.assertFalse(slot_is_future("2026-11-10", "08:00", self.now))
+        # 一位小时按分钟数比："9:00" 不能被当成比 "14:00" 晚
+        self.assertFalse(slot_is_future("2026-11-11", "9:00", self.now))
+        self.assertTrue(slot_is_future("2026-11-11", "15:30", self.now))
 
 
 if __name__ == "__main__":
