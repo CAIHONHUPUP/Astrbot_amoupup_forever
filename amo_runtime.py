@@ -104,6 +104,21 @@ class RuntimeMixin(_MixinBase):
                 await self.sync_current_state()
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime.on_message.sync_state", _amo_exc)
+            # 第六轮：用户话术先进过渡（去洗澡/去倒垃圾/去医院…），再组装回复，
+            # 否则她的第一条回复仍会秒报终态。
+            try:
+                try:
+                    from .amo_transition import maybe_start_from_text as _maybe_transition_text
+                except ImportError:
+                    from amo_transition import maybe_start_from_text as _maybe_transition_text
+                _user_text = str(getattr(event, "message_str", "") or "").strip()
+                if _user_text:
+                    _started = _maybe_transition_text(self, _user_text, source="user")
+                    if _started:
+                        logger.info("[amo] 用户话术开启过渡：%s→%s",
+                                    _started.get("kind"), _started.get("to"))
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.on_message.transition", _amo_exc)
             try:
                 raw_text = str(getattr(event, "message_str", "") or "").strip()
                 if raw_text and not raw_text.startswith(("/", "／")):
@@ -1717,6 +1732,17 @@ class RuntimeMixin(_MixinBase):
                 self._last_schedule_save = save_key
                 try:
                     items = self.state.schedule.get(save_key) or []
+                    # 第八轮 C：快照前先归一，内存里万一有重叠也别原样落库（读接口只读，这里兜底）
+                    try:
+                        try:
+                            from .amo_transition import normalize_day as _normalize_day
+                        except ImportError:
+                            from amo_transition import normalize_day as _normalize_day
+                        items, _fixed = _normalize_day(items)
+                        if _fixed:
+                            logger.info("[amo] 23:59 快照前归一了重叠块")
+                    except Exception as exc:
+                        logger.debug("[amo] 快照归一失败: %s", exc)
                     if items:
                         self.db.save_schedule(save_key, items)
                     self.db.fade_schedules(7)

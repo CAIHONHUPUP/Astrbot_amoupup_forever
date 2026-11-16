@@ -489,13 +489,31 @@ class ScheduleMixin(_MixinBase):
             now = _now()
             day = today_str()
             items = self.state.schedule.get(day) or self.db.get_schedule(day) or []
+            # 第八轮 D：日程主干也只在后台 tick 里补（每天一次，已有就跳过），GET 不再生成
+            if not items:
+                try:
+                    self._spawn(self.state.ensure_schedule(self._last_umo))
+                except Exception as _amo_exc:
+                    logger.debug("[DIARY] tick ensure_schedule failed: %s", _amo_exc)
+                return
+            # 限速：每分钟最多补 2 条（tick 每 30 秒跑一次，多轮不叠加）
+            _minute_key = now.strftime("%Y%m%d%H%M")
+            try:
+                _budget = self.db.kv_get("diary_backfill_minute", {}) or {}
+            except Exception:
+                _budget = {}
+            _used = (int(_budget.get("count") or 0)
+                     if isinstance(_budget, dict) and _budget.get("minute") == _minute_key else 0)
+            _cap = max(0, 2 - _used)
+            if _cap <= 0:
+                return
             if items:
                 version = self.db.schedule_version(day)
                 hourly = self.state._hourly_schedule(items)
                 check = getattr(self.db, "diary_is_valid", None)
                 # 从最近结束的小时往前补：14:00 先补 13 点，再补更早的。
                 for item in reversed(hourly):
-                    if generated >= 2:
+                    if generated >= _cap:
                         break
                     start = str(item.get("start") or "")
                     if not start or not slot_has_ended(day, start, item.get("end")):
@@ -506,6 +524,12 @@ class ScheduleMixin(_MixinBase):
                         continue
                     self._spawn_diary_task(day, item, hourly, version, reason="slot_ended")
                     generated += 1
+            if generated:
+                try:
+                    self.db.kv_set("diary_backfill_minute",
+                                   {"minute": _minute_key, "count": _used + generated})
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_schedule.diary_backfill_budget", _amo_exc)
             # 跨日补昨天 23 点：0 点后 scheduler 只看今天，昨天最后一小时会漏。
             if now.hour == 0:
                 yesterday = (now.date() - timedelta(days=1)).isoformat()

@@ -514,6 +514,17 @@ class DiaryStateMixin(_MixinBase):
         3. 今天还没生成日程（0 点后 / 刚启动）→ 沿用昨天同一小时；
         4. 昨天也没有 → 按小时兜底，并明确标记 no_schedule。
         """
+        # 第四轮防穿帮：过渡状态优先于日程——还没到就不许出现目的地（医院/公司…）
+        try:
+            try:
+                from .amo_transit import transit_activity as _transit_activity
+            except ImportError:
+                from amo_transit import transit_activity as _transit_activity
+            _transit = _transit_activity(self.p)
+            if _transit:
+                return _transit, "transit"
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_diary.current_activity.transit", _amo_exc)
         today = today_str()
         jit_activity = _jit_activity(self)
         if jit_activity:

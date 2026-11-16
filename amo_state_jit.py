@@ -143,7 +143,7 @@ class JitStateMixin(_MixinBase):
                 continue
             if finish <= begin:
                 finish = begin + 60
-            if begin <= start_min < finish:
+            if begin < start_min + 60 and finish > start_min:
                 return True
         return False
 
@@ -233,7 +233,7 @@ class JitStateMixin(_MixinBase):
             rows.append({
                 "start": self._minute_text(begin),
                 "end": self._minute_text(finish),
-                "activity": "未记录",
+                "activity": self._jit_gap_label(),
                 "place": self._jit_home(),
                 "zone": "home",
                 "category": "rest",
@@ -247,6 +247,22 @@ class JitStateMixin(_MixinBase):
             except Exception:
                 return []
         return rows
+
+    def _jit_gap_label(self):
+        """空档补位的人话标题（按身体状态/地点），不写“未记录”。"""
+        try:
+            health = self.health_info() or {}
+        except Exception:
+            health = {}
+        if health.get("sick"):
+            return "躺在床上休息"
+        try:
+            place = str((self.current_activity() or {}).get("place") or "")
+        except Exception:
+            place = ""
+        if place and place not in ("家", "卧室", "客厅", "出租屋"):
+            return "在原地发着呆"
+        return "在家休息（日常发呆）"
 
     def _finish_open_sleep(self, now):
         """早上醒来后，把昨晚 23:00 开始的睡眠合并成 23:00-07:00。"""

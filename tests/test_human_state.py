@@ -600,9 +600,19 @@ class JitBlindBoxTests(StateTestCase):
         now = dt.combine(date.today(), dt.min.time()).replace(hour=15, minute=30)
         rows = self.state._jit_backfill_gap(now, last)
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["start"], "15:00")
-        self.assertEqual(rows[0]["end"], "16:00")
-        self.assertEqual(rows[0]["activity"], "未记录")
+        # 期望按分钟算（跨分钟边界偶发红就是这个写死字符串造成的）
+        expected_start = "%02d:00" % last.hour
+        expected_end = "%02d:00" % min(24, now.hour + 1)
+
+        def _minutes(text):
+            hh, mm = str(text).split(":")[:2]
+            return int(hh) * 60 + int(mm)
+
+        self.assertEqual(_minutes(rows[0]["start"]), _minutes(expected_start))
+        self.assertEqual(_minutes(rows[0]["end"]), _minutes(expected_end))
+        # 空档补位必须是人话，不能再写“未记录”（2026-11-16 用户反馈）
+        self.assertNotEqual(rows[0]["activity"], "未记录")
+        self.assertTrue(str(rows[0]["activity"]).strip())
         self.assertEqual(self.state.schedule[day][0]["source"], "jit_recover")
 
     def test_normalize_place_whitelist(self) -> None:

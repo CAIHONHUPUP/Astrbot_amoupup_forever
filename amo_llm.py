@@ -559,6 +559,17 @@ class LlmMixin(_MixinBase):
         system_parts.append(prompt_block())
         if emotion_ice_point((snap or {}).get("mood") or {}):
             system_parts.append(ice_break_line())
+        # 第四轮防穿帮：过渡中（起床/出门/在路上）不许直接说已经到目的地
+        try:
+            try:
+                from .amo_transit import prompt_block as _transit_block
+            except ImportError:
+                from amo_transit import prompt_block as _transit_block
+            _transit_text = _transit_block(self)
+            if _transit_text:
+                system_parts.append(_transit_text)
+        except Exception as _amo_exc:
+            logger.debug("[amo] 过渡状态注入失败: %s" % _amo_exc)
         return system_parts
 
     def _reply_group_parts(self, ctx, event, group=True):

@@ -810,6 +810,27 @@ class MessageMixin(_MixinBase):
         except ImportError:
             from amo_immersion_guard import fix_identity, sanitize_extreme
         text = fix_identity(sanitize_extreme(text))
+        # 第六轮：她自己说「我去洗澡啦」→ 进过渡；说「刚下车」→ 推进到站（都在守卫之前）
+        try:
+            try:
+                from .amo_transition import maybe_advance as _maybe_advance, maybe_start_from_text as _maybe_transition_text
+            except ImportError:
+                from amo_transition import maybe_advance as _maybe_advance, maybe_start_from_text as _maybe_transition_text
+            _maybe_advance(self, text)
+            _bot_started = _maybe_transition_text(self, text, source="bot")
+            if _bot_started:
+                logger.info("[amo] 她的话开启过渡：%s→%s", _bot_started.get("kind"), _bot_started.get("to"))
+        except Exception as _amo_exc:
+            logger.debug("[amo] 她的过渡意图识别失败: %s", _amo_exc)
+        # 第四轮防穿帮：过渡期间说出目的地（医院/公司…）→ 改成「在路上/快到了」
+        try:
+            try:
+                from .amo_transit import rewrite_sent_text as _transit_rewrite
+            except ImportError:
+                from amo_transit import rewrite_sent_text as _transit_rewrite
+            text = _transit_rewrite(self, text)
+        except Exception as _amo_exc:
+            logger.debug("[amo] 过渡地点守卫失败: %s", _amo_exc)
         if looks_like_model_leak(text):
             text = "秘密，不告诉你。"
         if not text or not umo:

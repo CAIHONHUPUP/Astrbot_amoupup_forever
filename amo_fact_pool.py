@@ -113,6 +113,68 @@ def _routine_facts(items):
     return facts
 
 
+
+def _cn_duration(minutes):
+    minutes = max(0, int(minutes))
+    if minutes == 0:
+        return "一会儿"
+    if minutes % 60 == 0:
+        return "%d小时" % (minutes // 60)
+    if minutes % 30 == 0:
+        half = minutes // 30
+        if half % 2 == 1:
+            return "%d个半小时" % (half // 2) if half > 1 else "半个多小时"
+        return "%d小时" % (half // 2)
+    return "%d分钟" % minutes
+
+
+def _companion(text):
+    matched = re.search(r"和([^\s，,。！!？?、]{1,6})", str(text or ""))
+    return matched.group(1) if matched else ""
+
+
+def activity_facts(items, now=None):
+    """活动/过渡块 → 结构化活动事实（带真实时长与同伴），给大日记用。"""
+    if now is None:
+        return []
+    facts = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("source") or "") not in ("activity", "transit"):
+            continue
+        start = str(item.get("start") or "")[:5]
+        end = str(item.get("end") or "")[:5] or "24:00"
+        try:
+            hh, mm = [int(x) for x in start.split(":")]
+            begin = hh * 60 + mm
+            sh, sm = [int(x) for x in end.split(":")]
+            finish = 24 * 60 if sh >= 24 else sh * 60 + sm
+        except Exception:
+            continue
+        if finish <= begin:
+            continue
+        if end == "24:00" or (hh * 60 + mm) >= 0 and finish > now.hour * 60 + now.minute:
+            # 还没结束的活动块不进事实池
+            if finish > now.hour * 60 + now.minute:
+                continue
+        place = str(item.get("place") or "").strip()
+        activity = str(item.get("activity") or "").strip()
+        if not activity:
+            continue
+        companion = _companion(activity)
+        who = ("和%s" % companion) if companion else ""
+        where = ("在%s" % place) if place else ""
+        span = _cn_duration(finish - begin)
+        facts.append({
+            "time": start, "start": start, "end": end,
+            "type": "活动",
+            "detail": "%s%s%s%s" % (who, where, activity, span),
+            "place": place,
+        })
+    return facts
+
+
 async def build_fact_pool(plugin, day, now=None, hour_slot=None):
     now = now or _dt.datetime.now()
     if isinstance(day, str):
@@ -150,6 +212,11 @@ async def build_fact_pool(plugin, day, now=None, hour_slot=None):
             continue
         facts.append({"time": start, "type": "日程",
                       "detail": "%s（%s）" % (activity, item.get("place") or "家")})
+    # 第八轮 B：活动/过渡块写成结构化活动事实（真实时长 + 同伴），大日记不再“失忆”
+    try:
+        facts.extend(activity_facts(items, now))
+    except Exception as _amo_exc:
+        logger.debug("[amo] 活动事实拼装失败: %s", _amo_exc)
     facts.extend(_routine_facts(items))
     place = ""
     for item in items:

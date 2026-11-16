@@ -214,6 +214,42 @@ class ApiReadTests(unittest.TestCase):
         data = self._call("api_diary_tree")["data"]
         self.assertIsNotNone(data)
 
+    def test_schedule_detail_past_subhour_block_is_not_pending(self):
+        """13:00-13:41 这种分钟级块，13:41 之后点开必须是结果，不能再说「还没过完」。"""
+        import datetime as _dt
+        yesterday = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
+        item = {"id": "t-1", "start": "13:00", "end": "13:41",
+                "activity": "在家休息（日常发呆）", "place": "家", "zone": "home",
+                "category": "rest", "source": "jit_recover"}
+        self.plugin.db.save_schedule(yesterday, [item])
+        result = self._call("api_schedule_detail", body={
+            "date": yesterday, "start": "13:00", "end": "13:41"})
+        data = result.get("data") or {}
+        self.assertFalse(data.get("pending"), result)
+        text = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("这小时还没过完", text)
+        self.assertNotIn("未记录", text)
+        # 第八轮 D：GET 纯只读，缺小日记时返回 generating（后台补），不再同步跑 LLM
+        if data.get("status") == "generating":
+            self.assertIn("过几秒", data.get("message", ""))
+        else:
+            self.assertTrue(str(data.get("diary") or "").strip(), "过去块必须有内容或人话兜底")
+
+    def test_display_item_maps_stale_missing_record(self):
+        row = self.plugin._display_item({"activity": "未记录", "place": "家"})
+        self.assertNotEqual(row["activity"], "未记录")
+        self.assertIn("在家", row["activity"])
+        tree = self.plugin._display_tree([{"title": "x", "children": [{"activity": "未记录", "place": "家"}]}])
+        self.assertNotEqual(tree[0]["children"][0]["activity"], "未记录")
+
+    def test_gap_fallback_uses_health_and_place(self):
+        self.assertEqual(self.plugin._ui_gap_line({"place": "家"})[:2], "（窝")
+        now = __import__("time").time()
+        self.plugin.state.health = {"status": "发烧", "since": now, "until": now + 3600,
+                                    "severity": "serious", "treatment": "", "doctor": False,
+                                    "base_hours": 24}
+        self.assertIn("床上", self.plugin._ui_gap_line({"place": "家"}))
+
     def test_unknown_optional_panels_still_answer(self):
         # 照片/礼物这类面板在没配图片节点时也应该回 code 1 + 人话，而不是崩
         for name in ("api_photo_persona", "api_photo_job", "api_schedule_detail"):

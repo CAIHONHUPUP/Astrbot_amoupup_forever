@@ -192,6 +192,36 @@ class ScheduleStateMixin(_MixinBase):
         day_text = str(day or "")
         if day_text and day_text > today_str():
             return self._commit_todo_day(day_text, new_items, source=source)
+        # 第四轮防穿帮：聊天/命令/工具把地点改成户外目的地时，先开过渡（30 分钟路程），
+        # 不再瞬间传送（老 bug：被子里 → 医院走廊）。
+        try:
+            try:
+                from .amo_transit import maybe_start as _maybe_transit
+            except ImportError:
+                from amo_transit import maybe_start as _maybe_transit
+            _maybe_transit(self.p, day_text, new_items, old_items, source)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.commit.transit", _amo_exc)
+        # 第七轮：落库前去重叠（旧块优先，新块截断到空档或丢弃）
+        try:
+            try:
+                from .amo_transition import resolve_overlaps as _resolve_overlaps
+            except ImportError:
+                from amo_transition import resolve_overlaps as _resolve_overlaps
+            # 只拿“不在新列表里的旧块”当 blocker：ensure/JIT 重写是整份替换，
+            # 旧块和新块其实是同一批，如果不过滤会把所有块都当成冲突截掉（14:1x 的事故）。
+            def _ident(row):
+                return (str(row.get("start") or ""), str(row.get("end") or ""),
+                        str(row.get("activity") or ""))
+
+            _new_ids = {_ident(x) for x in (new_items or []) if isinstance(x, dict)}
+            _base = [x for x in (old_items or [])
+                     if isinstance(x, dict) and _ident(x) not in _new_ids]
+            new_items, _trimmed = _resolve_overlaps(_base, new_items)
+            if _trimmed:
+                logger.info("[amo] 日程去重叠：截断/丢弃 %d 条新块（旧块优先）", len(_trimmed))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.commit.overlap", _amo_exc)
         with self._schedule_commit_lock:
             return self._commit_schedule_change_locked(
                 day, new_items, old_items=old_items, source=source,
@@ -213,6 +243,17 @@ class ScheduleStateMixin(_MixinBase):
                 current, self.health_info(), now)
             if not removed:
                 return 0
+            # 第八轮 C：删完病假行也先归一一次，别把重叠写回库（旧代码这里直接 save）
+            try:
+                try:
+                    from .amo_transition import normalize_day as _normalize_day
+                except ImportError:
+                    from amo_transition import normalize_day as _normalize_day
+                kept, _fixed = _normalize_day(kept)
+                if _fixed:
+                    logger.info("[amo] 健康巡检写入前归一了重叠块")
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.reconcile_health.normalize", _amo_exc)
             result = self._commit_schedule_change_locked(
                 day, kept, old_items=current, source="health_audit",
                 reason="健康已恢复，清理过期病假日程",
@@ -308,6 +349,10 @@ class ScheduleStateMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
             version = 0
+        # 第八轮 C 审计结论：这里是今天日程的唯一落库点，写入语义是**整份替换**（不是增量），
+        # 因此不需要在这里二次去重叠——去重叠只对「新块 vs 真正的外部旧块」做，
+        # 由 commit_schedule_change 公共入口（_resolve_overlaps，先过滤同批旧块）和
+        # 健康巡检 / 23:59 快照（各自 normalize 后再写）负责；否则整份替换会自撞（14:1x 事故）。
         self.schedule[day] = new_items
         if source in ("chat", "command", "manual"):
             try:
@@ -925,6 +970,7 @@ class ScheduleStateMixin(_MixinBase):
                     "event": self._display_event(item.get("event")),
                     "mood": item.get("mood", ""),
                     "current": bool(is_today and start <= now_min < end),
+                    "doing": bool(is_today and start <= now_min < end),
                 }
                 children.append(hour)
             block["date"] = day
@@ -1146,16 +1192,12 @@ class ScheduleStateMixin(_MixinBase):
         return items
 
     def _schedule_jit_purge(self, today):
-        """JIT 盲盒：只保留预约和已发生的流水，未来随机日常一律隐藏。"""
-        items = self._jit_items(today)
-        existing = list(self.schedule.get(today) or self.db.get_schedule(today) or [])
-        if items != existing:
-            try:
-                self.commit_schedule_change(today, items, old_items=existing,
-                                            source="jit_purge", reason="隐藏未来随机日程")
-            except Exception as exc:
-                _note_swallowed("amo_human_state.py.2246", exc)
-        return items
+        """JIT 盲盒：只读过滤（预约 + 已发生流水），不写回库。
+
+        以前这里每次 tick 都把过滤结果 commit 回去，既制造写入风暴，又会让
+        「整份替换」被去重叠逻辑当成新块截断（2026-11-16 幽灵日程事故）。
+        """
+        return self._jit_items(today)
 
     def _schedule_reset_forced(self, today):
         """force 重生成前清掉当天的 day_type / manual_override，否则会读回旧类型。"""
