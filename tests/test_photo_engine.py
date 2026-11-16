@@ -17,6 +17,12 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import pytest  # noqa: E402
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if not os.path.isdir(os.path.join(os.path.dirname(_ROOT), "astrbot_plugin_omnidraw")):
+    pytest.skip("omnidraw sibling not checked out", allow_module_level=True)
+
 from photo_engine import PhotoEngine  # noqa: E402
 from photo_rules import resolve_plan  # noqa: E402
 
