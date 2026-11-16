@@ -267,8 +267,9 @@ def facts_lines(plugin, now=None):
 
     # 1) 绝对事实：已经发生过的日程 + 这一小时在干嘛
     chunks = []
+    day_label = "[今日] "
     for item in done[-3:]:
-        chunks.append("%s-%s %s（%s）" % (
+        chunks.append(day_label + "%s-%s %s（%s）" % (
             item.get("start", ""), item.get("end", ""),
             str(item.get("activity") or "").strip() or "在忙",
             str(item.get("place") or "家").strip() or "家"))
@@ -303,7 +304,7 @@ def facts_lines(plugin, now=None):
             else:
                 sign = "退回" if str(row.get("ref") or "") else "进"
                 mark = ""
-            pieces.append("%s %s %.2f 元 %s%s" % (
+            pieces.append(day_label + "%s %s %.2f 元 %s%s" % (
                 _clock(row["ts"]), sign, abs(row["delta"]) / 100.0, row["reason"], mark))
         lines.append("【今天的账单】" + "；".join(pieces) + "。")
 

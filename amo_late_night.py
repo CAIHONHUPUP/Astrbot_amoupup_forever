@@ -121,7 +121,9 @@ class LateNightEngine:
             if data["date"] not in hist:
                 hist.append(data["date"])
                 data["history"] = hist[-14:]
-            if now.hour >= 2 or now.hour < 6:
+            # late2 = 真的熬过了凌晨两点。以前写成「now.hour >= 2 or now.hour < 6」，
+            # 23 点刚进窗口也成立，于是每天 23:30 就把「熬到很晚」标记上，次日白扣心情。
+            if 2 <= now.hour < 6:
                 data["late2"] = True
             if data.get("fatigue_hour") != hour_key:
                 try:
@@ -165,7 +167,9 @@ class LateNightEngine:
             logger.debug("[amo] optional step failed: %r", exc)
         self._save(data)
         try:
-            self.human.nudge(开心=12, 感動=5, 疲惫=-10)
+            # 被哄睡是「心动」时刻，必须给数值反馈：原来写的是「感動」，既不是简体也不是
+            # MOOD_KEYS 里的词，被 nudge 静默丢掉，等于她的感动没有任何情绪记账。
+            self.human.nudge(开心=12, 依恋=5, 疲惫=-10)
         except Exception as exc:
             logger.debug("[amo] optional step failed: %r", exc)
         return data

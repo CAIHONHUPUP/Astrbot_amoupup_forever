@@ -345,6 +345,10 @@ def ensure_private_ending(day: date, text: str) -> str:
 
 def build_prompt(day: date, chat_lines, hourly_lines) -> str:
     """拼日记 prompt（纯函数，方便测试）。"""
+    try:
+        from .amo_immersion_guard import prompt_block as _immersion_block
+    except ImportError:
+        from amo_immersion_guard import prompt_block as _immersion_block
     private_today = wants_private_ending(day)
     if private_today:
         ending_rule = (
@@ -369,7 +373,7 @@ def build_prompt(day: date, chat_lines, hourly_lines) -> str:
         + ending_rule
         + "8. 文中的“我”是 bot 本人；用户是“他”，不要把“我”写成用户；\n"
         "9. 不要提「日程」「AI」「模型」「插件」这些词，不要分点，不要写日期标题；\n"
-        "直接输出日记正文。"
+        "直接输出日记正文。\n\n" + _immersion_block()
     )
 
 

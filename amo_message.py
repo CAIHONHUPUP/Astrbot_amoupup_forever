@@ -804,6 +804,12 @@ class MessageMixin(_MixinBase):
             text = _guard_date(text, self)
         except Exception as exc:
             logger.debug("[amo] 发送前约会校验失败: %s", exc)
+        # 防线二/四：极端情绪词改写 + 视角反转兜底（聊天、主动、里程碑都过这里）
+        try:
+            from .amo_immersion_guard import fix_identity, sanitize_extreme
+        except ImportError:
+            from amo_immersion_guard import fix_identity, sanitize_extreme
+        text = fix_identity(sanitize_extreme(text))
         if looks_like_model_leak(text):
             text = "秘密，不告诉你。"
         if not text or not umo:

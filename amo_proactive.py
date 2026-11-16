@@ -81,6 +81,31 @@ def pick_life_event(day, uid=""):
     return SHARE_EVENTS[sum(ord(ch) for ch in key) % len(SHARE_EVENTS)]
 
 
+# 严重度在插件里有两种写法：守护插件/老数据是 1~4 的数字，本体存档是 minor/serious 这种词。
+# 以前这里直接 int()，遇到 "minor" 抛 ValueError，每次主动检查（5 分钟一次）都会把 tick 整条带崩。
+SEVERITY_RANKS = {"none": 0, "healthy": 0, "健康": 0, "minor": 1, "mild": 1, "轻微": 1,
+                  "moderate": 2, "medium": 2, "中度": 2, "serious": 3, "severe": 3,
+                  "major": 3, "重度": 3, "critical": 4}
+
+
+def severity_rank(value):
+    """把严重度统一成整数档位；认不出来当 0（=不严重）。"""
+    if value is None or isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value).strip()
+    if not text:
+        return 0
+    rank = SEVERITY_RANKS.get(text.lower())
+    if rank is not None:
+        return rank
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        return 0
+
+
 def forced_reason(snap, balance_ratio=None, silence=0.0):
     """必须主动的红线：情绪极值 / 大病 / 余额低于总资产 5% / 超过 8 小时没交流。"""
     mood = (snap or {}).get("mood") or {}
@@ -89,7 +114,7 @@ def forced_reason(snap, balance_ratio=None, silence=0.0):
     if float(mood.get("委屈") or 0) >= 85 or float(mood.get("郁闷") or 0) >= 90:
         return "你现在情绪很崩，一个人很难受，特别想找老公。"
     health = (snap or {}).get("health") or {}
-    if health.get("sick") and int(health.get("severity") or 0) >= 3:
+    if health.get("sick") and severity_rank(health.get("severity")) >= 3:
         return "你病得有点重，一个人在家很难受。"
     if balance_ratio is not None and balance_ratio < 0.05:
         return "你的余额只剩总资产的 5% 不到了，有点慌。"

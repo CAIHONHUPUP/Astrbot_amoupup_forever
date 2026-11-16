@@ -1303,7 +1303,7 @@
     function actionTimeout(action) {
       const slow = ["schedule_regen", "schedule_detail", "worldview_regen", "config_save", "profiles_sync", "schedule"];
       if (slow.includes(action)) return 120000;
-      if (["weather", "status"].includes(action)) return 30000;
+      if (["weather", "weather/refresh", "status"].includes(action)) return 30000;
       return 20000;
     }
 
@@ -1440,6 +1440,7 @@
       "relation_save", "relation_delete", "memory_add", "memory_delete",
       "say", "city_set", "profiles_sync", "diary/open", "diary/write", "photo/test",
       "wardrobe/add", "wardrobe/delete", "wardrobe/reroll", "wardrobe/today", "wardrobe/night",
+      "weather/refresh",
     ]);
 
     async function call(action, payload, opts) {
@@ -2173,7 +2174,9 @@
       try { await load(); toast("已刷新"); } catch (e) { toast(e.message || "刷新失败", true); }
       finally { btn.disabled = false; }
     });
-    document.getElementById("btnWeather").addEventListener("click", (e) => action("weather", e.currentTarget));
+    // 刷新天气是副作用（请求和风 + 可能调心情），走写路由 /weather/refresh（只收 POST）；
+    // 读缓存用 /weather 或 /weather/brief，都是 GET。
+    document.getElementById("btnWeather").addEventListener("click", (e) => action("weather/refresh", e.currentTarget));
     document.getElementById("btnSchedule").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;

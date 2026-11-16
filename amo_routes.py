@@ -41,6 +41,8 @@ WRITE_ROUTES = frozenset({
     "/wardrobe/reroll",
     "/wardrobe/today",
     "/wardrobe/night",
+    "/wardrobe/refs",
+    "/weather/refresh",
     "/poses/save",
     "/poses/refs",
     "/diary/write",

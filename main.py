@@ -10,7 +10,7 @@ import asyncio
 import os
 import random  # 测试会 patch main.random（群聊回复概率）
 
-PLUGIN_VERSION = "7.3.6"
+PLUGIN_VERSION = "7.4.0"
 
 try:  # 包模式优先（AstrBot 正常加载）
     from .amo_bootstrap import (

@@ -192,6 +192,8 @@ async def build_fact_pool(plugin, day, now=None, hour_slot=None):
                           "type": "收入", "detail": "%s %.2f 元" % (reason, delta / 100.0)})
     meta = await _build_fact_pool_part( day, day_end, day_start, facts, place, plugin)
     meta = dict(meta or {})
+    meta["day"] = day.isoformat()
+    meta["now"] = now.isoformat()
     meta["date_together"] = bool(date_facts)
     meta["date_hour"] = hour_slot
     if date_facts:
@@ -208,6 +210,14 @@ def render_prompt(pool):
     facts = list((pool or {}).get("facts") or [])
     meta = (pool or {}).get("meta") or {}
     together = bool(meta.get("date_together"))
+    # 防线一：事实行必须带时间标签（补写昨天的日记时是 [昨日]，不是 [今日]）
+    day_label = ""
+    try:
+        from .amo_immersion_guard import time_label as _time_label
+    except ImportError:
+        from amo_immersion_guard import time_label as _time_label
+    if meta.get("day"):
+        day_label = _time_label(meta.get("day"), meta.get("now")) + " "
     lines = [
         "【事实素材·唯一素材】下面是你今天真实发生的事，日记必须且只能基于它扩写：",
     ]
@@ -249,7 +259,7 @@ def render_prompt(pool):
                      "但严禁脑补“他是不是不爱我了”“他是不是去找别人了”，各自忙碌很正常。")
     lines += ["素材（JSON）："]
     for fact in facts:
-        lines.append("- [%s] %s%s" % (fact.get("type") or "事实",
+        lines.append("- %s[%s] %s%s" % (day_label, fact.get("type") or "事实",
                                       (fact.get("time") + " ") if fact.get("time") else "",
                                       fact.get("detail") or ""))
     if meta.get("outfit"):

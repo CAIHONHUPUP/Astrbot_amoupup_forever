@@ -73,8 +73,12 @@ class WardrobeApiMixin(_MixinBase):
         name = str(data.get("name") or "").strip()
         if name and not result.get("dup"):
             try:
-                from .outfit_refs import ensure_ref
-                asyncio.create_task(ensure_ref(self, name))
+                try:  # 包模式优先，按文件直接加载时退回绝对导入
+                    from .outfit_refs import ensure_ref
+                except ImportError:
+                    from outfit_refs import ensure_ref
+                # 带上这件衣服的 sleep/hotel/swim 标记：不然睡衣/酒店/泳装图会存进「白天搭配」
+                asyncio.create_task(ensure_ref(self, name, item=result.get("item")))
             except Exception as exc:
                 logger.debug("[amo] 服装参考图任务创建失败: %s" % exc)
         return {
@@ -89,7 +93,10 @@ class WardrobeApiMixin(_MixinBase):
         wardrobe = getattr(self, "wardrobe", None)
         if wardrobe is None:
             return {"code": 1, "msg": "穿搭衣柜没加载"}
-        from .outfit_refs import batch_items, ensure_batch, pending_items, batch_status
+        try:  # 包模式优先，按文件直接加载时退回绝对导入
+            from .outfit_refs import batch_items, ensure_batch, pending_items, batch_status
+        except ImportError:
+            from outfit_refs import batch_items, ensure_batch, pending_items, batch_status
         status = batch_status()
         if status.get("running"):
             return {"code": 0,
@@ -100,7 +107,8 @@ class WardrobeApiMixin(_MixinBase):
         items = batch_items(wardrobe)
         if not items:
             return {"code": 1, "msg": "衣柜里还没有衣服"}
-        pending = pending_items(self, items)
+        # 逐件 stat（上百件 × 5 个文件夹）是磁盘 IO，别卡在事件循环上打扰聊天。
+        pending = await asyncio.to_thread(pending_items, self, items)
         if not pending:
             return {"code": 0,
                     "msg": "全部衣服都有参考图了（%d 件），没有要补的" % len(items),

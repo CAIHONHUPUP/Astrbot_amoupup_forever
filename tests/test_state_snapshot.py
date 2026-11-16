@@ -317,8 +317,8 @@ class MemoryPrefixTests(unittest.TestCase):
         plugin = Plugin()
         plugin._recall = types.MethodType(RecallContextMixin._recall, plugin)
         _, text = asyncio.run(plugin._recall("u1", "", None))
-        self.assertIn("[今天发生]", text)
-        self.assertIn("[昨天]", text)
+        self.assertIn("[今日]", text)
+        self.assertIn("[昨日]", text)
         self.assertIn("不能说成刚刚", text)
 
 

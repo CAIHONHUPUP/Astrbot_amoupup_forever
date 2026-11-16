@@ -364,6 +364,9 @@ class LlmMixin(_MixinBase):
                 _added_photo = False
                 if callable(enforcer):
                     reply, _added_photo = enforcer(event, reply)
+                # 防线三：意图词（拍一张/发给你/你看这张…）也硬拦，不只是「拍好了」这种完成态
+                if not _added_photo:
+                    reply = self._enforce_photo_intent(event, reply)
                 # 他明确要照片：不管模型说没说「拍好了」，都补一张真图（一小时内只补一次）
                 try:
                     if (not _added_photo and self.draw is not None
@@ -377,6 +380,37 @@ class LlmMixin(_MixinBase):
             except Exception as _amo_exc:
                 logger.debug("[amo] 假拍照兜底失败: %s" % _amo_exc)
         return reply
+
+    def _enforce_photo_intent(self, event, reply):
+        """防线三：命中拍照意图词却没真发图 → 强制补一张；发不出来就删掉口头承诺。
+
+        以前只拦「拍好了/咔嚓」这种完成态，她说「我拍一张发给你」但没调工具就穿帮了。
+        """
+        try:
+            from .amo_immersion_guard import photo_intent, strip_photo_promise
+        except ImportError:
+            from amo_immersion_guard import photo_intent, strip_photo_promise
+        body = str(reply or "")
+        if not body or not photo_intent(body):
+            return body
+        draw = getattr(self, "draw", None)
+        if draw is None:
+            return strip_photo_promise(body)
+        sent = False
+        try:
+            if getattr(draw, "enabled", True):
+                last = float(getattr(draw, "_last_tool_photo_at", 0) or 0)
+                if last and time.monotonic() - last < 60:
+                    return body  # 60 秒内刚发过一张，文本里的「发你」不算穿帮
+                target = draw.send_photo_now(event, "拍一张自拍发给他", kind="real", force=True)
+                sent = any(word in str(target or "") for word in ("拍一张", "发你", "找张图"))
+        except Exception as _amo_exc:
+            logger.debug("[amo] 意图拍照兜底失败: %s" % _amo_exc)
+            sent = False
+        if sent:
+            return body
+        logger.info("[amo] 口头拍照已确定性改写（发图失败）: %s" % body[:60])
+        return strip_photo_promise(body)
 
     async def _reply_prepare(self, event, text, snap, profile, group):
         """回复组装第一步：身份/语境/近期对话/余额/沉默天数（原 _compose_reply 前 56 行）。"""
@@ -509,6 +543,22 @@ class LlmMixin(_MixinBase):
             "别再问「你点了吗 / 吃了吗」；顺着他的答案聊，最多补一句自己的情况。",
             *message_blocks.dialogue_guard_blocks(snap, asked_activity),
         ]
+        # 防线二/四：情绪安全阀 + 熟人名单 + 身份视角（所有聊天 Prompt 必带）
+        try:
+            from .amo_immersion_guard import (
+                emotion_ice_point,
+                ice_break_line,
+                prompt_block,
+            )
+        except ImportError:
+            from amo_immersion_guard import (
+                emotion_ice_point,
+                ice_break_line,
+                prompt_block,
+            )
+        system_parts.append(prompt_block())
+        if emotion_ice_point((snap or {}).get("mood") or {}):
+            system_parts.append(ice_break_line())
         return system_parts
 
     def _reply_group_parts(self, ctx, event, group=True):

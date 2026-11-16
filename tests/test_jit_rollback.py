@@ -197,5 +197,43 @@ class RefundPairingTests(unittest.TestCase):
         self.assertEqual(spent_rows(ledger), [], "已退回的那笔不能再算支出事实")
 
 
+class JitMoodWordTests(unittest.TestCase):
+    """jit_plan 的心情词必须来自真实心情（self.mood 里只有十维数值，没有 word 键）。
+
+    以前这里传 `self.mood.get("word")`，真实状态里永远是空串：
+    jit_plan 里「15:00 郁闷/低落 → 窝着发呆」那支的心情参数一直是死的。
+    """
+
+    FULL_MOOD = {"开心": 10.0, "兴奋": 5.0, "平静": 20.0, "依恋": 10.0,
+                 "郁闷": 90.0, "疲惫": 30.0, "生气": 0.0, "暴躁": 0.0,
+                 "委屈": 20.0, "焦虑": 10.0}
+
+    def setUp(self):
+        self._old = schedule_engine.jit_plan
+        self.seen = []
+
+        def fake(hour, hunger, cash, sick=False, mood_word="", **kwargs):
+            self.seen.append(mood_word)
+            return {"action": "在忙手头的事", "place": "", "zone": "home",
+                    "category": "life", "cost_cents": 0, "diary": ""}
+
+        schedule_engine.jit_plan = fake
+
+    def tearDown(self):
+        schedule_engine.jit_plan = self._old
+
+    def test_mood_word_comes_from_real_mood(self):
+        state = build_state(lambda *a, **k: {"changed": True, "saved": True})
+        state.mood = dict(self.FULL_MOOD)
+        state._jit_plan_for_hour(NOW, HOUR, DAY)
+        self.assertEqual(self.seen, ["郁闷"], "心情最高的那一维要传进 jit_plan")
+
+    def test_partial_mood_dict_does_not_crash(self):
+        state = build_state(lambda *a, **k: {"changed": True, "saved": True})
+        state.mood = {"word": "平静"}
+        state._jit_plan_for_hour(NOW, HOUR, DAY)
+        self.assertEqual(self.seen, ["平静"])
+
+
 if __name__ == "__main__":
     unittest.main()

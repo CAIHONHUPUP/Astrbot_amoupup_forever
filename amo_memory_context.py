@@ -318,14 +318,16 @@ def _recall_format(self, item, lines, memories):
         created = to_int(item.get("created_at"))
         if created:
             try:
-                day = _clock_from_ts(created)
-                age = (_now().date() - day.date()).days
-                if age == 0:
-                    body = "[今天发生] " + body
-                elif age == 1:
-                    body = "[昨天] " + body
+                # 防线一：统一用 [今日]/[昨日]/[前天]/[日期]，不再只分今天/昨天
+                try:
+                    from .amo_immersion_guard import time_label as _time_label
+                except ImportError:
+                    from amo_immersion_guard import time_label as _time_label
+                label = _time_label(created, _now())
+                if label:
+                    body = label + " " + body
                 elif any(w in body for w in rel_words):
-                    body = "（记于 %s）%s" % (day.strftime("%m-%d"), body)
+                    body = "（记于 %s）%s" % (_clock_from_ts(created).strftime("%m-%d"), body)
             except Exception as _amo_exc:
                 _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
         # 用户记忆默认补「他：」；bot 自己的记忆用 [bot]，不能标成用户。
@@ -343,6 +345,6 @@ def _recall_format(self, item, lines, memories):
         lines.append("· " + prefix + body + "（" + label
                      + (" · 来源:" + src_label if src_label else "") + "）")
     if lines:
-        lines.append("（记忆前的 [今天发生]/[昨天] 是记录时间。写职场、出门的事时，"
+        lines.append("（每条记忆前的 [今日]/[昨日]/[前天]/[日期] 是记录时间。写职场、出门的事时，"
                      "昨天或更早的必须说成「昨天」「以前」，不能说成刚刚。）")
 

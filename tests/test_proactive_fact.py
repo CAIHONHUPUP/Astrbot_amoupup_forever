@@ -75,6 +75,24 @@ class ProactiveFactsTests(unittest.TestCase):
         self.assertIn("5%", forced_reason({}, 0.04, 1))
         self.assertEqual(forced_reason({}, 0.5, 2), "")
 
+    def test_forced_reason_accepts_word_severity(self):
+        """severity 可能是 minor/serious 词，也可能是 1~4 数字，都不能抛异常。"""
+        from amo_proactive import forced_reason, severity_rank
+        self.assertEqual(severity_rank("serious"), 3)
+        self.assertEqual(severity_rank("minor"), 1)
+        self.assertEqual(severity_rank("3"), 3)
+        self.assertEqual(severity_rank(3), 3)
+        self.assertEqual(severity_rank(None), 0)
+        self.assertEqual(severity_rank(""), 0)
+        self.assertEqual(severity_rank(True), 0)
+        self.assertEqual(severity_rank("乱七八糟"), 0)
+        self.assertIn("病得有点重",
+                      forced_reason({"health": {"sick": True, "status": "发烧", "severity": "serious"}}, None, 1))
+        self.assertIn("病得有点重",
+                      forced_reason({"health": {"sick": True, "status": "发烧", "severity": 3}}, None, 1))
+        self.assertEqual(forced_reason({"health": {"sick": True, "status": "疲惫", "severity": "minor"}}, None, 1), "")
+        self.assertEqual(forced_reason({"health": {"sick": True, "severity": "minor"}}, None, 1), "")
+
     def test_life_event_is_stable_per_day(self):
         from amo_proactive import pick_life_event
         first = pick_life_event("2026-11-14", "302578963")

@@ -66,6 +66,15 @@ def idle_archive_due(message_count: int, since_ts: int, now_ts: int,
     return int(now_ts or 0) - int(since_ts) >= max(1, int(idle_minutes or 1)) * 60
 
 
+def _safety_line() -> str:
+    """防线二：里程碑也是「生成人设内容」，必须带情绪安全句。"""
+    try:
+        from .amo_immersion_guard import SAFETY_LINE
+    except ImportError:
+        from amo_immersion_guard import SAFETY_LINE
+    return SAFETY_LINE
+
+
 def build_prompt(date_label: str, body: str) -> str:
     return (
         "下面是" + str(date_label or "最近") + "这段时间的聊天记录（[他] 是老公，[我] 是你自己）。\n"
@@ -73,6 +82,7 @@ def build_prompt(date_label: str, body: str) -> str:
         "每句必须带主体：写用户的用「他……」，写你自己的用「我……」；不要出现无主语的句子。\n"
         "只写事实，不写「今天/昨天/刚才」这类相对时间；不要复述原话；不确定的不要编。\n\n"
         + str(body or "")
+        + "\n\n" + _safety_line()
     )
 
 

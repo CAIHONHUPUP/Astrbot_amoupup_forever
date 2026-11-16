@@ -51,6 +51,7 @@ READ_HANDLERS = (
     "api_memory_candidates",
     "api_profile_links",
     "api_diary_tree",
+    "api_weather",
     "api_weather_brief",
     "api_city_search",
 )

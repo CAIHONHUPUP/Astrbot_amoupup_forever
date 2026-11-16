@@ -92,5 +92,42 @@ class NightlyResetTests(unittest.TestCase):
         self.assertFalse(engine.is_staying_up(now))
 
 
+class SootheMoodFeedbackTests(unittest.TestCase):
+    """被哄睡是「心动」时刻：心情必须有数值反馈，不能因为词写错被静默丢掉。
+
+    以前写的是 nudge(开心=12, 感動=5, 疲惫=-10)，「感動」既不是简体写法、
+    也不在 MOOD_KEYS 里，nudge 只处理 self.mood 里有的键 → 那 +5 直接蒸发。
+    """
+
+    def _human(self):
+        db = FakeDB()
+        nudges = []
+
+        def nudge(**deltas):
+            nudges.append(dict(deltas))
+
+        human = SimpleNamespace(db=db, nudges=nudges)
+        human.nudge = nudge
+        return human
+
+    def test_soothe_bumps_attachment(self):
+        human = self._human()
+        LateNightEngine(human).soothe("乖")
+        self.assertEqual(len(human.nudges), 1, human.nudges)
+        delta = human.nudges[0]
+        self.assertEqual(delta.get("依恋"), 5, "感动要落到「依恋」上：%s" % delta)
+        self.assertEqual(delta.get("开心"), 12)
+        self.assertEqual(delta.get("疲惫"), -10)
+        self.assertNotIn("感動", delta)
+
+    def test_soothe_keys_are_real_mood_keys(self):
+        from amo_shared import MOOD_KEYS
+
+        human = self._human()
+        LateNightEngine(human).soothe("乖")
+        unknown = [key for key in human.nudges[0] if key not in MOOD_KEYS]
+        self.assertEqual(unknown, [], "这些键不在 MOOD_KEYS，nudge 会静默丢掉：%s" % unknown)
+
+
 if __name__ == "__main__":
     unittest.main()

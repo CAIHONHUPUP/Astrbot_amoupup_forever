@@ -373,6 +373,11 @@ class LLMService:
             "也不要编出没发生过的会议/加班/行程。"
         )
         try:
+            from .amo_immersion_guard import prompt_block as _immersion_block
+        except ImportError:
+            from amo_immersion_guard import prompt_block as _immersion_block
+        system = system + "\n" + _immersion_block()
+        try:
             from .amo_date_context import prompt_block as _date_prompt_block
             _date_text = _date_prompt_block(self.p)
             if _date_text:

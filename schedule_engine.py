@@ -1983,11 +1983,17 @@ class ScheduleEngine:
          asset_line, worn_line, gift_line, outfit_line) = _diary_material_lines(
             self, ctx, item, prev_item, next_item, prev_diary)
         try:
+            from .amo_immersion_guard import diary_prompt_block as _immersion_block
+        except ImportError:
+            from amo_immersion_guard import diary_prompt_block as _immersion_block
+        _immersion_extra = _immersion_block(item)
+        try:
             from .amo_diary_guard import fact_rules
         except ImportError:
             from amo_diary_guard import fact_rules
         _base = (
             fact_rules(together) + "\n"
+            + _immersion_extra + "\n"
             + diary_presence_rules(together)
             + "角色设定：\n" + _brief_world(ctx.get("world") or {}) + "\n"
             "今天：%s，%s；天气：%s；所在地：%s。\n"
@@ -2222,7 +2228,8 @@ def _scenic_text(scenic):
 JIT_HOURS = (8, 12, 15, 19, 23)
 
 
-def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, weekday=None, sick_action=None):
+def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, weekday=None, sick_action=None,
+             mood_value=0):
     """到点即时决策：只给一个当前动作，不排未来。"""
     hour = int(hour)
     hunger = float(hunger)
@@ -2261,6 +2268,22 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, we
         if is_workday and 7 <= hour <= 18:
             return {"action": "请假在家休息", "place": "家", "zone": "home",
                     "category": "rest", "cost_cents": 0, "diary": "今天请假，在家养病。"}
+    # 心情优先于日历类型：情绪到极端时，工作日也会摸鱼发呆、周末也会突然想大扫除。
+    # 以前这条心情支写在「工作日 / 周末」分支后面，工作日和周末都被前面拦掉，永远是死代码。
+    if hour == 15 and float(mood_value or 0) >= 60:
+        mood_text = str(mood_word or "")
+        if "郁闷" in mood_text or "低落" in mood_text or "委屈" in mood_text:
+            if is_workday:
+                return {"action": "在工位上发呆，手头的事一点也不想动", "place": "公司", "zone": "office",
+                        "category": "rest", "cost_cents": 0, "diary": "下午情绪很低，坐在工位上发呆。"}
+            return {"action": "窝着发呆，不太想动", "place": "家", "zone": "home",
+                    "category": "rest", "cost_cents": 0, "diary": "下午有点丧，什么都不想做。"}
+        if "开心" in mood_text or "兴奋" in mood_text:
+            if is_workday:
+                return {"action": "心情很好，偷偷摸鱼刷了会儿手机", "place": "公司", "zone": "office",
+                        "category": "life", "cost_cents": 0, "diary": "下午心情不错，偷偷摸了会儿鱼。"}
+            return {"action": "忽然有兴致，把家里彻底打扫了一遍", "place": "家", "zone": "home",
+                    "category": "life", "cost_cents": 0, "diary": "心情好，难得想搞大扫除。"}
     if is_workday:
         # 工作日法则：07-09 必须出门/通勤，09-18 物理位置默认公司，不能在家发呆。
         if hour == 7:
@@ -2307,9 +2330,7 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, we
         return {"action": "饿着肚子喝水", "place": "家", "zone": "home", "category": "rest",
                 "cost_cents": 0, "diary": "肚子好饿，可是连泡面都买不起了。"}
     if hour == 15:
-        if "郁闷" in str(mood_word) or "低落" in str(mood_word):
-            return {"action": "窝着发呆，不太想动", "place": "家", "zone": "home",
-                    "category": "rest", "cost_cents": 0, "diary": "下午有点丧，什么都不想做。"}
+        # 心情支已经挪到最前面（心情优先于日历类型）；这里只剩「日历不明」时的普通下午。
         return {"action": "在忙手头的事，偶尔刷手机", "place": "", "zone": "home",
                 "category": "life", "cost_cents": 0, "diary": "下午慢慢过。"}
     if hour == 23:

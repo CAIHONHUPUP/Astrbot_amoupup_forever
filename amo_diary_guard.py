@@ -6,7 +6,10 @@
 """
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger("amo")
 
 _RULES_HEAD = """【事实分级·最高优先级】
 【绝对事实】：只写素材包里明确给出的事（真实聊天、消费记录、日程、系统事件）。
@@ -117,6 +120,14 @@ def sanitize_diary(text, address="老公", together=False):
             continue
         out.append(sentence)
     cleaned = "".join(out)
+    try:  # 防线四：名单外人名绝不入库（日记也兜一层）
+        try:
+            from .amo_immersion_guard import scrub_names as _scrub
+        except ImportError:
+            from amo_immersion_guard import scrub_names as _scrub
+        cleaned = _scrub(cleaned)
+    except Exception as exc:  # 人名兜底失败不能拖垮日记，但要留痕
+        logger.debug("[amo] 日记人名兜底跳过: %s" % exc)
     if not together:
         cleaned = _FABRICATED.sub("好想" + address, cleaned)
     cleaned = cleaned.replace("挂了电话", "")

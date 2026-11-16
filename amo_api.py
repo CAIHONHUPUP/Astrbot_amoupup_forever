@@ -212,13 +212,8 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
         return wrapper
 
     async def api_weather_brief(self):
-        """面板用：当前天气一行摘要 + 配置里的城市（只读缓存）。"""
+        """面板用：当前天气一行摘要 + 配置里的城市（只读缓存，GET 不触发请求）。"""
         await self._ensure_ready()
-        if not self.state.weather:
-            try:
-                await self.state.refresh_weather()
-            except Exception as exc:
-                logger.debug("[amo] 面板取天气失败: %s" % exc)
         return {
             "code": 0,
             "data": {
@@ -888,13 +883,26 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
             return {"code": 1, "msg": "房屋数据读不出来"}
 
     async def api_weather(self):
+        """面板读天气：只读缓存，不请求和风、不动心情。
+
+        副作用（取和风 + 天气变好变坏时调心情）只留在两个地方：后台 tick 的
+        ``refresh_weather()``（30 分钟缓存自然到期就刷新一次），以及写路由
+        ``/weather/refresh``（面板「刷新天气」按钮）。GET 必须是纯读的。
+        """
+        await self._ensure_ready()
+        return {"code": 0, "data": self.state.weather_brief()}
+
+    async def api_weather_refresh(self):
+        """面板「刷新天气」：强制重取一次（写路由，只收 POST）。"""
         await self._ensure_ready()
         weather = await self.state.refresh_weather(force=True)
-        return {"code": 0, "data": weather}
+        return {"code": 0, "data": weather,
+                "msg": "已刷新" if isinstance(weather, dict) and weather else "没取到天气"}
 
     async def api_worldview(self):
+        """面板读世界观：只读缓存。生成走后台（日程重建时 ensure_worldview）或显式
+        ``/worldview/regen`` 写路由，GET 不能顺手调模型。"""
         await self._ensure_ready()
-        await self.state.ensure_worldview(self._last_umo)
         return {"code": 0, "data": self.state.worldview}
 
     async def api_worldview_regen(self):

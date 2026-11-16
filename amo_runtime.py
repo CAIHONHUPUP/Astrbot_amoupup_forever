@@ -1527,9 +1527,18 @@ class RuntimeMixin(_MixinBase):
                 await self._hydrate_recent(umo, 30)
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime.HumanCorePlugin._tick", _amo_exc)
-        await self._tick_social(umo)
-        await self._tick_schedule_media(umo)
-        await self._tick_loop_tasks()
+        # 逐阶段隔离：某一阶段抛异常不能把同一轮的后续任务（主动消息 / JIT 盲盒 / 夜间事件）
+        # 一起跳过。以前这里直接顺序 await，一个阶段失败就整轮停摆，JIT 和夜间事件永远轮不到。
+        _stages = (
+            ("social", self._tick_social, (umo,)),
+            ("schedule_media", self._tick_schedule_media, (umo,)),
+            ("loop_tasks", self._tick_loop_tasks, ()),
+        )
+        for _stage, _step, _args in _stages:
+            try:
+                await _step(*_args)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin._tick." + _stage, _amo_exc)
 
     async def _tick_housekeeping(self):
         # 保活：照片任务、数据插件探测、心情/健康/天气维护；未就绪返回 False
@@ -1557,6 +1566,11 @@ class RuntimeMixin(_MixinBase):
         if now_ts() - to_float(getattr(self, "_last_diary_check", 0), 0) > 300:
             self._last_diary_check = now_ts()
             self._spawn(self._maybe_daily_diary())
+        # 世界观是「触发生成」类副作用：面板 GET 只读缓存，这里在后台补一次（空才生成，7 天缓存）。
+        if (not getattr(self.state, "worldview", None)
+                and now_ts() - to_float(getattr(self, "_last_worldview_check", 0), 0) > 300):
+            self._last_worldview_check = now_ts()
+            self._spawn(self.state.ensure_worldview(self._last_umo))
         if now_ts() - to_float(getattr(self, "_last_solo_return", 0), 0) > 120:
             self._last_solo_return = now_ts()
             self._spawn(self._maybe_solo_return())
@@ -1664,7 +1678,10 @@ class RuntimeMixin(_MixinBase):
         now = now_ts()
         if now - self._last_relation_decay > 3600:
             self._last_relation_decay = now
-            self._decay_hate_relations()
+            try:
+                self._decay_hate_relations()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin.relation_decay", _amo_exc)
         if (self.cfg_bool("auto_relation", True)
                 and now - self._last_relation_sediment > 1800):
             self._last_relation_sediment = now
@@ -1674,11 +1691,17 @@ class RuntimeMixin(_MixinBase):
                 logger.debug("[amo] 关系沉淀失败: %s" % exc)
         if now - self._last_purge > 3600:
             self._last_purge = now
-            self.db.purge_messages(self.cfg_int("chat_log_days", 14))
+            try:
+                self.db.purge_messages(self.cfg_int("chat_log_days", 14))
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin.purge_messages", _amo_exc)
 
         if self.cfg_bool("enable_auto_learn", True) and now - self._last_auto_learn > 1800:
             self._last_auto_learn = now
-            await self._auto_learn()
+            try:
+                await self._auto_learn()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin.auto_learn", _amo_exc)
 
         if now - self._last_pending_check >= 60:
             self._last_pending_check = now
@@ -1705,9 +1728,15 @@ class RuntimeMixin(_MixinBase):
 
         if now - self._proactive_last >= self.cfg_int("proactive_check_seconds", 300):
             self._proactive_last = now
-            await self._maybe_proactive()
+            try:
+                await self._maybe_proactive()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin.proactive", _amo_exc)
         if now - self._last_ritual >= 60:
-            await self._maybe_rituals()
+            try:
+                await self._maybe_rituals()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin.rituals", _amo_exc)
         try:
             tick_async = getattr(self.state, "jit_tick_async", None)
             if callable(tick_async):

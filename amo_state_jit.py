@@ -409,9 +409,21 @@ class JitStateMixin(_MixinBase):
                 sick_action = str((self.sick_decision(day) or {}).get("action") or "") or None
             except Exception:
                 sick_action = None
+        # 心情词：self.mood 只有十维数值（没有 word 键），以前这里永远传空字符串，
+        # jit_plan 里 15:00「郁闷/低落 → 窝着发呆」那支成了死代码。
+        mood_word = str(self.mood.get("word") or "")
+        if not mood_word:
+            try:
+                mood_word = str(self.dominant_mood() or "")
+            except Exception:
+                mood_word = ""
+        try:
+            mood_value = float(self.mood.get(mood_word) or 0)
+        except Exception:
+            mood_value = 0.0
         plan = jit_plan(hour, hunger, cash, bool(health.get("sick")),
-                        str(self.mood.get("word") or ""), weekday=now.weekday(),
-                        sick_action=sick_action)
+                        mood_word, weekday=now.weekday(),
+                        sick_action=sick_action, mood_value=mood_value)
         plan = dict(plan)
         try:
             if self.late is not None and hour in (12, 15) and now.weekday() >= 5 and self.late.late_yesterday(now):

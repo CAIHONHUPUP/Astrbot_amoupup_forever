@@ -21,6 +21,15 @@ SICK_SYSTEM = (
 ACTIONS = ("take_sick_leave", "go_to_work_sick")
 
 
+def _safety_line():
+    """防线二：生病决策也是「生成人设内容」，必须带情绪安全句。"""
+    try:
+        from .amo_immersion_guard import SAFETY_LINE
+    except ImportError:
+        from amo_immersion_guard import SAFETY_LINE
+    return SAFETY_LINE
+
+
 def build_prompt(status, balance_cents, weekday_label="星期一", reason="发烧"):
     balance = int(balance_cents or 0) / 100.0
     return (
@@ -30,8 +39,9 @@ def build_prompt(status, balance_cents, weekday_label="星期一", reason="发�
         "你当前总余额是 %.2f 元；不上班可以在家休息。\n"
         "如果去上班：要挤地铁，会很累，到了公司也只能昏昏沉沉撑着。\n"
         "请按你自己的性格和经济压力选一个，只输出 JSON。\n"
-        "（病情备注：%s）"
-    ) % (weekday_label, status or "生病", balance, reason or "不舒服")
+        "（病情备注：%s）\n"
+        "%s"
+    ) % (weekday_label, status or "生病", balance, reason or "不舒服", _safety_line())
 
 
 def _extract_json(raw):

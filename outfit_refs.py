@@ -216,8 +216,13 @@ async def ensure_item_ref(plugin, item, session=None, force=False):
         return ""
 
 
-async def ensure_ref(plugin, name, session=None, force=False):
-    """按名字生成/复用参考图；不在库里的名字按普通上衣处理。"""
+async def ensure_ref(plugin, name, session=None, force=False, item=None):
+    """按名字生成/复用参考图；不在库里的名字按普通上衣处理。
+
+    ``item`` 传衣柜里的那一件（带 sleep/hotel/swim 标记）时按它的目录落盘：
+    只给名字会把睡衣/酒店/泳装图存进「白天搭配」，和 ``item_ref_path`` 对不上，
+    删衣服时也删不到那张图。
+    """
     name = str(name or "").strip()
     if not name:
         return ""
@@ -235,8 +240,12 @@ async def ensure_ref(plugin, name, session=None, force=False):
             category = sleep_category
         elif classify_item is not None:
             category = classify_item(name) or "top"
-    item = {"name": name, "category": category}
-    return await ensure_item_ref(plugin, item, session=session, force=force)
+    target = {"name": name, "category": category}
+    if isinstance(item, dict):
+        target = dict(item)
+        target["name"] = name
+        target.setdefault("category", category)
+    return await ensure_item_ref(plugin, target, session=session, force=force)
 
 
 async def ensure_many(plugin, names, session=None, limit=4):

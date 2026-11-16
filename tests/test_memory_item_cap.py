@@ -74,7 +74,9 @@ class ItemCapTests(unittest.TestCase):
         lines = [line for line in text.splitlines() if line.startswith("· ")]
         self.assertEqual(len(lines), 1)
         self.assertIn("…", lines[0])
-        self.assertLessEqual(len(lines[0]), 240 + 20)
+        # 240 是单条正文上限；行首多出来的 [今日]/[昨日]/[2023-11-14] 是时间标签（防线一），
+        # 属于元数据，不占正文额度。
+        self.assertLessEqual(len(lines[0]), 240 + 40)
 
     def test_short_items_keep_all(self):
         plugin = FakePlugin([_row("他喜欢喝冰美式"), _row("他养了一只猫"),

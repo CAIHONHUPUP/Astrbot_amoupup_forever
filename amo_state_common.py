@@ -87,21 +87,14 @@ def normalize_place(value, zone=""):
 
 
 def slot_has_ended(day, start, end, now=None):
-    """这一小时是否已经过完（到 end 之后才允许生成小日记）。"""
+    """这一小时是否已经过完（秒级比较：23:59:59 不算过完，次日 00:00:01 才算）。"""
     try:
         now = now or _now()
-        day_text = str(day or "")
-        today_text = now.strftime("%Y-%m-%d")
-        if day_text < today_text:
-            return True
-        if day_text > today_text:
-            return False
-        end_text = str(end or "").strip()[:5]
-        if end_text in ("24:00", "0:00"):
-            end_min = 24 * 60
-        else:
-            end_min = parse_hhmm(end_text)
-        return now.hour * 60 + now.minute >= end_min
+        try:
+            from .amo_immersion_guard import slot_ended as _slot_ended
+        except ImportError:
+            from amo_immersion_guard import slot_ended as _slot_ended
+        return bool(_slot_ended(day, end, now))
     except Exception:
         return True
 
