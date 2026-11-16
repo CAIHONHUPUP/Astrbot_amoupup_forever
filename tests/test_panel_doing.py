@@ -126,5 +126,15 @@ class PanelStaticTests(unittest.TestCase):
         self.assertIn("doingTag.className = \"schedule-doing-tag\"", html)
 
 
+class DetailGeneratingTextTests(unittest.TestCase):
+    def test_detail_modal_has_generating_wording(self):
+        with open(os.path.join(ROOT, "views", "dashboard", "index.html"), encoding="utf-8") as fh:
+            html = fh.read()
+        self.assertIn('data.status === "generating"', html)
+        self.assertIn("咬着笔头写日记", html)
+        # 专属文案必须排在 empty_message 兜底之前
+        self.assertLess(html.index("咬着笔头写日记"), html.index("data.empty_message && !data.diary"))
+
+
 if __name__ == "__main__":
     unittest.main()

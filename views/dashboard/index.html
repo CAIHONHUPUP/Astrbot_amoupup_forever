@@ -1710,6 +1710,17 @@
           }
           return;
         }
+        // 后台正在生成时走专属文案；只有状态为空/出错才回落到 empty_message
+        if (data && data.status === "generating") {
+          box.textContent = "";
+          const gen = document.createElement("div");
+          gen.className = "diary-meta";
+          gen.textContent = "（她正咬着笔头写日记呢，过两秒再刷新看看吧~）";
+          box.appendChild(gen);
+          row.dataset.loaded = "1";
+          delete row.dataset.loading;
+          return;
+        }
         if (data.empty_message && !data.diary) {
           box.textContent = "";
           const empty = document.createElement("div");
