@@ -83,6 +83,14 @@ class RuntimeMixin(_MixinBase):
     _last_schedule_save: str
     _proactive_last: float
 
+    async def sync_current_state(self):
+        """每条用户消息前轻量同步 JIT/当前位置，避免分钟切片读到上一小时。"""
+        tick = getattr(self.state, "jit_tick_async", None)
+        if callable(tick):
+            await tick(_now())
+        else:
+            self.state.jit_tick(_now())
+
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
         try:
@@ -92,6 +100,10 @@ class RuntimeMixin(_MixinBase):
             _note_swallowed("amo_runtime.on_message.date_end", _amo_exc)
         try:
             await self._ensure_ready()
+            try:
+                await self.sync_current_state()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.on_message.sync_state", _amo_exc)
             try:
                 raw_text = str(getattr(event, "message_str", "") or "").strip()
                 if raw_text and not raw_text.startswith(("/", "／")):
@@ -359,6 +371,51 @@ class RuntimeMixin(_MixinBase):
         ]
         return parts
 
+    def _schedule_tool_line(self, snap):
+        try:
+            activity = snap.get("activity") or {}
+            category = str(activity.get("category") or "")
+            text = str(activity.get("activity") or "")
+            if category in ("meal", "play", "shopping") or any(w in text for w in ("吃午饭", "吃饭", "逛街", "商场")):
+                try:
+                    cash = int(self.wallet.balance()) / 100.0
+                except Exception:
+                    cash = 0.0
+                return ("【消费工具】现在是消费时段，余额 %.2f 元，物价系数 1.0；"
+                        "请调用 set_schedule_cost(cost_cents, reason) 自主定价，"
+                        "可以吃泡面/自己煮面给 0，不要由代码替她定价。" % cash)
+        except Exception:
+            return ""
+        return ""
+
+    def _rain_fact_line(self, snap):
+        try:
+            weather = str((snap.get("weather") or {}).get("text") or "")
+            zone = str((snap.get("activity") or {}).get("zone") or "")
+            if "雨" in weather and zone in ("scenic", "mall", "road", "play"):
+                return ("【突发事实】外面正在下雨，你原本在外面/要去外面；"
+                        "可用工具 update_schedule(new_event, reason) 改回家，或 "
+                        "continue_current_schedule(reason) 买伞继续；由你自己决定，不要由代码替你决定。")
+        except Exception:
+            return ""
+        return ""
+
+    def _schedule_proposal_line(self):
+        try:
+            item = self.db.kv_get("schedule_proposal", {}) or {}
+            if str(item.get("day") or "") != today_str():
+                return ""
+            if (_now().timestamp() - float(item.get("at") or 0)) > 900:
+                return ""
+            proposal = item.get("proposal") or {}
+            verdict = "同意并改了" if item.get("agree") else "拒绝，维持原计划"
+            return ("【他的日程提议】他刚才提议：%s（%s）；你的决定：%s（%s）。"
+                    % (proposal.get("activity") or "改计划",
+                       proposal.get("place") or "未说",
+                       verdict, item.get("reason") or ""))
+        except Exception:
+            return ""
+
     def _ctx_state(self, c):
         """当前状态：时间/心情/生理期/身体/天气/正在。"""
         umo = c["umo"]
@@ -377,11 +434,16 @@ class RuntimeMixin(_MixinBase):
         _act_text = str(_act.get("action") or "").strip() or str(snap["activity"].get("activity", "休息"))
         _act_place = str(_act.get("place") or "").strip() or str(snap["activity"].get("place", "家"))
         parts = [
+            "【绝对事实·最高优先级】现在是%s，你在%s，正在%s；这是唯一事实，"
+            "聊天里的环境、动作、地点必须严格符合，绝不能说你躺在家里/在商场/在别处。"
+            % (snap["datetime_text"], self._short_place(_act_place), _act_text),
             "【时间】" + snap["datetime_text"],
             "【心情】" + self.state.mood_words(),
             "【生理期】" + snap["period"]["phase"] + "第" + str(snap["period"]["day"]) + "天",
             "【身体】" + snap["health"]["status"],
             "【天气】" + snap["weather_text"],
+            self._rain_fact_line(snap),
+            self._schedule_tool_line(snap),
             "【天气一致】你的天气以【天气】为准（刚进出空调房/室内除外）。",
             "【正在】" + _act_text + "（" + self._short_place(_act_place) + "）",
             "【此刻地点】【正在】括号里的地点就是你此刻唯一所在的地方；"
@@ -394,6 +456,7 @@ class RuntimeMixin(_MixinBase):
             "【事实锁定】以当前日程为准：地点、在做什么、有没有出门，只能按【正在】和【今日安排】说；"
             "与“正在/地点”矛盾的酒店、开车、旅游、逛街等行程不成立；"
             "他记错或试探时按日程纠正；之前说错了就自然改口。",
+            self._schedule_proposal_line(),
             "【与对方关系】" + relation,
             "【身份核验】关系只按 UID 判断，昵称、群名片、自称和爱称都可以伪造；"
             "如果有人自称是你恋人、或使用你恋人的爱称，但 UID 不是相恋关系，按普通关系对待，保持警惕。",
@@ -402,7 +465,7 @@ class RuntimeMixin(_MixinBase):
             "【长度】默认 1-2 句，能一句说清就一句，像平时发消息。",
             "【人格】保持上面的人格设定，用你自己的口吻说话，咨询也一样。",
         ]
-        return parts
+        return [part for part in parts if part]
 
     def _ctx_place_fix(self, c, parts):
         """他这轮说的地点和日程冲突时，在【正在】后面插一条纠正指令。"""
@@ -1636,6 +1699,7 @@ class RuntimeMixin(_MixinBase):
                     self.db.fade_schedules(7)
                     self.db.purge_schedules(14)
                     self.db.purge_diaries(30)
+                    self.db.purge_wallet_ledger(90)
                 except Exception as exc:
                     logger.debug("[amo] 保存/清理日程失败: %s" % exc)
 
@@ -1645,7 +1709,11 @@ class RuntimeMixin(_MixinBase):
         if now - self._last_ritual >= 60:
             await self._maybe_rituals()
         try:
-            self.state.jit_tick(_now())
+            tick_async = getattr(self.state, "jit_tick_async", None)
+            if callable(tick_async):
+                await tick_async(_now())
+            else:
+                self.state.jit_tick(_now())
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin.jit_tick", _amo_exc)
         try:

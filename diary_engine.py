@@ -14,6 +14,9 @@
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 from typing import TYPE_CHECKING
 
 import os
@@ -63,8 +66,8 @@ def resolve_dir(setting: Any, data_root: str) -> str:
                 resolved_root = os.path.abspath(root)
                 if resolved == resolved_root or resolved.startswith(resolved_root + os.sep):
                     return resolved
-            except (OSError, ValueError):
-                pass
+            except (OSError, ValueError) as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
         return default
     if not os.path.isabs(text):
         if not root:
@@ -80,8 +83,8 @@ def resolve_dir(setting: Any, data_root: str) -> str:
             resolved = os.path.abspath(text)
             if resolved == resolved_root or resolved.startswith(resolved_root + os.sep):
                 return resolved
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
     return default
 
 
@@ -142,8 +145,8 @@ def read_diary(root: str, day: date) -> str:
     try:
         with open(path, "r", encoding="utf-8") as fp:
             return fp.read()
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     # 兜底：拷贝过来的日记如果文件名被改过，就按 年/月/日 目录找第一份 txt
     day_dir = os.path.dirname(path)
     try:
@@ -155,8 +158,8 @@ def read_diary(root: str, day: date) -> str:
                     return fp.read()
             except OSError:
                 continue
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     return ""
 
 
@@ -251,8 +254,8 @@ def _date_from_path(path: str, base: str) -> Optional[date]:
     if match:
         try:
             return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
-        except ValueError:
-            pass
+        except ValueError as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
     try:
         rel = os.path.relpath(os.path.dirname(path), base).split(os.sep)
     except ValueError:
@@ -324,8 +327,8 @@ def private_ending_hint(day: date) -> str:
         hints = pick_hints(DIARY_ENDING_HINTS, 1, day.isoformat())
         if hints:
             return str(hints[0]).strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     return "不给看，收好啦。"
 
 

@@ -1135,9 +1135,12 @@ class ScheduleEngine:
         meta = ctx.get("meta") or {}
         day_id = str(((ctx or {}).get("day_type") or {}).get("id") or "")
         sick = bool((ctx.get("health") or {}).get("sick"))
+        sick_leave = sick and str(ctx.get("sick_action") or "") == "take_sick_leave"
         good_weather = bool(ctx.get("good_weather", True))
         holiday = ctx.get("holiday_plan") or {}
-        if event_kind == "business_trip" and not meta.get("rest"):
+        if sick_leave and not meta.get("rest"):
+            segments = self._sick_rest_segments(ctx)
+        elif event_kind == "business_trip" and not meta.get("rest"):
             segments = self._business_trip_segments(ctx)
         elif holiday:
             kind = str(holiday.get("kind") or "")
@@ -1176,13 +1179,14 @@ class ScheduleEngine:
 
     def _seg(self, start, end, activity, place, zone, category,
              transit="", vehicle="", detail="", effects=None,
-             event="", spot="", soothe=False, swim=False):
+             event="", spot="", soothe=False, swim=False, cost_cents=0):
         return {
             "start": start, "end": end, "activity": activity, "place": place,
             "zone": zone, "category": category, "transit": transit,
             "vehicle": vehicle, "detail": detail, "effects": effects or {},
             "event": event, "spot": spot, "soothe": soothe,
             "swim": True if swim else False,
+            "cost_cents": max(0, int(cost_cents or 0)),
         }
 
     def _workday_segments(self, ctx, overtime=False):
@@ -1634,6 +1638,18 @@ class ScheduleEngine:
                     item["place"] = "路上"
                 if not item.get("transit"):
                     item["transit"] = cls._guess_transit(act)
+                # 文案写“在工位/在家/沙发/看电视”但区域是路上：改成真正的通勤文案。
+                # “下班回家/到家/路上”这类本来就是路上，不误伤。
+                if (str(item.get("category") or "") == "commute"
+                        and any(w in act for w in ("工位", "公司", "办公室", "沙发", "床", "电视", "厨房", "被窝", "家"))
+                        and not any(w in act for w in ("回家", "到家", "路上", "地铁", "公交", "开车", "打车", "走", "车厢", "等车"))):
+                    transit = str(item.get("transit") or "")
+                    item["activity"] = {
+                        "subway": "挤地铁去公司", "drive": "开车去公司",
+                        "bus": "坐公交去公司", "walk": "走路去公司",
+                        "taxi": "打车去公司",
+                    }.get(transit) or "赶路去公司"
+                    item["detail"] = ""
                 continue
             if zone in ("home", "hospital"):
                 continue
@@ -1663,6 +1679,14 @@ class ScheduleEngine:
         event = ctx.get("event") or {}
         scenic = ctx.get("scenic") or {}
         day_type = ctx.get("day_type") or {}
+        day_fact = ""
+        try:
+            day_obj = date.fromisoformat(str(ctx.get("day") or "")[:10])
+            weekday_label = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")[day_obj.weekday()]
+            day_kind = "法定工作日，她需要上班" if day_obj.weekday() < 5 else "休息日，不用上班"
+            day_fact = "【绝对事实】今天是%s，%s。\n" % (weekday_label, day_kind)
+        except Exception:
+            day_fact = ""
         day_type_line = ""
         if str(day_type.get("guide") or "").strip():
             day_type_line = "今天是「%s」：%s\n" % (
@@ -1672,6 +1696,7 @@ class ScheduleEngine:
         prompt = (
             "角色设定：\n" + _brief_world(ctx.get("world") or {}) + "\n"
             "今天：%s，%s；天气：%s。\n"
+            "%s"
             "%s"
             "情绪：%s；生理期：%s；身体：%s；昨日：%s\n"
             "突发事件：%s\n"
@@ -1683,11 +1708,13 @@ class ScheduleEngine:
             "2. 时间、地点、类别按骨架原样保留；睡觉就写睡觉，在路上就写在路上；\n"
             "3. 在景区要写具体项目；开车要体现堵车/找停车位；\n"
             "4. 相邻两小时用不同的句子；写生活本身，不写“日程”“AI”“模型”这些词；\n"
-            "5. 只输出 JSON 数组，例如 [\"...\",\"...\"]。"
+            "5. 工作日 07:00-09:00 必须写通勤/出门，09:00-18:00 必须写公司/工位，不能写在家发呆、看剧；\n"
+            "6. 只输出 JSON 数组，例如 [\"...\",\"...\"]。"
         ) % (
             ctx.get("day"), (ctx.get("meta") or {}).get("label") or "普通一天",
             _weather_text(ctx.get("weather") or {}),
             day_type_line,
+            day_fact,
             _mood_text(ctx.get("mood") or {}),
             (ctx.get("period") or {}).get("phase", ""),
             (ctx.get("health") or {}).get("status", "健康"),
@@ -1725,19 +1752,8 @@ class ScheduleEngine:
 
     @staticmethod
     def _fix_home_diary(text):
-        """同居在家：不能写「隔着微信/手机聊」——他就在屋里，要写成当面的。"""
-        body = str(text or "")
-        for old, new in (
-            ("在微信上跟老公聊了几句", "跟他随口说了几句"),
-            ("微信上跟老公聊了几句", "跟他随口说了几句"),
-            ("在微信上跟他说了几句", "跟他随口说了几句"),
-            ("在微信上聊了几句", "跟他随口说了几句"),
-            ("微信里", "当面"),
-            ("微信上", "当面"),
-            ("隔着屏幕", "当面"),
-        ):
-            body = body.replace(old, new)
-        return body
+        """物理边界：他不在现场，绝不能把手机聊天改写成“当面”。保留原文。"""
+        return str(text or "")
 
     @staticmethod
     def _interaction_material(lines):
@@ -1877,12 +1893,11 @@ class ScheduleEngine:
         else:
             prompt += ("\n\n【互动素材】这一小时你们没怎么发消息，可能只是在默默吃饭/待着。"
                        "不要编造对话，只写物理场景和情绪（比如「虽然没怎么说话，但一起吃饭很安心」）。\n")
-        _place_text = str(item.get("place") or "")
-        _at_home = any(word in _place_text for word in ("家", "卧室", "客厅", "沙发", "床", "出租屋"))
-        if _at_home and not is_date:
-            prompt += ("\n\n【同居·他在家】你们已经同居，这一小时他在你身边/同一个屋里。"
-                       "不要写「微信上聊了几句」「隔着屏幕」「他不在」这类话，"
-                       "要写当面说话、递东西、一起窝着的细节。\n")
+        if not is_date:
+            prompt += ("\n\n【物理边界·最高优先级】他此刻不在你身边、不在这个房间里。"
+                       "必须至少写一次“一个人/手机屏幕/微信/语音”这类独处细节，让读者看出你是一个人；"
+                       "严禁写他翻身、抱你、坐在旁边、屋里两个人。"
+                       "想他可以写想，但不能写成他就在现场。\n")
         if is_date:
             prompt += (
                 "\n\n【这一小时你们在一起】你和老公正在约会，他就在你对面/身边。"
@@ -2207,11 +2222,34 @@ def _scenic_text(scenic):
 JIT_HOURS = (8, 12, 15, 19, 23)
 
 
-def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, weekday=None):
+def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, weekday=None, sick_action=None):
     """到点即时决策：只给一个当前动作，不排未来。"""
     hour = int(hour)
     hunger = float(hunger)
     cash_cents = int(cash_cents)
+    is_workday = weekday is not None and int(weekday) < 5
+    if sick and sick_action == "go_to_work_sick":
+        if hour == 7:
+            return {"action": "硬撑着洗漱，量了体温还是烧", "place": "家", "zone": "home",
+                    "category": "life", "cost_cents": 0, "diary": "烧还没退，可今天得去上班。"}
+        if hour == 8:
+            return {"action": "戴着口罩去挤地铁，咳得嗓子疼", "place": "路上", "zone": "road",
+                    "category": "commute", "cost_cents": 0, "diary": "带病通勤，只想快点到公司。"}
+        if hour == 9:
+            return {"action": "到公司先趴一会儿，头昏昏沉沉", "place": "公司", "zone": "office",
+                    "category": "work", "cost_cents": 0, "diary": "撑着坐到工位，先缓缓。"}
+        if 10 <= hour <= 17 and hour != 12:
+            return {"action": "在工位上昏昏沉沉，时不时咳嗽", "place": "公司", "zone": "office",
+                    "category": "work", "cost_cents": 0, "diary": "带病上班，效率低得可怜。"}
+        if hour == 12:
+            return {"action": "没胃口，在工位上趴了一会儿", "place": "公司", "zone": "office",
+                    "category": "meal", "cost_cents": 0, "diary": "午饭吃不下，只想闭眼。"}
+        if hour == 18:
+            return {"action": "下班回家，路上走得慢吞吞", "place": "路上", "zone": "road",
+                    "category": "commute", "cost_cents": 0, "diary": "终于下班了，浑身发软。"}
+        if hour == 19:
+            return {"action": "到家瘫在沙发上，连饭都不想做", "place": "家", "zone": "home",
+                    "category": "rest", "cost_cents": 0, "diary": "带病上一天班，回家只想躺着。"}
     if sick:
         if hour in (8, 12, 19):
             if cash_cents >= 1000:
@@ -2220,6 +2258,32 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, we
                         "diary": "生病了只能喝粥，好想吃火锅。"}
             return {"action": "裹着被子躺着，没胃口", "place": "家", "zone": "home",
                     "category": "rest", "cost_cents": 0, "diary": "生病又没钱，只能躺着。"}
+        if is_workday and 7 <= hour <= 18:
+            return {"action": "请假在家休息", "place": "家", "zone": "home",
+                    "category": "rest", "cost_cents": 0, "diary": "今天请假，在家养病。"}
+    if is_workday:
+        # 工作日法则：07-09 必须出门/通勤，09-18 物理位置默认公司，不能在家发呆。
+        if hour == 7:
+            return {"action": "急急忙忙洗漱，准备出门", "place": "家", "zone": "home",
+                    "category": "life", "cost_cents": 0, "diary": "周一早上，得赶紧出门。"}
+        if hour == 8:
+            return {"action": "下楼买早餐，边走边吃去地铁站", "place": "路上", "zone": "road",
+                    "category": "commute", "cost_cents": 0, "diary": "边赶路边吃，别迟到。"}
+        if hour == 9:
+            return {"action": "到公司，先泡杯咖啡", "place": "公司", "zone": "office",
+                    "category": "work", "cost_cents": 0, "diary": "到工位了，先缓一口气。"}
+        if 10 <= hour <= 17 and hour != 12:
+            return {"action": "在工位上忙工作", "place": "公司", "zone": "office",
+                    "category": "work", "cost_cents": 0, "diary": "手头的事一件接一件。"}
+        if hour == 12:
+            return {"action": "在公司食堂吃午饭", "place": "公司", "zone": "office",
+                    "category": "meal", "cost_cents": 0, "diary": "中午在食堂随便吃点。"}
+        if hour == 18:
+            return {"action": "下班回家", "place": "路上", "zone": "road",
+                    "category": "commute", "cost_cents": 0, "diary": "终于下班了。"}
+        if hour == 19:
+            return {"action": "到家先歇一会儿，准备晚饭", "place": "家", "zone": "home",
+                    "category": "life", "cost_cents": 0, "diary": "到家了，先坐一会儿。"}
     if weekday is not None and int(weekday) >= 5 and hour in (8, 12, 15, 19):
         if hour == 15:
             return {"action": "窝在沙发上刷手机，没什么安排", "place": "家", "zone": "home",

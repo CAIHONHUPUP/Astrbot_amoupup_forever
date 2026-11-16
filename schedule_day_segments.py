@@ -8,14 +8,19 @@ def workday_segments(ctx, seg, overtime=False):
     office = ctx["workplace"]
     late = bool((ctx.get("yesterday") or {}).get("late_night"))
     sick = bool((ctx.get("health") or {}).get("sick"))
-    wake = "赖床、起不来" if late else "起床洗漱、吃早餐"
+    sick_work = sick and str(ctx.get("sick_action") or "") == "go_to_work_sick"
+    wake = "硬撑着洗漱，量了体温还是烧" if sick else "急急忙忙洗漱，准备出门"
     has_car = bool(ctx.get("has_gift_car"))
     if has_car:
-        commute = "开车去公司"
+        commute = "戴着口罩开车去公司" if sick_work else "开车去公司"
+    elif sick_work:
+        commute = "戴着口罩去挤地铁，咳得嗓子疼"
     elif sick:
         commute = "带病出门，慢慢走去地铁站"
     else:
         commute = "挤地铁去公司"
+    work_activity = "在工位上昏昏沉沉，时不时咳嗽" if sick_work else "上班"
+    lunch_activity = "没胃口，在工位上趴了一会儿" if sick_work else "吃午饭"
     if overtime:
         effects = (ctx.get("event") or {}).get("effects") or {}
         evening = [
@@ -43,15 +48,15 @@ def workday_segments(ctx, seg, overtime=False):
         ]
     return [
         seg("00:00", "07:00", "睡觉", home, "home", "sleep"),
-        seg("07:00", "08:00", wake, home, "home", "life", detail="昨晚没睡好" if late else ""),
+        seg("07:00", "08:00", wake, home, "home", "life", detail="昨晚没睡好，强撑着起来" if late else ""),
         seg("08:00", "09:00", commute, "路上", "road", "commute",
             transit="drive" if has_car else "subway",
             vehicle=ctx.get("car") if has_car else "",
             detail="早高峰有点堵，到公司还得找车位" if has_car else ""),
-        seg("09:00", "12:00", "上班", office, "office", "work"),
-        seg("12:00", "13:00", "吃午饭", office + "附近", "restaurant", "meal"),
+        seg("09:00", "12:00", work_activity, office, "office", "work"),
+        seg("12:00", "13:00", lunch_activity, office + "附近", "restaurant", "meal"),
         seg("13:00", "14:00", "午休", office, "office", "rest"),
-        seg("14:00", "18:00", "上班", office, "office", "work"),
+        seg("14:00", "18:00", work_activity, office, "office", "work"),
     ] + evening
 
 

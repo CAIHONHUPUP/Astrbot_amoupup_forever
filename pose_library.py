@@ -127,8 +127,8 @@ class PoseLibrary:
             try:
                 if not os.listdir(self.legacy_ref_dir):
                     os.rmdir(self.legacy_ref_dir)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
         except Exception as exc:
             logger.warning("[amo] 姿势参考图搬迁失败: %s" % exc)
 
@@ -407,7 +407,7 @@ async def ensure_pose_ref(plugin, pose, force=False):
             try:
                 import aiohttp
 
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
                     async with session.get(url, timeout=60) as resp:
                         if resp.status == 200:
                             data = await resp.read()

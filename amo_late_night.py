@@ -2,6 +2,9 @@
 """熬夜：23:30 后仍清醒 → is_staying_up；疲劳加速、次日惩罚、哄睡/转账清空。"""
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import datetime as _dt
 import random
 
@@ -29,8 +32,8 @@ class LateNightEngine:
     def _save(self, data):
         try:
             self.db.kv_set("late_night", data or {})
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
 
     @staticmethod
     def _day_of(now):
@@ -68,8 +71,8 @@ class LateNightEngine:
         data[key] = True
         try:
             self.db.kv_set("late_flags", data)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
 
     def on_big_stock_loss(self):
         self._set_flag("big_loss")
@@ -123,8 +126,8 @@ class LateNightEngine:
             if data.get("fatigue_hour") != hour_key:
                 try:
                     self.human.nudge(疲惫=2)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("[amo] optional step failed: %r", exc)
                 data["fatigue_hour"] = hour_key
             self._save(data)
         # 连续两晚熬夜：第二天 100% 感冒/发烧，并清空记录
@@ -135,8 +138,8 @@ class LateNightEngine:
                 data["history"] = []
                 data["sick_done"] = True
                 self._save(data)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
         # 第二天惩罚：疲惫 +30、皮肤差情绪 -10（只一次）
         if data.get("date") and not data.get("penalty_done") and 8 <= now.hour < 20:
             yesterday = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
@@ -145,8 +148,8 @@ class LateNightEngine:
                     self.human.nudge(疲惫=30)
                     if data.get("late2"):
                         self.human.nudge(开心=-10)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("[amo] optional step failed: %r", exc)
                 data["penalty_done"] = True
                 self._save(data)
         return data
@@ -158,13 +161,13 @@ class LateNightEngine:
                      "cleared_date": self._day_of(_dt.datetime.now())})
         try:
             self.db.kv_set("late_flags", {})
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
         self._save(data)
         try:
             self.human.nudge(开心=12, 感動=5, 疲惫=-10)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
         return data
 
     def note_snack(self, amount_cents, food=""):

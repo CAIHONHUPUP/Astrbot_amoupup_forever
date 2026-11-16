@@ -2019,6 +2019,32 @@ def _merge_uid_kv(cur, report, alias_uid, canon_uid, to_num):
 
 
 
+def clean_ui_value(value, depth=0):
+    """前端兜底：NaN/None/Tuple/Traceback 等绝不出现在 JSON 界面里。"""
+    if depth > 8:
+        return ""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, str)):
+        text = str(value)
+        if text in ("None", "NaN", "nan", "inf", "-inf", "Tuple", "Error"):
+            return ""
+        if "Traceback" in text or "Exception" in text:
+            return ""
+        return value
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            return 0
+        return value
+    if isinstance(value, dict):
+        return {str(k): clean_ui_value(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [clean_ui_value(v, depth + 1) for v in value]
+    return str(value)
+
+
 def extract_persona_name(persona: Any) -> str:
     """从 AstrBot Personality 的 name / system prompt 中取角色名。"""
     if not persona:

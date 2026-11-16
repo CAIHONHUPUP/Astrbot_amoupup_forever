@@ -14,9 +14,9 @@ else:
         from amo_observability import note as _note_swallowed
 
 try:
-    from .amo_shared import MOOD_KEYS, clamp, day_meta, today_str
+    from .amo_shared import MOOD_KEYS, clean_ui_value, clamp, day_meta, today_str
 except ImportError:
-    from amo_shared import MOOD_KEYS, clamp, day_meta, today_str
+    from amo_shared import MOOD_KEYS, clean_ui_value, clamp, day_meta, today_str
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -55,11 +55,12 @@ class ScheduleApiMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_api_schedule.api_schedule.summary", _amo_exc)
         return {"code": 0, "data": {
-            "day": day, "meta": day_meta(day), "items": items,
-            "tree": tree,
-            "current": self.state.current_activity(),
-            "context": self.state.schedule_context(day),
-            "blind": self.state.schedule_blind_hint(day),
+            "day": day, "meta": clean_ui_value(day_meta(day)),
+            "items": clean_ui_value(items),
+            "tree": clean_ui_value(tree),
+            "current": clean_ui_value(self.state.current_activity()),
+            "context": clean_ui_value(self.state.schedule_context(day)),
+            "blind": clean_ui_value(self.state.schedule_blind_hint(day)),
         }}
 
     async def api_todo_list(self):

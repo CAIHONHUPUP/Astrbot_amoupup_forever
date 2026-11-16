@@ -48,8 +48,8 @@ class PhotoApiMixin(_MixinBase):
         except RuntimeError:
             try:
                 coro.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
             jobs[job_id].update(status="error", msg="事件循环不可用")
         return job_id
 

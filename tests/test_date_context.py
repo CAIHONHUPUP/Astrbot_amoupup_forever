@@ -53,14 +53,14 @@ class PromptTests(unittest.TestCase):
                                                 "since": NOW - 3600}}), None)
         self.assertNotIn("约会开场", text)
 
-    def test_home_block_is_cohabitation(self):
+    def test_home_block_is_cyber_after_date(self):
         text = dc.prompt_block(ctx({"date_home": {"title": "火锅",
                                                   "at": NOW, "until": NOW + 3600}}), None)
-        self.assertIn("一起回到了共同的家", text)
-        self.assertIn("瘫在沙发上", text)
+        self.assertIn("约会结束", text)
+        self.assertIn("一个人回到出租屋", text)
+        self.assertIn("只能手机", text)
         self.assertIn("重点回味", text)
-        self.assertNotIn("空落落", text)
-        self.assertNotIn("分开", text)
+        self.assertNotIn("他就在屋里", text)
 
     def test_guard_replaces_amnesia_during_date(self):
         plugin = ctx({"date_now": {"line": "和老公吃火锅", "until": NOW + 3600}})

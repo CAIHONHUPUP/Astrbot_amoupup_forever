@@ -411,8 +411,8 @@ class Housing:
             if callable(spawn) and callable(ensure):
                 try:
                     spawn(ensure(force=True))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("[amo] optional step failed: %r", exc)
         return cheapest if ok else None
 
     # ---------- 文案 ----------

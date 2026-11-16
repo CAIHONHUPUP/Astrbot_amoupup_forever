@@ -8,6 +8,9 @@
 """
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import re
 
 try:
@@ -160,6 +163,6 @@ def format_event_memory(event, ctx):
     try:
         from .amo_diary_guard import normalize_platform
         text = normalize_platform(text)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     return (memory_prefix(ctx) + " " + text).strip()

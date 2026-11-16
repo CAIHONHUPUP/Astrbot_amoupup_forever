@@ -6,6 +6,9 @@
 """
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import datetime as _dt
 import json
 import re
@@ -335,7 +338,7 @@ async def _build_fact_pool_part( day, day_end, day_start, facts, place, plugin):
                 facts.append({"time": "", "type": "线下约会",
                               "detail": str(data.get("line") or data.get("activity") or "和老公约会")})
                 meta["has_offline_meet"] = True
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     return meta
 

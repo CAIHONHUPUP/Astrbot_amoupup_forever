@@ -235,7 +235,7 @@ def date_presence_facts(plugin, day, hour_slot=None):
             facts.append({
                 "time": _clock(at),
                 "type": "物理场景",
-                "detail": "约会之后你们一起回了家（同居，不是各回各家）；到家也在一起，他就在屋里。",
+                "detail": "约会结束，你一个人回到出租屋；他不在屋里，接下来只能手机联系。",
             })
     return facts
 

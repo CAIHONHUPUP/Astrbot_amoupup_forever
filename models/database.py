@@ -6,6 +6,9 @@
 """
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 
 class Database:
     """对 amo 现有 db 的只读/读写适配（kv_get/kv_set 已存在）。"""
@@ -34,5 +37,5 @@ class Database:
     def commit(self):
         try:
             self.db.conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)

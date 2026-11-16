@@ -631,6 +631,16 @@ class JitBlindBoxTests(StateTestCase):
         self.assertEqual(hit[0]["end"], "15:20")
         self.assertEqual(hit[0]["activity"], "逛街")
 
+    def test_sleep_hour_detail_is_placeholder(self) -> None:
+        day = today_str()
+        item = {"start": "03:00", "end": "04:00", "activity": "又睡过去了",
+                "place": "家", "zone": "home", "category": "sleep"}
+        self.state.schedule = {day: [item]}
+        result = asyncio.run(self.state.expand_hour(day, item, [item]))
+        self.assertTrue(result.get("sleep"))
+        self.assertIn("呼呼大睡", result.get("diary") or "")
+        self.assertNotIn("他", result.get("diary") or "")
+
     def test_jit_tick_runs_every_hour(self) -> None:
         from datetime import datetime as dt
 

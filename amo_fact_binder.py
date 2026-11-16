@@ -15,6 +15,9 @@
 """
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import datetime as _dt
 import hashlib
 
@@ -238,8 +241,8 @@ def warning_line(plugin, now=None, facts=None):
                       "restaurant": "餐厅", "scenic": "景区", "hotel": "酒店",
                       "road": "路上", "hospital": "医院", "station": "车站"}.get(zone, "家")
         done = str(data.get("action") or "在忙")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     words = ban_words(plugin, now, facts)
     return ("【系统警告】你这一小时在【%s】，已经完成了【%s】。"
             "严禁在回复中说出“%s”等矛盾词汇。" % (place_word, done, "、".join(words)))
@@ -417,8 +420,8 @@ def _mode(plugin):
             return "off"
         if plugin.cfg_bool("chat_claim_charge", False):
             return "charge"
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     return "rewrite"
 
 

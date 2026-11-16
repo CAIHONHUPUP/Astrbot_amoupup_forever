@@ -126,10 +126,10 @@ class SkeletonShapeTests(unittest.TestCase):
     def test_friend_dinner(self):
         self._check(build(event={"kind": "friend_dinner", "effects": {}}))
 
-    def test_late_night_wakes_late(self):
+    def test_late_night_still_goes_to_work(self):
         items = build(yesterday={"late_night": True})
         self._check(items)
-        self.assertIn("赖床", items[7].get("activity") or "")
+        self.assertIn("出门", items[7].get("activity") or "")
 
 
 class HourExpandTests(unittest.TestCase):

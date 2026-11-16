@@ -10,7 +10,7 @@ import asyncio
 import os
 import random  # 测试会 patch main.random（群聊回复概率）
 
-PLUGIN_VERSION = "7.3.5"
+PLUGIN_VERSION = "7.3.6"
 
 try:  # 包模式优先（AstrBot 正常加载）
     from .amo_bootstrap import (
@@ -273,6 +273,9 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                 manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)
                 if register_send_photo(self, manager):
                     logger.info("[amo] LLM tool registered: send_photo")
+                from .amo_schedule_tools import register_schedule_tools
+                if register_schedule_tools(self, manager):
+                    logger.info("[amo] LLM tools registered: update_schedule/continue/set_cost")
             except Exception as exc:
                 logger.debug("[amo] 注册 send_photo 工具失败: %s" % exc)
 
@@ -484,6 +487,9 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             from .draw_engine import register_send_photo
             ok3 = register_send_photo(self, manager)
             logger.info("[amo] LLM tool send_photo: %s", "registered" if ok3 else "skipped")
+            from .amo_schedule_tools import register_schedule_tools
+            ok4 = register_schedule_tools(self, manager)
+            logger.info("[amo] LLM tools schedule: %s", "registered" if ok4 else "skipped")
         except Exception as exc:
             logger.warning("[amo] 注册 buy_appliance 工具失败: %s", exc)
 

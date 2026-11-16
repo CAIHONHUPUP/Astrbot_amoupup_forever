@@ -687,6 +687,13 @@ class ProactiveMixin(_MixinBase):
         if callable(_dating) and _dating():
             logger.debug("[amo] 主动消息：约会中，本轮推演静默")
             return
+        try:
+            cur = self.state.current_activity() or {}
+            if str(cur.get("category") or "") == "sleep" or "睡" in str(cur.get("activity") or ""):
+                logger.debug("[amo] 主动消息：她正在睡觉，静默")
+                return
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._maybe_proactive.sleep", _amo_exc)
         now = _now()
         if int(now.hour) not in PROACTIVE_SLOTS:
             return

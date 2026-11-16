@@ -117,7 +117,7 @@ def expired(activity, now_ts=None):
 
 
 def entry_activity(label):
-    return "和老公一起" + str(label or "看电视")
+    return "和老公连麦" + str(label or "看电视")
 
 
 def hour_detail(old_activity, label, at_hhmm=""):
@@ -155,9 +155,37 @@ class SharedActivityMixin:
             _note_swallowed("amo_shared_activity._sa_kv", _amo_exc)
             return {}
 
+    def _sa_current_item(self):
+        now = _now()
+        day = now.date().isoformat()
+        try:
+            items = self.state.schedule.get(day) or []
+        except Exception:
+            return None
+        for item in items:
+            start, end = str(item.get("start") or ""), str(item.get("end") or "")
+            try:
+                sh, sm = [int(x) for x in start[:5].split(":")]
+                eh, em = (24, 0) if end.startswith("24") else [int(x) for x in end[:5].split(":")]
+            except Exception:
+                continue
+            if sh * 60 + sm <= now.hour * 60 + now.minute < eh * 60 + em:
+                return item
+        return None
+
+    def _sa_at_home(self):
+        item = self._sa_current_item()
+        if item is None:
+            return True  # 没有当前小时行时按在家处理（旧测试/首启）；有行就必须是 home
+        zone = str(item.get("zone") or "")
+        category = str(item.get("category") or "")
+        return zone == "home" and category not in ("commute", "work")
+
     def shared_activity_active(self):
         act = self._sa_kv()
         if act.get("status") != "active":
+            return None
+        if not self._sa_at_home():
             return None
         return act
 
@@ -177,6 +205,9 @@ class SharedActivityMixin:
         hit = detect(text)
         if not hit:
             return None
+        if not self._sa_at_home():
+            # 她在路上/公司/外面：不能把当前小时改写成“和老公看电视”
+            return {"action": "ignored", "reason": "not_home"}
         if hit.get("hedged"):
             try:
                 self.db.kv_set("shared_activity_hedged", {"label": hit["label"], "at": _now().timestamp()})
@@ -236,9 +267,9 @@ class SharedActivityMixin:
             old_activity = str(target.get("activity") or "")
         target["activity"] = entry_activity(act["label"])
         target["detail"] = hour_detail(old_activity, act["label"], now.strftime("%H:%M"))
-        target.setdefault("place", "家")
-        target.setdefault("zone", "home")
-        target["category"] = target.get("category") or "life"
+        target["place"] = str(target.get("place") or "家")
+        target["zone"] = "home"
+        target["category"] = "life"
         target["happened"] = True
         try:
             self.state.commit_schedule_change(day, items, source="chat",

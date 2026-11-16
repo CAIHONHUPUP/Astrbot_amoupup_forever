@@ -293,7 +293,7 @@ class ScheduleStateMixin(_MixinBase):
             old_items = list(self.schedule.get(day) or [])
         old_items = list(old_items or [])
         new_items = list(new_items or [])
-        new_items = self._normalize_schedule_items(new_items, source)
+        new_items = self._normalize_schedule_items(new_items, source, day)
         if old_items == new_items and invalidate_from is None:
             return {
                 "changed": False,
@@ -357,7 +357,7 @@ class ScheduleStateMixin(_MixinBase):
             "saved": saved,
         }
 
-    def _normalize_schedule_items(self, new_items, source):
+    def _normalize_schedule_items(self, new_items, source, day=""):
         # 清文案 → 归一地点 → 纠偏活动主语（三步各自兜底，坏一步不连累别的）
         try:
             from .amo_diary_guard import clean_schedule_text
@@ -384,7 +384,117 @@ class ScheduleStateMixin(_MixinBase):
             new_items = self._guard_activity_subjects(new_items, source)
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState._commit_schedule_change_locked", _amo_exc)
+        try:
+            new_items = self._enforce_zone_activity(new_items, day, source)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.HumanState._enforce_zone_activity", _amo_exc)
         return new_items
+
+    #: 区域 vs 文案的强冲突词；只拦“明显不可能”的组合，不碰擦边文案。
+    _ZONE_CONFLICT = {
+        "home": ("挤地铁", "坐地铁", "在公司", "到公司", "在工位", "办公室", "在商场", "逛街", "在路上", "开车去", "打车去"),
+        "office": ("在家里", "在家", "窝在", "躺在床上", "被窝", "厨房", "客厅", "卧室"),
+        "road": ("工位", "公司", "办公室", "沙发", "床", "电视", "厨房", "被窝", "家"),
+    }
+    _ZONE_FALLBACK = {
+        "home": "在家待着，做点自己的事",
+        "office": "在工位上忙工作",
+        "road": "在路上赶路",
+    }
+    _ROAD_EXEMPT = ("回家", "到家", "路上", "地铁", "公交", "开车", "打车", "走", "车厢", "等车")
+    #: 非约会日程里绝不能出现的实体陪伴词（用户物理上不在她身边）。
+    _CATEGORY_WORDS = {
+        "sleep": ("睡", "被窝", "床", "枕头", "眯", "梦", "醒", "赖", "翻", "烧", "冷", "热", "闹钟", "困", "闭眼"),
+        "commute": ("地铁", "公交", "车", "路上", "站", "走", "通勤", "堵", "车厢", "赶", "出门", "打车", "骑车", "扶", "下班", "回家", "到家"),
+    }
+    _CATEGORY_FALLBACK = {"sleep": "一个人裹着被子睡着", "commute": "在路上赶路"}
+    _PARTNER_PHYSICAL = ("黏着老公", "抱着老公", "搂着老公", "靠在老公", "躺在老公",
+                         "老公怀里", "老公身边", "老公旁边", "和老公一起睡",
+                         "他翻了个身", "他还在屋里", "他在屋里", "躺在他怀里")
+
+    @classmethod
+    def _enforce_zone_activity(cls, items, day="", source=""):
+        """所有写日程路径的总闸：zone 和 activity 明显打架时纠正文案，保留物理骨架。"""
+        for row in items or []:
+            if not isinstance(row, dict):
+                continue
+            zone = str(row.get("zone") or "")
+            if zone not in cls._ZONE_CONFLICT:
+                continue
+            act = str(row.get("activity") or "")
+            if not act:
+                continue
+            category = str(row.get("category") or "")
+            allowed = cls._CATEGORY_WORDS.get(category)
+            if allowed and not any(word in act for word in allowed):
+                safe = cls._CATEGORY_FALLBACK[category]
+                logger.warning("[amo] 日程类别/文案冲突已纠正: day=%s %s category=%s %r -> %r source=%s",
+                               day, row.get("start"), category, act[:40], safe, source)
+                row["activity"] = safe
+                row["detail"] = ""
+                continue
+            if category not in ("social", "date") and any(word in act for word in cls._PARTNER_PHYSICAL):
+                safe = "一个人裹着被子睡着" if category == "sleep" else cls._ZONE_FALLBACK.get(zone, "一个人待着")
+                logger.warning("[amo] 非约会日程出现实体陪伴，已改写: day=%s %s zone=%s %r -> %r source=%s",
+                               day, row.get("start"), zone, act[:40], safe, source)
+                row["activity"] = safe
+                row["detail"] = ""
+                continue
+            if zone == "road" and any(word in act for word in cls._ROAD_EXEMPT):
+                continue
+            if not any(word in act for word in cls._ZONE_CONFLICT[zone]):
+                continue
+            fallback = cls._ZONE_FALLBACK[zone]
+            logger.warning("[amo] 日程区域/文案冲突已纠正: day=%s %s-%s zone=%s %r -> %r source=%s",
+                           day, row.get("start"), row.get("end"), zone, act[:40], fallback, source)
+            row["activity"] = fallback
+            row["detail"] = ""
+        return items
+
+    def settle_schedule_costs(self, now=None):
+        """日程块结束后按 LLM 定价结算一次；同一 event_id 绝不重复扣款。"""
+        now = now or _now()
+        day = now.date().isoformat()
+        now_min = int(now.hour) * 60 + int(now.minute)
+        try:
+            items = list(self.schedule.get(day) or [])
+        except Exception:
+            items = []
+        for item in items:
+            cost = int(item.get("cost_cents") or 0)
+            if cost <= 0 or item.get("cost_settled"):
+                continue
+            end = parse_hhmm(item.get("end"), 24 * 60)
+            if now_min < end:
+                continue
+            event_id = "sch_%s_%s_%s" % (day, item.get("start"), item.get("category") or "life")
+            flag = "cost_settled:" + event_id
+            try:
+                if self.db.kv_get(flag, False):
+                    item["cost_settled"] = True
+                    continue
+            except Exception:  # cleanup: KV read is best-effort
+                pass
+            payload = {"ok": False, "reason": "余额不足"}
+            try:
+                reason = "日程消费·%s" % (item.get("activity") or "花销")
+                ok = bool(self.p.wallet.debit(cost, reason, event_id,
+                                               category="schedule",
+                                               item_name=str(item.get("activity") or "")))
+                payload = {"ok": ok, "reason": "" if ok else "余额不足",
+                           "cost_cents": cost, "event_id": event_id}
+                if not ok:
+                    logger.warning("[amo] 日程消费失败（余额不足）: %s %s 分", event_id, cost)
+            except Exception as exc:
+                payload = {"ok": False, "reason": "扣款异常: %s" % exc}
+                logger.warning("[amo] 日程消费异常: %s", exc)
+            try:
+                self.db.kv_set(flag, payload)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.settle_cost.flag", _amo_exc)
+            item["cost_settled"] = True
+            item["cost_result"] = payload
+        return items
 
     def _publish_schedule_change(self, day, version, source, reason, changed, start_hour):
         # 有事件总线就发 ScheduleChanged（订阅者取消日记任务）；旧实例/单测走兼容分支
@@ -997,6 +1107,10 @@ class ScheduleStateMixin(_MixinBase):
         """ensure_schedule 的锁内实现；点击二级卡片时再动态生成这一小时的日记。"""
         today = today_str()
         meta = day_meta(today)
+        try:
+            await self.decide_sick_action(umo, _now())
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.ensure_schedule.sick_decision", _amo_exc)
         if not force and self._jit_enabled():
             return self._schedule_jit_purge(today)
         if force:
@@ -1024,6 +1138,11 @@ class ScheduleStateMixin(_MixinBase):
         items, context = await self._schedule_rebuild(umo, today, meta, day_type, force)
         self._schedule_persist(today, items, previous, context, force)
         await self._schedule_apply_travel(today)
+        try:
+            if (self.sick_decision(today) or {}).get("action") == "take_sick_leave":
+                self.db.kv_set("sick_rebuilt:%s" % today, True)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.ensure_schedule.sick_rebuilt", _amo_exc)
         return items
 
     def _schedule_jit_purge(self, today):
@@ -1087,6 +1206,10 @@ class ScheduleStateMixin(_MixinBase):
                 )
                 self.schedule_profile = context.get("profile") or self.schedule_profile
                 context["day_type"] = day_type
+                try:
+                    context["sick_action"] = str((self.sick_decision(today) or {}).get("action") or "")
+                except Exception:
+                    context["sick_action"] = ""
                 items = self.engine.build_skeleton(context)
                 try:
                     items = await self.engine.enrich(umo, context, items, self.p.llm)

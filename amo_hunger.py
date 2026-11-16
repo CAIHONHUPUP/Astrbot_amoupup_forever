@@ -5,6 +5,9 @@
 """
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import datetime as _dt
 
 try:
@@ -57,8 +60,8 @@ class HungerEngine:
                 days = (_dt.date.today() - _dt.date.fromisoformat(start)).days
                 if days >= 0 and days % 28 < 5:
                     return 1.0
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
         return 0.0
 
     def decay(self):
@@ -69,8 +72,8 @@ class HungerEngine:
             try:
                 if getattr(self.p.state, "late", None) is not None and self.p.state.late.is_staying_up():
                     rate *= 2.0
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
             self.value = max(0.0, self.value - rate * hours)
             self.ts = now
             self._save()

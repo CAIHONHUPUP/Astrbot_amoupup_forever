@@ -450,8 +450,8 @@ class MicroEventEngine:
     def _kv_set(self, key, value):
         try:
             self.p.db.kv_set(key, value)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
 
     def _today(self, now=None):
         return (now or _now()).strftime("%Y-%m-%d")
@@ -516,8 +516,8 @@ class MicroEventEngine:
         for key, weight in (("开心", 0.6), ("兴奋", 0.5), ("依恋", 0.4), ("想念", 0.4)):
             try:
                 score += int(float(mood.get(key) or 0) * weight)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
         # 分享欲是累积的：事件里每遇上一件高兴事 +5，攒在 micro_event:share_drive。
         # 以前这里读的是另一个从没人写过的键（share_boost），累积等于没有；
         # 但也不能把存值直接加进 45 的基准（会滚雪球），所以取「心情分」和「存值」里大的那个。
@@ -549,8 +549,8 @@ class MicroEventEngine:
         except Exception:
             try:
                 self.p.state.nudge(**delta)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
         if not bias:
             if any(value < 0 for value in (event.get("mood") or {}).values()):
                 self._set_bias("low")
@@ -597,8 +597,8 @@ class MicroEventEngine:
                                                       "until": float(until or 0),
                                                       "place": "家", "zone": "home",
                                                       "category": "life"})
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
 
     def _action(self, now=None):
         data = self._kv_get("micro_event:action", {}) or {}
@@ -632,22 +632,22 @@ class MicroEventEngine:
                 self._kv_set("micro_event:action", {})
                 try:
                     self.p.set_current_action("", 0)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("[amo] optional step failed: %r", exc)
             else:
                 self._kv_set("micro_event:action", {})
 
     def _feed(self, food):
         try:
             self.p.add_hunger("amo", 45)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
         try:
             hunger = getattr(self.p, "hunger", None)
             if hunger is not None:
                 hunger.mark_meal(food, cooldown_hours=2)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
 
     def _mount_action(self, event, now, cash):
         key = str(event.get("key") or "")
@@ -713,8 +713,8 @@ class MicroEventEngine:
         try:
             self.p.state.nudge_once("late_snack:penalty:%s" % now.date().isoformat(),
                                     懊悔=8, 郁闷=4)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
         return ("【昨晚的代价】昨晚你吃了%s，今天早上有点懊悔，觉得脸圆了一圈/肠胃不太舒服；"
                 "可以自然提一句，但别演成大病。" % food)
 
@@ -765,8 +765,8 @@ class MicroEventEngine:
         if callable(guard):
             try:
                 line = str(await guard(line, umo, snapshot=snapshot) or "").strip()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
         if not line:
             return False
         try:

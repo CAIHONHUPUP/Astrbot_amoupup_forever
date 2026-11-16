@@ -143,7 +143,7 @@ async def _download(url, session=None):
     try:
         import aiohttp
         own = session is None
-        session = session or aiohttp.ClientSession()
+        session = session or aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
         try:
             async with session.get(url, timeout=60) as resp:
                 if resp.status == 200:
@@ -276,8 +276,8 @@ async def ensure_batch(plugin, items, session=None, progress=None):
             if progress:
                 try:
                     progress(index, total, name)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("[amo] optional step failed: %r", exc)
             await asyncio.sleep(0.5)
         return {"ok": True, "done": done, "failed": failed, "total": total}
     finally:

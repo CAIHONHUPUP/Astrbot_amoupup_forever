@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger("amo")
 # -*- coding: utf-8 -*-
 """会话归属：这段聊天是群里的，还是只属于他们俩的。
 
@@ -38,8 +40,8 @@ def event_scope(event):
     try:
         if event is not None and not event.is_private_chat():
             return "group", str(event.get_group_id() or "")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     return "private", ""
 
 

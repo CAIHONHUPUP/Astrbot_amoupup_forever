@@ -9,7 +9,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from schedule_engine import jit_plan  # noqa: E402
+from schedule_engine import ScheduleEngine, jit_plan  # noqa: E402
 
 
 class JitPlanTests(unittest.TestCase):
@@ -42,6 +42,37 @@ class JitPlanTests(unittest.TestCase):
     def test_afternoon_no_spend(self):
         plan = jit_plan(15, 90, 5000)
         self.assertEqual(plan["cost_cents"], 0)
+
+    def test_workday_morning_forces_commute_and_office(self):
+        wake = jit_plan(7, 90, 5000, weekday=0)
+        self.assertIn("出门", wake["action"])
+        commute = jit_plan(8, 90, 5000, weekday=0)
+        self.assertEqual(commute["zone"], "road")
+        self.assertEqual(commute["category"], "commute")
+        work = jit_plan(10, 90, 5000, weekday=0)
+        self.assertEqual(work["zone"], "office")
+        self.assertEqual(work["place"], "公司")
+        lunch = jit_plan(12, 90, 5000, weekday=0)
+        self.assertEqual(lunch["zone"], "office")
+        home = jit_plan(18, 90, 5000, weekday=0)
+        self.assertEqual(home["zone"], "road")
+        self.assertEqual(home["category"], "commute")
+
+    def test_sick_workday_stays_home_all_day(self):
+        plan = jit_plan(10, 90, 5000, sick=True, weekday=0)
+        self.assertEqual(plan["zone"], "home")
+        self.assertEqual(plan["category"], "rest")
+
+    def test_commute_row_with_office_text_is_repaired(self):
+        items = [{"start": "08:00", "end": "09:00", "activity": "在工位上发呆",
+                  "place": "路上", "zone": "road", "category": "commute", "transit": "subway"}]
+        ScheduleEngine._align_zone_with_activity(items)
+        self.assertNotIn("工位", items[0]["activity"])
+        self.assertIn("地铁", items[0]["activity"])
+
+    def test_weekend_daytime_stays_home(self):
+        plan = jit_plan(15, 90, 5000, weekday=5)
+        self.assertEqual(plan["zone"], "home")
 
 
 if __name__ == "__main__":

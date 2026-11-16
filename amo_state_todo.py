@@ -279,15 +279,19 @@ class ScheduleTodoMixin(_MixinBase):
                 })
             if not children:
                 continue
+            block_title = title
+            if (block_start == "00:00" and block_end == "06:00"
+                    and all(str(c.get("category") or "") == "sleep" for c in children)):
+                block_title = "深度睡眠"
             block = {
-                "start": block_start, "end": block_end, "title": title,
+                "start": block_start, "end": block_end, "title": block_title,
                 "date": day, "children": children,
                 "current": any(child["current"] for child in children),
             }
             block["activity"] = ""
             block["place"] = ""
             block["facts"] = {
-                "part": title,
+                "part": block_title,
                 "start": block_start,
                 "end": block_end,
                 "events": [

@@ -308,6 +308,26 @@ class JitStateMixin(_MixinBase):
             _note_swallowed("amo_human_state._finish_open_sleep.kv", exc)
         return {"day": sleep_day, "start": start, "wake": wake}
 
+    async def jit_tick_async(self, now=None):
+        """先让生病状态自主决策，再走同步 JIT；请假时把当天骨架也切到病假。"""
+        now = now or _now()
+        try:
+            decision = await self.decide_sick_action(
+                getattr(self.p, "_last_umo", "") or "", now)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.jit_tick_async.decide", _amo_exc)
+            decision = None
+        if decision and decision.get("action") == "take_sick_leave":
+            day = now.date().isoformat()
+            flag = "sick_rebuilt:%s" % day
+            try:
+                if not self.db.kv_get(flag, False):
+                    await self.ensure_schedule(getattr(self.p, "_last_umo", "") or "", force=True)
+                    self.db.kv_set(flag, True)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.jit_tick_async.rebuild", _amo_exc)
+        return self.jit_tick(now)
+
     def jit_tick(self, now=None):
         """到点推演一次：只决定此刻做什么，不排以后。"""
         if not self._jit_enabled():
@@ -321,6 +341,10 @@ class JitStateMixin(_MixinBase):
             self._finish_open_sleep(now)
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState.jit_tick.sleep", _amo_exc)
+        try:
+            self.settle_schedule_costs(now)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.HumanState.jit_tick.settle_cost", _amo_exc)
         try:
             _date_now = self.db.kv_get("date_now", {}) or {}
             if isinstance(_date_now, dict) and float(_date_now.get("until") or 0) > now_ts():
@@ -379,8 +403,15 @@ class JitStateMixin(_MixinBase):
             from .schedule_engine import jit_plan
         except ImportError:
             from schedule_engine import jit_plan
+        sick_action = None
+        if health.get("sick"):
+            try:
+                sick_action = str((self.sick_decision(day) or {}).get("action") or "") or None
+            except Exception:
+                sick_action = None
         plan = jit_plan(hour, hunger, cash, bool(health.get("sick")),
-                        str(self.mood.get("word") or ""), weekday=now.weekday())
+                        str(self.mood.get("word") or ""), weekday=now.weekday(),
+                        sick_action=sick_action)
         plan = dict(plan)
         try:
             if self.late is not None and hour in (12, 15) and now.weekday() >= 5 and self.late.late_yesterday(now):

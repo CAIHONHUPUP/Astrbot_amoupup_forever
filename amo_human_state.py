@@ -497,6 +497,89 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             }
         self.db.kv_set("health", self.health)
 
+    def sick_decision(self, day=None):
+        day = str(day or today_str())
+        try:
+            data = self.db.kv_get("sick_decision:%s" % day, {}) or {}
+        except Exception:
+            data = {}
+        return dict(data) if isinstance(data, dict) else {}
+
+    async def decide_sick_action(self, umo="", now=None):
+        """工作日早晨发烧：让 LLM 在请假/带病上班之间自主选一次，结果落库。"""
+        now = now or _now()
+        day = now.date().isoformat()
+        health = self.health_info() or {}
+        if not health.get("sick") or now.weekday() >= 5 or not (6 <= int(now.hour) <= 10):
+            return self.sick_decision(day) or None
+        cached = self.sick_decision(day)
+        if cached.get("action") in ("take_sick_leave", "go_to_work_sick"):
+            return cached
+        try:
+            from .amo_sick_decision import (ATTENDANCE_BONUS_CENTS, DAILY_WAGE_CENTS,
+                                            SICK_SYSTEM, build_prompt, parse_decision)
+        except ImportError:
+            from amo_sick_decision import (ATTENDANCE_BONUS_CENTS, DAILY_WAGE_CENTS,
+                                           SICK_SYSTEM, build_prompt, parse_decision)
+
+        reason = str(health.get("note") or health.get("status") or "发烧")
+        try:
+            cash = int(self.p.wallet.balance())
+        except Exception:
+            cash = 0
+        decision = None
+        try:
+            llm = getattr(self.p, "llm", None)
+            if llm is not None and hasattr(llm, "chat_raw"):
+                label = ("星期一", "星期二", "星期三", "星期四", "星期五",
+                         "星期六", "星期日")[now.weekday()]
+                raw = await llm.chat_raw(
+                    umo or getattr(self.p, "_last_umo", "") or "",
+                    SICK_SYSTEM, build_prompt(health.get("status"), cash, label, reason),
+                )
+                decision = parse_decision(raw)
+        except Exception as exc:
+            logger.warning("[amo] 生病自主决策失败，按带病上班兜底: %s" % exc)
+        if not decision:
+            decision = {"action": "go_to_work_sick",
+                        "reason": "没想好，还是先去上班", "fallback": True}
+        decision.update({"day": day, "at": now_ts(), "status": health.get("status")})
+
+        if decision["action"] == "take_sick_leave":
+            for amount, idem, label in (
+                (DAILY_WAGE_CENTS, "sick_leave:%s:wage" % day, "病假扣日薪"),
+                (ATTENDANCE_BONUS_CENTS, "sick_leave:%s:attendance" % day, "病假扣全勤"),
+            ):
+                try:
+                    self.p.wallet.debit(amount, label, idem,
+                                        category="work", item_name=label)
+                except Exception as exc:
+                    _note_swallowed("amo_human_state.sick_leave.debit", exc)
+            for key, delta in (("平静", 6), ("疲惫", 4), ("委屈", 2)):
+                if key in self.mood:
+                    self.mood[key] = max(0.0, min(100.0, float(self.mood[key]) + delta))
+            decision["mood_word"] = "虚弱但安心"
+        else:
+            for key, delta in (("委屈", 8), ("疲惫", 6), ("焦虑", 3)):
+                if key in self.mood:
+                    self.mood[key] = max(0.0, min(100.0, float(self.mood[key]) + delta))
+            try:
+                self.health["until"] = max(float(self.health.get("until") or 0),
+                                           now_ts() + 4 * 3600)
+                self.health["note"] = (str(self.health.get("note") or "") + "；带病上班").strip("；")
+                self.db.kv_set("health", self.health)
+            except Exception as exc:
+                _note_swallowed("amo_human_state.sick_work.health", exc)
+            decision["mood_word"] = "委屈又疲惫"
+        try:
+            self.db.kv_set("mood", self.mood)
+            self.db.kv_set("sick_decision:%s" % day, decision)
+        except Exception as exc:
+            _note_swallowed("amo_human_state.sick_decision.save", exc)
+        logger.info("[amo] 生病自主决策 day=%s action=%s reason=%s fallback=%s",
+                    day, decision.get("action"), decision.get("reason"), decision.get("fallback"))
+        return decision
+
     def set_treatment(self, treatment):
         """她决定去看医生 / 不去：不重置生病起点，只按新方案重算恢复时间。"""
         if self.health.get("status") == "健康":

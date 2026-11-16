@@ -191,12 +191,12 @@ class DiaryStateMixin(_MixinBase):
                     "activity": item.get("activity") or "",
                     "pending": True, "version": version}
         activity = str(item.get("activity") or "")
-        if any(word in activity for word in ("睡觉", "睡眠", "入睡")) and start[:2] in (
-                "23", "00", "01", "02", "03", "04", "05", "06"):
+        if str(item.get("category") or "") == "sleep" and start[:2] in (
+                "23", "00", "01", "02", "03", "04", "05", "06", "07"):
             logger.info("[DIARY_DEBUG] hour=%s timer_cancel=1 reason=sleep", start)
-            return {"diary": "", "mood": item.get("mood") or "平静",
+            return {"diary": "（呼呼大睡中，翻了个身又睡过去了）", "mood": item.get("mood") or "平静",
                     "place": item.get("place") or "", "activity": activity,
-                    "sleep": True, "version": version}
+                    "sleep": True, "placeholder": True, "version": version}
         try:
             from .amo_fact_pool import build_fact_pool
             _pool = await build_fact_pool(self.p, day, hour_slot=int(start[:2] or 0))
@@ -327,6 +327,15 @@ class DiaryStateMixin(_MixinBase):
         """有效缓存直接回放（顺手用事实池清洗一遍旧文），没有则返回 None。"""
         if not force and record and str(record.get("status") or "valid") == "valid" \
                 and record.get("text"):
+            # 旧日程版本写下的正文不能直接回放：即使状态还是 valid，也要按当前版本重写。
+            # version=0 是早期数据/测试里的旧记录，保留原兼容行为。
+            try:
+                rec_ver = int(record.get("version") or 0)
+                cur_ver = int(version or 0)
+            except (TypeError, ValueError):
+                rec_ver, cur_ver = 0, 0
+            if rec_ver and cur_ver and rec_ver < cur_ver:
+                return None
             text = str(record.get("text") or "")
             if facts and self.engine is not None and hasattr(self.engine, "_sanitize_hour_diary"):
                 cleaned = self.engine._sanitize_hour_diary(text, facts)

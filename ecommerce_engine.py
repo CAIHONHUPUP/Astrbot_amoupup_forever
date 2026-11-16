@@ -2,6 +2,9 @@
 """网购与物流：只返回结构化事实；下单不瞬间入库。"""
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import random
 import time
 import uuid
@@ -28,8 +31,8 @@ class EcommerceEngine:
     def _save(self, data):
         try:
             self.plugin.db.kv_set("ecommerce_state", data)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
 
     def _wallet(self):
         return getattr(self.plugin, "wallet", None)
@@ -148,8 +151,8 @@ class EcommerceEngine:
                 data.setdefault("assets", {})[kind] = {"order": order["id"], "name": item.get("name")}
                 try:
                     self.plugin.db.kv_set("house_assets", data["assets"])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("[amo] optional step failed: %r", exc)
                 continue
             try:
                 wardrobe = getattr(self.plugin, "wardrobe", None)
@@ -160,8 +163,8 @@ class EcommerceEngine:
                     if result.get("ok"):
                         item["wardrobe_id"] = (result.get("item") or {}).get("id", "")
                         self._mark_clean(item.get("wardrobe_id"))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
 
     def _mark_clean(self, item_id):
         try:
@@ -172,8 +175,8 @@ class EcommerceEngine:
                     item["clean_status"] = "clean"
                     break
             wardrobe._save(data)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
 
     def return_order(self, order_id, insurance=False, now=None):
         data = self._state()

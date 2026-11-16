@@ -189,6 +189,57 @@ class ScheduleMixin(_MixinBase):
                 return False
         return True
 
+    async def _judge_schedule_proposal(self, event, change, items):
+        """把用户提议交给 LLM：同意才 update_schedule，拒绝就保持原计划。"""
+        current = {}
+        try:
+            current = self.state.current_activity() or {}
+        except Exception:
+            current = {}
+        try:
+            cash = int(self.state.p.wallet.balance())
+        except Exception:
+            cash = 0
+        try:
+            mood = self.state.mood_words()
+        except Exception:
+            mood = ""
+        proposal = {
+            "activity": str(change.get("activity") or ""),
+            "place": str(change.get("place") or ""),
+            "category": str(change.get("category") or ""),
+        }
+        llm = getattr(self, "llm", None)
+        if llm is None or not hasattr(llm, "chat_raw"):
+            return {"agree": False, "reason": "没法判断，先按原计划", "fallback": True}
+        system = (
+            "你是角色的日程决策器。只输出 JSON，不要解释。\n"
+            "工具：update_schedule(reason) 同意改；keep_schedule(reason) 拒绝并维持原计划。\n"
+            "输出 {\"tool\":\"update_schedule\",\"reason\":\"...\"} 或 "
+            "{\"tool\":\"keep_schedule\",\"reason\":\"...\"}。"
+        )
+        prompt = (
+            "你此刻：%s（%s），心情：%s，余额：%.2f 元。\n"
+            "他提议把日程改成：%s（%s，%s）。\n"
+            "结合你的疲惫、心情、余额和想不想去，自主决定同意还是拒绝。"
+        ) % (current.get("activity") or "休息", current.get("place") or "",
+             mood, cash / 100.0, proposal["activity"], proposal["place"],
+             proposal["category"])
+        try:
+            raw = await llm.chat_raw(
+                str(getattr(event, "unified_msg_origin", "") or ""), system, prompt)
+            import json as _json
+            import re as _re
+            match = _re.search(r"\{.*\}", str(raw or ""), _re.S)
+            data = _json.loads(match.group(0)) if match else {}
+            tool = str((data or {}).get("tool") or (data or {}).get("action") or "")
+            return {"agree": tool == "update_schedule",
+                    "reason": str((data or {}).get("reason") or "")[:120],
+                    "fallback": False}
+        except Exception as exc:
+            logger.warning("[amo] 日程提议决策失败，保持原计划: %s" % exc)
+            return {"agree": False, "reason": "没想好，先不改", "fallback": True}
+
     async def _apply_user_schedule_change(self, event, user_text: str) -> None:
         """用户明确安排了行程（来接我 / 一起睡 / 出去吃），把那一段日程改掉。"""
         if detect_schedule_change is None or apply_sched_change is None:
@@ -225,10 +276,28 @@ class ScheduleMixin(_MixinBase):
                 logger.debug("[SCHED_CHANGE] skip reason=no_change change=%s",
                              str(change.get("activity") or "")[:40])
                 return
+            decision = await self._judge_schedule_proposal(event, change, items)
+            try:
+                self.db.kv_set("schedule_proposal", {
+                    "day": key, "at": _now().timestamp(), "text": str(user_text or "")[:120],
+                    "proposal": change, "agree": bool(decision.get("agree")),
+                    "reason": str(decision.get("reason") or ""),
+                })
+            except Exception as _amo_exc:
+                _note_swallowed("amo_schedule.schedule_proposal.save", _amo_exc)
+            if not decision.get("agree"):
+                logger.info("[amo] 拒绝用户改日程提议: %s（%s）",
+                            change.get("activity"), decision.get("reason"))
+                return
             self.state.commit_schedule_change(
                 key, new_items, old_items=items,
                 source="chat", reason=str(change.get("activity") or ""),
             )
+            try:
+                # 日程已经切了，旧的 current_action 不能继续压住新地点
+                self.db.kv_set("current_action", {})
+            except Exception as _amo_exc:
+                _note_swallowed("amo_schedule.schedule_change.clear_action", _amo_exc)
             # 生病/请假长期呆家才换睡衣；旅游/出差直接出发不换
             if str(change.get("category") or "") == "health":
                 text_raw = str(user_text)
@@ -874,6 +943,8 @@ class ScheduleMixin(_MixinBase):
             "\n\n你现在要保持这个人格，用自己的口吻写日记：第一人称、像真人写给自己的，"
             "不是助手汇报，也不要提 AI、模型、插件、日程表这些词。"
             "文中的“我”指你自己（bot），用户是“他”；不要把“我”写成用户。"
+            "物理边界：你们名义上同居，但现实里他不在你身边，平时只能手机聊天；"
+            "只有今天约会的那段时间可以写他坐在对面，约会前后都只能写一个人/手机。"
             "\n\n硬性结尾约束：日记必须是纯粹的内心独白（第一人称），"
             "严禁在结尾输出任何方括号、圆括号括起来的系统状态说明或代码逻辑！"
         )

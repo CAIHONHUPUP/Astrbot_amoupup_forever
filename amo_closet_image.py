@@ -2,6 +2,9 @@
 """买衣服后生成参考图：自定义生图接口（URL/Token 可配置）+ 超时回退文本。"""
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import asyncio
 import base64
 import json
@@ -99,8 +102,8 @@ def _save_path(plugin, item, path):
                 row["image_path"] = path
                 break
         wardrobe._save(data)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
 
 
 async def ensure_after_add(plugin, item):
@@ -108,6 +111,6 @@ async def ensure_after_add(plugin, item):
     if not result.get("ok"):
         try:
             plugin.logger.info("[衣橱] 参考图回退：%s" % result.get("fallback"))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
     return result

@@ -2,6 +2,9 @@
 """生活系统：洗衣状态机 / 家电决策 / 换季整理。只输出结构化事实，不生成人话。"""
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import datetime as _dt
 
 try:
@@ -50,8 +53,8 @@ class LifeFacts:
     def _save(self, wardrobe, data):
         try:
             wardrobe._save(data)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
 
     def _items(self, data):
         return list((data or {}).get("items") or [])
@@ -250,8 +253,8 @@ class LifeFacts:
                 if callable(fn):
                     fn(int(cents))
                     return True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
         return False
 
 

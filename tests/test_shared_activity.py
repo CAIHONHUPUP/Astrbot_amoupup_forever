@@ -45,12 +45,12 @@ class DetectTests(unittest.TestCase):
         text = sa.hour_detail("在家翻翻手机，消磨时间", "看电视", "16:20")
         self.assertIn("前半段", text)
         self.assertIn("后半段", text)
-        self.assertIn("和老公一起看电视", text)
+        self.assertIn("和老公连麦看电视", text)
 
     def test_hour_detail_without_old_activity(self):
         text = sa.hour_detail("", "看电视", "16:20")
         self.assertNotIn("前半段", text)
-        self.assertIn("和老公一起看电视", text)
+        self.assertIn("和老公连麦看电视", text)
 
     def test_prompt_is_scene_bound(self):
         block = sa.prompt_block({"label": "看电视"})
@@ -105,10 +105,12 @@ class FlowTests(unittest.TestCase):
         act = self.plugin.db.kv_get("shared_activity")
         self.assertEqual(act["status"], "active")
         item = self.plugin.state.schedule["2026-11-15"][0]
-        self.assertEqual(item["activity"], "和老公一起看电视")
+        self.assertEqual(item["activity"], "和老公连麦看电视")
+        self.assertEqual(item["zone"], "home")
+        self.assertEqual(item["category"], "life")
         self.assertIn("前半段", item["detail"])
         action = self.plugin.db.kv_get("current_action") or {}
-        self.assertEqual(action.get("action"), "和老公一起看电视")
+        self.assertEqual(action.get("action"), "和老公连麦看电视")
         self.assertIn("正在一起看电视", self.plugin.shared_activity_prompt())
 
     def test_hedged_does_not_touch_schedule(self):
@@ -154,8 +156,29 @@ class FlowTests(unittest.TestCase):
         self.plugin.shared_activity_on_message("一起打游戏吧")
         items = self.plugin.state.schedule["2026-11-15"]
         self.assertTrue(items)
-        self.assertEqual(items[0]["activity"], "和老公一起打游戏")
+        self.assertEqual(items[0]["activity"], "和老公连麦打游戏")
         self.assertEqual(items[0]["start"], "16:00")
+
+
+
+class NotHomeTests(unittest.TestCase):
+    def setUp(self):
+        self._old_now = sa._now
+        sa._now = lambda: datetime.datetime(2026, 11, 16, 8, 2, 0)
+        self.plugin = FakePlugin()
+        self.plugin.state.schedule = {"2026-11-16": [{
+            "start": "08:00", "end": "09:00", "activity": "下楼买早餐，边走边吃去地铁站",
+            "place": "路上", "zone": "road", "category": "commute",
+        }]}
+
+    def tearDown(self):
+        sa._now = self._old_now
+
+    def test_does_not_merge_watch_into_commute(self):
+        result = self.plugin.shared_activity_on_message("那我们今晚一起看电视吧")
+        self.assertEqual(result["action"], "ignored")
+        self.assertIsNone(self.plugin.db.kv_get("shared_activity"))
+        self.assertEqual(self.plugin.state.commits, [])
 
 
 class MoodStoryTests(unittest.IsolatedAsyncioTestCase):
@@ -168,7 +191,7 @@ class MoodStoryTests(unittest.IsolatedAsyncioTestCase):
         class LLM:
             async def chat_raw(self, umo, system, prompt):
                 captured.append(prompt)
-                return "独白：在家闲着，心里挺安稳。\n归因：刚刚和老公一起看剧。"
+                return "独白：在家闲着，心里挺安稳。\n归因：刚刚和老公连麦看剧。"
 
         class P(CommandMixin):
             def __init__(self):

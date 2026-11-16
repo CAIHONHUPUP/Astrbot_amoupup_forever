@@ -6,6 +6,9 @@
 """
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 try:
     from .amo_shared import now_ts
 except ImportError:
@@ -108,9 +111,9 @@ class FeatureApiMixin:
 
                             umos.append(umo)
 
-                except Exception:
+                except Exception as exc:
 
-                    pass
+                    logger.debug("[amo] optional step failed: %r", exc)
 
                 if umos:
 
@@ -196,8 +199,8 @@ class FeatureApiMixin:
             # 已经碰面：清掉「出门前准备」状态，别让她再补一句「我出门了」
             try:
                 self.db.kv_set("date_prep", {})
-            except Exception:  # cleanup: 清出门准备状态，失败不影响约会
-                pass
+            except Exception as exc:  # cleanup: 清出门准备状态，失败不影响约会
+                logger.debug("[amo] optional step failed: %r", exc)
 
         def set_date_meet(self, title, place="", ttl=900):
             """碰面：只记事实（事件/地点），开场白由大模型按事实自己生成。"""
@@ -279,8 +282,8 @@ class FeatureApiMixin:
                 if _set_action(self, action, until_ts, place=place, zone=zone,
                                category=category, source="writer"):
                     return
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("[amo] optional step failed: %r", exc)
 
             self.db.kv_set("current_action", {
 
@@ -368,9 +371,9 @@ class FeatureApiMixin:
 
                     return "心情不好花钱发泄"
 
-            except Exception:
+            except Exception as exc:
 
-                pass
+                logger.debug("[amo] optional step failed: %r", exc)
 
             return ""
 
@@ -424,9 +427,9 @@ class FeatureApiMixin:
 
                     self.wardrobe._save(db)
 
-                except Exception:
+                except Exception as exc:
 
-                    pass
+                    logger.debug("[amo] optional step failed: %r", exc)
 
                 try:
 
@@ -436,9 +439,9 @@ class FeatureApiMixin:
 
                     asyncio.get_running_loop().create_task(ensure_after_add(self, res["item"]))
 
-                except Exception:
+                except Exception as exc:
 
-                    pass
+                    logger.debug("[amo] optional step failed: %r", exc)
 
             return res
 

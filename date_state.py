@@ -10,6 +10,9 @@
 """
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger("amo")
+
 import datetime as _dt
 import re
 
@@ -38,8 +41,8 @@ def record(plugin, activity, ended_ts=0, hours=6, now=None):
             "day": _dt.datetime.fromtimestamp(base).strftime("%Y-%m-%d")}
     try:
         plugin.db.kv_set(KV_LOCK, data)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
     return data
 
 
@@ -96,8 +99,8 @@ def prompt_line(plugin, now=None):
             if ended.hour >= 18:
                 line += ("你刚回到家，洗了澡、卸了妆、换上舒服的睡衣，正瘫在床上准备休息。"
                          "如果他晚上找你，语气带一点居家慵懒。")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
         line += "你逛完腿有点酸、肚子也有点饿，累但很充实。"
         parts.append(line)
     else:
@@ -108,8 +111,8 @@ def prompt_line(plugin, now=None):
             if day == yesterday and int(now.hour) < 12:
                 parts.append("【昨晚】昨天晚上你和老公一起去%s，很开心，晚上睡得很好。"
                              "早上打招呼可以顺口提一句。" % str((data or {}).get("activity") or "约会"))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
     pre = prep(plugin, now)
     if pre:
         parts.append("【出门准备】你正在化妆/挑衣服，马上要出门和老公%s；他催你就说"

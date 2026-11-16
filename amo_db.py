@@ -388,10 +388,12 @@ class AmoDB:
         Web API 仍然存在；这里保证连接被关闭后下一次访问会自动重开，避免
         "Cannot operate on a closed database"。
         """
-        self._conn = sqlite3.connect(self.path, check_same_thread=False, timeout=15)
+        self._conn = sqlite3.connect(self.path, check_same_thread=False, timeout=20)
         self._conn.row_factory = sqlite3.Row
         try:
             self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA busy_timeout=20000")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
         except Exception as _amo_exc:
             _note_swallowed("amo_db.AmoDB._open_unlocked", _amo_exc)
 
@@ -765,6 +767,16 @@ class AmoDB:
                 "GROUP BY uid ORDER BY c DESC LIMIT ?", (float(since), int(limit))
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def purge_wallet_ledger(self, days=90):
+        """只保留最近 90 天流水，避免账本把 SQLite 撑爆。"""
+        cutoff = now_ts() - max(1, int(days)) * 86400
+        try:
+            with self.lock:
+                self.conn.execute("DELETE FROM wallet_ledger WHERE ts<?", (cutoff,))
+                self.conn.commit()
+        except Exception as _amo_exc:
+            _note_swallowed("amo_db.AmoDB.purge_wallet_ledger", _amo_exc)
 
     def purge_messages(self, days=14):
         with self.lock:

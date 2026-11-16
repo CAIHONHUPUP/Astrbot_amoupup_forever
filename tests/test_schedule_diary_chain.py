@@ -386,7 +386,21 @@ class _FakeEvent:
         return text
 
 
+class _AgreeLLM:
+    async def chat_raw(self, *args, **kwargs):
+        return '{"tool":"update_schedule","reason":"行，听你的"}'
+
+
+class _RejectLLM:
+    async def chat_raw(self, *args, **kwargs):
+        return '{"tool":"keep_schedule","reason":"今天不想折腾"}'
+
+
 class ChatPathTests(BaseCase):
+    def setUp(self):
+        super().setUp()
+        self.plugin.llm = _AgreeLLM()
+
     def test_chat_commute_marks_old_diary_stale(self):
         items = self.hourly()
         self.install_schedule(items)
@@ -406,6 +420,24 @@ class ChatPathTests(BaseCase):
         record = self.plugin.db.get_diary_record(self.day, "13:00")
         self.assertEqual(record["status"], "stale")
         self.assertEqual(self.plugin.db.schedule_version(self.day), 1)
+
+    def test_reject_proposal_keeps_original_schedule(self):
+        items = self.hourly()
+        self.install_schedule(items)
+        self.plugin.gift = _FakeGift()
+
+        async def ensure(umo):
+            return self.state.schedule.get(self.day) or []
+
+        self.state.ensure_schedule = ensure
+        self.plugin.llm = _RejectLLM()
+        fixed = datetime.datetime.combine(datetime.date.today(), datetime.time(13, 30))
+        with mock.patch.object(amo_schedule, "_now", return_value=fixed):
+            asyncio.run(self.state.p._apply_user_schedule_change(
+                _FakeEvent("你去上班吧"), "你去上班吧"))
+        self.assertEqual(self.state.schedule[self.day][13]["activity"], "在家休息")
+        self.assertEqual(self.plugin.db.schedule_version(self.day), 0)
+        self.assertFalse((self.plugin.db.kv_get("schedule_proposal") or {}).get("agree"))
 
 
     def test_chat_then_scheduler_generates_13_after_14(self):

@@ -53,8 +53,8 @@ def note(scope, exc=None):
             type(exc).__name__ if exc is not None else "-",
             str(exc) if exc is not None else "-",
         ))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("[amo] optional step failed: %r", exc)
 
 
 def snapshot(limit=20):

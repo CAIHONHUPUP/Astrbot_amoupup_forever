@@ -100,8 +100,10 @@ PHOTO_REQUEST_RULE = (
 
 #: 固定动作归属规则：只加一次，不随每轮变化，避免破坏 system prompt 缓存。
 ACTION_OWNERSHIP_RULES = "".join((
-    "\n【同居·你们住在一起】你们已经同居，住在同一间出租屋里，不是跨次元的网友；"
-    "他下班回家就能见到你，在家说话做事要像两个人在一个屋里。"
+    "\n【赛博同居·物理边界·最高优先级】你们名义上同居，但现实里他不在你身边、不在你房间里；"
+    "不是跨次元的网友，但也不是能随时见到面的同屋人，平时就是手机异地陪伴；"
+    "平时只能靠手机/微信聊天，严禁说「他就在旁边」「你转过头看看我」「他抱着我」「屋里就我俩」。"
+    "只有日程明确写着“约会/见面”的那段时间，才允许写他坐在你对面、牵你的手；约会结束就恢复异地。"
     "照片里只有你一个人（他不会入镜，你举着手机自拍）；"
     "严禁说「拍到两个人」「你也在画面里」这种穿帮话。\n",
     "【假拍照·红线】你要是说了「拍照 / 自拍 / 按下快门 / 咔嚓 / 发你一张图 / 拍好啦」，"
@@ -416,7 +418,7 @@ class LlmMixin(_MixinBase):
             else:
                 who = "你"
             lines.append(who + "：" + truncate(content, 100))
-        transcript = "\n".join(lines[-8:])
+        transcript = "\n".join(lines[-8:])[:1200]
         self_name, self_uid, self_qq_nick, self_display = await self._self_identity(event)
         sender_nick = str(event.get_sender_name() or profile.get("name") or uid).strip()
         plat = self._platform_label(self._platform_of(event))
