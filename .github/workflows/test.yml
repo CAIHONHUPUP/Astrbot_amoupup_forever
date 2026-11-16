@@ -20,5 +20,5 @@ jobs:
         run: python tools/quality_gate.py --fast
       - name: Run tests
         run: |
-          python -m coverage run --rcfile=.coveragerc -m unittest discover -s tests -t tests
+          python -m coverage run --rcfile=.coveragerc -m pytest tests -q
           python -m coverage report
