@@ -154,7 +154,8 @@ def build_snapshot(provider, cfg):
 class CrossPluginContractTests(unittest.TestCase):
     def test_watch_methods_exist(self):
         providers = available()
-        self.assertTrue(providers, "本机没有守护插件目录，契约测试跳过")
+        if not providers:
+            self.skipTest("本机没有守护插件目录，契约测试跳过")
         for name, cfg in providers.items():
             surface = provider_surface(os.path.join(PLUGINS_DIR, name), cfg["cls"])
             missing = sorted({(call[0], call[2], call[3])
