@@ -51,7 +51,7 @@ class DiaryWindowTests(unittest.TestCase):
         self.assertEqual(diary_manual_target(now, None), (dt.date(2026, 11, 11), ""))
         day, err = diary_manual_target(now, dt.date(2026, 11, 12))
         self.assertIsNone(day)
-        self.assertIn("22:00", err)
+        self.assertIn("第二天", err)
         self.assertEqual(diary_manual_target(now, dt.date(2026, 11, 10))[0], dt.date(2026, 11, 10))
 
 

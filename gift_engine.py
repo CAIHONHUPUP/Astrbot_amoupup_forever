@@ -13,15 +13,23 @@
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from typing import Any, TYPE_CHECKING
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
+
+from typing import Any
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 import asyncio
 import json
@@ -38,7 +46,14 @@ from astrbot.api import logger
 try:  # 原子写 JSON（tmp + fsync + os.replace），三个模块共用一份
     from .amo_fileio import atomic_write_json
 except ImportError:  # pragma: no cover - 直接按文件加载时
-    from amo_fileio import atomic_write_json
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_fileio import atomic_write_json
+
+try:  # JSON schema 版本（Phase 7）：gifts.json 写回时补 version
+    from .amo_json_schema import stamp as _stamp_json_version
+except ImportError:  # pragma: no cover - 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_json_schema import stamp as _stamp_json_version  # type: ignore[no-redef]
 
 # 统一时区：容器/服务器常在 UTC 跑，「今天/昨天」和礼物日志日期必须按配置时区算，
 # 不能用 time.localtime()（那是服务器本地时区）。
@@ -317,7 +332,7 @@ def fmt_day(ts) -> str:
         return ""
     day = _clock_from_ts(ts).strftime("%Y-%m-%d")
     today = _clock_now().strftime("%Y-%m-%d")
-    yesterday = _clock_from_ts(time.time() - 86400).strftime("%Y-%m-%d")
+    yesterday = _clock_from_ts(_amo_clock.now_ts() - 86400).strftime("%Y-%m-%d")
     if day == today:
         return "今天"
     if day == yesterday:
@@ -584,7 +599,7 @@ class GiftEngine:
 
     def gift_log_text(self, limit=6, days=30):
         """带日期的礼物记录，给日程日记留痕：「11-08 小挂件」。"""
-        now = time.time()
+        now = _amo_clock.now_ts()
         lines = []
         for gift in self.recent_gifts(limit=60):
             if now - float(gift.get("ts") or 0) > max(1, int(days)) * 86400:
@@ -753,7 +768,7 @@ class GiftEngine:
             # 以前这里静默把文件改名成 .broken-* 然后 data={}：
             # 下一次 _save() 会用空数据覆盖 gifts.json，她视角里礼物/心愿全消失，
             # 日志里却一条线索都没有。至少留一条 warning。
-            backup_path = self.path + ".broken-%d" % int(time.time())
+            backup_path = self.path + ".broken-%d" % int(_amo_clock.now_ts())
             try:
                 os.replace(self.path, backup_path)
             except Exception as _amo_exc:
@@ -782,6 +797,7 @@ class GiftEngine:
         data = self._load()
         data["wishes"] = data["wishes"][-MAX_WISHES:]
         data["gifts"] = data["gifts"][-MAX_GIFTS:]
+        data = _stamp_json_version("gifts", data)
         atomic_write_json(self.path, data, indent=1)
 
     def add_wish(self, item, raw="", umo="", uid="", source="chat"):
@@ -795,7 +811,7 @@ class GiftEngine:
         if any(word in item for word in FOOD_WORDS) or any(word in item for word in IMPOSSIBLE_WORDS):
             # 吃的喝的她这边吃不到；拿不到的东西也不惦记
             return {}
-        now = time.time()
+        now = _amo_clock.now_ts()
         with self._lock:
             data = self._load()
             for wish in reversed(data["wishes"]):
@@ -847,7 +863,7 @@ class GiftEngine:
         return item
 
     def find_wish(self, item="", umo="", allow_any_umo=True):
-        now = time.time()
+        now = _amo_clock.now_ts()
         item = clean_item(item) if item else ""
         with self._lock:
             data = self._load()
@@ -868,7 +884,7 @@ class GiftEngine:
         item = clean_item(item)
         if not item:
             return {}
-        now = time.time()
+        now = _amo_clock.now_ts()
         with self._lock:
             data = self._load()
             for wish in reversed(data["wishes"]):
@@ -890,7 +906,7 @@ class GiftEngine:
                 if wish.get("id") == wish_id:
                     wish["status"] = "gifted"
                     wish["gift_id"] = gift_id
-                    wish["gifted_at"] = time.time()
+                    wish["gifted_at"] = _amo_clock.now_ts()
                     self._save()
                     return
 
@@ -902,7 +918,7 @@ class GiftEngine:
         if kind in ("vehicle", "home", "luxury") and not self.big_allowed:
             logger.info("[amo] 大件礼物未开启，忽略: %s" % item)
             return {}
-        now = time.time()
+        now = _amo_clock.now_ts()
         with self._lock:
             data = self._load()
             for gift in reversed(data["gifts"]):
@@ -953,7 +969,7 @@ class GiftEngine:
             return [dict(item) for item in data["gifts"][-max(1, int(limit)):]][::-1]
 
     def recent_wishes(self, limit=6):
-        now = time.time()
+        now = _amo_clock.now_ts()
         with self._lock:
             data = self._load()
             return [
@@ -968,7 +984,7 @@ class GiftEngine:
 
     def panel_data(self):
         """给 Web 面板用的礼物墙数据。"""
-        now = time.time()
+        now = _amo_clock.now_ts()
         with self._lock:
             data = self._load()
             wishes = []
@@ -1080,7 +1096,7 @@ class GiftEngine:
         except Exception as _amo_exc:
             _note_swallowed("gift_engine.GiftEngine._maybe_shop_hint", _amo_exc)
             return
-        now = time.time()
+        now = _amo_clock.now_ts()
         with self._lock:
             meta = self._load().setdefault("meta", {})
             shop = meta.get("shop_hint")
@@ -1108,7 +1124,7 @@ class GiftEngine:
 
     def _recent_gift_like(self, item, days=7):
         """「挂件」和「小挂件」算同一件；吃的喝的可以重复送。"""
-        now = time.time()
+        now = _amo_clock.now_ts()
         item = str(item or "")
         for gift in self.recent_gifts(limit=60):
             name = str(gift.get("item") or "")
@@ -1122,7 +1138,7 @@ class GiftEngine:
 
     async def _handle_gift(self, event, text):
         key = self._message_key(event, text)
-        now = time.time()
+        now = _amo_clock.now_ts()
         for old_key, ts in list(self._seen_gift.items()):
             if now - ts > 300:
                 self._seen_gift.pop(old_key, None)
@@ -1209,7 +1225,7 @@ class GiftEngine:
         """她/他最近的话里找送礼对象：先看数据库里的真实对话，再看内存尾巴。"""
         gifted = {
             gift.get("item") for gift in self.recent_gifts(limit=60)
-            if time.time() - float(gift.get("ts") or 0) <= self.ttl
+            if _amo_clock.now_ts() - float(gift.get("ts") or 0) <= self.ttl
         }
         lines = []
         try:
@@ -1252,7 +1268,7 @@ class GiftEngine:
         if not umo or not text:
             return
         tail = self._user_tail.setdefault(umo, [])
-        tail.append((time.time(), text[:300]))
+        tail.append((_amo_clock.now_ts(), text[:300]))
         del tail[:-8]
 
     @staticmethod
@@ -1276,7 +1292,7 @@ class GiftEngine:
         if not text:
             return
         tail = self._bot_tail.setdefault(umo, [])
-        tail.append((time.time(), text[:400]))
+        tail.append((_amo_clock.now_ts(), text[:400]))
         if len(tail) > 10:
             del tail[:-10]
         if self._bool("gift_capture_private_only", True) and not self._private(event):
@@ -1285,7 +1301,7 @@ class GiftEngine:
             return
         if self._looks_like_command(text) or self._self_output(text):
             return
-        if time.time() - float(self._just_gifted.get(umo, 0)) < 90:
+        if _amo_clock.now_ts() - float(self._just_gifted.get(umo, 0)) < 90:
             return
         if not has_wish_cue(text):
             return
@@ -1457,7 +1473,7 @@ class GiftEngine:
         gift = self.add_gift(item=item, raw="命令送礼", umo=umo, uid=uid, source="command")
         if not gift:
             return "这个没记住（名字太短或者不像个东西）。"
-        self._just_gifted[umo] = time.time()
+        self._just_gifted[umo] = _amo_clock.now_ts()
         kind = gift.get("kind") or kind
         self._nudge_mood(kind)
         self._remember_gift(uid, gift.get("item") or item, kind)

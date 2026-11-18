@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
 """SocialMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from typing import Any, TYPE_CHECKING
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
+
+from typing import Any
 
 import json
 import os
@@ -16,7 +23,20 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
+
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .errors import CODE_FAIL
+    from .observability import log_event
+else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    try:
+        from .errors import CODE_FAIL
+        from .observability import log_event
+    except ImportError:  # 直接按文件加载时
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from errors import CODE_FAIL
+            from observability import log_event
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -28,9 +48,10 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             AstrMessageEvent, Comp, _rank_edges, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, parse_relations, plan_relation_edges, sentiment, to_float, to_int, truncate,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            AstrMessageEvent, Comp, _rank_edges, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, parse_relations, plan_relation_edges, sentiment, to_float, to_int, truncate,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                AstrMessageEvent, Comp, _rank_edges, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, parse_relations, plan_relation_edges, sentiment, to_float, to_int, truncate,
+            )
 
 
 if TYPE_CHECKING:
@@ -41,7 +62,8 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 try:  # 目标时区下的“现在”（判断是不是深夜）
     from .clock import now as _now
 except ImportError:  # 直接按文件加载时
-    from clock import now as _now  # type: ignore[no-redef]
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from clock import now as _now  # type: ignore[no-redef]
 
 
 class SocialMixin(_MixinBase):
@@ -163,7 +185,7 @@ class SocialMixin(_MixinBase):
         if cache is None:
             cache = {}
             self._admin_cache = cache
-        now = time.time()
+        now = _amo_clock.now_ts()
         hit = cache.get(umo)
         if hit and now - hit[0] < 60:
             return uid in hit[1]
@@ -293,7 +315,7 @@ class SocialMixin(_MixinBase):
         profile = self.db.get_profile(uid) or {}
         if str(profile.get("relation") or "") in ("抵触", "仇恨"):
             self.db.update_profile(uid, relation="相恋")
-            logger.info("[amo] 恋人 UID 恢复为相恋: %s" % uid)
+            log_event("info", "social.lover.restored", uid=uid)
 
     def _lover_aliases(self):
         aliases = {}
@@ -335,7 +357,7 @@ class SocialMixin(_MixinBase):
             if alias not in current:
                 new_alias = (current + "；" + alias).strip("；")[:80]
                 self.db.update_profile(uid, alias=new_alias)
-                logger.debug("[amo] 记住称呼: %s -> %s" % (uid, alias))
+                log_event("debug", "social.alias.remembered", uid=uid, alias=alias)
 
         try:
             messages = event.message_obj.message
@@ -700,7 +722,7 @@ class SocialMixin(_MixinBase):
             try:
                 if not self.db.upsert_relation(uid, target, relation, note):
                     continue
-                logger.debug("[amo] 关系网自动记录: %s --%s--> %s" % (uid, relation, target))
+                log_event("debug", "social.relation.auto", uid=uid, relation=relation, target_uid=target)
                 await self._push_relation_to_data(uid, target, relation, note)
             except Exception as exc:
                 logger.debug("[amo] 自动关系写入失败: %s" % exc)
@@ -829,15 +851,21 @@ class SocialMixin(_MixinBase):
                 same_sender += 1
         return max(same_sender, mentions) if group else same_sender
 
-    def _mark_bot_initiated(self, umo):
+    def _mark_bot_initiated(self, umo, text=""):
         key = str(umo)
         self._bot_initiated[key] = now_ts()
+        quote = str(text or "").strip()
+        if quote:
+            self._bot_initiated_text[key] = quote[:200]
         # 她主动发的消息代表当前是她来找你，不该延续上一轮的火气。
         self._disturb_until[key] = 0
         self._last_affect[key] = (now_ts(), "你主动发起聊天，语气自然亲昵")
 
     def _recent_bot_initiated(self, umo, seconds=3600):
         return now_ts() - to_float(getattr(self, "_bot_initiated", {}).get(str(umo), 0), 0) < seconds
+
+    def _bot_initiated_quote(self, umo):
+        return str(getattr(self, "_bot_initiated_text", {}).get(str(umo), "") or "").strip()
 
     def _should_disturb(self, snap, umo, uid, text="", group=False):
         if not self.cfg_bool("disturb_reply_enabled", True):
@@ -934,7 +962,7 @@ class SocialMixin(_MixinBase):
             ).fetchall()
             for row in rows:
                 self.db.update_profile(str(row["uid"]), relation="抵触")
-                logger.info("[amo] 仇恨超过7天，降为抵触: %s" % row["uid"])
+                log_event("info", "social.hate.decayed", uid=row["uid"])
         except Exception as exc:
             logger.debug("[amo] 仇恨关系衰减失败: %s" % exc)
 
@@ -1006,7 +1034,7 @@ class SocialMixin(_MixinBase):
                     )
                     ok_any = ok_any or written
                 if facts and not ok_any:
-                    logger.warning("[amo] 记忆写入失败，本轮不标记已学: %s" % uid)
+                    log_event("warning", "social.memory.write_failed", uid=uid, error_code=CODE_FAIL)
                     continue
                 self.db.kv_set(key, now_ts())
             except Exception as exc:
@@ -1021,18 +1049,17 @@ class SocialMixin(_MixinBase):
             "proactive_followup_last_", "proactive_forced_hour_", "proactive_pending_",
             "ext_mem_count_", "ext_mem_count_at_",
         )
+        keys_fn = getattr(self.db, "kv_keys", None)
+        if not callable(keys_fn):
+            return 0
         try:
-            rows = self.db.conn.execute("SELECT key FROM kv").fetchall()
-        except Exception as _amo_exc:
-            _note_swallowed("amo_social.HumanCorePlugin._purge_profile_kv", _amo_exc)
+            all_keys = keys_fn(limit=100000)
+        except Exception as exc:
+            logger.debug("[amo] 读取 kv 键失败: %s" % exc)
             return 0
         keys = []
-        for row in rows:
-            try:
-                key = str(row["key"] if hasattr(row, "keys") else row[0])
-            except Exception as _amo_exc:
-                _note_swallowed("amo_social.HumanCorePlugin._purge_profile_kv", _amo_exc)
-                continue
+        for key in all_keys:
+            key = str(key or "")
             if any(key == prefix + uid for prefix in prefixes):
                 keys.append(key)
             elif key.startswith("ritual_") and ("_" + uid + "_") in key:
@@ -1040,9 +1067,12 @@ class SocialMixin(_MixinBase):
         if not keys:
             return 0
         try:
-            for key in keys:
-                self.db.conn.execute("DELETE FROM kv WHERE key=?", (key,))
-            self.db.conn.commit()
+            deleter = getattr(self.db, "kv_delete_many", None)
+            if callable(deleter):
+                deleter(keys)
+            else:
+                for key in keys:
+                    self.db.kv_delete(key)
         except Exception as exc:
             logger.debug("[amo] 清理 kv 失败: %s" % exc)
             return 0

@@ -9,24 +9,13 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+from fixtures import FakeDB, FakePlugin  # Phase 11 共享测试桩
 
 import date_state  # noqa: E402
 
 
-class FakeDB:
-    def __init__(self):
-        self.data = {}
-
-    def kv_get(self, key, default=None):
-        return self.data.get(key, default)
-
-    def kv_set(self, key, value):
-        self.data[key] = value
 
 
-class FakePlugin:
-    def __init__(self):
-        self.db = FakeDB()
 
 
 NOW = dt.datetime(2026, 11, 14, 21, 0)

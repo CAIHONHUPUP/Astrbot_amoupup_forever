@@ -16,13 +16,15 @@
 这里只做纯文本判断，不碰数据库、不调模型，方便单测。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import re
 
 try:  # 包模式优先，按文件直接加载时退回绝对导入
     from .photo_scene import place_of, zone_of
 except ImportError:  # 直接按文件加载时
-    from photo_scene import place_of, zone_of
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_scene import place_of, zone_of
 
 #: 地点词 → 组（长得像「车站/车上」这种按最长匹配优先）
 GROUPS = (
@@ -115,12 +117,16 @@ def conflicting_place(text, activity):
     allowed = allowed_groups(activity)
     if not allowed:
         return None
+    # 她自己的日程文本里就有的词（「食堂」在「在公司食堂吃午饭」里）不算他在说她
+    act_text = str((activity or {}).get("activity") or "") + str((activity or {}).get("place") or "")
     for clause in _clauses(text):
         found = match_location(clause)
         if not found:
             continue
         group, word = found
         if group in allowed:
+            continue
+        if word in act_text:
             continue
         index = clause.find(word)
         last_you = clause.rfind("你", 0, index)
@@ -173,15 +179,20 @@ def rewrite_reply(text, activity):
             continue
         for word in sorted(words, key=len, reverse=True):
             pattern = re.escape(word)
+            # 地点词后面的方位/指示词要跟地点一起换掉，不能只换地点词：
+            # 「在工位上改周报」→「在家改周报」，不能变成「在家上改周报」。
+            local = r"(?:里面|上面|这边|那边|附近|旁边|里头|里|上|中|内)?"
             # 我在X / 我刚在X / 我还在X / 我到了X
             value = re.sub(
-                r"我(?P<mid>(?:刚|正|一直|还|才|也|这边)?)(?:在|到了|回到)(?P<w>" + pattern + r")",
+                r"我(?P<mid>(?:刚|正|一直|还|才|也|这边)?)(?:在|到了|回到)(?P<w>"
+                + pattern + r")" + local,
                 lambda match: "我" + (match.group("mid") or "") + "在" + target,
                 value,
             )
             # 「嗯，在逛街呢」这种省略主语的短回复
             value = re.sub(
-                r"(^|[，,。！!？?\s])在(?P<w>" + pattern + r")(?=[呢啊呀了，,。！!？?\s]|$)",
+                r"(^|[，,。！!？?\s])在(?P<w>" + pattern + r")" + local
+                + r"(?=[呢啊呀了，,。！!？?\s]|$)",
                 lambda match: (match.group(1) or "") + "在" + target,
                 value,
             )

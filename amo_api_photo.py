@@ -13,7 +13,8 @@ else:
     try:
         from .amo_shared import logger, now_ts
     except ImportError:
-        from amo_shared import logger, now_ts
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import logger, now_ts
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入

@@ -31,6 +31,21 @@ class DetectTests(unittest.TestCase):
         self.assertIsNone(sa.detect("今天上班好累"))
         self.assertIsNone(sa.detect("我自己看会儿书"))
 
+    def test_compliment_is_not_an_agreement(self):
+        # 2026-11-17 线上：「很好看，如果能换比基尼就更好看了」被当成约好一起看电视
+        self.assertIsNone(sa.detect("很好看，如果能换比基尼就更好看了"))
+        self.assertIsNone(sa.detect("哈哈哈，谁让我老婆好看"))
+        self.assertIsNone(sa.detect("这件衣服真好看"))
+
+    def test_user_own_activity_is_not_shared(self):
+        self.assertIsNone(sa.detect("我很难过，我看电视去了"))
+        self.assertIsNone(sa.detect("我在看动画片"))
+
+    def test_real_invitation_still_detected(self):
+        self.assertEqual("watch", sa.detect("好，那我们一起看剧吧")["kind"])
+        self.assertEqual("watch", sa.detect("陪你一起看电影")["kind"])
+        self.assertEqual("game", sa.detect("我们一起打游戏吧")["kind"])
+
     def test_stop_words(self):
         self.assertTrue(sa.stop_detected("我不看了，我去忙了"))
         self.assertTrue(sa.stop_detected("先睡了，明天再聊"))

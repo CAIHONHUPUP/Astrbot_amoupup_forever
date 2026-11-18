@@ -24,7 +24,6 @@ from amo_ports import (  # noqa: E402
     SocialItem,
 )
 
-
 class EventBusTests(unittest.TestCase):
     def test_typed_dispatch_and_unsubscribe(self):
         bus = EventBus()
@@ -54,25 +53,7 @@ class EventBusTests(unittest.TestCase):
         self.assertEqual(bus.publish(ScheduleChanged(day="x")), 1)
         self.assertEqual(len(got), 1)
 
-
-class FakeMarket:
-    async def quote(self, symbol):
-        return Quote(symbol=symbol, price=1.0)
-
-    async def history(self, symbol, days=20):
-        return [Quote(symbol=symbol, price=1.0)]
-
-    async def session(self, day):
-        return MarketSession(day=day, is_trading_day=True)
-
-
-class FakeSocial:
-    async def timeline(self, limit=20):
-        return [SocialItem(item_id="1", author="a", text="hello")]
-
-    async def search(self, query, limit=20):
-        return []
-
+from plugin_fakes import EngineeringSeamsFakeMarket as FakeMarket, EngineeringSeamsFakeSocial as FakeSocial  # noqa: E402
 
 class PortContractTests(unittest.TestCase):
     def test_fake_market_satisfies_ports(self):
@@ -82,7 +63,6 @@ class PortContractTests(unittest.TestCase):
 
     def test_fake_social_satisfies_feed_port(self):
         self.assertIsInstance(FakeSocial(), SocialFeedPort)
-
 
 if __name__ == "__main__":
     unittest.main()

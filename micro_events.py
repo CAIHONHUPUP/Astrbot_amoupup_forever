@@ -12,6 +12,7 @@
 - 分享欲 >50 → 主动发消息（走 amo 的主动发送通道）。
 """
 from __future__ import annotations
+from typing import Any, TYPE_CHECKING
 
 import datetime as _dt
 import random
@@ -24,19 +25,22 @@ except ImportError:  # 直接按文件加载时
     import logging
 
     logger = logging.getLogger(__name__)
-    from clock import now as _now
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from clock import now as _now
 
 try:
     from .amo_state_snapshot import build_snapshot, snapshot_text
 except ImportError:  # 直接按文件加载时
-    from amo_state_snapshot import build_snapshot, snapshot_text
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_snapshot import build_snapshot, snapshot_text
 
 try:
     from .amo_state_context import (StateConflict, build_state_context,
                                     event_conflict, format_event_memory)
 except ImportError:  # 直接按文件加载时
-    from amo_state_context import (StateConflict, build_state_context,
-                                   event_conflict, format_event_memory)
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_context import (StateConflict, build_state_context,
+                                       event_conflict, format_event_memory)
 
 try:  # 事实绑定（2026-11-15）：日程说做饭，就别再抽"点外卖"
     from .amo_fact_binder import COOK_WORDS as _COOK_WORDS
@@ -46,11 +50,18 @@ try:  # 事实绑定（2026-11-15）：日程说做饭，就别再抽"点外卖"
     from .amo_fact_binder import meal_facts as _meal_facts
     from .amo_fact_binder import schedule_items as _schedule_items
 except ImportError:  # 直接按文件加载时
-    from amo_fact_binder import facts_lines as _facts_lines
-    from amo_fact_binder import guard as _fact_guard
-    from amo_fact_binder import ledger_today as _ledger_today
-    from amo_fact_binder import meal_facts as _meal_facts
-    from amo_fact_binder import schedule_items as _schedule_items
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_fact_binder import facts_lines as _facts_lines
+        from amo_fact_binder import guard as _fact_guard
+        from amo_fact_binder import ledger_today as _ledger_today
+        from amo_fact_binder import meal_facts as _meal_facts
+        from amo_fact_binder import schedule_items as _schedule_items
+
+try:  # 2026-11-17：餐饮消费口径（夜间不扣/10 分钟去重/价目表金额）
+    from . import amo_food_cost as _food_cost
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_food_cost as _food_cost
 
 BANDS = ("dawn", "morning", "forenoon", "noon", "afternoon", "evening", "night")
 
@@ -199,7 +210,7 @@ PUBLIC_KEYS = {"subway", "breakfast", "desk_slack", "tea_time", "fat_cat",
 FOOD_KEYS = {"late_snack", "takeout", "breakfast", "tea_time", "fruit_tea",
              "colleague_lunch", "broke_water"}
 #: 这一餐已经在家吃过了，就别再抽"做饭/外卖"这类重复的吃饭事件（2026-11-15）
-MEAL_KEYS = {"takeout", "sick_takeout", "cook_feast", "colleague_lunch"}
+MEAL_KEYS = {"takeout", "sick_takeout", "cook_feast", "colleague_lunch", "breakfast"}
 FOOD_COOLDOWN_SECONDS = 2 * 3600
 QUIET_HOURS = (23, 30, 7, 30)
 
@@ -217,7 +228,7 @@ def _tag_values(tags, prefix):
 
 
 def event_zones(event):
-    zones = set()
+    zones: set[Any] = set()
     for value in _tag_values(event.get("tags"), TAG_ZONE):
         zones.update(part.strip() for part in value.split(",") if part.strip())
     return zones
@@ -469,7 +480,7 @@ class MicroEventEngine:
             facts = _meal_facts(items, ledger, now)
         except Exception:
             return False
-        return bool(facts.get("cooked"))
+        return bool(facts.get("cooked")) or _food_cost.meal_spent(self.p, now, ledger=ledger)
 
     def _recent_keys(self):
         rows = self._kv_get("micro_event:recent", {}) or {}
@@ -507,11 +518,11 @@ class MicroEventEngine:
 
     def share_drive(self, snap=None):
         """分享欲：心情好/兴奋/想念越高越想说。"""
-        mood = {}
+        mood: dict[str, Any] = {}
         try:
             mood = (snap or self.p.state.snapshot()).get("mood") or {}
         except Exception:
-            mood = {}
+            mood: dict[str, Any] = {}
         score = 45
         for key, weight in (("开心", 0.6), ("兴奋", 0.5), ("依恋", 0.4), ("想念", 0.4)):
             try:
@@ -532,12 +543,33 @@ class MicroEventEngine:
         cost = int(event.get("cost") or 0)
         if cost <= 0:
             return True
+        food = bool(_food_cost.looks_like_food(event))
+        # 生病只拦宵夜/夜间加餐；白天外卖照常（她不想做饭也可以点）。
+        if (food and str(event.get("key") or "") in ("late_snack", "night_snack")
+                and _food_cost.sick_status(self.p)):
+            logger.info("[amo] 生病期间禁止宵夜，跳过事件消费：%s", event.get("key"))
+            return False
         try:
+            item = _food_cost.event_item(event) if food else ""
+            if food and _food_cost.night_quiet(now):
+                # 夜间允许宵夜，但扣款前必须先在日程里落下对应块：扣款必有块，有块才允许扣。
+                if not _food_cost.ensure_food_block(
+                        self.p, item or "宵夜", now, str(event.get("text") or "")):
+                    logger.warning("[amo] 夜间餐饮补不上日程块，拒绝扣款：%s",
+                                   item or event.get("key"))
+                    return False
+            if food:
+                if _food_cost.recent_duplicate(self.p.wallet, item, now=now):
+                    logger.warning("[amo] 10 分钟内重复餐饮已拦截：%s", item)
+                    return False
+                cost = _food_cost.price_for(item) or cost
             if int(self.p.wallet.balance()) < cost:
                 return False
-            self.p.wallet.debit(cost, str(event.get("text") or "生活小事"),
-                                "micro:%s:%s" % (self._today(now), event["key"]))
-            return True
+            # 餐饮幂等键带来源 + 10 分钟桶：17:30/17:31 落同一个键，17:41 是新的一顿。
+            idem = (_food_cost.food_idem("micro", item, now) if food
+                    else "micro:%s:%s" % (self._today(now), event["key"]))
+            paid = self.p.wallet.debit(cost, str(event.get("text") or "生活小事"), idem)
+            return bool(paid)
         except Exception:
             return False
 
@@ -587,7 +619,12 @@ class MicroEventEngine:
                 "ts": _now().timestamp()}
         if isinstance(extra, dict):
             data.update(extra)
-        self._kv_set("micro_event:action", data)
+        try:
+            from .amo_state_store import for_plugin as _state_store_for
+        except ImportError:
+            from amo_state_store import for_plugin as _state_store_for
+        _state_store_for(self.p).set_ttl("micro_event:action", data, 0,
+                                         until=float(until or 0))
         try:
             self.p.set_current_action(str(action or ""), float(until or 0),
                                       place="家", zone="home", category="life")
@@ -602,14 +639,11 @@ class MicroEventEngine:
 
     def _action(self, now=None):
         data = self._kv_get("micro_event:action", {}) or {}
-        if not isinstance(data, dict):
-            return None
         try:
-            if float(data.get("until") or 0) <= (now or _now()).timestamp():
-                return None
-        except Exception:
-            return None
-        return data
+            from .amo_state_store import ttl_fresh as _ttl_fresh
+        except ImportError:
+            from amo_state_store import ttl_fresh as _ttl_fresh
+        return _ttl_fresh(data, (now or _now()).timestamp(), zero_is_expired=True)
 
     def lifecycle_tick(self, now=None):
         """推进外卖/吃夜宵/刚吃完/洗漱缓冲，不靠下一条消息。"""
@@ -780,7 +814,7 @@ class MicroEventEngine:
         try:
             sent = await self.p._send_proactive_lines(profile or {}, umo, line)
             if sent:
-                self.p._mark_bot_initiated(sent)
+                self.p._mark_bot_initiated(sent, line)
                 return True
         except Exception:
             return False
@@ -863,11 +897,11 @@ class MicroEventEngine:
         self._kv_set("micro_event:share_drive", drive)
         shared = False
         if drive > 50 and scene == "private" and not is_quiet(now.hour, now.minute):
-            profile = {}
+            profile: dict[str, Any] = {}
             try:
                 profile = self.p.db.get_profile(uid) if uid else {}
             except Exception:
-                profile = {}
+                profile: dict[str, Any] = {}
             shared = await self._share(event, umo, uid, profile, snapshot=snapshot)
             if shared:
                 # 分享出去就把攒的那份清回基准，下一轮重新攒；

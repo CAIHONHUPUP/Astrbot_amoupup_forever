@@ -7,6 +7,7 @@
 写记忆前再核一次，冲突就抛 StateConflict，绝不入库。
 """
 from __future__ import annotations
+from typing import Any, TYPE_CHECKING
 
 import logging
 logger = logging.getLogger("amo")
@@ -16,7 +17,8 @@ import re
 try:
     from .amo_state_snapshot import (blacklist_hit, build_snapshot)
 except ImportError:
-    from amo_state_snapshot import (blacklist_hit, build_snapshot)
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_snapshot import (blacklist_hit, build_snapshot)
 
 _TIME_RE = re.compile(r"^\d{1,2}:\d{2}-\d{1,2}:\d{2}$")
 _HEALTH_RE = re.compile(r"^(>=|<=|>|<|=)\s*(\d+)$")
@@ -54,7 +56,7 @@ def _tag_values(event, prefix):
 
 
 def event_zones(event):
-    zones = set()
+    zones: set[Any] = set()
     for value in _tag_values(event, "zone:"):
         zones.update(part.strip() for part in value.split(",") if part.strip())
     return zones

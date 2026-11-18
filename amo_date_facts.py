@@ -11,8 +11,33 @@
 聊天记录降级成互动素材；窗口内的转账/消费改写成面对面语境。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import datetime as _dt
+
+try:  # Phase 11：统一实现（旧私有名/旧导出名保留为 import 别名）
+    from .amo_numbers import (
+        clock_of_ts as _clock,
+        day_text as _day_text,
+        hhmm_text as _hhmm,
+        minutes_of_plain as _minutes,
+        safe_float_any as _float,
+    )
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_numbers import (
+        clock_of_ts as _clock,
+        day_text as _day_text,
+        hhmm_text as _hhmm,
+        minutes_of_plain as _minutes,
+        safe_float_any as _float,
+        )
+
+try:  # 约会会话单一源（Phase 2）
+    from . import amo_date_session as _ds
+except ImportError:
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_date_session as _ds
 
 # 日程里算“和老公在一起”的类别；social 还要看活动里有没有老公/约会
 _DATE_CATEGORIES = ("date", "social")
@@ -27,43 +52,7 @@ def _kv(plugin, key, default=None):
         return default
 
 
-def _float(value, default=0.0):
-    try:
-        return float(value or 0)
-    except Exception:
-        return default
-
-
-def _day_text(day):
-    if isinstance(day, _dt.datetime):
-        return day.date().isoformat()
-    if isinstance(day, _dt.date):
-        return day.isoformat()
-    return str(day or "")[:10]
-
-
-def _hhmm(value):
-    text = str(value or "")[:5]
-    try:
-        hh, mm = text.split(":")
-        return "%02d:%02d" % (int(hh), int(mm))
-    except Exception:
-        return ""
-
-
-def _minutes(value):
-    text = _hhmm(value)
-    if not text:
-        return None
-    hh, mm = text.split(":")
-    return int(hh) * 60 + int(mm)
-
-
-def _clock(ts):
-    try:
-        return _dt.datetime.fromtimestamp(float(ts)).strftime("%H:%M")
-    except Exception:
-        return ""
+# _float / _day_text / _hhmm / _minutes / _clock 已迁到 amo_numbers（顶部 import 别名）。
 
 
 def _minute_of(ts):
@@ -106,6 +95,20 @@ def _is_partner_item(item):
     return any(marker in activity for marker in _PARTNER_MARKERS)
 
 
+def _session_window(sess):
+    """会话里的当前约会窗口（能陪+守护共用的唯一真相）。"""
+    if not isinstance(sess, dict) or sess.get("phase") not in ("active", "paused"):
+        return None
+    line = str(sess.get("line") or "").strip()
+    if not line:
+        return None
+    start = _float(sess.get("start_ts"))
+    end = _float(sess.get("end_ts"))
+    return {"start": _clock(start) if start else "", "end": _clock(end) if end else "",
+            "activity": line[:40], "place": str(sess.get("place") or ""),
+            "source": "session", "ended": False}
+
+
 def date_windows(plugin, day):
     """当天「你们面对面在一起」的时间窗。
 
@@ -129,14 +132,21 @@ def date_windows(plugin, day):
             "source": "schedule",
             "ended": False,
         })
+    sess = _ds.load(plugin)
+    live_window = _session_window(sess)
+    # 会话窗口只属于它自己那一天：补写历史小日记时不能把今天的窗口塞给昨天
+    session_day = _same_day(sess.get("start_ts"), day_text) or _same_day(sess.get("end_ts"), day_text)
+    if live_window and session_day:
+        windows = [live_window]  # 会话进行中：以会话窗口为准，日程块不再重复算一条
     now_state = _kv(plugin, "date_now", {}) or {}
     home_state = _kv(plugin, "date_home", {}) or {}
     face_fact = _kv(plugin, "date_fact", {}) or {}
     last_event = _kv(plugin, "last_date_event", {}) or {}
-    closed = _float(_kv(plugin, "date_closed_at", 0))
+    closed = _float(sess.get("closed_at") or _kv(plugin, "date_closed_at", 0))
 
     day_had_date = (
-        (isinstance(face_fact, dict) and str(face_fact.get("day") or "") == day_text)
+        _ds.day_had_date(plugin, day_text)
+        or (isinstance(face_fact, dict) and str(face_fact.get("day") or "") == day_text)
         or (isinstance(last_event, dict) and str(last_event.get("day") or "") == day_text)
         or _same_day(closed, day_text)
         or _same_day((now_state or {}).get("since") or 0, day_text)
@@ -200,42 +210,53 @@ def _presence_detail(window, slot):
             "不是网恋、不是异地，人就在你身边。" % (activity, where))
 
 
-def date_presence_facts(plugin, day, hour_slot=None):
+def date_presence_facts(plugin, day, hour_slot=None, slot=None):
     """最高优先级物理事实：约会时段「他就在你对面」。
 
-    hour_slot 给定时（写这一小时的小日记）只保留与这一小时重叠的窗口。
+    hour_slot / slot（分钟窗口）给定时（写这一小时/这一块的小日记）只保留与这个
+    时段重叠的窗口；约会结束后的小时/块拿不到「在一起」的事实（B 方案：各回各家）。
     """
     windows = date_windows(plugin, day)
     if not windows:
         return []
-    slot = None
-    if hour_slot is not None:
+    hour_scope = None
+    scope = None
+    if slot is not None:
+        try:
+            scope = (int(slot[0]), int(slot[1]))
+        except (TypeError, ValueError, IndexError):
+            scope = None
+    elif hour_slot is not None:
         try:
             hour = int(hour_slot)
-            slot = (hour * 60, hour * 60 + 60)
-        except Exception:
-            slot = None
+            hour_scope = (hour * 60, hour * 60 + 60)
+            scope = hour_scope
+        except (TypeError, ValueError):
+            scope = None
     facts = []
     for window in windows:
-        if slot is not None:
+        if scope is not None:
             win = (_minutes(window.get("start")), _minutes(window.get("end")))
             if win[0] is None:
                 continue
-            if not _overlap(slot, win):
+            if not _overlap(scope, win):
                 continue
         facts.append({
             "time": str(window.get("start") or ""),
             "type": "物理场景",
-            "detail": _presence_detail(window, slot),
+            "detail": _presence_detail(window, hour_scope),
+            "together": True,
         })
-    if slot is None:
+    if scope is None:
+        sess_home = _ds.home(plugin) or {}
         home_state = _kv(plugin, "date_home", {}) or {}
-        at = _float((home_state or {}).get("at") or 0)
+        at = _float(sess_home.get("at") or (home_state or {}).get("at") or 0)
         if at and _same_day(at, _day_text(day)):
             facts.append({
                 "time": _clock(at),
                 "type": "物理场景",
                 "detail": "约会结束，你一个人回到出租屋；他不在屋里，接下来只能手机联系。",
+                "together": False,
             })
     return facts
 

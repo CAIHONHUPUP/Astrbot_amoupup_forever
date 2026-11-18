@@ -11,6 +11,7 @@ import sys
 import tempfile
 import types
 import unittest
+from typing import Any, Callable
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -59,6 +60,14 @@ class FakeState:
 
 
 class FakePlugin:
+    _uid_alias_mapping: Callable[..., Any]
+    _canonical_uid: Callable[..., Any]
+    _is_admin: Callable[..., Any]
+    _tone_with_continuity: Callable[..., Any]
+    _disturb_category: Callable[..., Any]
+    _apply_disturbance: Callable[..., Any]
+    _is_talking_to_me: Callable[..., Any]
+
     def __init__(self, tmp, **cfg):
         self.config = {"uid_merge_enabled": True}
         self.config.update(cfg)
@@ -104,7 +113,7 @@ class Base(unittest.TestCase):
             module.__path__ = []
             sys.modules[name] = module
         path_module = types.ModuleType("astrbot.core.utils.astrbot_path")
-        path_module.get_astrbot_data_path = lambda: self.tmp
+        setattr(path_module, "get_astrbot_data_path", lambda: self.tmp)
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
         self.plugin = FakePlugin(self.tmp)
 

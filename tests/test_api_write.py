@@ -160,32 +160,66 @@ class ApiWriteTests(unittest.TestCase):
     def test_diary_write_without_material(self):
         self.assertEqual(self._call("api_diary_write", {"date": "2026-11-09"}).get("code"), 1)
 
-    def test_diary_write_rejects_today_before_ready(self):
-        # 22:30 前点开日记卡：不许临时调模型现编
+    def test_diary_write_manual_rewrite_yesterday(self):
+        # 用户主动点「写昨天」：昨天已定稿也允许手动重写，不被「历史只读」挡住
+        import datetime as dt
+
+        import amo_api_diary
         from amo_shared import today_str
 
-        self.plugin._diary_gate_open = lambda now: False
+        yesterday = (dt.date.fromisoformat(today_str()) - dt.timedelta(days=1)).isoformat()
+        self.plugin.db.kv_set("diary_written:" + yesterday, "/tmp/old.md")
+        self.plugin.db.kv_set("diary_locked:" + yesterday, True)
+
+        async def fake_generate(day):
+            return "手动重写后的昨天"
+
+        old_write = amo_api_diary._diary_write
+        self.plugin._generate_daily_diary = fake_generate
+        amo_api_diary._diary_write = lambda root, day, text: "/tmp/new.md"
+        try:
+            result = self._call("api_diary_write", {"date": yesterday})
+        finally:
+            amo_api_diary._diary_write = old_write
+        self.assertEqual(result.get("code"), 0, result)
+        self.assertEqual(result.get("data", {}).get("date"), yesterday)
+        self.assertIn("手动重写后的昨天", result.get("data", {}).get("text") or "")
+
+    def test_diary_write_rejects_today_in_morning_mode(self):
+        # B 方案：今天的日记第二天才写，面板不能现编今天
+        from amo_shared import today_str
+
         result = self._call("api_diary_write", {"date": today_str()})
         self.assertEqual(result.get("code"), 1)
-        self.assertIn("还在过", result.get("msg") or "")
+        self.assertIn("第二天", result.get("msg") or "")
 
     def test_diary_write_locked_returns_existing(self):
+        # 旧配置 22:00 仍能写当天：定稿后点开只回读，不重写
         from amo_shared import today_str
 
         day = today_str()
+        self.plugin.config["diary_time"] = "22:00"
         self.plugin._diary_gate_open = lambda now: True
         self.plugin.db.kv_set("diary_locked:" + day, True)
         result = self._call("api_diary_write", {"date": day})
         self.assertEqual(result.get("code"), 0)
         self.assertTrue(result.get("data", {}).get("locked"))
 
-    def test_diary_gate_opens_at_2230(self):
+    def test_diary_gate_is_morning_window(self):
         import datetime as dt
 
-        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 22, 29)))
+        # B 方案默认 08:00-08:30：22:30、00:30 都不开
+        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 7, 59)))
+        self.assertTrue(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 8, 0)))
+        self.assertTrue(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 8, 30)))
+        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 8, 31)))
+        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 22, 30)))
+        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 0, 30)))
+        # 旧配置 22:00 仍然可用：窗口 22:00-22:30
+        self.plugin.config["diary_time"] = "22:00"
+        self.assertTrue(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 22, 0)))
         self.assertTrue(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 22, 30)))
-        self.assertTrue(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 23, 40)))
-        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 17, 30)))
+        self.assertFalse(self.plugin._diary_gate_open(dt.datetime(2026, 11, 15, 22, 31)))
 
     # ---------- 穿搭 ----------
 

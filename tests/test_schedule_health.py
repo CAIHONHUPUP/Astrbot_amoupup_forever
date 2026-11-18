@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import datetime as dt
 import os
 import sys
 import unittest
@@ -35,3 +36,35 @@ class ReconcileTests(unittest.TestCase):
         kept, removed = reconcile_stale_health_schedule([item], {"status": "健康"})
         self.assertEqual(removed, 1)
         self.assertEqual(kept, [])
+
+    def test_future_sick_flavor_life_block_removed(self):
+        # 2026-11-17 线上：早上生病重建的 23:00「起来洗漱，扶着墙慢慢来」没被清掉。
+        item = {"start": "23:00", "end": "24:00", "activity": "起来洗漱，扶着墙慢慢来",
+                "category": "life", "place": "家"}
+        kept, removed = reconcile_stale_health_schedule(
+            [item], {"status": "健康"}, now=dt.datetime(2026, 11, 17, 13, 58))
+        self.assertEqual(removed, 1)
+        self.assertEqual(kept, [])
+
+    def test_past_sick_flavor_kept_as_history(self):
+        item = {"start": "23:00", "end": "24:00", "activity": "起来洗漱，扶着墙慢慢来",
+                "category": "life", "place": "家"}
+        kept, removed = reconcile_stale_health_schedule(
+            [item], {"status": "健康"}, now=dt.datetime(2026, 11, 17, 23, 30))
+        self.assertEqual(removed, 0)
+        self.assertEqual(kept, [item])
+
+    def test_current_hour_sick_flavor_kept(self):
+        item = {"start": "23:00", "end": "24:00", "activity": "扶着墙慢慢挪",
+                "category": "life", "place": "家"}
+        kept, removed = reconcile_stale_health_schedule(
+            [item], {"status": "健康"}, now=dt.datetime(2026, 11, 17, 23, 10))
+        self.assertEqual(removed, 0)
+
+    def test_future_normal_life_block_kept(self):
+        item = {"start": "23:00", "end": "24:00", "activity": "起来洗漱，准备睡觉",
+                "category": "life", "place": "家"}
+        kept, removed = reconcile_stale_health_schedule(
+            [item], {"status": "健康"}, now=dt.datetime(2026, 11, 17, 13, 58))
+        self.assertEqual(removed, 0)
+        self.assertEqual(kept, [item])

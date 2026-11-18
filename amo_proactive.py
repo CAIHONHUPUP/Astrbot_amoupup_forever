@@ -3,17 +3,48 @@
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
+
+try:  # 配置化骨架：阈值在 infra/config/amo_thresholds.json
+    from .infra.config import load_config
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:
+        from infra.config import load_config
+
+
+def _burst_guard_seconds() -> int:
+    """连续爆发保护的窗口秒数；坏值回退 90。"""
+    data = load_config("amo_thresholds", {"proactive_burst_guard_seconds": 90},
+                       lambda value: isinstance(value, dict) and bool(value))
+    try:
+        value = int(data.get("proactive_burst_guard_seconds", 90))
+    except (TypeError, ValueError):
+        return 90
+    return value if value > 0 else 90
+
+
+PROACTIVE_BURST_GUARD_SECONDS = _burst_guard_seconds()
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
+
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .observability import log_event
+else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    try:
+        from .observability import log_event
+    except ImportError:  # 直接按文件加载时
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from observability import log_event
 
 import asyncio
 import random
 import re
+from datetime import timedelta
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
         _greeting_targets, _now, _within_minutes, in_minute_range, logger, minutes_now, now_ts, parse_hhmm, quiet_now, to_float, to_int, today_str,
@@ -24,9 +55,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             _greeting_targets, _now, _within_minutes, in_minute_range, logger, minutes_now, now_ts, parse_hhmm, quiet_now, to_float, to_int, today_str,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            _greeting_targets, _now, _within_minutes, in_minute_range, logger, minutes_now, now_ts, parse_hhmm, quiet_now, to_float, to_int, today_str,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                _greeting_targets, _now, _within_minutes, in_minute_range, logger, minutes_now, now_ts, parse_hhmm, quiet_now, to_float, to_int, today_str,
+            )
+
+
+try:  # 回复守卫流水线（Phase 6）：主动消息分段前的守卫也走同一张阶段表
+    from . import amo_reply_pipeline as _reply_pipeline
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_reply_pipeline as _reply_pipeline
 
 
 if TYPE_CHECKING:
@@ -38,6 +77,21 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 PROACTIVE_SLOTS = (8, 12, 15, 19, 23)
 PROACTIVE_NIGHT_START = 30      # 00:30
 PROACTIVE_NIGHT_END = 7 * 60    # 07:00
+
+#: 刚发过照片（含面板测试/手动发）后，主动消息闭嘴的时长。
+#: 2026-11-17 事故：15:11 面板测试图静默进聊天，15:12 主动消息立刻接话，看起来像同一条日常分享。
+PROACTIVE_PHOTO_SILENCE_SECONDS = 10 * 60
+#: 照片分享记录的 kv 键（photo_share.note_sent 写，这里只读）。
+PHOTO_LAST_SHARE_KEY = "photo_last_share"
+#: 过去时间词 → 相对现在的天数；「大前天」不算「前天」。
+_PAST_CLAIM_RE = re.compile(r"(?<!大)前天|前晚|昨天|昨晚")
+#: 明确指向「此刻」的词：和过去时间词同句出现＝时态混写。
+CURRENT_DAY_WORDS = ("现在", "这会儿", "此刻", "目前", "如今", "刚刚", "刚才", "正在",
+                     "今天", "今晚", "今儿")
+#: 身体/状态反应词：接在过去句后面、又没有「现在」锚点，就会被读成把昨天说成此刻。
+CURRENT_REACTION_WORDS = ("出了", "出汗", "感觉", "有点", "还是", "退了", "好多了", "烧退", "缓过来")
+#: 分句只看标点，不跨句猜时态。
+_CLAUSE_SPLIT_RE = re.compile(r"[，,。！？!?~～；;\n]+")
 
 SHARE_EVENTS = (
     "看到了一只很胖的流浪猫，蹲在便利店门口。",
@@ -137,6 +191,30 @@ def proactive_period(hour):
     return "深夜"
 
 
+MICRO_SHARE_TTL = 45 * 60
+
+
+def _fresh_micro_text(record, now=None):
+    """只把 45 分钟内发生的微型事件当「刚发生的小事」；旧事不再拿出来当话题。"""
+    if not isinstance(record, dict):
+        return ""
+    try:
+        ts = float(record.get("ts") or 0)
+    except Exception:
+        ts = 0
+    if record.get("text") and now is not None and now - ts <= MICRO_SHARE_TTL:
+        return str(record.get("text"))
+    return ""
+
+
+def _recent_said_line(texts):
+    items = [str(item).strip() for item in (texts or ()) if str(item).strip()]
+    if not items:
+        return ""
+    return ("你最近已经主动跟他说过：" + "；".join("「%s」" % item[:40] for item in items)
+            + "。这次别再重复同一件事、同一个细节。")
+
+
 def proactive_facts(snap, hunger, now=None, extra=""):
     """把此刻的事实摆给她：几点、天气、心情、饥饿、在做什么；发不发由她自己判断。"""
     now = now or _now()
@@ -148,7 +226,8 @@ def proactive_facts(snap, hunger, now=None, extra=""):
         hunger_value = int(round(float(hunger)))
     except Exception:
         hunger_value = 80
-    parts = ["现在是%s %s。" % (proactive_period(hour), now.strftime("%H:%M"))]
+    parts = [proactive_time_block(now),
+             "现在是%s %s。" % (proactive_period(hour), now.strftime("%H:%M"))]
     if hour in (6, 7, 8, 9) and any(word in place for word in ("睡", "起床", "赖床")):
         parts.append("你刚起床。")
     weather_text = str(snap.get("weather_text") or "").strip()
@@ -171,8 +250,103 @@ def proactive_skip(text):
         return True
     return value.strip("[] .。!！").upper() == "SKIP"
 
+def proactive_now_stamp(now=None):
+    """【现在：YYYY-MM-DD HH:MM】——主动消息的锚点，日期不能让模型自己猜。"""
+    now = now or _now()
+    return "【现在：%s】" % now.strftime("%Y-%m-%d %H:%M")
+
+
+def proactive_tense_rules(now=None):
+    """时态规则：过去的事必须写「昨天/前天」，现在的反应只能接当前事实。"""
+    now = now or _now()
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    before = (now - timedelta(days=2)).strftime("%Y-%m-%d")
+    return (
+        "【日期】昨天是%s，前天是%s。" % (yesterday, before)
+        + "【时态规则】过去发生的事必须明确写「昨天」或「前天」，不能写成刚刚/现在；"
+        "现在/这会儿只能接当前事实（此刻在做什么、心情、天气、地点），"
+        "不许把昨天的身体感受（洗澡、出汗、退烧）说成此刻；"
+        "同一条消息里不要把过去和现在混在一起说；记忆里没有的昨天/前天的事不要编。"
+    )
+
+
+def proactive_time_block(now=None):
+    """主动消息 prompt 顶部的「现在」+ 时态规则。"""
+    return proactive_now_stamp(now) + proactive_tense_rules(now)
+
+
+def split_time_clauses(text):
+    """按标点切句（空段丢掉）；时态只看句子，不跨句猜。"""
+    return [item.strip() for item in _CLAUSE_SPLIT_RE.split(str(text or "")) if item.strip()]
+
+
+def past_claim_labels(text):
+    """这句话里出现过的过去时间词，归一成「昨天 / 前天」，按出现顺序去重。"""
+    labels = []
+    for match in _PAST_CLAIM_RE.finditer(str(text or "")):
+        label = "前天" if match.group(0) in ("前天", "前晚") else "昨天"
+        if label not in labels:
+            labels.append(label)
+    return labels
+
+
+def past_day_label(text):
+    """这一段说的是哪天（没有过去时间词返回空串）。"""
+    labels = past_claim_labels(text)
+    return labels[0] if labels else ""
+
+
+def _has_any(text, words):
+    return any(word in text for word in words)
+
+
+def guard_proactive_time(text, evidence=None, now=None):
+    """主动消息发送前的时态/日期校验。
+
+    返回 (可以发的内容, 结论)：
+    - ok：没提过去；或提了但 memory/diary 里有那一天、也没有把过去写成此刻；
+    - degraded：有问题的句子被删掉，剩下的还能发；
+    - blocked：整条都不该发（只剩有问题的句子）。
+
+    evidence 是 {"昨天": bool, "前天": bool}：那一天在 memory/diary 里有没有记录。
+    """
+    raw = str(text or "").strip()
+    if not raw or not past_claim_labels(raw):
+        return raw, "ok"
+    resolved = {"昨天": bool((evidence or {}).get("昨天")),
+                "前天": bool((evidence or {}).get("前天"))}
+    kept, dropped = [], []
+    for clause in split_time_clauses(raw):
+        label = past_day_label(clause)
+        if label:
+            if _has_any(clause, CURRENT_DAY_WORDS) or not resolved.get(label):
+                dropped.append(clause)
+                continue
+            kept.append(clause)
+            continue
+        # 过去句之后、没有任何「现在/今天」锚点的身体或状态反应，会被读成昨天的事发生在此刻
+        if _has_any(clause, CURRENT_REACTION_WORDS) and not _has_any(clause, CURRENT_DAY_WORDS):
+            dropped.append(clause)
+            continue
+        kept.append(clause)
+    if not kept:
+        return "", "blocked"
+    if dropped:
+        return "，".join(kept) + "。", "degraded"
+    return raw, "ok"
+
+
+try:  # 约会会话单一源（Phase 2）
+    from . import amo_date_session as _ds
+except ImportError:
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_date_session as _ds
+
 
 class ProactiveMixin(_MixinBase):
+    if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
+        _last_proactive_activity: Any
+        set_date_fact: Any
     def _migrate_proactive_timing(self):
         try:
             if self.db.kv_get("proactive_timing_migrated", False):
@@ -228,7 +402,7 @@ class ProactiveMixin(_MixinBase):
             self.db.kv_set("proactive_depressed_until_" + str(uid), 0)
             self.db.kv_set("proactive_ignored_" + str(uid), 0)
             self.state.nudge(委屈=-8, 郁闷=-8, 开心=5, 依恋=3)
-            logger.debug("[amo] 抑郁状态被哄好: %s" % uid)
+            log_event("debug", "proactive.comforted", uid=uid)
 
     @staticmethod
     def _followup_topics(text):
@@ -309,8 +483,8 @@ class ProactiveMixin(_MixinBase):
                         self.db.kv_set(self._pending_key(uid), pending)
                         # 追问本身也是一句她说过的话，不记下来会引出下一轮「你怎么不理我」
                         self._remember_bot_message(umo, followup)
-                        self._mark_bot_initiated(umo)
-                        logger.debug("[amo] 主动私聊未回复，已追问: %s" % uid)
+                        self._mark_bot_initiated(umo, followup)
+                        log_event("debug", "proactive.followup.sent", uid=uid)
             if not pending.get("mood") and age >= mood_after:
                 pending["mood"] = True
                 self.db.kv_set(self._pending_key(uid), pending)
@@ -320,7 +494,7 @@ class ProactiveMixin(_MixinBase):
                 self.state.nudge(委屈=5, 郁闷=5, 生气=2, 依恋=2)
                 if ignored >= max(1, self.cfg_int("proactive_depressed_count", 3)):
                     self._set_depressed(uid)
-                logger.debug("[amo] 主动私聊仍无回复，心情变差: %s (%d)" % (uid, ignored))
+                log_event("debug", "proactive.ignored", uid=uid, ignored=ignored)
 
     def _ritual_in_window(self, spec):
         try:
@@ -429,15 +603,17 @@ class ProactiveMixin(_MixinBase):
                 _note_swallowed("amo_proactive.ProactiveMixin._user_spoke_today.local", _amo_exc)
                 rows = []
         for row in rows or []:
-            if str((row or {}).get("role") or "") != "user":
+            if not isinstance(row, dict):  # 记忆终端偶发非 dict 行（旧格式/坏行），跳过而不是崩
+                continue
+            if str(row.get("role") or "") != "user":
                 continue
             try:
-                ts = float((row or {}).get("created_at") or 0)
+                ts = float(row.get("created_at") or 0)
             except (TypeError, ValueError):
                 continue
             if ts < start:
                 continue
-            text = str((row or {}).get("content") or "")
+            text = str(row.get("content") or "")
             stripped = text.lstrip()
             if stripped.startswith("{") or '"event_id"' in text or '"level":"auto"' in text:
                 # 金融/系统事件也以 role=user 落库，不能算「他说话了」
@@ -499,17 +675,15 @@ class ProactiveMixin(_MixinBase):
 
     async def _maybe_date_wrap(self):
         """约会超时 / 静默收尾：只写客观事实，道别话由大模型现场生成（禁止模板）。"""
-        try:
-            data = self.db.kv_get("date_now", {}) or {}
-        except Exception:
-            return
-        if not isinstance(data, dict) or not str(data.get("line") or "").strip():
-            return
-        try:
-            until = float(data.get("until") or 0)
-        except Exception:
-            until = 0
         now = now_ts()
+        try:
+            data = _ds.wrap_candidate(self, now)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._maybe_date_wrap.session", _amo_exc)
+            return
+        if not data or not str(data.get("line") or "").strip():
+            return
+        until = float(data.get("end_ts") or 0)
         try:
             profiles = self.db.proactive_profiles(limit=20)
         except Exception:
@@ -522,17 +696,13 @@ class ProactiveMixin(_MixinBase):
         if not umo:
             return
         reason = fact = ""
-        pause = {}
-        try:
-            pause = self.db.kv_get("date_pause", {}) or {}
-        except Exception:
-            pause = {}
-        if isinstance(pause, dict) and pause.get("at") and now - float(pause.get("at") or 0) > 15 * 60:
+        pause_at = float(data.get("pause_at") or 0)
+        if data.get("phase") == "paused" and pause_at and now - pause_at > 15 * 60:
             reason = "pause_timeout"
-            fact = "他走开好一会儿还没回来，你有点坐不住了，想去找他、或者先一起回家。"
+            fact = "他走开好一会儿还没回来，你有点坐不住了，想去找他，或者自己先回去。"
         elif until and now > until:
             reason = "timeout"
-            fact = "时间不早了，吃饱喝足了，该一起回家了。"
+            fact = "时间不早了，吃饱喝足了，该回去了；他不在你身边，你自己先回家。"
         else:
             last_user = 0
             try:
@@ -543,21 +713,16 @@ class ProactiveMixin(_MixinBase):
                 last_user = 0
             if last_user and now - last_user > 30 * 60:
                 reason = "silent"
-                fact = "他好像去忙了，你在犹豫是继续等他一起回家，还是自己先溜达回去。"
+                fact = "他好像去忙了，你在犹豫是继续等他，还是自己先溜达回去。"
         if not reason:
             return
-        self.db.kv_set("date_now", {})
-        self.db.kv_set("date_ending", {"fact": fact, "reason": reason,
-                                       "until": now + 600, "sent": True, "at": now})
+        _ds.finish(self, now, reason=reason, title=str(data.get("title") or "约会"))
+        _ds.request_end(self, fact, reason=reason, ttl=600, sent=True, now=now)
         try:
             self.set_date_fact("今天的约会已经结束，你们各自回到日常；现在你在家，"
                                "他不在你身边，只能手机聊天。", now + 6 * 3600)
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive._maybe_date_wrap.fact", _amo_exc)
-        try:
-            self.set_date_home("约会", now)   # 同居：一起回家，不是分别
-        except Exception as _amo_exc:
-            _note_swallowed("amo_proactive._maybe_date_wrap.home", _amo_exc)
         try:
             text = await self.llm.gen_proactive(
                 umo, profile, self.state.snapshot(), "date_end", facts=fact)
@@ -569,7 +734,7 @@ class ProactiveMixin(_MixinBase):
             return
         sent = await self._send_proactive_lines(profile, umo, text)
         if sent:
-            self._mark_bot_initiated(sent)
+            self._mark_bot_initiated(sent, text)
             self.db.log_proactive(str(profile.get("uid") or ""), "date_end", text)
             logger.info("[amo] 约会收尾 -> %s: %s" % (umo, text[:80]))
 
@@ -620,7 +785,7 @@ class ProactiveMixin(_MixinBase):
                             sent_umo = candidate
                             break
                     if sent_umo:
-                        self._mark_bot_initiated(sent_umo)
+                        self._mark_bot_initiated(sent_umo, text)
                         self.db.kv_set(year_key, True)
                         self.db.log_proactive(uid, "birthday", text)
                         logger.info("[amo] 生日祝福 -> %s: %s" % (name, text[:120]))
@@ -699,12 +864,105 @@ class ProactiveMixin(_MixinBase):
     def _dating_active(self):
         """约会进行中：所有主动推演/追问都必须静默（2026-11-15 用户要求）。"""
         try:
-            data = self.db.kv_get("date_now", {}) or {}
-            if isinstance(data, dict) and str(data.get("line") or "").strip():
-                return float(data.get("until") or 0) > now_ts()
+            return bool(_ds.is_dating(self, now_ts()))
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive.ProactiveMixin._dating_active", _amo_exc)
         return False
+
+    def _photo_proactive_blocked(self):
+        """刚分享过照片（含测试/手动）就先别主动开口：10 分钟冷却。"""
+        seconds = PROACTIVE_PHOTO_SILENCE_SECONDS
+        checker = getattr(self, "photo_share_cooldown_active", None)
+        if callable(checker):
+            try:
+                if checker(seconds):
+                    return True
+            except Exception as _amo_exc:
+                _note_swallowed("amo_proactive._photo_proactive_blocked.engine", _amo_exc)
+        try:
+            record = self.db.kv_get(PHOTO_LAST_SHARE_KEY, {}) or {}
+            at = to_float(record.get("at"), 0) if isinstance(record, dict) else 0.0
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._photo_proactive_blocked.kv", _amo_exc)
+            at = 0.0
+        return bool(at) and (now_ts() - at) < max(0, int(seconds))
+
+    @staticmethod
+    def _day_has_diary(plugin, day):
+        """那一天有没有留下日记（块日记优先，旧整点日记兜底）。"""
+        db = getattr(plugin, "db", None)
+        if db is None:
+            return False
+        lister = getattr(db, "list_block_diaries", None)
+        if callable(lister):
+            try:
+                rows = lister(day) or []
+            except Exception as _amo_exc:
+                _note_swallowed("amo_proactive._day_has_diary.block", _amo_exc)
+                rows = []
+            if any(isinstance(row, dict) and str(row.get("text") or "").strip() for row in rows):
+                return True
+        getter = getattr(db, "get_diary", None)
+        if not callable(getter):
+            return False
+        for hour in range(24):
+            try:
+                if str(getter(day, hour) or "").strip():
+                    return True
+            except Exception as _amo_exc:
+                _note_swallowed("amo_proactive._day_has_diary.hour", _amo_exc)
+                return False
+        return False
+
+    async def _day_has_memory(self, uid, day, label):
+        """那一天的长期记忆在不在（记忆终端不可用时按「没有」处理）。"""
+        recall = getattr(self, "_recall", None)
+        if not callable(recall) or not uid:
+            return False
+        try:
+            result = await recall(uid, label)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._day_has_memory", _amo_exc)
+            return False
+        text = ""
+        if isinstance(result, (tuple, list)) and len(result) >= 2:
+            text = str(result[1] or "")
+        elif isinstance(result, str):
+            text = result
+        tag = "[昨日]" if label == "昨天" else "[前天]"
+        return bool(text) and (label in text or day in text or tag in text)
+
+    async def _proactive_time_evidence(self, uid, now):
+        """昨天/前天在 memory 或 diary 里有没有记录：决定过去事实能不能说。"""
+        evidence = {"昨天": False, "前天": False}
+        for label, days in (("昨天", 1), ("前天", 2)):
+            day = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+            if self._day_has_diary(self, day):
+                evidence[label] = True
+            elif await self._day_has_memory(uid, day, label):
+                evidence[label] = True
+        return evidence
+
+    async def _proactive_time_guard_text(self, profile, text):
+        """发送前校验：提到「昨天/前天」就必须和 memory/diary 的日期对得上。"""
+        raw = str(text or "").strip()
+        if not raw or not past_claim_labels(raw):
+            return raw
+        uid = str((profile or {}).get("uid") or "")
+        now = _now()
+        try:
+            evidence = await self._proactive_time_evidence(uid, now)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._proactive_time_guard_text", _amo_exc)
+            evidence = {"昨天": False, "前天": False}
+        kept, decision = guard_proactive_time(raw, evidence, now)
+        if decision != "ok":
+            try:
+                log_event("debug", "proactive.time_guard", uid=uid, decision=decision)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_proactive._proactive_time_guard_text.log", _amo_exc)
+            logger.info("[amo] 主动消息时态校验 %s：%s", decision, raw[:60])
+        return kept
 
     async def _maybe_proactive(self):
         """时段推演：把分享欲/想念/生活小事/红线摆给她，发不发由她自己判断。"""
@@ -742,6 +1000,15 @@ class ProactiveMixin(_MixinBase):
         raw = str(text or "").strip()
         if not raw:
             return ""
+        photo_blocked = getattr(self, "_photo_proactive_blocked", None)
+        if callable(photo_blocked) and photo_blocked():
+            logger.info("[amo] 主动消息：刚分享过照片，本轮先不开口")
+            return ""
+        time_guard = getattr(self, "_proactive_time_guard_text", None)
+        if callable(time_guard):
+            raw = await time_guard(profile, raw)
+            if not raw:
+                return ""
         # 连续爆发保护：同一个会话 90 秒内只允许一轮主动消息（防机关枪）
         try:
             burst = getattr(self, "_proactive_burst", None)
@@ -750,19 +1017,35 @@ class ProactiveMixin(_MixinBase):
                 self._proactive_burst = burst
             key = str(target_umo or "")
             last = to_float(burst.get(key), 0)
-            if last and now_ts() - last < 90:
-                logger.debug("[amo] 主动消息：90 秒内刚发过，跳过这一轮")
+            if last and now_ts() - last < PROACTIVE_BURST_GUARD_SECONDS:
+                logger.debug("[amo] 主动消息：%s 秒内刚发过，跳过这一轮",
+                             PROACTIVE_BURST_GUARD_SECONDS)
                 return ""
             burst[key] = now_ts()
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive.ProactiveMixin._send_proactive_lines.burst", _amo_exc)
         # 2026-11-15：主动消息也要过消费校验，不能张嘴就编外卖
+        # Phase 6：这道守卫走 amo_reply_pipeline 的 proactive_pre 阶段（仍在切句之前）。
+        context = _reply_pipeline.context_for_proactive(self, target_umo, profile)
+        raw = str((await _reply_pipeline.run(raw, context))["text"] or "").strip()
+        # 「不矛盾」守卫：主动消息不走 decorate，切句前补一次（消费校验顺序不变）
+        # 事实只读唯一视图（F1）：apply_fact_guard → amo_diary_guard.narrative_check
         try:
-            guard = getattr(self, "_guard_consumption", None)
-            if callable(guard):
-                raw = str(guard(raw) or raw).strip()
-        except Exception as exc:
-            logger.debug("[amo] 主动消息消费校验失败: %s" % exc)
+            raw = await _reply_pipeline.apply_fact_guard_async(raw, self)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._send_proactive_lines.fact_guard", _amo_exc)
+        # 同一状态 30 分钟内不重复主动发（跨段去重在 send 阶段）
+        try:
+            raw = _reply_pipeline.apply_proactive_dedup(raw, self, target_umo)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._send_proactive_lines.status_dedup", _amo_exc)
+        if not raw:
+            return ""
+        # 口头禅去逐字复读：主动消息不走 decorate，这里紧跟事实守卫补一次
+        try:
+            raw = _reply_pipeline.apply_tone_guard(raw, self, target_umo)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._send_proactive_lines.tone_guard", _amo_exc)
         if not raw:
             return ""
         parts = [item.strip() for item in re.split(r"(?<=[。！？!?~])", raw) if item.strip()]
@@ -846,6 +1129,11 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         logger.info("[amo] 主动消息：目标群是工作群/陌生群，取消发送")
         self.db.kv_set(slot_key, True)
         return
+    # 刚发过照片（尤其面板测试图）先闭嘴：15:11 测试图 + 15:12 主动消息会像同一条日常分享
+    if self._photo_proactive_blocked():
+        logger.info("[amo] 主动消息：%d 分钟内刚分享过照片，先不打扰",
+                    PROACTIVE_PHOTO_SILENCE_SECONDS // 60)
+        return
     if self._proactive_user_just_talked(profile, now_ts()):
         return
     pending = self.db.kv_get(self._pending_key(uid), None)
@@ -884,8 +1172,7 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     micro = ""
     try:
         record = self.db.kv_get("micro_event:last", {}) or {}
-        if isinstance(record, dict) and record.get("text"):
-            micro = str(record.get("text"))
+        micro = _fresh_micro_text(record, now_ts())
     except Exception:
         micro = ""
     extra = []
@@ -898,6 +1185,13 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         extra.append("你今天分享欲挺强，遇到一点小事都想告诉他。")
     if micro or event:
         extra.append("你身边的小事：" + (micro or event))
+    try:
+        recent_said = self.db.recent_proactive_texts(uid, 2, 3)
+    except Exception:
+        recent_said = []
+    said_line = _recent_said_line(recent_said)
+    if said_line:
+        extra.append(said_line)
     facts = proactive_facts(snap, hunger, now, extra="".join(extra))
     try:
         text = await self.llm.gen_proactive(target_umo, profile, snap, "decide", facts=facts)
@@ -911,7 +1205,7 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     sent_umo = await self._send_proactive_lines(profile, target_umo, text)
     if not sent_umo:
         return
-    self._mark_bot_initiated(sent_umo)
+    self._mark_bot_initiated(sent_umo, text)
     self.db.kv_set("last_channel:%s" % uid, sent_umo)
     self.db.bump_proactive(uid)
     self.db.log_proactive(uid, "decide", text)

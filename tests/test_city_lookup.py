@@ -5,6 +5,8 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from panel_source import panel_source  # noqa: E402
 
 from amo_city_index import (  # noqa: E402
     city_location,
@@ -139,9 +141,7 @@ class CityPanelTests(unittest.TestCase):
 
     def setUp(self) -> None:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        path = os.path.join(root, "views", "dashboard", "index.html")
-        with open(path, encoding="utf-8") as fh:
-            self.html = fh.read()
+        self.html = panel_source(root)
 
     def test_row_calls_brief_api(self) -> None:
         self.assertIn('call("weather/brief")', self.html)

@@ -9,7 +9,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -47,31 +48,33 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         truncate,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            _pg_analyze_rows,
-            _pg_compose_task,
-            _pg_near_duplicate,
-            clean_reply,
-            json_extract,
-            json_extract_list,
-            logger,
-            looks_like_ai_admission,
-            now_ts,
-            other_platform_bot_lines,
-            to_int,
-            today_str,
-            city_or_empty,
-        truncate,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                _pg_analyze_rows,
+                _pg_compose_task,
+                _pg_near_duplicate,
+                clean_reply,
+                json_extract,
+                json_extract_list,
+                logger,
+                looks_like_ai_admission,
+                now_ts,
+                other_platform_bot_lines,
+                to_int,
+                today_str,
+                city_or_empty,
+            truncate,
+            )
 
 try:  # 地点跟日程对齐：主动消息里说错地方也改回来
     from .place_guard import rewrite_reply as _rewrite_place
 except ImportError:  # 直接按文件加载时
-    try:
-        from place_guard import rewrite_reply as _rewrite_place
-    except Exception:  # pragma: no cover
-        def _rewrite_place(text, activity):
-            return str(text or "")
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from place_guard import rewrite_reply as _rewrite_place
+        except Exception:  # pragma: no cover
+            def _rewrite_place(text, activity):
+                return str(text or "")
 
 
 def _align_place(text, snap):
@@ -330,8 +333,9 @@ class LLMService:
         system = "你是一个世界观设定师。只输出 JSON，不要输出其他文字。"
         prompt = (
             "根据下面的人格设定，为这个角色生成一个真实可信的现代生活世界观。\n"
-            "设定：她和老公名义上同居，但现实里是异地，不能凭空出现在彼此身边；"
-            "QQ/飞书/微信是他们平时的联系方式，只有约会见面时才有物理陪伴。\n"
+            "设定：她和老公同城不同住、各有住处（她住出租屋，他住他自己那边），"
+            "不能凭空出现在彼此身边；"
+            "QQ/飞书/微信是他们平时的联系方式，只有约会见面那天才有面对面的陪伴，约会结束各回各家。\n"
             "人格设定：\n" + truncate(persona, 1500) + "\n\n"
             "输出 JSON 对象，字段：name(角色名), age(整数), city(城市), occupation(职业), "
             "workplace(工作或学习地点), personality(性格一句话), hobbies(字符串数组), "
@@ -427,6 +431,22 @@ class LLMService:
         if not text or "[SKIP]" in text.upper():
             return ""
         text = _align_place(text, snap)
+        # 完成动作一致性：刚说「洗漱过了」就不能再说「才想起来洗漱」（2026-11-17）。
+        try:
+            try:
+                from .done_action_guard import done_actions as _done_actions
+                from .done_action_guard import filter_contradictions as _drop_contradictions
+            except ImportError:
+                from done_action_guard import done_actions as _done_actions
+                from done_action_guard import filter_contradictions as _drop_contradictions
+            _done = _done_actions(analysis.get("recent_bot_texts") or [])
+            if _done:
+                text = _drop_contradictions(text, _done).strip()
+                if not text:
+                    logger.info("[amo] 主动消息和刚说过的完成动作矛盾，跳过本次")
+                    return ""
+        except Exception as _amo_exc:
+            _note_swallowed("amo_llm_service.gen_proactive.done_action", _amo_exc)
         if _pg_near_duplicate is None or not self.p.cfg_bool("proactive_dedupe_enabled", True):
             return text
         threshold = self.p.cfg_float("proactive_dedupe_threshold", 0.62)

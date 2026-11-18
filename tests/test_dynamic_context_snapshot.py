@@ -30,13 +30,19 @@ astrbot_stub.install()
 import main  # noqa: E402
 import amo_human_state  # noqa: E402
 import amo_runtime  # noqa: E402
+import amo_runtime_context  # noqa: E402
+import amo_runtime_reply  # noqa: E402
+import amo_runtime_tick  # noqa: E402
 import amo_shared  # noqa: E402
+import clock  # noqa: E402
 from astrbot.api.message_components import At  # noqa: E402
 from astrbot.api.star import Context  # noqa: E402
 
 SNAP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshots")
 FIXED_TS = 1794754200.0  # 2026-11-15 21:30:00 +08:00
 FIXED_DAY = "2026-11-15"
+# 拆分后 _dynamic_context 住在 amo_runtime_context；门面只转发，patch 要打到实现所在的模块。
+RUNTIME_CLOCK_MODULES = (amo_runtime, amo_runtime_context, amo_runtime_reply, amo_runtime_tick)
 
 OFFICE = {
     "start": "09:00", "end": "24:00", "activity": "对着屏幕敲周报",
@@ -108,11 +114,19 @@ class SnapshotTests(unittest.TestCase):
         path_module.get_astrbot_data_path = lambda: self.tmp
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
 
-        self._orig = (amo_runtime._now, amo_runtime.now_ts, amo_runtime.today_str)
+        self._orig = {module.__name__: (module._now, module.now_ts, module.today_str)
+                      for module in RUNTIME_CLOCK_MODULES}
         self._orig_state = (amo_human_state._now, amo_human_state.today_str)
-        amo_runtime._now = lambda: __import__("datetime").datetime(2026, 11, 15, 21, 30)
-        amo_runtime.now_ts = lambda: FIXED_TS
-        amo_runtime.today_str = lambda: FIXED_DAY
+        # Phase 11：生产代码改走插件时钟 clock.now()/now_ts()；只冻结旧入口
+        # （amo_runtime._now / amo_human_state._now）已经盖不住 runtime 的取时，
+        # 23:30 后会多注入一行【熬夜】导致快照漂移。这里把新入口也钉死。
+        self._orig_clock = (clock.now, clock.now_ts)
+        clock.now = lambda: __import__("datetime").datetime(2026, 11, 15, 21, 30)
+        clock.now_ts = lambda: FIXED_TS
+        for module in RUNTIME_CLOCK_MODULES:
+            module._now = lambda: __import__("datetime").datetime(2026, 11, 15, 21, 30)
+            module.now_ts = lambda: FIXED_TS
+            module.today_str = lambda: FIXED_DAY
         amo_human_state._now = lambda: __import__("datetime").datetime(2026, 11, 15, 21, 30)
         amo_human_state.today_str = lambda: FIXED_DAY
 
@@ -141,8 +155,10 @@ class SnapshotTests(unittest.TestCase):
         return plugin
 
     def tearDown(self):
-        amo_runtime._now, amo_runtime.now_ts, amo_runtime.today_str = self._orig
+        for module in RUNTIME_CLOCK_MODULES:
+            module._now, module.now_ts, module.today_str = self._orig[module.__name__]
         amo_human_state._now, amo_human_state.today_str = self._orig_state
+        clock.now, clock.now_ts = self._orig_clock
         try:
             self.plugin.db.conn.close()
         except Exception:

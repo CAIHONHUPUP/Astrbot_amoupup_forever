@@ -260,6 +260,22 @@
     "description": "每次最多注入几条记忆",
     "default": 6
   },
+  "memory_rerank_enabled": {
+    "type": "bool",
+    "description": "每轮一次的记忆重排",
+    "hint": "把这一轮的候选（最多 20 条）交给一次小模型挑一遍，只重排/丢弃、不新增；候选不超过上限时不调用。超时或失败自动用原顺序。",
+    "default": true
+  },
+  "memory_rerank_candidates": {
+    "type": "int",
+    "description": "重排候选条数",
+    "default": 10
+  },
+  "memory_rerank_timeout": {
+    "type": "float",
+    "description": "重排超时（秒）",
+    "default": 6.0
+  },
   "memory_item_max_chars": {
     "type": "int",
     "description": "【注入】单条记忆最多多少字",
@@ -369,6 +385,12 @@
     "type": "bool",
     "description": "也润色 AstrBot 原生回复",
     "hint": "会多一次模型调用，默认关闭",
+    "default": false
+  },
+  "tone_llm_pick": {
+    "type": "bool",
+    "description": "事实改口用 LLM 选语气（B 方案）",
+    "hint": "只从现有候选里选序号，不生成新文本；默认关闭；命中事实冲突才调用，超时/坏序号/校验失败自动回退",
     "default": false
   },
   "blocked_words": {
@@ -1293,7 +1315,21 @@
     "type": "bool",
     "description": "写日记",
     "default": true,
-    "hint": "每天 10 点前后用昨天的聊天和日程小日记写一篇，保存成 txt。"
+    "hint": "每天用昨天的聊天和日程小日记写一篇（第二天自动补写昨天），保存成 txt。"
+  },
+  "diary_live_enabled": {
+    "type": "bool",
+    "description": "当天连载小记（每过完一段日程就接一段）",
+    "default": true,
+    "hint": "默认开：每个日程块结束一会儿后自动写一段第一人称小记，第二天大日记写好后合并收束。关掉后不再写连载，只保留每天一篇大日记。"
+  },
+  "diary_live_debounce_minutes": {
+    "type": "int",
+    "description": "当天连载小记的防抖（分钟）",
+    "default": 7,
+    "min": 5,
+    "max": 10,
+    "hint": "块结束后等多久再写这一段，避免块还在改就写进去；可填 5-10，超范围按 5 或 10 算，默认 7。首次启用时当天已经过完的块会按时间顺序分批补写（每次最多 5 条），不会一次刷一屏。"
   },
   "diary_dir": {
     "type": "string",
@@ -1304,14 +1340,56 @@
   "diary_time": {
     "type": "string",
     "description": "日记时间",
-    "default": "22:00",
-    "hint": "HH:MM，默认 22:00：傍晚以后（18:00 起）写「当天」，白天写「昨天」。只在「日记时间 + 日记窗口」内生成；面板「写昨天」只能补昨天及以前，当天这篇到点自动写。"
+    "default": "08:00",
+    "hint": "HH:MM，默认 08:00：18 点前都算「早上型」——第二天任意时间（开机/首个刷新）自动补写昨天，23:30 的宵夜也算昨天；18 点后的旧配置（如 22:00）仍按「日记时间 + 窗口」写当天。面板「写昨天」可手动重写昨天及以前。"
   },
   "diary_window_minutes": {
     "type": "int",
     "description": "日记生成窗口（分钟）",
     "default": 30,
-    "hint": "默认 30：22:00 开始，最晚 22:30 前生成；错过窗口当天不补写，下次到点会把缺的日期一起补上。"
+    "hint": "只对 18 点后的旧配置生效：默认 30 表示 22:00 开始、22:30 前生成；早上型不再限制窗口，第二天开机就把缺的日期按序补上（最多 7 天）。"
+  },
+  "location_rules_enabled": {
+    "type": "bool",
+    "description": "地点物理法则（日记/消息只能写当前地点里有的东西）",
+    "hint": "默认开：日程在医院就不能写被窝/茶几，在公司就不能写洗澡/做饭；生成前注入允许/禁止词，生成后再校验，仍冲突就降级成地点兜底句。关掉后不再注入和拦截。",
+    "default": true
+  },
+  "block_diary_enabled": {
+    "type": "bool",
+    "description": "小日记按日程块保存（推荐开）",
+    "hint": "默认开：每一段日程块一条小日记，按「开始-结束|活动|地点」认身份，两个相接的块不会共用一段日记，跨小时块也只出一条。关掉则回退旧的按整点保存，用于一键回滚。",
+    "default": true
+  },
+  "diary_audit_enabled": {
+    "type": "bool",
+    "description": "【日记质检】每天检查已结束日程块的小日记",
+    "default": true,
+    "hint": "默认开：每天补审前一天及更早没审过的日期，只审已经过完的块。漏写、空文本、块对不上、写到别的地点算「对不上」，会标 stale 让调度重写；相邻块重复、时间词可疑、过长过短只记录。关掉后完全不再检查。"
+  },
+  "diary_audit_lookback_days": {
+    "type": "int",
+    "description": "【日记质检】往回补审几天",
+    "default": 3,
+    "hint": "启动或隔了 10 分钟以上没检查时，从最近这几天里挑最旧的一天补审，一次只审一天；默认 3 天。"
+  },
+  "diary_audit_notify": {
+    "type": "bool",
+    "description": "【日记质检】发现问题私聊提醒主人",
+    "default": true,
+    "hint": "默认开：只有「对不上」的块才会私聊，每天最多一条，安静时段不发；只有小问题时不私聊，只写进面板和 /amo audit。"
+  },
+  "diary_audit_notify_hour": {
+    "type": "int",
+    "description": "【日记质检】几点后可以发提醒",
+    "default": 9,
+    "hint": "0-23 的整点；默认 9 点以后才发，避免半夜吵人。"
+  },
+  "diary_audit_quiet_hours": {
+    "type": "string",
+    "description": "【日记质检】免打扰时段",
+    "default": "22-8",
+    "hint": "默认 22-8（晚上 10 点到早上 8 点）不发提醒；格式「开始-结束」，用 24 小时制。"
   },
   "quote_group_probability": {
     "type": "float",
@@ -1353,7 +1431,7 @@
     "type": "bool",
     "description": "【照片】聊天里自动画图",
     "default": false,
-    "hint": "他聊到吃的/在干嘛，或直接说「拍给我看看」时，让她用万象画卷生一张发过来。需要先装好万象画卷。"
+    "hint": "他聊到吃的/在干嘛，或直接说「拍给我看看」时，让她用我能永远定格你生一张发过来。需要先装好我能永远定格你。"
   },
   "draw_trigger_mode": {
     "type": "string",
@@ -1474,6 +1552,12 @@
     "description": "【照片】街景/自拍里的自拍占比（%）",
     "default": 50,
     "hint": "旅游、逛街、周末、日常按这个比例决定发自拍还是街景；穿搭永远是自拍。"
+  },
+  "photo_room_refs": {
+    "type": "bool",
+    "description": "【照片】房间参考图",
+    "default": true,
+    "hint": "默认开启（用户决定）：在家（卧室/客厅）生图时带一张当前房间的参考图，保持每次都像同一间房；没有房间图会自动跳过。显式设为 false 回到旧行为。"
   },
   "photo_daily_cap": {
     "type": "int",
@@ -1695,5 +1779,95 @@
     "description": "语音合成超时（秒）",
     "default": 45,
     "hint": "TTS 超过这个时间就放弃语音并回退文字；建议 15-60 秒。"
+  },
+  "travel_enabled": {
+    "type": "bool",
+    "description": "【旅游】旅游系统总开关",
+    "default": true,
+    "hint": "关掉后她不会自己提旅游、不读也不写 trip 状态；面板和 /amo trip 的手动入口也会拒绝。"
+  },
+  "travel_cooldown_days": {
+    "type": "int",
+    "description": "【旅游】两次旅游至少隔几天",
+    "default": 20,
+    "hint": "上次出发当天算第 0 天；填 20 就是三周内不会再出去玩。"
+  },
+  "travel_max_per_year": {
+    "type": "int",
+    "description": "【旅游】一年最多出去玩几次",
+    "default": 6,
+    "hint": "按 travel_count 累计，到了上限就不再触发。"
+  },
+  "travel_prob_holiday": {
+    "type": "float",
+    "description": "【旅游】长假时决定出发的概率（0-1）",
+    "default": 0.6,
+    "hint": "只有长假或低心情才会进入掷骰；0.6 就是六成会去。"
+  },
+  "travel_prob_low": {
+    "type": "float",
+    "description": "【旅游】低心情时决定出发的概率（0-1）",
+    "default": 0.35,
+    "hint": "心情低落/很累时的概率；0 表示再难受也不想出门。"
+  },
+  "travel_days_min": {
+    "type": "int",
+    "description": "【旅游】一趟最少玩几天",
+    "default": 2,
+    "hint": "随机行程天数的下限；手动指定天数时以手动为准。"
+  },
+  "travel_days_max": {
+    "type": "int",
+    "description": "【旅游】一趟最多玩几天",
+    "default": 3,
+    "hint": "自动决定时用这个天数；也用来做出发前的预算预检。"
+  },
+  "travel_price_multiplier": {
+    "type": "float",
+    "description": "【旅游】景区吃饭/交通/日常的溢价倍数",
+    "default": 1.6,
+    "hint": "只作用于 food / transport / daily 三类，酒店和门票不乘。"
+  },
+  "travel_budget_min": {
+    "type": "int",
+    "description": "【旅游】单趟预算下限（元）",
+    "default": 2000,
+    "hint": "低于这个预算的行程不安排；预算上限见 travel_budget_max。"
+  },
+  "travel_budget_max": {
+    "type": "int",
+    "description": "【旅游】单趟预算上限（元）",
+    "default": 5000,
+    "hint": "记进 trip.budget_cap，真实消费逐笔扣，不预扣基金。"
+  },
+  "travel_assassin_prob": {
+    "type": "float",
+    "description": "【旅游】遇到刺客（临时加价）的概率（0-1）",
+    "default": 0.06,
+    "hint": "整趟最多一次，扣 80-200 元并掉一点心情；0 表示不会遇到。"
+  },
+  "travel_return_cost": {
+    "type": "int",
+    "description": "【旅游】回程车票预算（元）",
+    "default": 800,
+    "hint": "断粮兜底按这个数留回程钱；余额不够就借/缩短/等入账。"
+  },
+  "travel_hotel_min": {
+    "type": "int",
+    "description": "【旅游】每晚酒店最低预算（元）",
+    "default": 300,
+    "hint": "出发前预算预检按「回程 + 酒店 + 吃饭」三项相加。"
+  },
+  "travel_food_min": {
+    "type": "int",
+    "description": "【旅游】每天吃饭最低预算（元）",
+    "default": 100,
+    "hint": "出发前预算预检用；真实吃饭按景区溢价逐笔扣。"
+  },
+  "travel_silence_ok": {
+    "type": "bool",
+    "description": "【旅游】出发后允许安静少发消息",
+    "default": true,
+    "hint": "在路上/玩的时候主动消息可以更少；关掉则照常按频率找她。"
   }
 }

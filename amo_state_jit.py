@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """JIT 即时决策 mixin（盲盒模式）：从 amo_human_state.py 按域拆出（只搬方法，行为零变化）。"""
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -9,7 +9,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
     from .amo_state_common import (
@@ -18,35 +19,75 @@ try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
         normalize_place,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_state_common import (
-        _now,
-        minutes_now,
-        normalize_place,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_common import (
+            _now,
+            minutes_now,
+            normalize_place,
+        )
+
+try:  # 时间轴：块读取/查询的唯一入口（第 1 阶段重构）
+    from .amo_timeline import Timeline
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_timeline import Timeline
 
 try:  # amo_shared：时间/日程/心情共享底层
     from .amo_shared import (
+        day_meta,
         logger,
         now_ts,
         parse_hhmm,
         to_float,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_shared import (
-        logger,
-        now_ts,
-        parse_hhmm,
-        to_float,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import (
+            day_meta,
+            logger,
+            now_ts,
+            parse_hhmm,
+            to_float,
+        )
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_types import PluginLike as _MixinBase
 else:  # 运行时用 object：协议里的声明不能进 MRO
     _MixinBase = object
 
+try:  # 约会会话单一源（Phase 2）
+    from . import amo_date_session as _ds
+except ImportError:
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_date_session as _ds
+
+
+def _hour_end_ts(hour, now=None):
+    """这一小时结束的时间戳（current_action 的有效期边界）。"""
+    now = now or _now()
+    try:
+        start = datetime(now.year, now.month, now.day, int(hour), 0, 0)
+        return start.timestamp() + 3600
+    except (TypeError, ValueError):
+        return now_ts() + 3600
+
 
 class JitStateMixin(_MixinBase):
     """JIT 域：到点即时决策、心跳/补洞、提交与持久化。"""
+    if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
+        _fmt_minutes: Any
+        _todo_for_hour: Any
+        _todo_plan: Any
+        current_activity: Any
+        decide_sick_action: Any
+        dominant_mood: Any
+        ensure_schedule: Any
+        health_info: Any
+        late: Any
+        mood: Any
+        p: Any
+        settle_schedule_costs: Any
+        sick_decision: Any
 
     # ---------- JIT 即时决策（盲盒模式） ----------
 
@@ -81,15 +122,19 @@ class JitStateMixin(_MixinBase):
             return ""
         return str(data.get("action") or "")
 
-    def _jit_items(self, day):
-        items = []
-        try:
-            items = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
-        except Exception:
-            items = []
+    def _jit_items(self, day, items=None):
+        _trip_kind = self._trip_day_kind(day)
+        if _trip_kind:
+            return self._trip_day_items(day, _trip_kind)
+        if items is None:
+            try:
+                items = Timeline(self).blocks(day)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_jit._jit_items.timeline", _amo_exc)
+                items = []
         now = minutes_now()
         try:
-            live = bool((self.db.kv_get("date_now", {}) or {}).get("line"))
+            live = _ds.active(self) is not None
         except Exception:
             live = False
         kept = []
@@ -114,6 +159,39 @@ class JitStateMixin(_MixinBase):
         home = self.p.cfg_str("schedule_home", "") or profile.get("home") or "家"
         return normalize_place(home, "home")
 
+    @staticmethod
+    def _gap_place(items, begin, finish):
+        """补洞用：按前后最近的块推她当时在哪，推不出才交给调用方回家。"""
+        if finish - begin > 90 or finish >= 21 * 60:
+            return None, ""  # 长空档/晚上：不猜地点，交给调用方按家处理
+        prev = nxt = None
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                start = parse_hhmm(item.get("start"))
+                end_text = str(item.get("end") or "").strip()
+                end = 24 * 60 if end_text in ("24:00", "0:00", "00:00") else parse_hhmm(end_text)
+            except Exception:
+                continue
+            if end <= begin:
+                prev = item
+            elif start >= finish and nxt is None:
+                nxt = item
+        prev_place = str((prev or {}).get("place") or "").strip()
+        prev_zone = str((prev or {}).get("zone") or "").strip()
+        next_place = str((nxt or {}).get("place") or "").strip()
+        next_zone = str((nxt or {}).get("zone") or "").strip()
+        if prev_place and next_place:
+            if prev_zone and prev_zone == next_zone:
+                return prev_place, prev_zone
+            return None, ""  # 前后不一致（比如 21:00 餐厅 → 23:00 睡觉）：按未知处理
+        if next_place:
+            return next_place, next_zone or "home"
+        if prev_place:
+            return prev_place, prev_zone or "home"
+        return None, ""
+
     def _jit_place_of(self, plan):
         zone = str(plan.get("zone") or "")
         place = str(plan.get("place") or "")
@@ -125,27 +203,104 @@ class JitStateMixin(_MixinBase):
             return self._jit_home()
         return normalize_place(place, zone)
 
+    def _trip_day_kind(self, day):
+        """旅游日：traveling / rest / ""（其他日子完全不变）。"""
+        try:
+            try:
+                from . import amo_trip as _trip
+            except ImportError:
+                import amo_trip as _trip
+            plugin = getattr(self, "p", None) or self
+            return str(_trip.day_kind(plugin, day) or "")
+        except Exception as exc:
+            _note_swallowed("amo_state_jit._trip_day_kind", exc)
+            return ""
+
+    def _trip_day_items(self, day, kind):
+        """旅游日池：只生成一次（kv 标记）；重载后读回同一份，不重复写。"""
+        try:
+            try:
+                from . import amo_trip as _trip
+            except ImportError:
+                import amo_trip as _trip
+        except Exception as exc:
+            _note_swallowed("amo_state_jit._trip_day_items.import", exc)
+            return []
+        plugin = getattr(self, "p", None) or self
+        day = str(day or "")
+        try:
+            existing = Timeline(self).blocks(day)
+        except Exception:
+            existing = []
+        flag = "trip_day:%s:%s" % (kind or "", day)
+        try:
+            if self.db.kv_get(flag, False):
+                return existing
+        except Exception as exc:
+            _note_swallowed("amo_state_jit._trip_day_items.flag", exc)
+        # 10B2：出发/返程当天已经写了自己的长途块，不再用旅游日池覆盖。
+        # 10B3：跨午夜到达日只占 00:00-到达点，02:00 到家的那天白天仍要铺旅行日池，
+        # 凌晨那几条长途腿跟着保留（不重不漏）；白天出发/返程当天继续不覆盖。
+        if kind == "traveling":
+            legs, late = _trip.travel_day_legs(existing)
+            if late:
+                return existing
+            rows = legs + _trip.travel_day_blocks(plugin, day)
+        else:
+            rows, _changed = _trip.rest_day_rows(plugin, day, existing)
+        if not rows:
+            return existing
+        try:
+            Timeline(self).save(day, rows, old_items=existing,
+                                source="trip_pool", reason="旅游日池")
+        except Exception as exc:
+            _note_swallowed("amo_state_jit._trip_day_items.commit", exc)
+            return existing
+        try:
+            self.db.kv_set(flag, True)
+        except Exception as exc:
+            _note_swallowed("amo_state_jit._trip_day_items.mark", exc)
+        try:
+            return Timeline(self).blocks(day) or rows
+        except Exception:
+            return rows
+
+    def _trip_plan_for_hour(self, now, hour, day, kind):
+        """旅游日的到点决策：只用旅游事件池，绝不出上班/洗衣/做饭。"""
+        try:
+            try:
+                from . import amo_trip as _trip
+            except ImportError:
+                import amo_trip as _trip
+        except Exception as exc:
+            _note_swallowed("amo_state_jit._trip_plan_for_hour.import", exc)
+            return ({"action": "休息", "place": "家", "zone": "home",
+                     "category": "rest", "cost_cents": 0, "diary": ""}, 0, False)
+        plugin = getattr(self, "p", None) or self
+        if kind == "rest":
+            if 8 <= int(hour) < 20:
+                action, place, zone, category = _trip.REST_DAY_ACTIVITY, "家", "home", "rest"
+            elif int(hour) < 7 or int(hour) >= 23:
+                action, place, zone, category = "睡觉", "家", "home", "sleep"
+            else:
+                action, place, zone, category = "在家躺着", "家", "home", "rest"
+        else:
+            plan = _trip.travel_event_for_hour(plugin, day, hour)
+            action = str(plan.get("action") or "休息")
+            place = str(plan.get("place") or "家")
+            zone = str(plan.get("zone") or "")
+            category = str(plan.get("category") or "rest")
+        return ({"action": action, "place": place, "zone": zone,
+                 "category": category, "cost_cents": 0, "diary": ""}, 0, False)
+
     def _hour_has_plan(self, day, hour):
         """这一小时是不是已经有真实安排（预约/聊天改日程/补记），有就不再插一条。"""
-        try:
-            items = self.schedule.get(day) or self.db.get_schedule(day) or []
-        except Exception:
-            return False
         start_min = max(0, min(23, int(hour))) * 60
-        for item in items or []:
-            if not isinstance(item, dict):
-                continue
-            try:
-                begin = parse_hhmm(item.get("start"))
-                end_text = str(item.get("end") or "").strip()
-                finish = 24 * 60 if end_text in ("24:00", "0:00", "00:00") else parse_hhmm(end_text)
-            except Exception:
-                continue
-            if finish <= begin:
-                finish = begin + 60
-            if begin < start_min + 60 and finish > start_min:
-                return True
-        return False
+        try:
+            return bool(Timeline(self).between(day, start_min, start_min + 60))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_jit._hour_has_plan.timeline", _amo_exc)
+            return False
 
     @staticmethod
     def _minute_text(value):
@@ -157,6 +312,11 @@ class JitStateMixin(_MixinBase):
     def recover_missed_ticks(self, now=None):
         """启动/断网恢复：上次心跳到现在有空洞就补成中立时间块，保证 UI 不断档。"""
         now = now or _now()
+        try:
+            if self._trip_day_kind(now.date().isoformat()):
+                return []  # 旅行日由旅行池排，补洞不插手
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_jit.recover_missed_ticks.trip", _amo_exc)
         try:
             last = to_float(self.db.kv_get("jit:heartbeat", 0), 0)
         except Exception:
@@ -187,6 +347,14 @@ class JitStateMixin(_MixinBase):
         return self._jit_backfill_gap(now, last_dt)
 
     def _jit_heartbeat(self, now):
+        """心跳：顺手按天打一次 kv_health INFO 摘要（只读，不删键）。"""
+        try:
+            from .amo_state_store import for_plugin as _state_store_for
+            from .amo_state_store import should_log_health as _should_log_health
+            if _should_log_health(now.timestamp()):
+                logger.info("[amo] %s", _state_store_for(self).health_line(now=now.timestamp()))
+        except Exception as exc:
+            logger.debug("[amo] kv_health 心跳摘要失败: %s" % exc)
         return self.recover_missed_ticks(now)
 
     def _jit_backfill_gap(self, now, last_dt):
@@ -197,8 +365,9 @@ class JitStateMixin(_MixinBase):
         if start_min >= now_min:
             return []
         end_min = min(24 * 60, (int(now.hour) + 1) * 60)
+        timeline = Timeline(self)
         try:
-            items = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
+            items = timeline.blocks(day)
         except Exception:
             items = []
         covered = []
@@ -230,20 +399,21 @@ class JitStateMixin(_MixinBase):
         for begin, finish in gaps:
             if finish - begin < 5:
                 continue
+            place, zone = self._gap_place(items, begin, finish)
             rows.append({
                 "start": self._minute_text(begin),
                 "end": self._minute_text(finish),
                 "activity": self._jit_gap_label(),
-                "place": self._jit_home(),
-                "zone": "home",
+                "place": place or self._jit_home(),
+                "zone": zone or "home",
                 "category": "rest",
                 "source": "jit_recover",
                 "happened": True,
             })
         if rows:
             try:
-                self.commit_schedule_change(day, items + rows, old_items=items,
-                                            source="jit", reason="重启后补全空档")
+                timeline.save(day, items + rows, old_items=items,
+                             source="jit", reason="重启后补全空档")
             except Exception:
                 return []
         return rows
@@ -278,8 +448,9 @@ class JitStateMixin(_MixinBase):
         if not sleep_day or sleep_day >= today or int(now.hour) < 7:
             return None
         wake = "%02d:00" % min(23, int(now.hour))
+        sleep_timeline = Timeline(self)
         try:
-            previous = list(self.schedule.get(sleep_day) or self.db.get_schedule(sleep_day) or [])
+            previous = sleep_timeline.blocks(sleep_day)
         except Exception:
             previous = []
         updated = []
@@ -295,12 +466,13 @@ class JitStateMixin(_MixinBase):
             updated.append(row)
         if changed:
             try:
-                self.commit_schedule_change(sleep_day, updated, old_items=previous,
-                                            source="jit", reason="醒来后合并睡眠")
+                sleep_timeline.save(sleep_day, updated, old_items=previous,
+                                    source="jit", reason="醒来后合并睡眠")
             except Exception as exc:
                 _note_swallowed("amo_human_state._finish_open_sleep.commit_sleep", exc)
+        today_timeline = Timeline(self)
         try:
-            today_items = list(self.schedule.get(today) or self.db.get_schedule(today) or [])
+            today_items = today_timeline.blocks(today)
         except Exception:
             today_items = []
         has_sleep = any(str(item.get("category") or "") == "sleep"
@@ -312,8 +484,8 @@ class JitStateMixin(_MixinBase):
                 "sleep_from": start, "source": "jit", "happened": True,
             }]
             try:
-                self.commit_schedule_change(today, today_items, old_items=old,
-                                            source="jit", reason="醒来后合并睡眠")
+                today_timeline.save(today, today_items, old_items=old,
+                                    source="jit", reason="醒来后合并睡眠")
             except Exception as exc:
                 _note_swallowed("amo_human_state._finish_open_sleep.commit_today", exc)
         try:
@@ -362,8 +534,7 @@ class JitStateMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState.jit_tick.settle_cost", _amo_exc)
         try:
-            _date_now = self.db.kv_get("date_now", {}) or {}
-            if isinstance(_date_now, dict) and float(_date_now.get("until") or 0) > now_ts():
+            if _ds.active(self, now_ts()):
                 return None  # 约会进行中：不让 JIT 覆盖“和老公在一起”
         except Exception as exc:
             _note_swallowed("amo_human_state.py.2139", exc)
@@ -404,6 +575,9 @@ class JitStateMixin(_MixinBase):
         anchor = self._todo_for_hour(day, hour)
         if anchor:
             return self._todo_plan(anchor)
+        _trip_kind = self._trip_day_kind(day)
+        if _trip_kind:
+            return self._trip_plan_for_hour(now, hour, day, _trip_kind)
         # 饥饿/余额/健康 → jit_plan；熬夜补觉覆盖；再按计划扣钱（扣不到就改成忍着）
         hunger = 100.0
         try:
@@ -415,12 +589,34 @@ class JitStateMixin(_MixinBase):
         except Exception:
             cash = 0
         health = self.health_info() or {}
+        on_leave = False
+        try:
+            _leave = getattr(self, "on_sick_leave", None)
+            on_leave = bool(_leave(day)) if callable(_leave) else False
+        except Exception:
+            on_leave = False
+        try:
+            metadata = day_meta(day)
+        except Exception:
+            metadata = {}
+        rest_day = bool(metadata.get("rest")) if metadata else None
+        try:
+            _pick_type = getattr(self, "_today_day_type", None)
+            day_type = (_pick_type(day) or {}) if callable(_pick_type) else {}
+        except Exception:
+            day_type = {}
+        weather = getattr(self, "weather", {}) or {}
+        try:
+            _period_info = getattr(self, "period_info", None)
+            period = (_period_info() or {}) if callable(_period_info) else {}
+        except Exception:
+            period = {}
         try:
             from .schedule_engine import jit_plan
         except ImportError:
             from schedule_engine import jit_plan
         sick_action = None
-        if health.get("sick"):
+        if health.get("sick") or on_leave:
             try:
                 sick_action = str((self.sick_decision(day) or {}).get("action") or "") or None
             except Exception:
@@ -439,7 +635,12 @@ class JitStateMixin(_MixinBase):
             mood_value = 0.0
         plan = jit_plan(hour, hunger, cash, bool(health.get("sick")),
                         mood_word, weekday=now.weekday(),
-                        sick_action=sick_action, mood_value=mood_value)
+                        sick_action=sick_action, mood_value=mood_value,
+                        leave_day=on_leave, rest_day=rest_day,
+                        weather_text=str(weather.get("text") or ""),
+                        weather_temp=weather.get("temp"),
+                        period_phase=str(period.get("phase") or ""),
+                        day_type_id=str(day_type.get("id") or ""))
         plan = dict(plan)
         try:
             if self.late is not None and hour in (12, 15) and now.weekday() >= 5 and self.late.late_yesterday(now):
@@ -467,9 +668,10 @@ class JitStateMixin(_MixinBase):
         jit_idem = "jit:%s:%02d" % (day, hour)
         committed = True
         try:
-            items = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
-            result = self.commit_schedule_change(day, items + [item], old_items=items,
-                                                 source="jit", reason="到点即时决策")
+            timeline = Timeline(self)
+            items = timeline.blocks(day)
+            result = timeline.save(day, items + [item], old_items=items,
+                                   source="jit", reason="到点即时决策")
             if isinstance(result, dict) and result.get("saved") is False:
                 committed = False
         except Exception as exc:
@@ -511,7 +713,7 @@ class JitStateMixin(_MixinBase):
         self.db.kv_set("current_action", {"action": plan.get("action"),
                                           "place": plan.get("place"),
                                           "at": now_ts(),
-                                          "until": now_ts() + 3600,
+                                          "until": _hour_end_ts(hour),
                                           "hour": hour})
         self.db.kv_set(flag, True)
         diary = str(plan.get("diary") or "")

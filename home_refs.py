@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """家的场景参考图（2026-11-14）：客厅 / 卧室各一张，入住或搬家时生成。
 
-- 生成走万象画卷 generate_images_for_plugin(prompt=...)；
+- 生成走我能永远定格你 generate_images_for_plugin(prompt=...)；
 - 不出现人物，只拍房间，风格/主色/家具按 housing 里的固定属性；
 - 已有图就复用，搬家/大件家具/装修才 force 重生成；
-- 万象画卷没装、超时、返回坏图都只返回空，聊天继续用文字描述，不阻塞。
+- 我能永远定格你没装、超时、返回坏图都只返回空，聊天继续用文字描述，不阻塞。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import asyncio
 import os
@@ -15,8 +16,9 @@ try:
     from .amo_image_common import find_omni
     from .outfit_refs import _as_png, _decode_item, _download
 except ImportError:  # 直接按文件加载时
-    from amo_image_common import find_omni  # type: ignore[no-redef]
-    from outfit_refs import _as_png, _decode_item, _download  # type: ignore[no-redef]
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_image_common import find_omni  # type: ignore[no-redef]
+        from outfit_refs import _as_png, _decode_item, _download  # type: ignore[no-redef]
 
 ROOMS = (("living", "客厅"), ("bedroom", "卧室"))
 

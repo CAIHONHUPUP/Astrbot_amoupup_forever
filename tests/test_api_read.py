@@ -51,9 +51,11 @@ READ_HANDLERS = (
     "api_memory_candidates",
     "api_profile_links",
     "api_diary_tree",
+    "api_diary_audit",
     "api_weather",
     "api_weather_brief",
     "api_city_search",
+    "api_facts",
 )
 
 
@@ -138,6 +140,20 @@ class ApiReadTests(unittest.TestCase):
                 pass
         text = json.dumps(self._call("api_config"), ensure_ascii=False)
         self.assertNotIn("SECRET-VALUE-123", text)
+
+    def test_config_exposes_diary_live_settings(self):
+        data = self._call("api_config")["data"]
+        items = {item["key"]: item for item in data.get("items") or []}
+        enabled = items.get("diary_live_enabled") or {}
+        debounce = items.get("diary_live_debounce_minutes") or {}
+        self.assertEqual(enabled.get("type"), "bool")
+        self.assertIs(enabled.get("default"), True)
+        self.assertEqual(enabled.get("group"), "基础")
+        self.assertTrue(enabled.get("description"))
+        self.assertTrue(enabled.get("hint"))
+        self.assertEqual(debounce.get("type"), "int")
+        self.assertEqual(debounce.get("default"), 7)
+        self.assertTrue(debounce.get("hint"))
 
     def test_status_has_counts_and_data_plugin(self):
         data = self._call("api_status")["data"]

@@ -34,12 +34,7 @@ from schedule_engine import (  # noqa: E402
 
 ZONES = {"home", "office", "road", "mall", "scenic", "restaurant", "hotel", "station"}
 
-
-class FakeState:
-    def __init__(self):
-        self.p = types.SimpleNamespace(gift=None)
-        self.db = None
-
+from plugin_fakes import ScheduleSkeletonsFakeState as FakeState  # noqa: E402
 
 BASE = {
     "day": "2026-11-12",
@@ -63,16 +58,13 @@ BASE = {
     "seed": 20261112,
 }
 
-
 def engine():
     return ScheduleEngine(FakeState())
-
 
 def build(**overrides):
     ctx = dict(BASE)
     ctx.update(overrides)
     return engine().build_skeleton(ctx)
-
 
 class SkeletonShapeTests(unittest.TestCase):
     def _check(self, items):
@@ -131,7 +123,6 @@ class SkeletonShapeTests(unittest.TestCase):
         self._check(items)
         self.assertIn("出门", items[7].get("activity") or "")
 
-
 class HourExpandTests(unittest.TestCase):
     def test_expand_fills_every_hour(self):
         eng = engine()
@@ -149,7 +140,6 @@ class HourExpandTests(unittest.TestCase):
         items = eng._expand([eng._seg("10:00", "09:00", "写反了", "家里", "home", "life")], BASE)
         self.assertEqual(len(items), 24)
         self.assertTrue(all(item["end"] > item["start"] for item in items))
-
 
 class HelperTests(unittest.TestCase):
     def test_parse_and_fmt(self):
@@ -204,7 +194,6 @@ class HelperTests(unittest.TestCase):
         for _ in range(20):
             picked = ScheduleEngine._choose(["a", "b", "c"], rng, "a")
             self.assertIn(picked, ("b", "c"))
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """生病工作日早上的自主决策：LLM 二选一，结果落库后统一喂给 JIT 和骨架。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import json
 import re

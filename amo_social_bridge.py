@@ -25,12 +25,13 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 try:
     from .amo_observability import note as _note_swallowed
 except ImportError:  # 直接按文件加载时
-    try:
-        from amo_observability import note as _note_swallowed
-    except ImportError:  # pragma: no cover
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_observability import note as _note_swallowed
+        except ImportError:  # pragma: no cover
 
-        def _note_swallowed(scope, exc=None):
-            return None
+            def _note_swallowed(scope, exc=None):
+                return None
 
 
 WATCH_PLUGIN_NAME = "Astrbot_amoupup_watch"

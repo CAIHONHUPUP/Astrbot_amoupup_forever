@@ -12,18 +12,12 @@ import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from fixtures import FakeDB, FakePlugin  # Phase 11 共享测试桩
 
 from amo_shared import city_or_empty  # noqa: E402
 from schedule_engine import ScheduleEngine  # noqa: E402
 
 
-class FakePlugin:
-    def __init__(self, **cfg):
-        self.config = dict(cfg)
-        self.state = None
-
-    def cfg_str(self, key, default=""):
-        return str(self.config.get(key, default))
 
 
 class CityOrEmptyTests(unittest.TestCase):
@@ -57,15 +51,6 @@ class CityOrEmptyTests(unittest.TestCase):
         self.assertEqual(city_or_empty(plugin), "")
 
 
-class FakeDB:
-    def __init__(self):
-        self.kv = {}
-
-    def kv_get(self, key, default=None):
-        return self.kv.get(key, default)
-
-    def kv_set(self, key, value):
-        self.kv[key] = value
 
 
 class ResolveProfileTests(unittest.TestCase):

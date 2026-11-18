@@ -27,6 +27,7 @@ from social_learn_engine import (  # noqa: E402
     parse_baidu,
     parse_weibo,
     parse_zhihu,
+    parse_opinions,
     recent_block,
 )
 
@@ -260,6 +261,31 @@ class EngineTests(unittest.TestCase):
         block = engine.injection(now)
         self.assertIn("【社会见闻】", block)
         self.assertIn("公司要求员工周末加班", block)
+
+    def test_run_splits_opinions_per_item(self):
+        plugin = FakePlugin(opinion="1. 又是加班，真烦。\n2. 我也想攒点钱。")
+        engine = self._engine(plugin)
+        now = dt.datetime(2026, 11, 14, 12, 30)
+        asyncio.run(engine.run(now, umo="umo-1", uid="1001"))
+        items = plugin.db.data[KV_ENTRIES][0]["items"]
+        self.assertEqual(len(items), 2)
+        self.assertNotEqual(items[0]["opinion"], items[1]["opinion"])
+
+    def test_injection_natural_single_item(self):
+        plugin = FakePlugin()
+        engine = self._engine(plugin)
+        now = dt.datetime(2026, 11, 14, 12, 30)
+        asyncio.run(engine.run(now, umo="umo-1", uid="1001"))
+        block = engine.injection(now)
+        self.assertIn("公司要求员工周末加班", block)
+        self.assertNotIn("年轻人开始攒钱不消费", block)
+        self.assertNotIn("今日见闻", block)
+        self.assertNotIn("你今天刷到的", block)
+        self.assertIn("顺口", block)
+
+    def test_parse_opinions_numbered_and_fallback(self):
+        self.assertEqual(parse_opinions("1. 好烦\n2. 想攒钱"), ["好烦", "想攒钱"])
+        self.assertEqual(parse_opinions("就一句心里话"), ["就一句心里话"])
 
     def test_disabled_engine_does_nothing(self):
         class Off(FakePlugin):

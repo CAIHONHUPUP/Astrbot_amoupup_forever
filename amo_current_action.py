@@ -11,6 +11,13 @@
 微型事件动作（最新、正在发生）> JIT/current_action（有效性看 until）> 日程 > 按小时兜底。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import datetime as _dt
 
@@ -18,7 +25,7 @@ PRIORITY = ("micro", "jit", "schedule", "fallback")
 
 
 def _now():
-    return _dt.datetime.now()
+    return _amo_clock.now()
 
 
 def _kv_get(plugin, key, default=None):
@@ -29,15 +36,12 @@ def _kv_get(plugin, key, default=None):
 
 
 def _unexpired(data, ts):
-    if not isinstance(data, dict) or not data:
-        return None
+    """TTL 判定统一走 StateStore（Phase 5）；保留旧名字给调用方/测试。"""
     try:
-        until = float(data.get("until") or 0)
-    except Exception:
-        until = 0.0
-    if until and until <= ts:
-        return None
-    return data
+        from .amo_state_store import ttl_fresh as _ttl_fresh
+    except ImportError:
+        from amo_state_store import ttl_fresh as _ttl_fresh
+    return _ttl_fresh(data, ts)
 
 
 def _micro_action(plugin, now):
@@ -144,7 +148,12 @@ def set_action(plugin, action, until_ts=0, place="家", zone="", category="life"
         "source": str(source or "manual"),
     }
     try:
-        plugin.db.kv_set("current_action", data)
+        try:
+            from .amo_state_store import for_plugin as _state_store_for
+        except ImportError:
+            from amo_state_store import for_plugin as _state_store_for
+        _state_store_for(plugin).set_ttl("current_action", data, 0,
+                                         until=float(until_ts or 0))
     except Exception:
         return False
     return True
@@ -153,7 +162,11 @@ def set_action(plugin, action, until_ts=0, place="家", zone="", category="life"
 def clear_action(plugin):
     """清掉当前动作（微型事件 lifecycle 用）。"""
     try:
-        plugin.db.kv_set("current_action", {})
+        try:
+            from .amo_state_store import for_plugin as _state_store_for
+        except ImportError:
+            from amo_state_store import for_plugin as _state_store_for
+        _state_store_for(plugin).set("current_action", {})
     except Exception:
         return False
     return True

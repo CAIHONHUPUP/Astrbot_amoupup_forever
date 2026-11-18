@@ -193,9 +193,11 @@ class PoolTests(unittest.TestCase):
     def test_historical_diary_read_only(self):
         import inspect
         from amo_schedule import ScheduleMixin
-        # 2026-11-15 拆函数后，「历史日记只读」这段落到 _write_one_daily_diary
+        # 2026-11-17 B 方案：旧日记默认只读，只有 stale + 事实矛盾才重写（一致的只清 stale）
         source = inspect.getsource(ScheduleMixin._write_one_daily_diary)
-        self.assertIn("历史日记只读", source)
+        self.assertIn("if written and not stale:", source)
+        self.assertIn("if not self.diary_fact_mismatch(day, existing):", source)
+        self.assertIn("reason=fact_consistent", source)
 
 
 if __name__ == "__main__":

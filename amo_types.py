@@ -15,6 +15,7 @@
 方法签名由 tools/gen_types.py 从真实实现抓取，改了实现要同步这里（CI 的 mypy 会检查）。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 from typing import Any, Protocol
 
@@ -124,6 +125,8 @@ class PluginLike(Protocol):
     _balance_cached: Any
     _body: Any
     _bot_initiated: Any
+    _bot_initiated_quote: Any
+    _bot_initiated_text: Any
     _check_proactive_pending: Any
     _city_lookup: Any
     _city_module: Any

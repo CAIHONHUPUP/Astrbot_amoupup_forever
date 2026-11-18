@@ -265,7 +265,7 @@ class SharePromptTests(unittest.TestCase):
                 self.sent.append(text)
                 return umo
 
-            def _mark_bot_initiated(self, umo):
+            def _mark_bot_initiated(self, umo, text=""):
                 pass
 
         plugin = Plugin()

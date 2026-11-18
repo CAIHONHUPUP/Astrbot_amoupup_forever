@@ -17,6 +17,21 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import wardrobe as wardrobe_module  # noqa: E402
+import wardrobe_data  # noqa: E402
+import wardrobe_daily  # noqa: E402
+import wardrobe_queries  # noqa: E402
+import wardrobe_seed  # noqa: E402
+
+# 2026-11-17：wardrobe.py 拆成门面 + wardrobe_data/seed/daily/queries 后，
+# _clock_now / today_str 绑在各子模块自己的命名空间里；mock 时钟要一次打到所有模块。
+_WARDROBE_MODULES = (wardrobe_module, wardrobe_data, wardrobe_seed, wardrobe_daily, wardrobe_queries)
+
+
+def _patch_clock(name, value):
+    for module in _WARDROBE_MODULES:
+        if hasattr(module, name):
+            setattr(module, name, value)
+
 from wardrobe import Wardrobe  # noqa: E402
 
 
@@ -57,14 +72,14 @@ class OutfitStateTests(unittest.TestCase):
         self._original_clock = wardrobe_module._clock_now
         self._original_today = wardrobe_module.today_str
         self.day = "2026-11-12"
-        wardrobe_module.today_str = lambda: self.day
+        _patch_clock("today_str", lambda: self.day)
 
     def tearDown(self):
-        wardrobe_module._clock_now = self._original_clock
-        wardrobe_module.today_str = self._original_today
+        _patch_clock("_clock_now", self._original_clock)
+        _patch_clock("today_str", self._original_today)
 
     def at(self, hour, minute=0):
-        wardrobe_module._clock_now = lambda: datetime(2026, 11, 12, hour, minute)
+        _patch_clock("_clock_now", lambda: datetime(2026, 11, 12, hour, minute))
 
     def activity(self, place, activity="休息", swim=False):
         self.plugin.state.activity = {

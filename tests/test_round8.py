@@ -9,10 +9,12 @@ import os
 import sys
 import threading
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from panel_source import panel_source  # noqa: E402
 
 import astrbot_stub  # noqa: E402
 
@@ -23,6 +25,7 @@ import amo_fact_pool  # noqa: E402
 import amo_transition as tr  # noqa: E402
 from amo_api_schedule import ScheduleApiMixin  # noqa: E402
 from amo_state_common import today_str  # noqa: E402
+from fixtures import FixedClock, today_at  # noqa: E402
 
 
 class FakeDB:
@@ -38,6 +41,15 @@ class FakeDB:
         return list(self.items)
 
     def get_diary(self, day, hour):
+        return self.diary
+
+    def get_block_diary_record(self, day, block_key):
+        """详情缓存现在按块身份读；只有真有正文才返回可用记录。"""
+        if not self.diary:
+            return None
+        return {"text": self.diary, "status": "valid"}
+
+    def get_block_diary(self, day, block_key):
         return self.diary
 
     def schedule_version(self, day):
@@ -208,8 +220,11 @@ class ActivityFactTests(unittest.TestCase):
         self.assertEqual(facts, [])
 
     def test_fact_pool_calls_activity_facts(self):
+        # Phase 3：facts 组装已经收敛到唯一时间线，活动块也由时间线生产
         src = inspect.getsource(amo_fact_pool.build_fact_pool)
-        self.assertIn("activity_facts(items, now)", src)
+        self.assertIn("fact_timeline.build_pool", src)
+        src = inspect.getsource(amo_fact_pool.activity_facts)
+        self.assertIn("activity_entries", src)
 
 
 class CommitSelfReplaceTests(unittest.TestCase):
@@ -260,6 +275,10 @@ class ScheduleGetReadOnlyTests(unittest.TestCase):
         self.assertIn("过几秒", result["data"].get("message", ""))
 
     def test_detail_reads_cache_and_never_expands(self):
+        # 详情只回「已经过完」的块；14:00-15:00 在 0 点刚过时还没过完会先返回 pending。
+        frozen = FixedClock(today_at(15, 0))
+        frozen.start()
+        self.addCleanup(frozen.stop)
         plugin = FakePlugin(db=FakeDB(diary="她写的小日记"))
         plugin.state = FakeState(plugin, [{"start": "14:00", "end": "15:00",
                                            "activity": "逛街", "place": "商场"}],
@@ -269,6 +288,9 @@ class ScheduleGetReadOnlyTests(unittest.TestCase):
         self.assertNotIn("expand", plugin.state.calls)
 
     def test_detail_without_diary_returns_generating(self):
+        frozen = FixedClock(today_at(15, 0))
+        frozen.start()
+        self.addCleanup(frozen.stop)
         plugin = FakePlugin(db=FakeDB(diary=""))
         plugin.state = FakeState(plugin, [{"start": "14:00", "end": "15:00",
                                            "activity": "逛街", "place": "商场"}],
@@ -294,6 +316,10 @@ class TickBudgetTests(unittest.TestCase):
 
 
     def test_tick_backfills_when_budget_available(self):
+        # tick 只补「已经过完」的块：10:00-11:00 必须早于当前时刻，否则没有可补的。
+        frozen = FixedClock(today_at(15, 0))
+        frozen.start()
+        self.addCleanup(frozen.stop)
         from amo_schedule import ScheduleMixin as _Mixin
         plugin = FakePlugin()
         day = today_str()
@@ -314,10 +340,12 @@ class ActivityMemoryTests(unittest.TestCase):
             asyncio.run(coro)
 
         async def _write(uid, content, kind, tier, scope, group_id, subject="user",
-                         tags="", idem="", importance=0):
-            plugin.mem.append({"content": content, "tags": tags, "idem": idem,
-                               "importance": importance, "scope": scope,
-                               "kind": kind, "subject": subject})
+                         platform="", idem_key="", importance=None, tags=""):
+            # 严格按 amo_memory_data._data_memory_write 的新签名收参：多一个/少一个都 TypeError
+            plugin.mem.append({"uid": uid, "content": content, "tags": tags,
+                               "idem": idem_key, "importance": importance,
+                               "scope": scope, "tier": tier, "kind": kind,
+                               "subject": subject, "platform": platform})
 
         plugin._spawn = _spawn
         plugin._data_memory_write = _write
@@ -344,9 +372,14 @@ class ActivityMemoryTests(unittest.TestCase):
         for row in keep + drop:
             tr.write_activity_memory(plugin, [row], now)
         self.assertEqual(len(plugin.mem), 5, plugin.mem)
-        self.assertTrue(all("#活动" == m["tags"] for m in plugin.mem))
-        self.assertTrue(all(m["importance"] == 25 for m in plugin.mem))
-        self.assertTrue(all(m["scope"] == "private" for m in plugin.mem))
+        self.assertEqual({m["tags"].split(" ")[0] for m in plugin.mem}, {"#活动"})
+        self.assertTrue(all("event:ev_" in m["tags"] for m in plugin.mem),
+                        "活动记忆 tags 要带事件 id")
+        self.assertEqual({m["importance"] for m in plugin.mem}, {0.25})
+        self.assertEqual({m["kind"] for m in plugin.mem}, {"activity"})
+        self.assertEqual({m["tier"] for m in plugin.mem}, {1})
+        self.assertEqual({m["scope"] for m in plugin.mem}, {"private"})
+        self.assertEqual({m["subject"] for m in plugin.mem}, {"bot"})
 
     def test_idempotent_same_block(self):
         now = dt.datetime(2026, 11, 16, 20, 0)
@@ -369,6 +402,54 @@ class ActivityMemoryTests(unittest.TestCase):
             self._row("16:00", "16:45", "看电影", "play")], now)
         self.assertIn("45分钟", plugin2.mem[0]["content"])
         self.assertIn("activity:2026-11-16:16:00", plugin2.mem[0]["idem"])
+
+    def test_real_signature_kwargs_reach_writer(self):
+        now = dt.datetime(2026, 11, 16, 20, 0)
+        plugin = self._plugin()
+        tr.write_activity_memory(plugin, [
+            self._row("14:00", "15:30", "和柳如烟逛街", "shopping")], now)
+        self.assertEqual(len(plugin.mem), 1)
+        row = plugin.mem[0]
+        self.assertTrue(row["tags"].startswith("#活动"))
+        self.assertIn("event:ev_", row["tags"], "活动记忆 tags 要带事件 id")
+        self.assertEqual(row["importance"], 0.25)
+        self.assertEqual(row["idem"], "activity:2026-11-16:14:00")
+        self.assertEqual(row["kind"], "activity")
+        self.assertEqual(row["tier"], 1)
+        self.assertEqual(row["subject"], "bot")
+        self.assertEqual(row["scope"], "private")
+
+    def test_writer_typeerror_warns_and_counts_fallback(self):
+        now = dt.datetime(2026, 11, 16, 20, 0)
+        plugin = self._plugin()
+        old_writes = []
+        checked = []
+
+        async def _old_write(uid, content, subject="user"):
+            old_writes.append(content)
+            return True
+
+        async def _checked_write(uid, content, kind, tier, scope, group_id, subject="user"):
+            checked.append({"content": content, "kind": kind, "tier": tier,
+                            "scope": scope, "subject": subject})
+            return True
+
+        plugin._data_memory_write = _old_write
+        plugin._write_memory_checked = _checked_write
+        with mock.patch.object(tr.logger, "warning") as warning:
+            tr.write_activity_memory(plugin, [
+                self._row("14:00", "15:30", "逛街", "shopping"),
+                self._row("16:00", "17:00", "逛街", "shopping"),
+            ], now)
+        self.assertEqual(plugin.db.kv_get("activity_mem_fallback"), 2)
+        self.assertEqual([call.args[0] for call in warning.call_args_list],
+                         ["[amo] 想记不支持 tags/idem_key/importance（event:%s），"
+                          "退回通用写入口: %s",
+                          "[amo] 想记不支持 tags/idem_key/importance（event:%s），"
+                          "退回通用写入口: %s"])
+        self.assertEqual(old_writes, [])
+        self.assertEqual(len(checked), 2)
+        self.assertEqual({item["kind"] for item in checked}, {"activity"})
 
     def test_async_and_failure_isolated(self):
         now = dt.datetime(2026, 11, 16, 20, 0)
@@ -404,7 +485,11 @@ class BackdoorTests(unittest.TestCase):
         for prev, nxt in zip(fixed, fixed[1:]):
             self.assertLessEqual(prev["end"], nxt["start"])
 
-    def test_locked_commit_documented_whole_replace(self):
+    def test_commit_documented_whole_replace(self):
+        """文档 lint：只钉源码注释里的关键词，不是行为测试。
+
+        行为验证见 tests/test_commit_semantics.py（整份替换、增量/外部重叠、幂等）。
+        """
         from amo_state_schedule import ScheduleStateMixin
         body = inspect.getsource(ScheduleStateMixin._commit_schedule_change_locked)
         self.assertIn("唯一落库点", body)
@@ -416,9 +501,16 @@ class BackdoorTests(unittest.TestCase):
         self.assertIn("normalize_day(kept)", body)
 
     def test_runtime_snapshot_normalizes(self):
-        with open(os.path.join(ROOT, "amo_runtime.py"), encoding="utf-8") as fh:
-            text = fh.read()
-        idx = text.find("save_schedule(save_key, items)")
+        # 2026-11-17：amo_runtime 拆成门面 + tick/context/reply 三个 mixin 模块，
+        # 落库调用点跟着 tick 走；这里按门面→子模块顺序拼回原来的"源码视图"。
+        text = ""
+        for name in ("amo_runtime.py", "amo_runtime_context.py",
+                     "amo_runtime_reply.py", "amo_runtime_tick.py"):
+            with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
+                text += fh.read() + "\n"
+        # 2026-11-17：落库统一走 HumanState.save_day（表 + kv 一起写），
+        # 快照仍然先 normalize 再存，这里锁住的语义没变。
+        idx = text.find("save_day(save_key, items)")
         self.assertGreater(idx, 0)
         window = text[max(0, idx - 900):idx]
         self.assertIn("normalize_day", window)
@@ -426,8 +518,7 @@ class BackdoorTests(unittest.TestCase):
 
 class FrontendGeneratingTests(unittest.TestCase):
     def test_html_shows_generating_message(self):
-        with open(os.path.join(ROOT, "views", "dashboard", "index.html"), encoding="utf-8") as fh:
-            html = fh.read()
+        html = panel_source(ROOT)
         self.assertIn('data.status === "generating"', html)
         self.assertIn("咬着笔头", html)
 

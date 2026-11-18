@@ -21,9 +21,10 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         from .amo_memory_context import RecallContextMixin
         from .amo_memory_data import DataSyncMixin
     except ImportError:  # 直接按文件加载时
-        from amo_memory_bridge import BridgeMixin
-        from amo_memory_context import RecallContextMixin
-        from amo_memory_data import DataSyncMixin
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_memory_bridge import BridgeMixin
+            from amo_memory_context import RecallContextMixin
+            from amo_memory_data import DataSyncMixin
 
 
 class MemoryMixin(DataSyncMixin, BridgeMixin, RecallContextMixin):

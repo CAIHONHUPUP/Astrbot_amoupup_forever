@@ -23,7 +23,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 import os
 import time as _time
@@ -173,6 +174,11 @@ def now(explicit=""):
     if zone is None:
         return datetime.now()
     return datetime.now(zone).replace(tzinfo=None)
+
+
+def now_ts() -> float:
+    """epoch 秒：与 ``time.time()`` 同值，作为插件内唯一「现在」的秒级入口。"""
+    return _time.time()
 
 
 def today(explicit=""):

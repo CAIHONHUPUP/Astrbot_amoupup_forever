@@ -8,6 +8,9 @@ import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+class FakePlugin:
+    def __init__(self):
+        self.mem = FakeMem()
 
 from memory_hooks import (  # noqa: E402
     CAP_RECALL,
@@ -43,9 +46,6 @@ class FakeMem:
         ][:limit]
 
 
-class FakePlugin:
-    def __init__(self):
-        self.mem = FakeMem()
 
 
 class FakeRuntime:

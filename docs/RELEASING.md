@@ -35,7 +35,7 @@ python work/refactor/upload.py amo         # 真上传：推 main + 建 tag/Rele
 |---|---|
 | Version | `metadata.yaml` / `CHANGELOG.md` / `README.md` / `main.py` 四处版本一致 |
 | Type check | `tools/mypy_check.py`（严格模式 `--check-untyped-defs`，失败即红） |
-| Quality gate | schema 键数、全目录编译、路由数（84）、面板 JS 语法、pyflakes |
+| Quality gate | schema 键数、全目录编译、路由数（97）、面板 JS 语法、pyflakes |
 | Run tests | 1465 项单测 + 覆盖率（`.coveragerc` 底线 58%） |
 
 `mypy` 版本钉在 `2.4.1`，不要随手升；本地跑法：

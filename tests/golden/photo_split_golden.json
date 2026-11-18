@@ -1,0 +1,248 @@
+{
+ "generate_timeout": 180,
+ "home_room": [
+  "living",
+  "bedroom",
+  "",
+  ""
+ ],
+ "intent_words": [
+  "拍照",
+  "拍张",
+  "拍个",
+  "拍给我",
+  "拍来看",
+  "照片",
+  "自拍",
+  "看看你",
+  "看看你在",
+  "你在哪",
+  "在哪呢"
+ ],
+ "max_image_bytes": 16777216,
+ "outdoor_poses": {
+  "hospital": "坐在候诊椅上，双手放在腿上，正对镜头",
+  "hotel": "坐在床边，一只手撑在身侧，身体微微后仰看镜头",
+  "mall": "站在橱窗前，一只手自然垂着，微微侧身",
+  "office": "站在工位旁，一只手搭在椅背上，微微侧身",
+  "restaurant": "坐在餐桌旁，双手放在桌上，正对镜头",
+  "road": "站在车厢里，一只手扶着头顶的扶手或吊环，身体微微侧着看镜头",
+  "scenic": "站在景点前，抬手挡了一下阳光，头发被风吹起",
+  "station": "站在候车厅里，一只手扶着行李箱拉杆",
+  "street": "站在路边，身体侧一点，回头看向镜头"
+ },
+ "outfit_pool": [
+  "米色针织衫配牛仔裤",
+  "白色衬衫配深色半裙",
+  "浅灰卫衣配运动裤",
+  "奶油色开衫配直筒裤",
+  "黑色小高领配卡其色半裙",
+  "牛仔外套配白色T恤和长裤",
+  "浅蓝衬衫配米白阔腿裤",
+  "粉色卫衣配牛仔裙",
+  "燕麦色毛衣配深色半裙",
+  "条纹长袖配浅色牛仔裤"
+ ],
+ "place_words": [
+  "公园",
+  "商场",
+  "咖啡",
+  "学校",
+  "公司",
+  "家里",
+  "街上",
+  "海边",
+  "餐厅",
+  "超市",
+  "地铁",
+  "床上",
+  "办公室",
+  "图书馆",
+  "电影院",
+  "游乐园",
+  "动物园",
+  "植物园",
+  "江边",
+  "河边",
+  "山上",
+  "健身房",
+  "教室",
+  "宿舍",
+  "路边",
+  "小区"
+ ],
+ "pose_line_for": [
+  "站在车厢里，一只手扶着头顶的扶手或吊环，身体微微侧着看镜头",
+  "坐在座位上系好安全带，一只手举手机自拍，不要站起来",
+  "坐在床边，一只手撑在身侧，身体微微后仰看镜头"
+ ],
+ "ride_words": {
+  "bus": [
+   "公交",
+   "大巴",
+   "巴士"
+  ],
+  "car": [
+   "开车",
+   "打车",
+   "taxi",
+   "网约",
+   "车里",
+   "驾驶",
+   "副驾",
+   "车上"
+  ],
+  "subway": [
+   "地铁",
+   "subway",
+   "metro",
+   "车厢"
+  ]
+ },
+ "scene_allowed": {
+  "home": "家里该有的东西：沙发或床、抱枕、毯子、水杯、窗边的光",
+  "hospital": "医院该有的东西：候诊椅、叫号屏、走廊、扶手、消毒水味的环境",
+  "hotel": "酒店房间该有的东西：床和枕头、床头灯、行李、窗帘、地毯",
+  "mall": "商场该有的东西：店铺橱窗、扶梯、地砖、指示牌、来往的人",
+  "office": "工位该有的东西：办公桌、显示器、键盘、马克杯、文件、办公椅",
+  "restaurant": "餐厅该有的东西：餐桌、碗筷餐盘、菜单、杯子、店里的灯",
+  "road": "路上该有的东西：扶手或安全带、车窗、座椅、窗外街景或隧道",
+  "scenic": "景区该有的东西：景点建筑或山水、栏杆、游客、路牌、自然光",
+  "station": "车站该有的东西：候车座椅、指示牌、行李箱、时刻表、行人",
+  "street": "街边该有的东西：路面、行道树、店面、路牌、走过的行人"
+ },
+ "scene_allowed_line": [
+  "路上该有的东西：扶手或安全带、车窗、座椅、窗外街景或隧道",
+  "只出现这个地点本来就有的东西"
+ ],
+ "scene_policy": {
+  "default": {
+   "banned_postures": [],
+   "banned_props": [
+    "bedding",
+    "tableware"
+   ],
+   "poses": [
+    "standing",
+    "sit"
+   ],
+   "seat": ""
+  },
+  "home": {
+   "banned_postures": [],
+   "banned_props": [],
+   "poses": [
+    "library"
+   ],
+   "seat": "soft"
+  },
+  "hospital": {
+   "banned_postures": [],
+   "banned_props": [
+    "bedding"
+   ],
+   "poses": [
+    "sit"
+   ],
+   "seat": "chair"
+  },
+  "hotel": {
+   "banned_postures": [],
+   "banned_props": [],
+   "poses": [
+    "sit_edge",
+    "stand"
+   ],
+   "seat": "soft"
+  },
+  "mall": {
+   "banned_postures": [],
+   "banned_props": [
+    "bedding",
+    "instant_noodles",
+    "tableware"
+   ],
+   "poses": [
+    "stand",
+    "walk"
+   ],
+   "seat": "bench"
+  },
+  "office": {
+   "banned_postures": [],
+   "banned_props": [
+    "bedding"
+   ],
+   "poses": [
+    "stand",
+    "sit"
+   ],
+   "seat": "chair"
+  },
+  "restaurant": {
+   "banned_postures": [],
+   "banned_props": [],
+   "poses": [
+    "sit"
+   ],
+   "seat": "chair"
+  },
+  "road": {
+   "banned_postures": [
+    "kneel",
+    "sit_on_seat",
+    "cross_leg"
+   ],
+   "banned_props": [
+    "bedding",
+    "instant_noodles",
+    "thermos",
+    "tableware",
+    "food"
+   ],
+   "poses": [
+    "standing",
+    "hold_strap"
+   ],
+   "seat": "hard_bench"
+  },
+  "scenic": {
+   "banned_postures": [],
+   "banned_props": [
+    "bedding",
+    "instant_noodles",
+    "tableware"
+   ],
+   "poses": [
+    "stand",
+    "walk"
+   ],
+   "seat": "bench"
+  },
+  "station": {
+   "banned_postures": [],
+   "banned_props": [
+    "bedding",
+    "instant_noodles",
+    "tableware"
+   ],
+   "poses": [
+    "stand"
+   ],
+   "seat": "bench"
+  },
+  "street": {
+   "banned_postures": [],
+   "banned_props": [
+    "bedding",
+    "instant_noodles",
+    "tableware"
+   ],
+   "poses": [
+    "stand",
+    "walk"
+   ],
+   "seat": "bench"
+  }
+ }
+}

@@ -6,9 +6,22 @@ private / work_group / friend_group / stranger_group。
 群聊 Prompt 走“社交面具”，发送层再做私密词硬拦截；主动消息只走私聊。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import json
 import re
+
+try:  # 提示词注册表（Phase 4）
+    from . import amo_prompt_registry as _prompts
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_prompt_registry as _prompts
 
 SCENES = ("private", "work_group", "friend_group", "stranger_group")
 DEFAULT_GROUP_SCENE = "stranger_group"
@@ -90,28 +103,19 @@ def owner_nickname(plugin):
 def prompt_block(scene, sender_name="群友", owner_name="他", is_owner=False, mentioned=False):
     scene = scene if scene in SCENES else DEFAULT_GROUP_SCENE
     if scene == "private":
-        return ("【私聊】这是私聊，没有外人：可以撒娇、抱怨、分享身体和钱的事，"
-                "可以叫他老公/亲爱的，情绪可以拉满。")
-    parts = []
-    if scene == "work_group":
-        parts.append("【群聊·工作群】你现在在有很多同事和老板的工作群。必须礼貌、得体、甚至有点社恐；"
-                     "绝不撒娇，绝不提房贷、生病、钱等私人话题；每次回复不超过 15 字，多用“嗯”“好的”“收到”。")
-    elif scene == "friend_group":
-        parts.append("【群聊·熟人】你在熟人/闺蜜群里。可以放飞自我、吐槽工作、八卦、发可爱表情包；"
-                     "但如果他在群里，不要叫老公，叫昵称或直接叫名字。")
-    else:
-        parts.append("【群聊·大群】你在大群里。保持高冷和边界感，不要主动搭话；"
-                     "只有被 @ 并且问到了，才礼貌、简短地回复。")
-    parts.append("【群里的人】这是群聊，说话的人叫%s，他不是你的老公；你老公的昵称是%s。"
-                 "群友搭讪只回“谢谢”“哈哈”，保持距离。" % (sender_name or "群友", owner_name or "他"))
+        return _prompts.render("group.scene.private")
+    scene_block = {"work_group": "group.scene.work",
+                   "friend_group": "group.scene.friend"}.get(scene, "group.scene.stranger")
+    parts = [
+        _prompts.render(scene_block),
+        _prompts.render("group.scene.roster", sender_name=sender_name, owner_name=owner_name),
+    ]
     if is_owner:
-        soft = "别闹，在忙呢" if scene == "work_group" else "嗯？怎么啦"
-        parts.append("【他@你】这条是你老公在群里跟你说话：可以稍微软一点，但仍受群规限制"
-                     "（工作群最多回“%s”），不能叫老公、不能提私事。" % soft)
+        parts.append(_prompts.render("group.scene.owner", scene=scene))
     elif mentioned:
-        parts.append("【被@】这条 @ 了你：礼貌简短回答，不要热情过头。")
+        parts.append(_prompts.render("group.scene.mentioned"))
     else:
-        parts.append("【不主动】没 @ 你、也没问你时，尽量少接话；群聊回复不超过 20 字，语气平淡。")
+        parts.append(_prompts.render("group.scene.silent"))
     return "\n".join(parts)
 
 
@@ -168,7 +172,7 @@ def _recent(data, seconds, now):
         return False
 
 def micro_prompt_block(plugin, text, memory_text="", now=None, rng=None):
-    now = (now or _dt.datetime.now()).timestamp()
+    now = (now or _amo_clock.now()).timestamp()
     rng = rng or random
     body = str(text or "")
     parts = []

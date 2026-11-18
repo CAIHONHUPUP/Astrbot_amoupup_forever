@@ -139,7 +139,7 @@ class PersonaTests(unittest.TestCase):
         async def name_for(umo=""):
             return "阿珍"
 
-        plugin._persona_name_for = name_for
+        setattr(plugin, "_persona_name_for", name_for)
         prompt = asyncio.run(LLMService(plugin).persona())
         self.assertIn("说话短一点", prompt)
         self.assertIn("你的名字是阿珍", prompt)

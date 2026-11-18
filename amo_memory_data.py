@@ -10,7 +10,20 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
+
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .errors import CODE_FAIL
+    from .observability import log_event
+else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    try:
+        from .errors import CODE_FAIL
+        from .observability import log_event
+    except ImportError:  # 直接按文件加载时
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from errors import CODE_FAIL
+            from observability import log_event
 
 import asyncio
 import re
@@ -31,12 +44,13 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             to_int,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            INTERNAL_RELATION_NODES,
-            logger,
-            to_float,
-            to_int,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                INTERNAL_RELATION_NODES,
+                logger,
+                to_float,
+                to_int,
+            )
 
 if TYPE_CHECKING:
     from .amo_types import PluginLike as _MixinBase
@@ -362,7 +376,8 @@ class DataSyncMixin(_MixinBase):
             try:
                 ok = await self._push_profile_to_data(uid, profile)
             except Exception as exc:
-                logger.warning("[amo] 推送画像 %s 异常: %s: %s" % (uid, type(exc).__name__, exc))
+                log_event("warning", "profile.push.failed", uid=uid,
+                          error=type(exc).__name__, detail=str(exc), error_code=CODE_FAIL)
                 ok = False
             if ok:
                 pushed += 1
@@ -383,9 +398,9 @@ class DataSyncMixin(_MixinBase):
         try:
             self.db.update_profile(uid, mark_local=False, **fields)
         except Exception as exc:
-            logger.warning("[amo] 拉回画像 %s 失败: %s" % (uid, exc))
+            log_event("warning", "profile.pull.failed", uid=uid, detail=str(exc), error_code=CODE_FAIL)
             return False
-        logger.info("[amo] 画像从数据插件拉回：%s %s" % (uid, ",".join(fields.keys())))
+        log_event("info", "profile.pull.done", uid=uid, fields=",".join(fields.keys()))
         return True
     async def _push_relation_to_data(self, a_uid, b_uid, relation, note=""):
         # "bot"/"self" 是插件内部标识，不是真实人物：写进记忆终端会让关系图多出一个
@@ -415,7 +430,7 @@ class DataSyncMixin(_MixinBase):
         return [dict(row) for row in (rows or []) if isinstance(row, dict)]
 
     async def _all_memories(self, uid, keyword="", limit=50):
-        """面板/命令统一的记忆读取入口：只读「能记」(Astr_Amo_data)。
+        """面板/命令统一的记忆读取入口：只读「能记」（数据插件，旧名见 amo_compat）。
 
         以前各走各的：记忆页读能记，画像页和命令只读旧适配器 → 只装能记时会显示 0 条。
         """
@@ -426,7 +441,7 @@ class DataSyncMixin(_MixinBase):
     async def _sync_with_data_plugin(self):
         """启动时双向同步：首次把本地画像/关系/日程缓存推过去，之后以插件为准补齐本地。
 
-        数据插件（Astr_Amo_data）可能比 amo 后加载，所以允许重试：
+        数据插件（旧名见 amo_compat）可能比 amo 后加载，所以允许重试：
         - 本实例只成功同步一次（_data_synced），之后所有调用直接返回，不重复推送；
         - 启动、on_astrbot_loaded、后台 tick 三处可能同时来，用锁串行，避免重复迁移。
         """
@@ -557,21 +572,27 @@ class DataSyncMixin(_MixinBase):
             logger.debug("[amo] 金融记忆写入失败: %s" % exc)
             return False
 
-    async def finance_recall(self, query, limit=6):
-        """金融记忆检索（返回 list[dict]）；失败返回空列表。"""
+    async def finance_recall(self, query, limit=6, tags=""):
+        """金融记忆检索（返回 list[dict]）；失败返回空列表。
+
+        tags 追加在末尾：老的位置调用不受影响；需要按事件回查时再传。
+        """
         uid = self.finance_memory_uid()
         if not uid:
             return []
         try:
-            return await self._data_memory_recall(uid, str(query or ""), limit=int(limit))
+            return await self._data_memory_recall(uid, str(query or ""), limit=int(limit),
+                                                  tags=tags)
         except Exception as exc:
             logger.debug("[amo] 金融记忆检索失败: %s" % exc)
             return []
 
-    async def _data_memory_recall(self, uid, text, limit=6, event=None):
-        """从「记忆终端」（Astr_Amo_data）取回这个人的记忆。
+    async def _data_memory_recall(self, uid, text, limit=6, event=None, tags=""):
+        """从「记忆终端」（数据插件，旧名见 amo_compat）取回这个人的记忆。
 
         陪伴自己不存记忆：装了就只问它要，没装才退回外挂记忆插件。
+        tags 非空时只召回带这个标签的记忆（如 "#活动 event:<id>"）；旧版能记不认
+        tags 时退回不带标签的同一调用，群聊 scope 不丢、召回不丢。
         """
         mem = self._data_mem()
         if mem is None or not uid:
@@ -594,23 +615,31 @@ class DataSyncMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_llm.LlmMixin._data_memory_recall", _amo_exc)
             platform = ""
-        try:
-            rows = await recall(
-                self._data_bot_id(), str(uid), str(text or ""),
-                max(1, to_int(limit, 6)), scope, group_id, platform=platform,
-            )
-        except TypeError:
-            # 旧版没有 scope / group_id / platform 参数
+        args = (self._data_bot_id(), str(uid), str(text or ""), max(1, to_int(limit, 6)))
+        tag = str(tags or "").strip()
+        rows = None
+        if tag:
             try:
-                rows = await recall(
-                    self._data_bot_id(), str(uid), str(text or ""), max(1, to_int(limit, 6))
-                )
+                rows = await recall(*args, scope, group_id, platform=platform, tags=tag)
+            except TypeError:
+                # 旧版能记没有 tags 参数：下面不带 tags 的调用会接住这次召回
+                rows = None
             except Exception as exc:
                 logger.debug("[amo] 记忆终端召回失败: %s" % exc)
                 return []
-        except Exception as exc:
-            logger.debug("[amo] 记忆终端召回失败: %s" % exc)
-            return []
+        if rows is None:
+            try:
+                rows = await recall(*args, scope, group_id, platform=platform)
+            except TypeError:
+                # 更老的能记没有 scope / group_id / platform 参数
+                try:
+                    rows = await recall(*args)
+                except Exception as exc:
+                    logger.debug("[amo] 记忆终端召回失败: %s" % exc)
+                    return []
+            except Exception as exc:
+                logger.debug("[amo] 记忆终端召回失败: %s" % exc)
+                return []
         items = []
         for row in rows or []:
             if not isinstance(row, dict):
@@ -637,8 +666,11 @@ class DataSyncMixin(_MixinBase):
         return items
     async def _data_memory_write(self, uid, content, kind="fact", tier=1,
                                  scope="private", group_id="", subject="user", platform="",
-                                 idem_key=""):
-        """把一条记忆交给「记忆终端」写入；subject=user/bot 区分主体。"""
+                                 idem_key="", importance=None, tags=""):
+        """把一条记忆交给「记忆终端」写入；subject=user/bot 区分主体。
+
+        importance 传了就覆盖 tier 推导（仍是 0-1 小数），tags 原样落库。
+        """
         mem = self._data_mem()
         if mem is None or not uid:
             return False
@@ -649,7 +681,11 @@ class DataSyncMixin(_MixinBase):
         if not callable(remember):
             return False
         level = to_int(tier, 1)
-        importance = 0.75 if level >= 2 else (0.55 if level == 1 else 0.35)
+        if importance is None:
+            importance = 0.75 if level >= 2 else (0.55 if level == 1 else 0.35)
+        else:
+            importance = max(0.0, min(1.0, to_float(importance, 0.5)))
+        tags = str(tags or "").strip()
         # 群聊写 group + group_id，私聊写 private（记忆终端按这个分桶）
         scope = "group" if str(scope or "") == "group" else "private"
         group_id = str(group_id or "") if scope == "group" else ""
@@ -661,15 +697,16 @@ class DataSyncMixin(_MixinBase):
         )
         platform = str(platform or "").strip()
         variants = []
+        base = {"kind": str(kind or "fact"), "importance": importance,
+                "scope": scope, "group_id": group_id, "subject": subject,
+                "idem_key": str(idem_key or "")}
         if platform:
             # 新版记忆终端认 platform：写进去才知道这条是飞书还是 QQ 说的
-            variants.append({"kind": str(kind or "fact"), "importance": importance,
-                             "scope": scope, "group_id": group_id, "subject": subject,
-                             "platform": platform, "idem_key": str(idem_key or "")})
+            variants.append(dict(base, platform=platform, tags=tags))
         variants.extend([
-            {"kind": str(kind or "fact"), "importance": importance,
-             "scope": scope, "group_id": group_id, "subject": subject,
-             "idem_key": str(idem_key or "")},
+            # tags 是 2026-11-16 新加的：老版本不认就退一步，但仍尽量保住 idem
+            dict(base, tags=tags),
+            dict(base),
             {"kind": str(kind or "fact"), "importance": importance,
              "scope": scope, "group_id": group_id},
             {"kind": str(kind or "fact"), "importance": importance},

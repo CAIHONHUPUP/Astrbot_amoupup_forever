@@ -9,6 +9,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+from fixtures import FakeDB  # Phase 11 共享测试桩
 
 import group_scene as mt  # noqa: E402
 
@@ -21,15 +22,6 @@ class Rng:
         return self.value
 
 
-class FakeDB:
-    def __init__(self):
-        self.data = {}
-
-    def kv_get(self, key, default=None):
-        return self.data.get(key, default)
-
-    def kv_set(self, key, value):
-        self.data[key] = value
 
 
 class FakeWallet:

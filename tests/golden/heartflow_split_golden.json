@@ -1,0 +1,158 @@
+{
+ "base_prompt_sha256": "0b330b193babf95e4449944e6342300f4eed8d196444a4ed3d400e07cff199ea",
+ "build_immersive_prompt": [
+  "\n## 机器人身份\n机器人名字：大肥鱼\n机器人别名：小鱼、鱼鱼\n如果当前消息包含这些名字或别名，就是在叫机器人，不是叫其他群友。\n\n## ⚠️ 最高优先级：追踪机器人自己的发言\n对话历史（contexts）中，role 为 assistant 的消息是【机器人自己】之前说的话，role 为 user 的消息是群友说的话（带 [昵称] 前缀）。\n先找到机器人最近说了什么，再判断当前消息与机器人发言的关系。\n\n## 沉浸模式判断规则\n先按顺序推理：① 从对话历史还原最近谁在跟谁说话 ② 判断当前这条在对谁说（bot / other / all / unknown）\n③ 再决定要不要说话。\n\n你的默认倾向是 **不回复**。只有在以下情况之一时才回复：\n1. 消息直接 @ 了机器人或提到机器人名字\n2. 消息明确向机器人提问\n3. 消息是机器人发起的对话的延续\n4. 消息内容与机器人刚聊的话题直接相关\n5. 群聊中出现冷场，机器人的回复能自然活跃气氛\n6. 群里正聊得热闹、话题轻松，机器人插一句能接上（仅当关闭“只在被叫到时回复”时才成立）\n\n## 当前状态\n- 模式: 沉浸模式 | 剩余: 120秒 | 活跃度: 一般 (42%)\n\n## 待判断消息\n[小明] 今天好热\n\n## 严格判断\n根据上述规则严格判断。沉默也是好的选择，但不要因为“没叫我”就一律沉默。\n严格返回 JSON：\n{\"should_reply\": true或false, \"target\": \"bot|other|all|unknown\", \"thought\": \"一句话说明在对谁说\", \"reasoning\": \"简短原因\"}\n",
+  "你是严格的群聊机器人判断系统，严格返回JSON，不要输出其他内容。",
+  [
+   "ctx-1",
+   "ctx-2"
+  ]
+ ],
+ "build_judge_prompt": [
+  "你是群聊机器人决策系统，判断机器人是否应该回复消息。\n\n## 机器人身份\n机器人名字：大肥鱼\n机器人别名：小鱼、鱼鱼\n如果当前消息包含这些名字或别名，说明群友是在叫机器人，不是叫其他群友；relevance、continuity 必须给高分。\n\n## 群成员（按最近发言）\n小明（最近发言）、小红\n带「（机器人）」的是别的机器人：它们说的话只是背景，不要当成群友在叫你，也不要去接它们的话；\n群友在叫它们时，target 一律算 other，不接。\n\n## ⚠️ 最高优先级：关注机器人自己的发言\n对话历史（contexts）中，role 为 assistant 的消息是【机器人自己】之前说的话，role 为 user 的消息是群友说的话（带 [昵称] 前缀）。\n判断时按这三步走：\n1. 先回顾机器人最近说了什么（见下方\"上次Bot回复\"，以及对话历史中的 assistant 消息）\n2. 判断当前消息是否与机器人的发言存在关联：追问、回应、赞同、反驳、补充、顺着话题继续\n3. 如果当前消息是在回应机器人说过的话，continuity 必须给高分\n\n## 🧠 打分之前先走一遍逻辑推理（按顺序想清楚，再打分）\n**第 1 步 · 还原现场**：读 dialogue 历史（contexts），找到最近的对话关系。\n- role 为 assistant 的是【机器人自己】说过的话，带 [昵称] 的是群友。\n- 看最近 3-5 条：谁在回答谁？有没有人的问题还悬着？现在这条在接谁的话？\n\n**第 2 步 · 判断这条消息在对谁说（target）**：\n- `bot`：消息里出现机器人名字/别名、@机器人、引用机器人上一条，才算在对机器人说。\n  **单独一个“你 / 你呢 / 你pr好了吗”不算**——群聊里“你”大多在问别人。\n- `other`：@别人、引用/回复别人的消息、叫了别的群友名字、两个人一问一答；\n  或者**上一条明确 @ 了某个群友 / 回复了某个群友，这条没有新的 @/引用/名字**——那就继续算那个群友。\n- `all`：抛给全群的问题、分享、感叹、群通知，没有特定对象。\n- `unknown`：信息不足，看不出来。\n\n对话历史每条都带 `[HH:MM]` 时间；群友消息后面的 `→@xxx` 表示这条 @ 了谁，\n`→回复xxx` 表示这条在回复谁。判断 target 时优先看这两个标记，不要只看“你”。\n\n**时间规则**：如果“上次Bot回复”已经超过 3 分钟，当前消息**不要**当成在接机器人的话；\n超过 5 分钟只当背景。不要因为机器人十几分钟前说过一句“我去翻代码”，\n就把一句“你pr好了吗”认成在追问机器人。\n\n**第 3 步 · 判断插话价值（这一步才是核心）**：\n不是“被叫到才说话”的客服；你是群里一个会自己插话的人。\n- target = bot：正常接话，relevance、continuity 可以给高分。\n- target = other / all：问自己“我接一句自然吗？”\n  - 自然：话题看得懂、能接梗、能补充、能开个玩笑、群里正冷场、大家在聊你也在参与的事 → 分数照常给，不要因为没点名就把分数压到底。\n  - 不自然：两个人在聊私事、正在争执、在解决和机器人无关的具体事务（约饭、开黑、转账），\n    或者**在聊技术细节（模型/接入/插件/API/部署）** → social、timing 给低分，机器人插进去也接不上。\n\n**第 4 步 · 分辨“在聊技术”和“在质疑我”**：\n群友在讨论模型、接入、插件、API、部署、参数这类技术话题时，那是他们在聊自己的事，**不是在骂你、也不是在质疑你**。\n- 没点名你 → 当作普通话题，不要当成挑衅；插话也只能是闲聊，不要辩解“我是真人”。\n- 真的在问“你是不是机器人/人机”并冲着你说 → 才算质疑，可以按普通反应处理。\n\n**第 5 步 · 打分**：按上面的判断给 5 个维度打分。\n不要预设“不是叫我 = 全部最低分”，那样机器人就永远不会在群里说话了；\n也不要因为想说话就把明显插不进去的对话打成高分。\n\n## 评分规则\n- 所有评分必须在 1 到 10 之间。\n- 不要给出0分，最低分为 1 分。\n- 即使完全不相关，也至少给 1 分。\n\n## 评分维度\n\n### 1. relevance 内容相关度\n- 低分情况：无关\n- 高分情况：有关\n\n### 2. willingness 回复意愿\n- 低分情况：不想\n- 高分情况：想\n\n### 3. social 社交适宜性\n- 低分情况：不宜\n- 高分情况：适宜\n\n### 4. timing 时机\n- 低分情况：早\n- 高分情况：好\n\n### 5. continuity 连贯\n- 低分情况：断\n- 高分情况：连\n\n\n## 待判断消息\n[小明] 今天好热\n\n## 当前状态\n- 群聊ID: group:100\n- 上次回复: 7分钟前\n- 状态: 状态：闲聊\n- 对话流: 对话流：接话\n- ⭐ 上次Bot回复: 上次：我也热\n- 活跃度: 一般 (42%)\n\n## 综合判断\n阈值: 0.6\n分数范围: 1-10分\n\n## 结构化字段\n- `is_mentioning_bot`：只有出现机器人名字/别名、@机器人、引用机器人上一条时才为 true；\n  单独的“你”不算。上一条 @ 的是别人、这条只是“你……”，一律 false。\n- `context_type`：mention_bot=在叫机器人；knowledge_comment=在聊知识、新闻、作品并发表看法；question=在提问（不一定问机器人）；casual_chat=日常闲聊；other=其他。\n- `topic`：当前在聊什么，2-6 个字（如“AI技术”“晚饭”“加班”）。\n- `reply_style`：answer=直接回答；comment=插一句评论/接话；quote=引用着接更清楚（人多、指代不清时）；none=这次不该说话。\n\n## 返回格式\n严格返回 JSON，不要输出任何其他内容：\n{\"relevance\": 分数, \"willingness\": 分数, \"social\": 分数, \"timing\": 分数, \"continuity\": 分数, \"is_mentioning_bot\": true或false, \"context_type\": \"mention_bot|knowledge_comment|question|casual_chat|other\", \"topic\": \"2-6个字\", \"target\": \"bot|other|all|unknown\", \"reply_style\": \"answer|comment|quote|none\", \"thought\": \"一句话说明这条在对谁说、依据是什么\", \"reasoning\": \"简短分析原因\"}\n",
+  "你是群聊机器人决策系统，严格返回JSON，不要输出其他内容。所有分数必须在1到10之间，不能为0。",
+  [
+   "ctx-1",
+   "ctx-2"
+  ]
+ ],
+ "clamp": [
+  5.0,
+  6.0,
+  10.0,
+  5.0,
+  7.0,
+  5.0
+ ],
+ "clamp_zero": [
+  0.0,
+  0.6
+ ],
+ "extract_json": [
+  {
+   "a": 1
+  },
+  {
+   "b": 2
+  },
+  {
+   "c": 3
+  }
+ ],
+ "judge_result": {
+  "confidence": 0.6666666666666666,
+  "context_type": "casual_chat",
+  "continuity": 9.0,
+  "is_mentioning_bot": false,
+  "overall_score": 0.6666666666666666,
+  "reasoning": "r",
+  "relevance": 8.0,
+  "reply_style": "comment",
+  "should_reply": true,
+  "social": 5.0,
+  "target": "bot",
+  "timing": 7.0,
+  "topic": "天气",
+  "willingness": 6.0
+ },
+ "normalize": {
+  "context": [
+   "mention_bot",
+   "question",
+   "casual_chat",
+   ""
+  ],
+  "style": [
+   "answer",
+   "quote",
+   "none",
+   ""
+  ],
+  "target": [
+   "bot",
+   "other",
+   "all",
+   "",
+   "",
+   "bot"
+  ]
+ },
+ "rules_section": "### 1. relevance 内容相关度\n- 低分情况：无关\n- 高分情况：有关\n\n### 2. willingness 回复意愿\n- 低分情况：不想\n- 高分情况：想\n\n### 3. social 社交适宜性\n- 低分情况：不宜\n- 高分情况：适宜\n\n### 4. timing 时机\n- 低分情况：早\n- 高分情况：好\n\n### 5. continuity 连贯\n- 低分情况：断\n- 高分情况：连\n",
+ "safe_extract": [
+  1.0,
+  9.0,
+  5.0
+ ],
+ "validate_config": {
+  "context_messages_count": 50,
+  "debounce_delay": 10.0,
+  "dynamic_activity_weights": [
+   0.4,
+   0.3,
+   0.3
+  ],
+  "dynamic_activity_window": 600,
+  "dynamic_threshold_max": 1.0,
+  "dynamic_threshold_min": 0.9,
+  "enable_debounce": true,
+  "enable_detailed_log": false,
+  "enable_dynamic_threshold": true,
+  "immersive_mode_duration": 0,
+  "judge_context_count": 1,
+  "judge_max_retries": 10,
+  "judge_rules": [
+   {
+    "dimension_display": "内容相关度",
+    "dimension_name": "relevance",
+    "high_desc": "有关",
+    "low_desc": "无关",
+    "weight": 0.3
+   },
+   {
+    "dimension_display": "回复意愿",
+    "dimension_name": "willingness",
+    "high_desc": "想",
+    "low_desc": "不想",
+    "weight": 0.2
+   },
+   {
+    "dimension_display": "社交适宜性",
+    "dimension_name": "social",
+    "high_desc": "适宜",
+    "low_desc": "不宜",
+    "weight": 0.2
+   },
+   {
+    "dimension_display": "时机",
+    "dimension_name": "timing",
+    "high_desc": "好",
+    "low_desc": "早",
+    "weight": 0.15
+   },
+   {
+    "dimension_display": "连贯",
+    "dimension_name": "continuity",
+    "high_desc": "连",
+    "low_desc": "断",
+    "weight": 0.15
+   },
+   {
+    "dimension_display": "未知维",
+    "dimension_name": "mood",
+    "high_desc": "",
+    "low_desc": "",
+    "weight": 0.99
+   }
+  ],
+  "judgment_paused_timeout": 5,
+  "max_debounce_wait": 1.0,
+  "reply_threshold": 0.7
+ },
+ "weights": {
+  "continuity": 0.15,
+  "relevance": 0.3,
+  "social": 0.2,
+  "timing": 0.15,
+  "willingness": 0.2
+ }
+}

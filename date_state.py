@@ -9,6 +9,13 @@
 - 记忆统一写成 [共同记忆]。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import logging
 logger = logging.getLogger("amo")
@@ -31,7 +38,7 @@ def _kv(plugin, key, default=None):
 
 
 def _now(now=None):
-    return now or _dt.datetime.now()
+    return now or _amo_clock.now()
 
 
 def record(plugin, activity, ended_ts=0, hours=6, now=None):

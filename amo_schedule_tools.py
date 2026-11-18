@@ -1,13 +1,24 @@
 # -*- coding: utf-8 -*-
 """日程/天气/消费的 LLM 工具：只执行模型的选择，不替模型做决定。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import json
 
 try:
     from .amo_shared import now_ts, today_str
 except ImportError:
-    from amo_shared import now_ts, today_str
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import now_ts, today_str
+
+try:  # 旅游目的地锁：模型改计划也要过用户聊天同一把锁
+    from . import amo_trip as _trip_guard
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            import amo_trip as _trip_guard
+        except ImportError:
+            _trip_guard = None  # type: ignore[assignment]
 
 
 def _current_item(plugin):
@@ -43,11 +54,24 @@ def _infer(text):
     return "", "", ""
 
 
+def _trip_guard_result(plugin, *texts):
+    """把工具里的计划文本一起过 guard_change；被目的地锁拦下时返回原结果。"""
+    if _trip_guard is None:
+        return {}
+    text = " ".join(str(item or "") for item in texts if str(item or "").strip())
+    if not text:
+        return {}
+    try:
+        result = _trip_guard.guard_change(plugin, text)
+    except Exception:
+        return {}
+    if str((result or {}).get("action") or "") == "blocked":
+        return result or {}
+    return {}
+
+
 def make_update_schedule_tool(plugin):
     async def update_schedule(new_event="", reason="", event=None):
-        day, items, item = _current_item(plugin)
-        if item is None:
-            return json.dumps({"ok": False, "error": "当前没有日程块"}, ensure_ascii=False)
         payload = {}
         if isinstance(new_event, str) and new_event.strip().startswith("{"):
             try:
@@ -55,6 +79,14 @@ def make_update_schedule_tool(plugin):
             except Exception:
                 payload = {}
         text = str(payload.get("activity") or new_event or "改计划")
+        blocked = _trip_guard_result(plugin, text, reason)
+        if blocked:
+            reply = str(blocked.get("reply") or "出发后改不了目的地")
+            return json.dumps({"ok": False, "blocked": True, "error": reply,
+                               "context": reply}, ensure_ascii=False)
+        day, items, item = _current_item(plugin)
+        if item is None:
+            return json.dumps({"ok": False, "error": "当前没有日程块"}, ensure_ascii=False)
         place, zone, category = _infer(text)
         item["activity"] = text
         if place:
@@ -75,6 +107,11 @@ def make_update_schedule_tool(plugin):
 
 def make_continue_schedule_tool(plugin):
     async def continue_current_schedule(reason="", event=None):
+        blocked = _trip_guard_result(plugin, reason)
+        if blocked:
+            reply = str(blocked.get("reply") or "出发后改不了目的地")
+            return json.dumps({"ok": False, "blocked": True, "error": reply,
+                               "context": reply}, ensure_ascii=False)
         day, items, item = _current_item(plugin)
         try:
             plugin.db.kv_set("schedule_weather_continue", {

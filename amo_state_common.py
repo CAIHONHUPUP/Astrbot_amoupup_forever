@@ -17,18 +17,38 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 try:  # 纯规则模块：日程 → 地点/场景优先级（照片严格跟随日程用）
-    from .photo_rules import (
-        CATEGORY_PRIORITY,
+    from .photo_rules import CATEGORY_PRIORITY
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_rules import CATEGORY_PRIORITY
+
+try:  # Phase 11：地点归一唯一实现在 amo_place，zone 门面也走这里
+    from .amo_place import (
+        PLACE_WHITELIST,
+        _PLACE_ALIASES,
+        _PLACE_ZONE_KEEP,
+        normalize_place,
         zone_for_place,
     )
 except ImportError:  # 直接按文件加载时
-    from photo_rules import (
-        CATEGORY_PRIORITY,
-        zone_for_place,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_place import (
+            PLACE_WHITELIST,
+            _PLACE_ALIASES,
+            _PLACE_ZONE_KEEP,
+            normalize_place,
+            zone_for_place,
+        )
+
+try:  # 时间轴：块身份唯一实现 + 统一块读取
+    from .amo_timeline import Timeline, block_id
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_timeline import Timeline, block_id
 
 try:  # amo_shared：时间/解析共享底层
     from .amo_shared import (
@@ -37,53 +57,19 @@ try:  # amo_shared：时间/解析共享底层
         parse_hhmm,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_shared import (
-        in_minute_range,
-        now_ts,
-        parse_hhmm,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import (
+            in_minute_range,
+            now_ts,
+            parse_hhmm,
+        )
 
 
 #: 同一小时小日记最多允许重写的次数（超过后冻结，保留最后一版）
-DIARY_REWRITE_LIMIT = 5
+DIARY_REWRITE_LIMIT = 10
 
 
-PLACE_WHITELIST = frozenset({
-    "家", "卧室", "客厅", "公司", "楼下小馆", "地铁", "商场",
-})
-_PLACE_ALIASES = (
-    ("他桌面上", "家"), ("桌面", "家"), ("电脑里", "家"), ("家里", "家"),
-    ("家中", "家"), ("出租屋", "家"), ("小窝", "家"), ("房间", "家"),
-)
-_PLACE_ZONE_KEEP = frozenset({
-    "road", "health", "hospital", "hotel", "scenic", "restaurant", "station", "school",
-})
-
-
-def normalize_place(value, zone=""):
-    """地点白名单：桌面投影/旧数据一律洗成「家」；通勤/就医/酒店等真实场景保留。"""
-    text = str(value or "").strip()
-    if text in PLACE_WHITELIST:
-        return text
-    for alias, canonical in _PLACE_ALIASES:
-        if alias in text:
-            return canonical
-    if text in ("路上", "医院", "酒店房间", "景区", "餐厅", "车站", "学校"):
-        return text
-    zone = str(zone or "")
-    if zone == "office":
-        return "公司"
-    if zone == "mall":
-        return "商场"
-    if zone == "restaurant":
-        return "楼下小馆"
-    if zone == "road":
-        if "地铁" in text or "公交" in text:
-            return "地铁"
-        return text or "路上"
-    if zone in ("health", "hospital", "hotel", "scenic", "station", "school"):
-        return text or "家"
-    return "家"
+# PLACE_WHITELIST / _PLACE_ALIASES / normalize_place 已迁到 amo_place（顶部 import 兼容旧名）。
 
 
 def slot_has_ended(day, start, end, now=None):
@@ -127,6 +113,59 @@ def slot_is_future(day, start, now=None):
         return start_min > now_min
     except Exception:
         return False
+
+
+# ---------- 日程块身份 / 块级小日记开关 ----------
+
+
+# 块身份（block_id）已迁到 amo_timeline，从本模块顶部导入；旧导入路径不变。
+
+
+def block_diary_enabled(target=True):
+    """块级小日记开关：插件对象走 cfg_bool，bool 原样返回；读不到默认开。"""
+    if isinstance(target, bool):
+        return target
+    cfg = getattr(target, "cfg_bool", None)
+    if not callable(cfg):
+        return True
+    try:
+        return bool(cfg("block_diary_enabled", True))
+    except Exception:
+        return True
+
+
+def block_places(items, item=None):
+    """块窗口内出现过的地点（含块自己的），按出现顺序去重。
+
+    单地点块只有一项；跨地点块（空档合并/过渡块落在同一窗口）拿到地点集合，
+    地点闸用集合校验，不会把块内真实去过的地点误判成幻觉。
+    """
+    row = item if isinstance(item, dict) else {}
+    places = []
+
+    def _add(value):
+        text = str(value or "").strip()
+        if text and text not in places:
+            places.append(text)
+
+    _add(row.get("place"))
+    begin = parse_hhmm(row.get("start"))
+    finish = parse_hhmm(row.get("end")) or (begin + 60)
+    if finish <= begin:
+        finish = begin + 60
+    for entry in items or []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            entry_begin = parse_hhmm(entry.get("start"))
+            entry_finish = parse_hhmm(entry.get("end")) or (entry_begin + 60)
+        except Exception:
+            continue
+        if entry_finish <= entry_begin:
+            entry_finish = entry_begin + 60
+        if entry_begin < finish and entry_finish > begin:
+            _add(entry.get("place"))
+    return places
 
 
 # ---------- 回查 amo_human_state 的代理层（测试会直接改它的模块级函数） ----------
@@ -189,11 +228,11 @@ def _jit_activity(self):
 
 
 def _today_items(self, today):
+    """今天的块：统一走 Timeline（排序/去重/空 end 防御），不再各读各的缓存。"""
     try:
-        items = self.schedule.get(today) or []
+        return Timeline(self).blocks(today)
     except Exception:
-        items = []
-    return items if isinstance(items, list) else []
+        return []
 
 
 def _pick_covering(self, items, current):
@@ -259,7 +298,7 @@ def _pick_yesterday_hour(self, current):
     if not yesterday:
         return None
     try:
-        y_items = self.schedule.get(yesterday) or self.db.get_schedule(yesterday) or []
+        y_items = Timeline(self).blocks(yesterday)
     except Exception:
         y_items = []
     for item in y_items or []:
@@ -278,3 +317,9 @@ def _pick_yesterday_hour(self, current):
         except Exception:
             continue
     return None
+
+
+def people_from_text(text, npc_map=None):
+    """活动文字里出现的已知 NPC 名字（npc_summary: name->relation）。"""
+    body = str(text or "")
+    return [str(k) for k in (npc_map or {}) if str(k) and str(k) in body]

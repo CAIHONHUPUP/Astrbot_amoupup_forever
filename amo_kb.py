@@ -17,7 +17,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -29,9 +30,10 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger, now_ts, to_float,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger, now_ts, to_float,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                DIALECT_FALLBACK_ROWS, DIALECT_REGIONS, dialect_for_city, logger, now_ts, to_float,
+            )
 
 
 if TYPE_CHECKING:

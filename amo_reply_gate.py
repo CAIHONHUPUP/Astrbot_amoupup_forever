@@ -4,6 +4,7 @@
 只做打分与阈值计算，不碰数据库、不发消息。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import random
 import re
@@ -11,7 +12,8 @@ import re
 try:  # 包模式优先，按文件直接加载时退回绝对导入
     from .amo_observability import note as _note_swallowed
 except ImportError:
-    from amo_observability import note as _note_swallowed
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_observability import note as _note_swallowed
 
 try:
     from .amo_shared import (
@@ -27,18 +29,19 @@ try:
         truncate,
     )
 except ImportError:
-    from amo_shared import (
-        _now,
-        clamp,
-        has_question,
-        logger,
-        now_ts,
-        overlap,
-        quiet_now,
-        sentiment,
-        tokens,
-        truncate,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import (
+            _now,
+            clamp,
+            has_question,
+            logger,
+            now_ts,
+            overlap,
+            quiet_now,
+            sentiment,
+            tokens,
+            truncate,
+        )
 
 
 RELATION_REPLY_PROB = {

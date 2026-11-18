@@ -227,7 +227,19 @@ class ScheduleApiReadTests(unittest.TestCase):
         data = __import__("asyncio").run(result())["data"]
         current = tr.current_activity(plugin, api_now)
         children = [child for block in data["tree"] for child in block["children"]]
-        covering = [child for child in children if child["start"] <= api_now.strftime("%H:%M") < child["end"]]
+        def _minute_of(text):
+            hour, _sep, minute = str(text or "00:00").strip()[:5].partition(":")
+            return int(hour or 0) * 60 + int(minute or 0)
+
+        def _covers(child, minute):
+            start = _minute_of(child["start"])
+            end = _minute_of(child["end"])
+            if end <= start:  # 23:5x 的过渡块会跨 0 点，end 要顺延一天
+                end += 24 * 60
+            return start <= minute < end
+
+        current_minute = _minute_of(api_now.strftime("%H:%M"))
+        covering = [child for child in children if _covers(child, current_minute)]
         self.assertTrue(covering, children)
         self.assertEqual(covering[0]["place"], current["place"])
         self.assertEqual(covering[0]["activity"], current["activity"])
@@ -242,10 +254,14 @@ class WiringTests(unittest.TestCase):
 
     def test_send_path_advances_and_starts(self):
         from amo_message import MessageMixin
+        from amo_reply_pipeline import PIPELINE
 
-        source = inspect.getsource(MessageMixin._send_to_umo)
-        self.assertIn("_maybe_advance(self, text)", source)
-        self.assertIn("_maybe_transition_text(self, text, source=\"bot\")", source)
+        # Phase 6：推进/开启过渡改成 send.transition_advance 阶段（顺序仍是守卫之前）
+        self.assertIn("amo_reply_pipeline", inspect.getsource(MessageMixin._send_to_umo))
+        stage = {item.id: item for item in PIPELINE.stages}["send.transition_advance"]
+        source = inspect.getsource(stage.run)
+        self.assertIn("_maybe_advance(ctx.plugin, text)", source)
+        self.assertIn("_maybe_transition_text(ctx.plugin, text, source=\"bot\")", source)
 
 
 if __name__ == "__main__":

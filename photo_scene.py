@@ -19,6 +19,7 @@
 ``scene_for()``；``clean_place()`` 仍由 ``amo_image_common`` 提供，避免两份洗法漂移。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 try:  # 纯规则模块：地点→zone、词表、清洗，和图片引擎解耦
     from .photo_rules import (
@@ -30,14 +31,15 @@ try:  # 纯规则模块：地点→zone、词表、清洗，和图片引擎解�
         zone_for_place,
     )
 except ImportError:  # 直接按文件加载时
-    from photo_rules import (
-        SHOPPING_WORDS,
-        TRAVEL_WORDS,
-        clean_place,
-        is_swim_activity,
-        road_ride,
-        zone_for_place,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_rules import (
+            SHOPPING_WORDS,
+            TRAVEL_WORDS,
+            clean_place,
+            is_swim_activity,
+            road_ride,
+            zone_for_place,
+        )
 
 #: 日程/活动里出现这些词就算「在玩水」（衣柜会换泳装，照片背景是泳池/海边）
 #: 出现这些词就算「在逛街」

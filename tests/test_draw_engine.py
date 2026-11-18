@@ -331,7 +331,7 @@ class RunTests(unittest.TestCase):
         event = FakeEvent("给我画一碗面")
         engine.maybe_after_reply(event, "好呀")
         asyncio.run(plugin.tasks[0])
-        # 没装万象画卷：不画图，但要回一句说明，不能一声不吭
+        # 没装我能永远定格你：不画图，但要回一句说明，不能一声不吭
         self.assertEqual(len(event.sent), 1)
         self.assertEqual(len(event.sent[0].chain), 1)
 

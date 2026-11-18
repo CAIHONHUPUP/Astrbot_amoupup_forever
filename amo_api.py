@@ -1,28 +1,48 @@
 # -*- coding: utf-8 -*-
 """ApiMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # 兼容层：旧插件名 / 旧数据目录 / 旧配置名的唯一来源
+    from . import amo_compat as _compat
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:
+        import amo_compat as _compat
 
 try:
     from .amo_route_table import build_routes
     from .amo_api_diary import DiaryApiMixin
     from .amo_api_schedule import ScheduleApiMixin
+    from .amo_api_trip import TripApiMixin
     from .amo_api_wardrobe import WardrobeApiMixin
     from .amo_api_photo import PhotoApiMixin
 except ImportError:  # 直接按文件加载时
-    from amo_route_table import build_routes
-    from amo_api_diary import DiaryApiMixin
-    from amo_api_schedule import ScheduleApiMixin
-    from amo_api_wardrobe import WardrobeApiMixin
-    from amo_api_photo import PhotoApiMixin
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_route_table import build_routes
+        from amo_api_diary import DiaryApiMixin
+        from amo_api_schedule import ScheduleApiMixin
+        from amo_api_trip import TripApiMixin
+        from amo_api_wardrobe import WardrobeApiMixin
+        from amo_api_photo import PhotoApiMixin
 
-from typing import Any, TYPE_CHECKING
+from typing import Any
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
+
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from .observability import log_event
+else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
+    try:
+        from .observability import log_event
+    except ImportError:  # 直接按文件加载时
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from observability import log_event
 
 import asyncio
 import os
@@ -46,9 +66,10 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
+            )
 
 
 if TYPE_CHECKING:
@@ -59,41 +80,41 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 try:  # 面板手动写日记只能补昨天及以前（当天由 22:00 自动写）
     from .amo_schedule import diary_manual_target
 except ImportError:  # 直接按文件加载时
-    try:
-        from amo_schedule import diary_manual_target
-    except Exception:  # pragma: no cover
-        def diary_manual_target(now, requested):
-            return requested, ""
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_schedule import diary_manual_target
+        except Exception:  # pragma: no cover
+            def diary_manual_target(now, requested):
+                return requested, ""
 
 try:  # 姿势库的参考图任务（双模式导入：按文件加载时相对 import 会失败）
     from .pose_library import batch_status as pose_batch_status
     from .pose_library import ensure_batch as pose_ensure_batch
     from .pose_library import pending_poses as pose_pending
 except ImportError:  # 直接按文件加载时
-    try:
-        from pose_library import batch_status as pose_batch_status
-        from pose_library import ensure_batch as pose_ensure_batch
-        from pose_library import pending_poses as pose_pending
-    except Exception:  # pragma: no cover
-        def pose_batch_status():
-            return {}
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from pose_library import batch_status as pose_batch_status
+            from pose_library import ensure_batch as pose_ensure_batch
+            from pose_library import pending_poses as pose_pending
+        except Exception:  # pragma: no cover
+            def pose_batch_status():
+                return {}
 
-        async def pose_ensure_batch(plugin, poses, force=False):
-            return {"ok": False}
+            async def pose_ensure_batch(plugin, poses, force=False):
+                return {"ok": False}
 
-        def pose_pending(library):
-            return []
+            def pose_pending(library):
+                return []
 
 
-class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin, _MixinBase):
+class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, PhotoApiMixin, _MixinBase):
     def _register_web_apis(self):
         prefixes = uniq([
             getattr(self, "name", None),
             PLUGIN_NAME,
             os.path.basename(self.plugin_dir),
-            "astrbot_plugin_Astrbot_amoupup_forever",
-            "astrbot_plugin_Astrbot_Amo_forever",
-            "astrbot_plugin_amo_forever",
+            *_compat.PLUGIN_ID_LEGACY_NAMES,
         ])
         # 清除上一实例/旧版本残留的 Web API 路由。
         # AstrBot 重载插件时不会自动清理 registered_web_apis，旧路由会继续
@@ -511,7 +532,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
             return {"code": 1, "msg": "缺少 uid"}
         if confirm not in ("1", "true", "yes", "on"):
             return {"code": 1, "msg": "删除档案需要确认：再带一次 confirm=1"}
-        logger.info("[amo] 删除档案请求: uid=%s" % uid)
+        log_event("info", "profile.delete.request", uid=uid)
         profile: dict[Any, Any] = {}
         try:
             profile = self.db.get_profile(uid) or {}
@@ -580,7 +601,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
                     counts["data"] = total
         except Exception as exc:
             logger.warning("[amo] 删除画像时同步数据插件失败: %s" % exc)
-        logger.info("[amo] 已删除档案 %s（清理 %s）" % (uid, counts))
+        log_event("info", "profile.delete.done", uid=uid, counts=counts)
         return {"code": 0, "msg": "已删除", "data": {"uid": uid, "counts": counts}}
 
     async def api_relation_save(self):
@@ -599,7 +620,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
             await self._push_relation_to_data(a_uid, b_uid, relation, note)
         except Exception as exc:
             logger.debug("[amo] 关系同步失败: %s" % exc)
-        logger.debug("[amo] 关系网更新: %s <-> %s = %s" % (a_uid, b_uid, relation))
+        log_event("debug", "relation.update", a_uid=a_uid, b_uid=b_uid, relation=relation)
         return await self.api_relations()
 
     async def api_relation_delete(self):
@@ -677,6 +698,8 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
                 "switch_status": data["config"],
                 "threshold": data["threshold"],
                 "counts": data["counts"],
+                "obs_health": data.get("obs_health") or {},
+                "trip_settle": data.get("trip_settle") or {},
             },
         }
 
@@ -711,6 +734,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, WardrobeApiMixin, PhotoApiMixin,
         except Exception as exc:
             logger.warning("[amo] 手动刷新天气失败: %s" % exc)
             return {"code": 1, "msg": "刷新失败：%s" % exc}
+        self._status_cache = None  # 手动刷新后下一次 /status 必须重算
         return {"code": 0, "msg": "刷新成功"}
 
     async def api_profiles(self):

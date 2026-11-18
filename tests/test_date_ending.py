@@ -62,7 +62,7 @@ class _Proactive(pa.ProactiveMixin):
         self.sent.append((umo, text))
         return umo
 
-    def _mark_bot_initiated(self, umo):
+    def _mark_bot_initiated(self, umo, text=""):
         return None
 
 
@@ -101,6 +101,8 @@ class DateEndingTests(unittest.TestCase):
         ending = plugin.db.kv_get("date_ending")
         self.assertEqual(ending["reason"], "timeout")
         self.assertTrue(ending["sent"])
+        self.assertNotIn("一起回家", ending["fact"])
+        self.assertIn("他不在你身边", ending["fact"])
 
 
 def _coro(value):

@@ -14,6 +14,7 @@
 实机由 amo 后台 tick 在 12:30 / 20:00 触发，结果注入 <amo_state> 的【社会见闻】。
 """
 from __future__ import annotations
+from typing import Any, TYPE_CHECKING
 
 import asyncio
 import json
@@ -23,13 +24,14 @@ import urllib.request
 try:
     from .clock import now as _now
 except ImportError:  # 直接按文件加载时
-    from clock import now as _now
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from clock import now as _now
 
 SLOTS = ((12, 30, "noon"), (20, 0, "night"))
 WINDOW_MINUTES = 30
 TTL_DAYS = 3
 MAX_ITEMS = 5
-INJECT_LIMIT = 2
+INJECT_LIMIT = 1
 INJECT_MAX_AGE_HOURS = 24
 RETRY_SECONDS = 300
 
@@ -196,13 +198,14 @@ def build_opinion_prompt(items, state_line=""):
                       ("（%s）" % item.get("summary")) if item.get("summary") else "")
         for idx, item in enumerate(items or [])
     )
-    system = ("你就是这个角色本人，一个普通打工女孩。写自己的看法，不写旁白，"
-              "不写“作为AI”。")
+    system = ("你就是这个角色本人，一个普通打工女孩。写自己的第一反应，"
+              "不写旁白，不写“作为AI”，也不要称呼对方。")
     prompt = (
-        "今天刷到的热搜：\n" + numbered + "\n\n"
+        "今天刷到的几条事：\n" + numbered + "\n\n"
         + (("你现在的状态：%s\n" % state_line) if state_line else "")
-        + "结合你自己的生活（上班、房租、钱、感情），写一段 50 字左右的看法或吐槽，"
-          "像跟老公聊天那样口语化、有情绪；事实只来自上面的标题和摘要。只输出这段话。"
+        + "每条写一句 30 字以内的心里话：像自己看到时冒出来的第一反应，"
+          "口语、有情绪；别用“老公/你看/刷到/热搜/新闻”开头，也别念标题。\n"
+          "格式：1. 一句话\n2. 一句话（条数和上面一致，只输出这些行）。"
     )
     return system, prompt
 
@@ -211,7 +214,30 @@ def clean_opinion(text, limit=120):
     body = _text(text, limit)
     body = body.strip("“”\"'‘’ ")
     body = re.sub(r"^(我觉得|我认为|说实话|说真的)[，,：:]\s*", "", body)
+    body = re.sub(r"^(老公|亲爱的|宝贝|宝)[，,：:、\s]*", "", body)
+    body = re.sub(r"^(你看|你猜|我跟你说)[，,：:、\s]*", "", body)
     return body[:limit]
+
+
+def parse_opinions(text, count=0, limit=60):
+    """把「1. …」逐条拆成看法；没有编号时整段当第一条。"""
+    body = str(text or "").strip()
+    if not body:
+        return []
+    rows = []
+    for line in re.split(r"\r?\n+", body):
+        line = re.sub(r"^\s*\d+\s*[.、)）:：]\s*", "", line).strip()
+        if not line:
+            continue
+        line = clean_opinion(line, limit=limit)
+        if line:
+            rows.append(line)
+    if not rows:
+        one = clean_opinion(body, limit=limit)
+        rows = [one] if one else []
+    if count:
+        rows = rows[:max(1, int(count))]
+    return rows
 
 
 def fact_guard(opinion, items):
@@ -234,15 +260,15 @@ def fact_guard(opinion, items):
 def aggregate(rows, now=None):
     """3-5 条见闻 + 她的看法 → 一条记忆文本（带标签和时间戳）。"""
     now = now or _now()
-    kept = [row for row in (rows or []) if _text(row.get("opinion"), 120)]
-    if not kept:
+    kept = [row for row in (rows or []) if _text(row.get("title"), 60)]
+    if not any(_text(row.get("opinion"), 120) for row in kept):
         return ""
     stamp = now.strftime("%m-%d %H:%M")
     lines = []
     for row in kept:
         title = _text(row.get("title"), 60)
         opinion = _text(row.get("opinion"), 120)
-        lines.append("%s：%s" % (title, opinion))
+        lines.append(("%s：%s" % (title, opinion)) if opinion else title)
     return "[今日见闻 %s] %s %s" % (stamp, TAG_LINE, "；".join(lines))
 
 
@@ -260,8 +286,20 @@ def cleanup_entries(entries, now=None, days=TTL_DAYS):
     return [entry for entry in (entries or []) if not is_expired(entry, now, days)]
 
 
+def _entry_items(entry):
+    """新格式条目：每条见闻各自带一句短看法；旧条目只有 text。"""
+    out = []
+    for row in (entry or {}).get("items") or []:
+        if not isinstance(row, dict):
+            continue
+        title = _text(row.get("title"), 40)
+        if title:
+            out.append({"title": title, "opinion": _text(row.get("opinion"), 60)})
+    return out
+
+
 def recent_block(entries, now=None, limit=INJECT_LIMIT, max_age_hours=INJECT_MAX_AGE_HOURS):
-    """聊天注入：最近 24 小时、最多 2 条，带一句“话题合适再聊”。"""
+    """聊天注入：只取最新（最多 limit 条、每条一条见闻），引子要像随口想起。"""
     now = now or _now()
     fresh = []
     for entry in entries or []:
@@ -271,15 +309,33 @@ def recent_block(entries, now=None, limit=INJECT_LIMIT, max_age_hours=INJECT_MAX
             continue
         if (now.timestamp() - ts) > max_age_hours * 3600:
             continue
+        items = _entry_items(entry)
+        if items:
+            fresh.append((ts, items))
+            continue
         text = _text((entry or {}).get("text"), 400)
-        if text:
-            fresh.append((ts, text))
+        # 旧格式是「[今日见闻 …] #标签 标题：看法；…」：去时间戳/标签，只留第一条
+        text = re.sub(r"\[今日见闻[^\]]*\]\s*", "", text)
+        text = re.sub(r"#[^\s　]+", "", text).strip()
+        first = text.split("；")[0].strip()
+        first = re.sub(r"(老公|亲爱的|宝贝)[，,：:]?\s*", "", first)
+        first = re.sub(r"(你看这热搜|你看|我刚刷到|刷到)[，,：:]?\s*", "", first)
+        if first:
+            fresh.append((ts, [{"legacy": _text(first, 120)}]))
     fresh.sort(key=lambda pair: pair[0], reverse=True)
-    picked = [text for _, text in fresh[:max(0, int(limit))]]
+    picked = [item for _, items in fresh[:max(0, int(limit))] for item in items[:1]]
     if not picked:
         return ""
-    return ("【社会见闻】你今天刷到的：" + " ｜ ".join(picked)
-            + "。聊天话题合适时自然提起；他在说别的事就先听他说。")
+    lines = []
+    for item in picked:
+        if item.get("legacy"):
+            lines.append(item["legacy"])
+        elif item.get("opinion"):
+            lines.append("%s（你当时想：%s）" % (item["title"], item["opinion"]))
+        else:
+            lines.append(item["title"])
+    return ("【社会见闻】你今天看到的一件事：" + " ｜ ".join(lines)
+            + "。想提就顺口带一句，像自己刚想起来；别报来源、别念标题；他接不上就放下。")
 
 
 class SocialLearnEngine:
@@ -338,7 +394,7 @@ class SocialLearnEngine:
                 continue
             seen.add(item["title"])
             unique.append(item)
-        by_source = {}
+        by_source: dict[str, Any] = {}
         for item in unique:
             by_source.setdefault(item.get("source") or "", []).append(item)
         picked = []
@@ -398,16 +454,23 @@ class SocialLearnEngine:
                     timeout=60)
             except Exception:
                 raw = ""
-        opinion = clean_opinion(raw)
-        if not fact_guard(opinion, items):
-            opinion = ""
-        rows = [{"title": item["title"], "summary": item.get("summary", ""),
-                 "opinion": opinion} for item in items[:MAX_ITEMS]]
+        opinions = parse_opinions(raw, count=len(items))
+        rows = []
+        for idx, item in enumerate(items[:MAX_ITEMS]):
+            opinion = opinions[idx] if idx < len(opinions) else ""
+            if opinion and not fact_guard(opinion, items):
+                opinion = ""
+            rows.append({"title": item["title"], "summary": item.get("summary", ""),
+                         "opinion": opinion})
+        if not any(row["opinion"] for row in rows):
+            return {"ok": False, "reason": "no_opinion"}
         text = aggregate(rows, now)
         if not text:
             return {"ok": False, "reason": "no_opinion"}
         entries = cleanup_entries(self._kv_get(KV_ENTRIES, []) or [], now)
-        entries.append({"ts": now.timestamp(), "day": day, "slot": slot, "text": text})
+        entries.append({"ts": now.timestamp(), "day": day, "slot": slot, "text": text,
+                        "items": [{"title": row["title"], "opinion": row["opinion"]}
+                                  for row in rows]})
         self._kv_set(KV_ENTRIES, entries)
         self._kv_set(KV_SEEN, {title: day for title, day in seen.items() if day == day})
         self._kv_set(slot_key, True)

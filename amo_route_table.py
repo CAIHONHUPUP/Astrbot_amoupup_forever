@@ -11,6 +11,7 @@ ROUTE_SPECS = (
     ("/get_status", "api_get_status", ("GET",)),
     ("/diary/tree", "api_diary_tree", ("GET", "POST",)),
     ("/diary/read", "api_diary_read", ("GET", "POST",)),
+    ("/diary/audit", "api_diary_audit", ("GET",)),
     ("/diary/write", "api_diary_write", ("POST",)),
     ("/diary/note", "api_diary_note", ("POST",)),
     ("/diary/open", "api_diary_open", ("GET", "POST",)),
@@ -53,9 +54,15 @@ ROUTE_SPECS = (
     ("/todo_list", "api_todo_list", ("GET", "POST")),
     ("/schedule/detail", "api_schedule_detail", ("GET", "POST",)),
     ("/schedule_detail", "api_schedule_detail", ("GET", "POST",)),
+    ("/facts", "api_facts", ("GET",)),
     ("/mood/update", "api_mood_update", ("GET", "POST",)),
     ("/mood_update", "api_mood_update", ("GET", "POST",)),
     ("/schedule/regen", "api_schedule_regen", ("GET", "POST",)),
+    # B3：面板日程块删除/修改（写路由只注册 POST，见 amo_routes.WRITE_ROUTES）
+    ("/schedule/block/update", "api_schedule_block_update", ("POST",)),
+    ("/schedule/block/delete", "api_schedule_block_delete", ("POST",)),
+    # B3c：按审计 before 撤销/恢复，同样只收 POST
+    ("/schedule/block/restore", "api_schedule_block_restore", ("POST",)),
     ("/kb/regen", "api_kb_regen", ("GET", "POST",)),
     ("/scenic_kb/regen", "api_scenic_kb_regen", ("GET", "POST",)),
     ("/scenic_kb_regen", "api_scenic_kb_regen", ("GET", "POST",)),
@@ -96,11 +103,14 @@ ROUTE_SPECS = (
     ("/worldview_regen", "api_worldview_regen", ("GET", "POST",)),
     ("/say", "api_say", ("GET", "POST",)),
     ("/refresh_status", "api_refresh_status", ("GET",)),
+    ("/trip/status", "api_trip_status", ("GET",)),
+    ("/trip/start", "api_trip_start", ("POST",)),
+    ("/trip/cancel", "api_trip_cancel", ("POST",)),
 )
 
 
 #: 路由总数（增删接口后只改这里；quality_gate 与 tests/test_route_table 都读它）
-ROUTE_COUNT_EXPECTED = 89
+ROUTE_COUNT_EXPECTED = 97
 
 
 def build_routes(api):

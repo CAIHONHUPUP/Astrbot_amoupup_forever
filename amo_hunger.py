@@ -4,6 +4,7 @@
 暴露给守护插件：get_hunger(target) / add_hunger(target, amount) / mark_meal()。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import logging
 logger = logging.getLogger("amo")
@@ -13,7 +14,8 @@ import datetime as _dt
 try:
     from .amo_shared import now_ts, to_float
 except ImportError:
-    from amo_shared import now_ts, to_float
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import now_ts, to_float
 
 SICK_STATUSES = ("感冒", "发烧", "低烧", "轻微不适", "肠胃炎", "疲惫")
 

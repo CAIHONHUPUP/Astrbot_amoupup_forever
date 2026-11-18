@@ -37,6 +37,7 @@ class HourFactGuardTests(unittest.TestCase):
 
     def test_whitelist_in_prompt(self):
         source = inspect.getsource(ScheduleEngine._diary_prompt)
+        source += inspect.getsource(ScheduleEngine._diary_fact_section)
         self.assertIn("【今天真实发生的事件（白名单）】", source)
 
     def test_audit_returns_false_on_false(self):

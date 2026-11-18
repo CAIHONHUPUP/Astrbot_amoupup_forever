@@ -60,7 +60,10 @@ class PromptTests(unittest.TestCase):
         self.assertIn("一个人回到出租屋", text)
         self.assertIn("只能手机", text)
         self.assertIn("重点回味", text)
+        self.assertIn("各回各家", text)
         self.assertNotIn("他就在屋里", text)
+        for banned in ("一起回家", "同居", "住在一起", "共同的家"):
+            self.assertNotIn(banned, text)
 
     def test_guard_replaces_amnesia_during_date(self):
         plugin = ctx({"date_now": {"line": "和老公吃火锅", "until": NOW + 3600}})
@@ -78,7 +81,12 @@ class WiringTests(unittest.TestCase):
         self.assertIn("amo_date_context", inspect.getsource(LlmMixin.on_llm_request))
 
     def test_send_guards_date_reply(self):
-        self.assertIn("amo_date_context", inspect.getsource(MessageMixin._send_to_umo))
+        # Phase 6：发送前守卫统一走 amo_reply_pipeline，约会守卫在 send.date_context 阶段
+        from amo_reply_pipeline import PIPELINE
+
+        self.assertIn("amo_reply_pipeline", inspect.getsource(MessageMixin._send_to_umo))
+        stage = {item.id: item for item in PIPELINE.stages}["send.date_context"]
+        self.assertIn("amo_date_context", inspect.getsource(stage.run))
 
 
 if __name__ == "__main__":

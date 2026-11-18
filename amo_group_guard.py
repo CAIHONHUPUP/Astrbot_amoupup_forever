@@ -16,6 +16,13 @@
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import re
 import time
@@ -131,7 +138,7 @@ class MemberBook:
         user_key = str(uid or "").strip()
         if not group_key or not user_key:
             return None
-        stamp = time.time() if now is None else float(now)
+        stamp = _amo_clock.now_ts() if now is None else float(now)
         group = self._groups.setdefault(group_key, {})
         row = group.get(user_key)
         if row is None:

@@ -4,45 +4,114 @@
 生理期 / 九维心情 / 世界观与日程 / 天气 / 健康 / 群聊插话阈值 /
 私聊判定 / 主动私聊 / 长期记忆与遗忘 / 防抖 / 分段与打字延迟 / 引用回复 / AI 润色"""
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-import asyncio
+try:  # 兼容层：旧插件名 / 旧数据目录 / 旧配置名的唯一来源
+    from . import amo_compat as _compat
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:
+        import amo_compat as _compat
+
+import hashlib
 import os
 import random  # 测试会 patch main.random（群聊回复概率）
 
-PLUGIN_VERSION = "7.4.0"
+try:  # Phase 17：结构化健康快照（只读、降级不抛；读库细节在 observability）
+    from .observability import plugin_health
+except ImportError:  # 按文件直接加载（离线单测）
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from observability import plugin_health
+
+try:  # Phase 17：统一时钟（源码守护禁止生产代码裸调 time.time）
+    from .clock import now_ts as _obs_now_ts
+except ImportError:  # 按文件直接加载（离线单测）
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from clock import now_ts as _obs_now_ts
+
+#: 插件载入时刻，用来给 /status 的 obs_health.uptime_s 当起点
+_OBS_STARTED_AT = _obs_now_ts()
+
+PLUGIN_VERSION = "7.5.0"
 
 try:  # 包模式优先（AstrBot 正常加载）
     from .amo_bootstrap import (
         AmoDB, ApiMixin, CommandMixin, ConfigMixin, Context,
         DrawEngine, EventBus, FeatureApiMixin, GiftEngine, HeartflowEngine,
-        Housing, HumanState, HungerEngine, KbMixin, LLMService,
-        LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
+        HandshakeMixin, Housing, KbMixin, LLMService,
+        InitMixin, LifecycleMixin, LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
         PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
         ScheduleMixin, SegmentEngine, SocialLearnEngine, SocialMixin, Star,
         TravelMixin, UsageMixin, Wallet, Wardrobe,
         WebRouteMixin, _align_handler_module_paths, _clock_configure, _clock_name, _note_swallowed,
-        _watch_handshake, logger, looks_like_plain_command,
+        logger, looks_like_plain_command,
     )
 except ImportError:  # 按文件直接加载（离线单测 / 老加载方式）
-    from amo_bootstrap import (
-        AmoDB, ApiMixin, CommandMixin, ConfigMixin, Context,
-        DrawEngine, EventBus, FeatureApiMixin, GiftEngine, HeartflowEngine,
-        Housing, HumanState, HungerEngine, KbMixin, LLMService,
-        LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
-        PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
-        ScheduleMixin, SegmentEngine, SocialLearnEngine, SocialMixin, Star,
-        TravelMixin, UsageMixin, Wallet, Wardrobe,
-        WebRouteMixin, _align_handler_module_paths, _clock_configure, _clock_name, _note_swallowed,
-        _watch_handshake, logger, looks_like_plain_command,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_bootstrap import (
+            AmoDB, ApiMixin, CommandMixin, ConfigMixin, Context,
+            DrawEngine, EventBus, FeatureApiMixin, GiftEngine, HeartflowEngine,
+            HandshakeMixin, Housing, KbMixin, LLMService,
+            InitMixin, LifecycleMixin, LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
+            PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
+            ScheduleMixin, SegmentEngine, SocialLearnEngine, SocialMixin, Star,
+            TravelMixin, UsageMixin, Wallet, Wardrobe,
+            WebRouteMixin, _align_handler_module_paths, _clock_configure, _clock_name, _note_swallowed,
+            logger, looks_like_plain_command,
+        )
+
+try:  # 兼容旧导入：测试 / 外部扩展仍会 from main import HumanState / HungerEngine
+    from .amo_bootstrap import HumanState, HungerEngine  # noqa: F401
+except ImportError:  # 按文件直接加载
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_bootstrap import HumanState, HungerEngine  # noqa: F401
+
+try:  # 就绪/握手/日程事件：2026-11-17 从 main.py 拆到 amo_readiness
+    from .amo_readiness import ReadinessMixin
+except ImportError:  # 按文件直接加载
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_readiness import ReadinessMixin
+
+try:  # 提示词注册表（Phase 4）：LEAN_PARTS 不再手写第二份
+    from . import amo_prompt_registry
+except ImportError:  # 按文件直接加载（顶层 sys.path 模式）
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_prompt_registry
+
+try:  # Phase 16：统一后台任务管理器（受管 spawn / 快照都在 amo_jobs）
+    from .amo_jobs import JobManager, report_jobs, spawn_background
+except ImportError:  # 按文件直接加载（离线单测 / 老加载方式）
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_jobs import JobManager, report_jobs, spawn_background
+
+try:  # 运行期 glue：启动预热 / 我能永远定格你自用版提醒
+    from .amo_image_common import self_use_hint
+    from .amo_runtime import warm_up
+except ImportError:  # 按文件直接加载（离线单测）
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_image_common import self_use_hint
+        from amo_runtime import warm_up
 
 # handler 装饰器必须留在 main.py：AstrBot 按 handler_module_path 派发，
 # 搬走会让 handler 静默失效（2026-11-11 那次 20 个 handler 全灭）。
 _align_handler_module_paths(__name__)
 
+#: 跨插件 feature API 协议版本（Phase 19）：守护只读 protocol_info() 判断兼容性。
+PROTOCOL_NAME = "amo-feature"
+PROTOCOL_VERSION = "1.0"
 
-class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, SocialMixin, TravelMixin, RuntimeMixin, KbMixin, UsageMixin, ApiMixin, ScheduleMixin, ProactiveMixin, LlmMixin, WebRouteMixin, Star):
+
+def feature_api_names():
+    """feature API 公开方法名（排序后作为 api_hash 的输入，只读）。"""
+    return sorted(name for name in dir(FeatureApiMixin) if not name.startswith("_"))
+
+
+def feature_api_hash():
+    """feature API 指纹：方法名排序后 sha256 前 12 位。"""
+    payload = "\n".join(feature_api_names()).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:12]
+
+
+class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, SocialMixin, TravelMixin, RuntimeMixin, KbMixin, UsageMixin, ApiMixin, ScheduleMixin, ProactiveMixin, LlmMixin, WebRouteMixin, HandshakeMixin, InitMixin, LifecycleMixin, ReadinessMixin, Star):
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context)
         self._init_basic(config)
@@ -52,176 +121,8 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         logger.info("[amo] 我能永远陪伴你 %s loaded; stale web routes purged" % PLUGIN_VERSION)
         self._spawn(self._log_omni_handshake())
 
-    def _init_basic(self, config):
-        """配置/事件/时区/各种内存状态（原 __init__ 前半段）。"""
-        self.config = config or {}
-        self.events = EventBus()
-        self.events.subscribe(ScheduleChanged, self._on_schedule_changed)
-        self.plugin_dir = os.path.dirname(os.path.abspath(__file__))
-        self._migrate_legacy_config()
-        self.bot_name = self.cfg_str("bot_name", "") or "陪伴"
-        # 时区：服务器常在 UTC 跑，必须按用户时区算（否则北京时间早上 10 点会被当成凌晨 2 点）
-        try:
-            self.timezone_name = _clock_configure(self.cfg_str("timezone", "Asia/Shanghai"))
-            logger.info("[amo] 时区: %s（系统: %s）" % (self.timezone_name, _clock_name()))
-        except Exception as exc:
-            self.timezone_name = ""
-            logger.warning("[amo] 时区初始化失败: %s" % exc)
-        self.persona_name = ""
-        self._persona_name_cache: dict[str, Any] = {}
-        self._last_affect: dict[str, Any] = {}
-        self._disturb_until: dict[str, float] = {}
-        self._disturb_last: dict[str, float] = {}
-        self._last_pending_check = 0.0
-        self._last_proactive_activity: dict[str, Any] = {}
-        self._last_bot_saved: dict[str, float] = {}
-        # 近聊上下文缓冲（只在内存里；本地聊天可以不落库，用记忆终端补）
-        self._ctx_buffer: dict[str, list] = {}
-        self._ctx_hydrated: set[str] = set()
-        self._attribution_alert: dict[str, float] = {}
-        self._last_schedule_save = ""
-        self._disturb_cooldown: dict[str, float] = {}
-        self._disturb_reset_at: dict[str, float] = {}
-        self.bot_aliases = [item.strip() for item in self.cfg_str("bot_aliases", "").split(",") if item.strip()]
-        self.admin_uids = set()
-        for item in self.cfg_str("admin_uids", "").split(","):
-            if item.strip():
-                self.admin_uids.add(item.strip())
+    # 初始化装配（_init_basic / _init_engines / _init_runtime）：2026-11-17 拆到 amo_init.InitMixin
 
-    def _init_engines(self):
-        """db / 钱包 / 各引擎（原 __init__ 中段）。"""
-        self.db = AmoDB(self.plugin_dir)
-        # 钱包：amo 是资产权威，金融插件只读余额 / 调 credit、debit（不做 UI）
-        self.wallet = Wallet(self.db)
-        self.wardrobe = None
-        if Wardrobe is not None:
-            try:
-                self.wardrobe = Wardrobe(self)
-            except Exception as exc:
-                logger.warning("[amo] 穿搭衣柜初始化失败: %s" % exc)
-        self.pose = None
-        if PoseLibrary is not None:
-            try:
-                self.pose = PoseLibrary(self)
-            except Exception as exc:
-                logger.warning("[amo] 姿势库初始化失败: %s" % exc)
-        self.state: Any = None
-        self.watch_info = None
-        self.llm = LLMService(self)
-        self.social_learn = None
-        if SocialLearnEngine is not None:
-            try:
-                self.social_learn = SocialLearnEngine(self)
-                logger.info("[amo] 社会见闻引擎已加载（12:30 / 20:00 各刷一次）")
-            except Exception as exc:
-                logger.warning("[amo] 社会见闻引擎初始化失败: %s" % exc)
-        self.micro_events = None
-        if MicroEventEngine is not None:
-            try:
-                self.micro_events = MicroEventEngine(self)
-                logger.info("[amo] 微型日常事件引擎已加载")
-            except Exception as exc:
-                logger.warning("[amo] 微型日常事件初始化失败: %s" % exc)
-        self.housing = None
-        if Housing is not None:
-            try:
-                self.housing = Housing(self)
-                logger.info("[amo] 房屋系统已加载（%s）" % (self.housing.current().get("name") or "家"))
-            except Exception as exc:
-                logger.warning("[amo] 房屋系统初始化失败: %s" % exc)
-        self.gate = ReplyGate(self)
-        self.gift = None
-        if GiftEngine is not None:
-            try:
-                self.gift = GiftEngine(self)
-            except Exception as exc:
-                logger.warning("[amo] 礼物引擎初始化失败: %s" % exc)
-        self.draw = None
-        if DrawEngine is not None:
-            try:
-                self.draw = DrawEngine(self)
-            except Exception as exc:
-                logger.warning("[amo] 画图引擎初始化失败: %s" % exc)
-        self.photo = None
-        if PhotoEngine is not None:
-            try:
-                self.photo = PhotoEngine(self)
-            except Exception as exc:
-                logger.warning("[amo] 照片引擎初始化失败: %s" % exc)
-        if self.draw is not None:
-            logger.info("[amo] 画图引擎已加载（%s）" % ("开" if self.draw.enabled else "关"))
-        if self.photo is not None:
-            logger.info("[amo] 照片引擎已加载（%s）" % ("开" if self.photo.enabled else "关"))
-        try:
-            logger.info(
-                "[CONFIG] private=%s group=%s draw=%s photo=%s gift=%s diary=%s "
-                "heartflow=%s schedule_change=%s",
-                self.cfg_bool("enable_private_reply", True),
-                self.cfg_bool("enable_group_reply", True),
-                self.cfg_bool("draw_enable", False),
-                self.cfg_bool("photo_enable", False),
-                self.cfg_bool("gift_enable", False),
-                self.cfg_bool("diary_enabled", True),
-                self.cfg_bool("hf_enable_heartflow", True),
-                self.cfg_bool("schedule_change_enabled", True),
-            )
-        except Exception as _amo_exc:
-            _note_swallowed("main.HumanCorePlugin.__init__.config_summary", _amo_exc)
-        self.heartflow = None
-        self.segment_engine = None
-        try:
-            if HeartflowEngine is not None:
-                hf_config = self._hf_config()
-                hf_config.setdefault("enable_heartflow", True)
-                hf_config.setdefault("enable_dynamic_threshold", True)
-                hf_config.setdefault("judge_provider_name", "")
-                self.heartflow = HeartflowEngine(self.context, hf_config)
-                self.heartflow.set_identity(self.bot_name, self.bot_aliases)
-            if SegmentEngine is not None:
-                seg_config = self._seg_config()
-                seg_config.setdefault("protect_paired_symbols", True)
-                self.segment_engine = SegmentEngine(self.context, seg_config, plugin=self)
-        except Exception as exc:
-            logger.error("[amo] 心流/分段引擎初始化失败: %s" % exc)
-
-    def _init_runtime(self):
-        """引用守卫 / 运行标记 / 计数器（原 __init__ 后半段）。"""
-        # 飞书适配器默认把每条回复都发成「引用回复」；私聊不该引用（群聊按概率）
-        try:
-            self._install_lark_quote_guard()
-        except Exception as exc:
-            logger.debug("[amo] 飞书引用守卫安装失败: %s" % exc)
-        try:
-            self._install_qq_quote_guard()
-        except Exception as exc:
-            logger.debug("[amo] QQ 引用守卫安装失败: %s" % exc)
-        self._ready = False
-        self._init_lock = asyncio.Lock()
-        self._running = True
-        self._tasks: set[Any] = set()
-        # 数据插件（Astrbot_amoupup_data）可能比 amo 后加载：用这几个标记做一次性补同步，不轮询
-        self._data_synced = False
-        self._data_sync_lock = asyncio.Lock()
-        self._last_data_sync_try = 0.0
-        self._data_found_logged = False
-        self._data_missing_logged = False
-        self._data_warn_scheduled = False
-        self._group_times: dict[str, float] = {}
-        self._private_buffers: dict[str, list] = {}
-        self._last_reply_at: dict[str, float] = {}
-        self._last_umo = ""
-        self._last_group = ""
-        self._last_purge = 0.0
-        self._last_auto_learn = 0.0
-        self._proactive_last = 0.0
-        self._last_ritual = 0.0
-        self._last_relation_decay = 0.0
-        self._last_relation_sediment = 0.0
-        self._bot_initiated: dict[str, float] = {}
-        self._prefix_cache: Any = None
-        self._loop_task = None
-        self._config_mtime = 0.0
-        self._boot_task = self._spawn(self._ensure_ready())
 
     # ---------- 配置 ----------
 
@@ -279,269 +180,39 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             except Exception as exc:
                 logger.debug("[amo] 注册 send_photo 工具失败: %s" % exc)
 
-    def _spawn(self, coro):
-        try:
-            task = asyncio.create_task(coro)
-        except RuntimeError:
-            try:
-                coro.close()
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin._spawn", _amo_exc)
-            return None
-        self._tasks.add(task)
+    # 受管 spawn / 任务快照 / 启动预热 / 生图插件提醒：实现都在各自模块，
+    # 这里只留类属性别名（self._spawn(...) 等调用点一个都不用改）。
+    _spawn = spawn_background
+    _jobs_report = report_jobs
+    _warm_up = warm_up
+    _omnidraw_self_use_hint = self_use_hint
 
-        def _report(done):
-            self._tasks.discard(done)
-            if done.cancelled():
-                return
-            try:
-                exc = done.exception()
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin._spawn._report", _amo_exc)
-                exc = None
-            if exc is not None:
-                logger.warning("[amo] 后台任务异常: %s", exc, exc_info=exc)
+    def protocol_info(self):
+        """Phase 19：只读协议摘要（守护 compat() 用来判断跨插件协议版本）。
 
-        task.add_done_callback(_report)
-        return task
-
-    def _omnidraw_self_use_hint(self):
-        """提醒：万象画卷要装作者仓库的「能陪自用版」，上游版一次自拍可能发两张。"""
-        try:
-            ctx = getattr(self, "context", None)
-            getter = getattr(ctx, "get_registered_star", None) if ctx else None
-            meta = getter("astrbot_plugin_omnidraw") if callable(getter) else None
-            if meta is None:
-                return
-            version = str(getattr(meta, "version", "") or "")
-            name = str(getattr(meta, "display_name", "") or "")
-            if version.startswith(("3.4.3", "3.4.4")) or "自用" in name:
-                return
-            logger.warning(
-                "[amo] 提醒：万象画卷不是「能陪自用版」（当前 %s）。上游版一次自拍可能发两张；"
-                "请安装作者仓库 CAIHONHUPUP/astrbot_plugin_omnidraw-amoupup 的 v3.4.3-amoupup。",
-                version or "未知版本")
-        except Exception as _amo_exc:
-            _note_swallowed("amo.main.omnidraw_hint", _amo_exc)
-
-    async def _ensure_ready(self):
-        if self._ready:
-            return
-        async with self._init_lock:
-            if self._ready:
-                return
-            try:
-                await asyncio.to_thread(self.db.init)
-            except Exception as exc:
-                logger.error("[amo] 数据库初始化失败: %s" % exc)
-            try:
-                await asyncio.to_thread(self.wallet.ensure_schema)
-            except Exception as exc:
-                logger.error("[amo] 钱包初始化失败: %s" % exc)
-            self._migrate_delay_default()
-            self._migrate_proactive_timing()
-            self._migrate_typing_defaults()
-            self._migrate_legacy_admin_default()
-            self._migrate_scenic_kb_name()
-            self._migrate_schedule_defaults()
-            self._migrate_diary_continuity()
-            await asyncio.to_thread(self._merge_alias_profiles)
-            self.state = HumanState(self)
-            try:
-                # 旧库里提前铺好的未来日程 → 待办表（只搬一次，之后未来事件直接进待办）
-                self.state.migrate_future_todos()
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin._ensure_ready.todo_migrate", _amo_exc)
-            self.hunger = HungerEngine(self)
-            try:
-                await self._sync_with_data_plugin()
-            except Exception as exc:
-                logger.debug("[amo] 与数据插件同步失败: %s" % exc)
-            self._ready = True
-            self._omnidraw_self_use_hint()
-            try:
-                retry = getattr(self, "_retry_web_api_routes", None)
-                if callable(retry):
-                    retry()
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin._ensure_ready.web_retry", _amo_exc)
-            self._spawn(self._log_omni_handshake())
-            self._spawn(self._watch_handshake())
-            self._loop_task = self._spawn(self._background_loop())
-            self._spawn(self._warm_up())
-
-
-    async def _warm_up(self):
-        try:
-            await asyncio.sleep(3)
-            umo = self._last_umo or self._first_private_umo()
-            await self._sync_persona_name(umo or "")
-            await self._ensure_dialect_kb()
-            await self._ensure_scenic_kb()
-            await self.state.ensure_worldview(umo)
-            await self.state.ensure_schedule(umo)
-        except Exception as exc:
-            logger.debug("[amo] 预热失败: %s" % exc)
-
-    async def _log_omni_handshake(self):
-        """启动时主动和万象画卷握手一次；没装也不报错，生图前还会再找。"""
-        try:
-            from .amo_image_common import find_omni
-        except Exception:
-            try:
-                from amo_image_common import find_omni
-            except Exception:
-                return
-        try:
-            engine = getattr(self, "photo", None) or getattr(self, "draw", None)
-            if engine is None:
-                return
-            omni = None
-            for attempt in range(8):
-                omni = find_omni(self, engine, "main._log_omni_handshake", force=True)
-                if omni is not None:
-                    break
-                await asyncio.sleep(2)
-            if omni is None:
-                logger.info(
-                    "[amo] 没装「万象画卷」(astrbot_plugin_omnidraw)：照片/画图暂时用不了，"
-                    "用户要图时会回一句说明；装好并启用后会自动接上，不用重启"
-                )
-                return
-            cfg = getattr(omni, "plugin_config", None)
-            nodes = list(getattr(cfg, "providers", []) or [])
-            model = str(getattr(nodes[0], "model", "") or "") if nodes else ""
-            logger.info("[amo] 已握手万象画卷，可直接生图（生图节点 %d 个%s）" % (
-                len(nodes), ("，模型 " + model) if model else ""))
-        except Exception as exc:
-            logger.debug("[amo] 万象画卷握手检查失败: %s" % exc)
-
-    async def _watch_handshake(self):
-        """和「我能永远守护你」（Astrbot_amoupup_watch）握一次手。
-
-        只做发现 + describe()：没装 / 停用 / 加载失败 / 版本不匹配都只记日志，
-        不影响聊天。社会逻辑全在 watch 自己的插件里，amo 一行都不碰。
+        纯内存 + 源码常量，不读库、不联网；字段只增不改。
         """
-        try:
-            info = await _watch_handshake(self)
-        except Exception as exc:
-            _note_swallowed("main.HumanCorePlugin._watch_handshake", exc)
-            return None
-        self.watch_info = info
-        return info
+        try:  # 包模式优先
+            from . import amo_db_schema as _schema
+        except ImportError:  # 按文件直接加载
+            import amo_db_schema as _schema
+        return {
+            "plugin": "Astrbot_amoupup_forever",
+            "protocol": PROTOCOL_NAME,
+            "protocol_version": PROTOCOL_VERSION,
+            "api_hash": feature_api_hash(),
+            "schema_version": int(getattr(_schema, "LATEST_VERSION", 0) or 0),
+            "version": PLUGIN_VERSION,
+        }
 
-    def _on_schedule_changed(self, event):
-        """日程事件订阅者：日记失效/取消 + 穿搭失效 + 生图刷新日志。"""
-        day = str(getattr(event, "day", "") or "")
-        version = int(getattr(event, "version", 0) or 0)
-        start_hour = int(getattr(event, "start_hour", -1) or -1)
-        cancelled: list[Any] = []
-        state = getattr(self, "state", None)
-        if state is not None and start_hour >= 0:
-            try:
-                state.db.mark_diaries_stale(day, start_hour, version)
-            except Exception as exc:
-                logger.warning("[EVENT] diary_stale failed: %s", exc)
-            cancel = getattr(self, "_cancel_diary_tasks", None)
-            if callable(cancel):
-                try:
-                    cancelled = cancel(day, start_hour) or []
-                except Exception as exc:
-                    logger.warning("[EVENT] diary_cancel failed: %s", exc)
-            daily_mark = getattr(self, "_mark_daily_diary_stale", None)
-            if callable(daily_mark):
-                try:
-                    daily_mark(day, version)
-                except Exception as exc:
-                    logger.warning("[EVENT] daily_diary_stale failed: %s", exc)
-        wardrobe = getattr(self, "wardrobe", None)
-        if wardrobe is not None:
-            invalidate = getattr(wardrobe, "invalidate", None)
-            if callable(invalidate):
-                try:
-                    invalidate(day, reason="schedule_changed")
-                except Exception as exc:
-                    logger.warning("[EVENT] wardrobe_invalidate failed: %s", exc)
-        photo = getattr(self, "photo", None)
-        hook = getattr(photo, "on_schedule_changed", None) if photo is not None else None
-        if callable(hook):
-            try:
-                hook(day, version, "schedule_changed")
-            except Exception as exc:
-                logger.warning("[EVENT] photo_refresh failed: %s", exc)
-        logger.debug("[EVENT] schedule_changed day=%s version=%s start_hour=%s cancelled=%s",
-                     day, version, start_hour, len(cancelled))
-        return cancelled
-
-    async def initialize(self):
-        await self._ensure_ready()
-        try:
-            from .laundry_engine import register_buy_appliance
-            manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)
-            ok = register_buy_appliance(self, manager)
-            logger.info("[amo] LLM tool buy_appliance: %s", "registered" if ok else "skipped")
-            from .ecommerce_engine import register_ecommerce_tools
-            ok2 = register_ecommerce_tools(self, manager)
-            logger.info("[amo] LLM tools online_order/add_to_cart/user_gift: %s",
-                        "registered" if ok2 else "skipped")
-            from .draw_engine import register_send_photo
-            ok3 = register_send_photo(self, manager)
-            logger.info("[amo] LLM tool send_photo: %s", "registered" if ok3 else "skipped")
-            from .amo_schedule_tools import register_schedule_tools
-            ok4 = register_schedule_tools(self, manager)
-            logger.info("[amo] LLM tools schedule: %s", "registered" if ok4 else "skipped")
-        except Exception as exc:
-            logger.warning("[amo] 注册 buy_appliance 工具失败: %s", exc)
+    def _obs_health(self):
+        """Phase 17：结构化健康快照（/status 的 obs_health 字段；读库细节在 observability）。"""
+        return plugin_health(self, version=PLUGIN_VERSION,
+                             started_at=_OBS_STARTED_AT, now=_obs_now_ts())
 
 
+    # 生命周期（initialize / terminate / stop）：2026-11-17 拆到 amo_lifecycle.LifecycleMixin
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    async def terminate(self):
-        self._running = False
-        if self.heartflow is not None:
-            try:
-                await self.heartflow.terminate()
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin.terminate", _amo_exc)
-        if self.segment_engine is not None:
-            for task in list(getattr(self.segment_engine, "_tasks", set())):
-                try:
-                    task.cancel()
-                except Exception as _amo_exc:
-                    _note_swallowed("main.HumanCorePlugin.terminate", _amo_exc)
-        for task in list(self._tasks):
-            try:
-                task.cancel()
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin.terminate", _amo_exc)
-        if self.state is not None:
-            try:
-                self.state.save()
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin.terminate", _amo_exc)
-        # 不在这里关闭数据库：AstrBot 重载插件时旧实例注册的 Web API
-        # 可能仍被调用，关闭连接会导致 "Cannot operate on a closed database"。
-        # 连接由进程退出时回收；AmoDB.conn 也会在需要时自动重连。
-
-    async def stop(self):
-        await self.terminate()
 
     # ---- 跨平台账号合并 ----
 
@@ -556,121 +227,13 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
 
 
     # ---------- 配套数据插件（Astrbot_amoupup_data / 我能永远记住你） ----------
-    DATA_PLUGIN_NAMES = ("Astrbot_amoupup_data", "Astr_Amo_data", "astrbot_plugin_amo_data", "AstrAmoData")
+    DATA_PLUGIN_NAMES = _compat.DATA_PLUGIN_NAMES
 
 
     # ---------- 记忆能力层（memory_hooks）：陪伴只判定，数据交给挂载插件 ----------
 
 
-    def _plugin_by_names(self, names):
-        """按插件名找实例；不缓存，reload 之后拿到的是新实例。
-
-        停用的插件还挂在内存里（`activated=False`），这里必须当它不存在：
-        否则停用「能记」之后，记忆仍会往它身上写，用户却看不到任何数据。
-        """
-        for name in names:
-            try:
-                meta = self.context.get_registered_star(name)
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin._plugin_by_names", _amo_exc)
-                meta = None
-            if getattr(meta, "activated", True) is False:
-                continue
-            star = self._star_instance(meta)
-            if star is not None:
-                return star
-        try:
-            wanted = [str(item).lower() for item in names]
-            for meta in self.context.get_all_stars():
-                if getattr(meta, "activated", True) is False:
-                    continue
-                module = str(getattr(meta, "module_path", "") or "").lower()
-                label = str(getattr(meta, "name", "") or "").lower()
-                if any(word in module or word in label for word in wanted):
-                    star = self._star_instance(meta)
-                    if star is not None:
-                        return star
-        except Exception as _amo_exc:
-            _note_swallowed("main.HumanCorePlugin._plugin_by_names", _amo_exc)
-        return None
-
-
-    def _note_data_missing(self):
-        """第一次没找到数据插件：记一次日志，并在 60 秒后再确认一次（只提醒一次）。"""
-        if not self._data_missing_logged:
-            self._data_missing_logged = True
-            logger.info(
-                "[amo] 未检测到数据插件 Astrbot_amoupup_data（没装或已停用）："
-                "这期间聊天正常，但记忆不会写入，面板记忆页是空的；装好并启用后一分钟内会自动接上"
-            )
-        if not self._data_warn_scheduled:
-            self._data_warn_scheduled = True
-            self._spawn(self._warn_data_missing_later())
-
-    async def _warn_data_missing_later(self, delay=60.0):
-        try:
-            await asyncio.sleep(max(1.0, float(delay)))
-        except asyncio.CancelledError:
-            return
-        if not self._running or self._data_synced or self._data_connected():
-            return
-        logger.warning(
-            "[amo] 数据插件未连接：去「插件」页看 Astrbot_amoupup_data 是不是被停用/加载报错；"
-            "装好并启用后一分钟内会自动接上，不用重启"
-        )
-
-
-    # 平台名 -> 显示名。Amo 在 QQ 和飞书上都要认得出同一个人。
-    PLATFORM_LABELS = {
-        "aiocqhttp": "QQ", "qq": "QQ", "qq_official": "QQ", "onebot": "QQ", "napcat": "QQ",
-        "lark": "飞书", "feishu": "飞书",
-        "wecom": "企业微信", "wework": "企业微信", "dingtalk": "钉钉",
-        "telegram": "Telegram", "discord": "Discord", "slack": "Slack",
-        "webchat": "网页", "wechat": "微信", "wx": "微信",
-    }
-
-    def _platform_of(self, event=None):
-        """当前消息来自哪个平台（aiocqhttp / lark …），失败就退回 umo 前缀。"""
-        name = ""
-        try:
-            name = str(event.get_platform_name() or "")
-        except Exception as _amo_exc:
-            _note_swallowed("main.HumanCorePlugin._platform_of", _amo_exc)
-            name = ""
-        if not name:
-            try:
-                name = str(event.unified_msg_origin or "").split(":", 1)[0]
-            except Exception as _amo_exc:
-                _note_swallowed("main.HumanCorePlugin._platform_of", _amo_exc)
-                name = ""
-        name = name.strip().lower()
-        if name:
-            seen = getattr(self, "_seen_platforms", None)
-            if seen is None:
-                seen = set()
-                self._seen_platforms = seen
-            seen.add(name)
-        return name
-
-    def _platform_label(self, platform=""):
-        key = str(platform or "").strip().lower()
-        if not key:
-            return "这里"
-        return self.PLATFORM_LABELS.get(key, str(platform).strip())
-
-    @staticmethod
-    def _event_message_id(event):
-        """取平台消息 id（QQ 的 message_id / 飞书的 event id），用于聊天记录去重。"""
-        for holder in (getattr(event, "message_obj", None), event):
-            for attr in ("message_id", "msg_id", "id"):
-                try:
-                    value = getattr(holder, attr, None)
-                except Exception as _amo_exc:
-                    _note_swallowed("main.HumanCorePlugin._event_message_id", _amo_exc)
-                    value = None
-                if value not in (None, "", 0):
-                    return str(value)[:128]
-        return ""
+    # 配套插件发现 / 数据插件缺失提醒 / 平台标签：2026-11-17 拆到 amo_handshake.HandshakeMixin
 
 
 # ---------- livingmemory（只读直连） ----------
@@ -685,21 +248,8 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
     # ---------- LLM 注入 ----------
 
 
-    LEAN_PARTS = {
-        "【昵称区分】": None,
-        "【角色边界】": "【角色边界】他说“我在开车/在酒店/刚逛完”，说的是他自己的经历。",
-        "【身体归属】": "【身体归属】他的伤/病/疼/被打都是他的事，不是你的。",
-        "【引用规则】": "【引用规则】引用的话按引用头算是谁说的。",
-        "【天气一致】": "【天气一致】天气以【天气】为准。",
-        "【地点写法】": "【地点写法】地点用口语说，不念“城市·地点”。",
-        "【别编】": "【别编】对方没明说的（进店/点好/买好/在开车）都算未知。",
-        "【别翻旧账】": "【别翻旧账】同一个问题再问就正常再答。",
-        "【问题怎么答】": "【问题怎么答】问吃什么：先说你自己吃什么，再给一两个具体建议。",
-        "【事实锁定】": "【事实锁定】地点/在做什么/有没有出门以【正在】为准，不编和地点矛盾的行程；他记错或试探时按日程纠正，别顺着他改口。",
-        "【聊天格式】": "【聊天格式】@昵称、账号、群号、ID 不进聊天。",
-        "【长度】": "【长度】默认 1-2 句，能一句说清就一句。",
-        "【人格】": "【人格】保持人格设定，用你自己的口吻说话。",
-    }
+    #: lean 压缩文案由注册表统一生成（不再手写第二份）
+    LEAN_PARTS = amo_prompt_registry.REGISTRY.lean_parts_map()
 
     # ---------- 后台循环 ----------
 
@@ -775,7 +325,8 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
 try:  # 测试里 main 是当顶层模块导入的，两种都要能吃
     from .amo_shared_activity import SharedActivityMixin  # noqa: E402
 except ImportError:  # pragma: no cover
-    from amo_shared_activity import SharedActivityMixin  # noqa: E402
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared_activity import SharedActivityMixin  # noqa: E402
 
 for _sa_name in dir(SharedActivityMixin):
     # 私有辅助（_sa_kv/_sa_start/_sa_finish…）也要一起搬，公开方法里都在调它们

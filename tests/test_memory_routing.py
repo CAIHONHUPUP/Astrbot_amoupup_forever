@@ -11,6 +11,7 @@ import os
 import sys
 import types
 import unittest
+from typing import Any, Callable
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -61,6 +62,15 @@ class FakeMem:
 
 
 class FakePlugin:
+    _all_memories: Callable[..., Any]
+    _data_memory_write: Callable[..., Any]
+    _data_connected: Callable[..., Any]
+    _external_memory_write: Callable[..., Any]
+    _write_memory_checked: Callable[..., Any]
+    _recall: Callable[..., Any]
+    _data_memory_recall: Callable[..., Any]
+    _ensure_ready: Callable[..., Any]
+
     def __init__(self, mem=None, **cfg):
         self.config = {"memory_recall_limit": 6, "context_style": "lean", "ctx_window": 48}
         self.config.update(cfg)
@@ -180,6 +190,70 @@ class CandidatesTests(unittest.TestCase):
         plugin._data_plugin = lambda: None
         result = asyncio.run(ApiMixin.api_memory_candidates(plugin))
         self.assertEqual(result["data"]["items"], [])
+
+
+class StrictSignatureMem:
+    """新版想记：严格按 MemoryAPI.remember 的签名收参。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def remember(self, bot_id, uid, content, kind="fact", importance=0.5,
+                       scope="private", group_id="", idem_key="", subject="user",
+                       platform="", tags=""):
+        self.calls.append({"content": content, "kind": kind, "importance": importance,
+                           "scope": scope, "group_id": group_id, "idem_key": idem_key,
+                           "subject": subject, "platform": platform, "tags": tags})
+        return {"ok": True}
+
+
+class LegacySignatureMem:
+    """旧版想记：只认 idem_key，不认 tags。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def remember(self, bot_id, uid, content, kind="fact", importance=0.5,
+                       scope="private", group_id="", idem_key="", subject="user"):
+        self.calls.append({"content": content, "kind": kind, "idem_key": idem_key,
+                           "subject": subject})
+        return {"ok": True}
+
+
+class WriteSignatureTests(unittest.TestCase):
+    def test_new_mem_gets_tags_importance_and_idem(self) -> None:
+        mem = StrictSignatureMem()
+        plugin = FakePlugin(mem)
+        ok = asyncio.run(plugin._data_memory_write(
+            "1", "和柳如烟逛街", "activity", 1, "private", "", subject="bot",
+            idem_key="activity:2026-11-16:14:00", tags="#活动", importance=0.25))
+        self.assertTrue(ok)
+        self.assertEqual(len(mem.calls), 1)
+        call = mem.calls[0]
+        self.assertEqual(call["kind"], "activity")
+        self.assertEqual(call["tags"], "#活动")
+        self.assertEqual(call["idem_key"], "activity:2026-11-16:14:00")
+        self.assertEqual(call["subject"], "bot")
+        self.assertAlmostEqual(call["importance"], 0.25)
+
+    def test_importance_none_keeps_tier_derivation(self) -> None:
+        mem = StrictSignatureMem()
+        plugin = FakePlugin(mem)
+        asyncio.run(plugin._data_memory_write("1", "内容", "fact", 2, "private", ""))
+        self.assertEqual(len(mem.calls), 1)
+        self.assertAlmostEqual(mem.calls[0]["importance"], 0.75)
+
+    def test_old_mem_still_gets_idem_but_no_tags(self) -> None:
+        mem = LegacySignatureMem()
+        plugin = FakePlugin(mem)
+        ok = asyncio.run(plugin._data_memory_write(
+            "1", "内容", "activity", 1, "private", "", subject="bot",
+            idem_key="activity:2026-11-16:14:00", tags="#活动", importance=0.25))
+        self.assertTrue(ok)
+        self.assertEqual(len(mem.calls), 1)
+        self.assertEqual(mem.calls[0]["kind"], "activity")
+        self.assertEqual(mem.calls[0]["idem_key"], "activity:2026-11-16:14:00")
+        self.assertEqual(mem.calls[0]["subject"], "bot")
 
 
 if __name__ == "__main__":

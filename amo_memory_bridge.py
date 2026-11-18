@@ -14,7 +14,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 import re
 
@@ -32,11 +33,12 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             to_int,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            MemoryHub,
-            logger,
-            to_int,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                MemoryHub,
+                logger,
+                to_int,
+            )
 
 if TYPE_CHECKING:
     from .amo_types import PluginLike as _MixinBase

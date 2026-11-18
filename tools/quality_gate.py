@@ -12,6 +12,7 @@ import ast
 import compileall
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,12 +20,18 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+#: _conf_schema.json 的键数；新增/删除配置键时同步这里和 test_config_model.py
+SCHEMA_KEY_COUNT_EXPECTED = 266
+
 
 def check_schema():
     path = os.path.join(ROOT, "_conf_schema.json")
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     assert isinstance(data, dict) and len(data) > 200, "schema 太小"
+    assert len(data) == SCHEMA_KEY_COUNT_EXPECTED, (
+        "schema 键数变化：%d != %d（同步 SCHEMA_KEY_COUNT_EXPECTED 与 test_config_model）"
+        % (len(data), SCHEMA_KEY_COUNT_EXPECTED))
     assert "local_chat_cache" not in data, "local_chat_cache 应已删除"
     assert data.get("schedule_holiday_min_days", {}).get("default") == 4
     return "schema %d keys" % len(data)
@@ -48,27 +55,46 @@ def check_routes():
     return "routes %d" % count
 
 
-def check_dashboard_js():
-    html_path = os.path.join(ROOT, "views", "dashboard", "index.html")
-    with open(html_path, encoding="utf-8") as fh:
+def _dashboard_script_sources():
+    """收集面板脚本：<script> 内联块 + 本地 <script src> 外链（相对 page root）。
+
+    Phase 10 拆分后 index.html 只剩 <script src="assets/*.js">，所以逐块检查。
+    """
+    dash = os.path.join(ROOT, "views", "dashboard")
+    with open(os.path.join(dash, "index.html"), encoding="utf-8") as fh:
         html = fh.read()
-    start = html.find("<script>")
-    end = html.find("</script>", start)
-    assert start >= 0 and end > start, "找不到面板 script"
+    sources = []
+    for match in re.finditer(r"<script\b(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, re.S | re.I):
+        sources.append(("inline", match.group(1)))
+    for match in re.finditer(r'<script\b[^>]*\bsrc="([^"]+)"[^>]*>\s*</script>', html, re.S | re.I):
+        ref = match.group(1)
+        if re.match(r"^(?:[a-z]+:)?//", ref, re.I) or ref.startswith(("/", "\\")):
+            continue
+        path = os.path.normpath(os.path.join(dash, ref))
+        assert os.path.isfile(path), "面板脚本不存在: %s" % ref
+        with open(path, encoding="utf-8") as fh:
+            sources.append((ref, fh.read()))
+    return sources
+
+
+def check_dashboard_js():
+    sources = _dashboard_script_sources()
+    assert sources, "找不到面板 script"
     node = shutil.which("node")
     if not node:
-        return "dashboard js skipped (node missing)"
-    tmp = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
-    try:
-        tmp.write(html[start + len("<script>"):end])
-        tmp.close()
-        subprocess.run([node, "--check", tmp.name], check=True)
-    finally:
+        return "dashboard js skipped (node missing, %d blocks)" % len(sources)
+    for name, code in sources:
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8")
         try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
-    return "dashboard js ok"
+            tmp.write(code)
+            tmp.close()
+            subprocess.run([node, "--check", tmp.name], check=True)
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+    return "dashboard js ok (%d blocks)" % len(sources)
 
 
 def check_pyflakes():
@@ -353,10 +379,18 @@ def check_function_sizes():
     return "functions ok（最长 %s::%s %d 行）" % longest
 
 
+WORK_TESTS_PATTERN = "test_*.py"
+
+
 def check_tests():
+    """tests/ 全量 + work/ 仿真库自测；两棵目录树各 discover 一次，不会重复收集。"""
+    work_test = os.path.join(ROOT, "work", "test_sim_lib.py")
+    assert os.path.isfile(work_test), "work 仿真测试缺失：%s" % work_test
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-q"]
     subprocess.run(cmd, cwd=ROOT, check=True)
-    return "unittest ok"
+    cmd = [sys.executable, "-m", "unittest", "discover", "-s", "work", "-p", WORK_TESTS_PATTERN, "-q"]
+    subprocess.run(cmd, cwd=ROOT, check=True)
+    return "unittest ok（tests + work）"
 
 
 def clean_pycache():
@@ -371,13 +405,25 @@ def clean_pycache():
     return removed
 
 
+
+def check_mypy_strict():
+    """严格 mypy（--check-untyped-defs）只降不升：超过基线即红。"""
+    script = os.path.join(ROOT, "tools", "mypy_strict.py")
+    result = subprocess.run([sys.executable, script], cwd=ROOT, capture_output=True,
+                            text=True, encoding="utf-8", errors="replace", timeout=900)
+    tail = ((result.stdout or "") + (result.stderr or "")).strip().splitlines()
+    assert result.returncode == 0, "严格 mypy 超过基线：\n" + "\n".join(tail[-4:])
+    return tail[-1] if tail else "strict mypy ok"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fast", action="store_true", help="跳过全量单测")
     args = parser.parse_args()
     print("[quality] clean_pycache", clean_pycache())
     checks = [check_schema, check_compile, check_routes, check_dashboard_js, check_pyflakes,
-              check_size, check_function_sizes, check_silent_except, check_async_blocking]
+              check_size, check_function_sizes, check_silent_except, check_async_blocking,
+              check_mypy_strict]
     if not args.fast:
         checks.append(check_tests)
     for check in checks:

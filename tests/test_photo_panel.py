@@ -3,15 +3,17 @@
 
 import os
 import re
+import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from panel_source import panel_source  # noqa: E402
 
 
 class PhotoPanelTests(unittest.TestCase):
     def setUp(self):
-        with open(os.path.join(ROOT, "views", "dashboard", "index.html"), encoding="utf-8") as handle:
-            self.html = handle.read()
+        self.html = panel_source(ROOT)
 
     def test_tab_and_panel(self):
         self.assertEqual(self.html.count('data-tab="photo"'), 1)

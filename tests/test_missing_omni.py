@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""没装「万象画卷」时，用户要照片不能一声不吭。
+"""没装「我能永远定格你」时，用户要照片不能一声不吭。
 
 以前 `_generate` 只写一行日志就返回 None，聊天里什么都不会发生——用户只会觉得
-"她不理我"。现在明确要图（自拍/画一张…）且本机没有万象画卷时，补一句人话，
+"她不理我"。现在明确要图（自拍/画一张…）且本机没有我能永远定格你时，补一句人话，
 同一会话 10 分钟只提醒一次。
 """
 from __future__ import annotations
@@ -65,7 +65,7 @@ class MissingOmniTests(unittest.TestCase):
     def test_explicit_request_gets_an_explanation(self):
         fake = Fake()
         text = fake.missing_omni_notice(event())
-        self.assertIn("万象画卷", text)
+        self.assertIn("我能永远定格你", text)
         self.assertIn("拍照片", text)
 
     def test_explanation_is_throttled(self):

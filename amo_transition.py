@@ -14,12 +14,33 @@
 - 「刚下车/到楼下了」→ 立刻截断当前块、写下一块并推进状态。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
+
+try:  # Phase 11：地点门面 + 分钟时钟统一实现
+    from .amo_place import zone_for_place
+    from .amo_numbers import clock_after as _clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_place import zone_for_place
+        from amo_numbers import clock_after as _clock
 
 import asyncio
 import logging
-import time
+import random
 
 logger = logging.getLogger("amo.transition")
+
+try:  # 时间轴：块读取/写入的唯一入口（第 1 阶段重构）
+    from .amo_timeline import Timeline
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_timeline import Timeline
 
 KEY = "transition"
 STATE_KEY = "transition"
@@ -103,6 +124,23 @@ def detect_intent(text):
 
 def maybe_start_from_text(plugin, text, now=None, source="user"):
     """聊天入口：用户说「去洗澡/去倒垃圾/去医院」或她自己说，都先进过渡再回复。"""
+    # 旅游目的地锁（10B1 单点）：出发后「改去大理」不能起新过渡；叫回直接切 returning。
+    try:
+        try:
+            from . import amo_trip as _trip_guard
+        except ImportError:
+            import amo_trip as _trip_guard
+        _guard = _trip_guard.guard_change(plugin, text)
+        _action = str(_guard.get("action") or "")
+        if _action == "blocked":
+            logger.info("[trip] 过渡入口被目的地锁拦下：%s", str(text or "")[:40])
+            return None
+        if _action == "return" and _trip_guard.is_return_command(plugin, text):
+            _trip_guard.early_return(plugin)
+            logger.info("[trip] 过渡入口收到叫回：切到 returning")
+            return None
+    except Exception as exc:
+        logger.debug("[trip] 过渡入口旅游守卫失败: %s", exc)
     intent = detect_intent(text)
     if not intent:
         return None
@@ -172,6 +210,55 @@ DESTINATION_MINUTES = {
 KIND_MINUTES = {"commute": 30, "bath": 25, "meal": 50, "sleep": 20,
                 "shopping": 30, "errand": 12}
 
+# ---------- 第十轮 B1：跨地点切换必须补「回程/去程」通勤块 ----------
+# 从这些地方回「家」默认用时（分钟区间）；公司按通勤 15-40，医院 25-35，商场 20-30。
+TRANSIT_RETURN_RANGES = {
+    "医院": (25, 35), "商场": (20, 30), "公司": (15, 40), "景区": (25, 40),
+    "餐厅": (15, 25), "超市": (10, 20), "学校": (15, 30), "车站": (15, 30),
+    "酒店": (15, 25), "公园": (10, 20),
+}
+TRANSIT_OTHER_RANGE = (15, 40)   # 非「回家」的跨地点切换
+TRANSIT_MIN_MINUTES = 10         # 再短也要给 10 分钟，不能凭空瞬移
+TRANSIT_MAX_MINUTES = 40
+TRANSIT_KNOWN_PLACES = frozenset({
+    "家", "卧室", "客厅", "厨房", "浴室", "阳台", "出租屋", "家里",
+    "公司", "商场", "医院", "景区", "餐厅", "车站", "学校", "酒店房间",
+    "路上", "超市", "公园", "楼下小馆",
+})
+_VEHICLE_RETURN = {
+    "医院": "出租车", "商场": "出租车", "景区": "出租车", "酒店房间": "出租车",
+    "车站": "出租车", "餐厅": "公交", "超市": "公交", "公园": "公交",
+}
+#: vehicle 中文名 -> transit 字段代码（地铁/公交/打车；自驾用 drive）
+_TRANSIT_MODE_BY_VEHICLE = {
+    "出租车": "taxi", "地铁": "subway", "公交": "bus", "开车": "drive",
+}
+#: 在车上时绝对不能说的「已经到家」类终态词（到站后由日程放行）。
+_ROAD_HOME_TERMINAL = (
+    ("已经到家了", "还在车上，快到楼下了"),
+    ("快到家了", "还在车上，快到了"),
+    ("到家啦", "还在车上，快到楼下了"),
+    ("到家了", "还在车上，快到楼下了"),
+    ("进家门", "还在车上，快到楼下了"),
+    ("瘫在沙发上", "还在车上"),
+    ("躺在沙发上", "还在车上"),
+    ("瘫沙发", "还在车上"),
+    ("躺沙发", "还在车上"),
+    ("在沙发上", "还在车上"),
+    ("躺下了", "还在车上"),
+    ("在家里", "还在路上"),
+    ("在家看电视", "还在路上，电视还没看上"),
+    ("在家", "还在路上"),
+    ("看电视", "还在车上"),
+    ("躺在床上", "还在路上"),
+    ("躺床上", "还在路上"),
+    ("窝着", "还在路上"),
+    ("在沙发上", "还在车上"),
+    ("沙发", "还在车上"),
+    ("卧室", "还在路上"),
+    ("被窝", "还在路上"),
+)
+
 EMOTION_HINT = {
     "wronged": "你现在又委屈又气：可以气鼓鼓地抱怨（例：「（气鼓鼓套外套）去去去，你这就催，"
                "你凶什么凶嘛」），但台词仍要符合安全规则。",
@@ -180,15 +267,7 @@ EMOTION_HINT = {
 }
 
 
-def zone_for_place(place):
-    try:
-        try:
-            from .photo_rules import zone_for_place as _zone
-        except ImportError:
-            from photo_rules import zone_for_place as _zone
-        return _zone(place) or ""
-    except Exception:
-        return ""
+
 
 
 def needs_transit(from_place, to_place):
@@ -201,6 +280,8 @@ def needs_transit(from_place, to_place):
 
 def vehicle_for(to_place, minutes=30):
     place = str(to_place or "")
+    if place == "公司":
+        return "地铁"
     if place in ("景区", "酒店") or int(minutes or 0) >= 40:
         return "出租车"
     if place in ("餐厅", "公园", "超市"):
@@ -264,8 +345,7 @@ def _now(now=None):
     if now is not None:
         return now
     try:
-        import datetime
-        return datetime.datetime.now()
+        return _amo_clock.now()
     except Exception:  # pragma: no cover
         return None
 
@@ -356,8 +436,42 @@ def current(plugin, now=None):
     if stage and stage.get("arrived"):
         finish(plugin, data, stage, now)
         return None
-    _ensure_blocks(plugin, data, now)
+    _ensure_blocks(plugin, data, now, readonly=True)
+    if data.get("cancelled"):
+        return None
     return data
+
+
+OFFICE_WORDS = ("公司", "写字楼", "办公室", "工位")
+WORK_START_HOUR = 9
+WORK_END_HOUR = 18
+
+
+def _office_place(place):
+    return any(word in str(place or "") for word in OFFICE_WORDS)
+
+
+def _no_office_allowed(plugin, now=None):
+    """病假当天、或夜间（>=20:00 / <06:00）不再安排去公司。
+
+    2026-11-18：21:18 还起了一次「去公司」的过渡，到站后写了 120 分钟在工位忙工作。
+    """
+    now = now or _now()
+    try:
+        state = getattr(plugin, "state", None)
+        checker = getattr(state, "on_sick_leave", None)
+        if callable(checker) and checker():
+            return True
+    except Exception as exc:
+        logger.debug("[amo] 请假状态读取失败: %s", exc)
+    try:
+        until = float(_kv_get(plugin, "health:sick_until", 0) or 0)
+        if until > _amo_clock.now_ts():
+            return True
+    except Exception as exc:
+        logger.debug("[amo] 病假截止时间读取失败: %s", exc)
+    # 只有正常上班时间能去公司（周末加班也按早 9 晚 6）：09:00-18:00 之外不安排。
+    return now.hour >= WORK_END_HOUR or now.hour < WORK_START_HOUR
 
 
 def start(plugin, kind, to_place="", activity="", category="", minutes=None,
@@ -366,13 +480,17 @@ def start(plugin, kind, to_place="", activity="", category="", minutes=None,
     """开始一次过渡；已有进行中的过渡按「正在做的事优先」排队。"""
     now = _now(now)
     kind = str(kind or "commute")
+    to_place = str(to_place or "")
+    if _office_place(to_place) and _no_office_allowed(plugin, now):
+        logger.warning("[amo] 病假/夜间不安排去公司：to=%s hour=%s kind=%s", to_place, now.hour, kind)
+        return None
     state = getattr(plugin, "state", None)
     current_data = _kv_get(plugin, STATE_KEY, {}) or {}
     if isinstance(current_data, dict) and current_data.get("steps"):
         stage = stage_at(current_data, now)
         if stage and not stage.get("arrived"):
             history = list(current_data.get("queued") or [])
-            history.append({"kind": kind, "to": to_place, "queued_at": time.time()})
+            history.append({"kind": kind, "to": to_place, "queued_at": _amo_clock.now_ts()})
             current_data["queued"] = history[-5:]
             _kv_set(plugin, STATE_KEY, current_data)
             logger.info("[amo] 过渡冲突：%s 优先，新的 %s→%s 排队", stage.get("activity"), kind, to_place)
@@ -395,9 +513,9 @@ def start(plugin, kind, to_place="", activity="", category="", minutes=None,
     data = {
         "kind": kind, "from": from_place, "to": str(to_place or ""),
         "activity": str(activity or ""), "category": str(category or ""),
-        "started_at": float(now.timestamp()) if now else time.time(),
+        "started_at": float(now.timestamp()) if now else _amo_clock.now_ts(),
         "minutes": total, "steps": steps, "emotion": emotion,
-        "status": "running", "blocks_written": False, "created_at": time.time(),
+        "status": "running", "blocks_written": False, "created_at": _amo_clock.now_ts(),
         "vehicle": vehicle_for(to_place, total),
     }
     # 第八轮 A：新过渡启动先截断与 now 重叠的旧活动块（否则 17:00 的逛街尾巴会穿帮）
@@ -418,9 +536,9 @@ def start(plugin, kind, to_place="", activity="", category="", minutes=None,
 
 
 def _state_items(plugin, day):
-    state = getattr(plugin, "state", None)
+    """当天的块：统一走 Timeline（排序/去重/空 end 防御），不再直读缓存。"""
     try:
-        return list((getattr(state, "schedule", {}) or {}).get(day) or [])
+        return Timeline(plugin).blocks(day)
     except Exception:
         return []
 
@@ -429,21 +547,49 @@ def _commit(plugin, day, items, old_items):
     state = getattr(plugin, "state", None)
     try:
         if state is not None and callable(getattr(state, "commit_schedule_change", None)):
-            return state.commit_schedule_change(day, items, old_items=old_items,
-                                                source="transit", reason="过渡分块")
+            return Timeline(plugin).save(day, items, old_items=old_items,
+                                         source="transit", reason="过渡分块")
     except Exception as exc:
         logger.debug("[amo] 过渡分块落库失败: %s", exc)
     return None
 
 
-def _clock(now, minutes=0.0):
-    import datetime
-    moment = now + datetime.timedelta(minutes=float(minutes))
-    return moment.strftime("%H:%M")
 
 
-def _ensure_blocks(plugin, data, now):
-    """≥15 分钟的过渡写成分块日程（source=transit，带 step 下标）。"""
+
+def _drop_future_transit(plugin, now=None):
+    """取消过渡时把还没开始的 transit 块一起删掉（避免留下半截日程）。"""
+    now = _now(now)
+    if now is None:
+        return
+    day = now.strftime("%Y-%m-%d")
+    now_text = now.strftime("%H:%M")
+    try:
+        items = _state_items(plugin, day)
+        kept, filled_to = [], ""
+        for row in items:
+            if (str(row.get("source") or "") == "transit"
+                    and str(row.get("start") or "") >= now_text):
+                filled_to = max(filled_to, str(row.get("end") or ""))
+                continue
+            kept.append(row)
+        if filled_to and kept:
+            # 删掉未落地的过渡块会把时间轴挖空；把前一块补到被删块的末尾（保持连续覆盖）。
+            last = dict(kept[-1])
+            if str(last.get("end") or "") < filled_to:
+                last["end"] = filled_to
+                kept[-1] = last
+        if len(kept) != len(items) or filled_to:
+            _commit(plugin, day, kept, items)
+    except Exception as exc:
+        logger.debug("[amo] 清理未落地过渡块失败: %s", exc)
+
+
+def _ensure_blocks(plugin, data, now, readonly=False):
+    """≥15 分钟的过渡写成分块日程（source=transit，带 step 下标）。
+
+    readonly=True 时只清状态、不写库（GET /schedule 必须纯只读）。
+    """
     if not isinstance(data, dict) or data.get("blocks_written"):
         return
     if data.get("no_blocks"):
@@ -451,7 +597,29 @@ def _ensure_blocks(plugin, data, now):
         _kv_set(plugin, STATE_KEY, data)
         return
     now = _now(now)
-    total = total_minutes(data.get("steps") or [])
+    if _office_place(data.get("to")) and _no_office_allowed(plugin, now):
+        if readonly:
+            return  # GET 纯只读：这里只跳过，不取消、不写库
+        logger.warning("[amo] 取消去公司的过渡（病假/夜间/工作日下班后）：to=%s hour=%s",
+                       data.get("to"), now.hour)
+        data["cancelled"] = True
+        data["blocks_written"] = True
+        _kv_set(plugin, STATE_KEY, {})
+        _kv_set(plugin, "activity_now", {})
+        return
+    started = float(data.get("started_at") or 0)
+    total_planned = total_minutes(data.get("steps") or [])
+    if started and now is not None and (now.timestamp() - started) > (total_planned + 15) * 60:
+        if readonly:
+            return
+        logger.warning("[amo] 过渡已过期（%.0f 分钟没落地），丢弃：%s→%s",
+                       (now.timestamp() - started) / 60.0, data.get("from"), data.get("to"))
+        data["cancelled"] = True
+        data["blocks_written"] = True
+        _kv_set(plugin, STATE_KEY, {})
+        _kv_set(plugin, "activity_now", {})
+        return
+    total = total_planned
     if total < MIN_BLOCK_MINUTES or now is None:
         data["blocks_written"] = True
         _kv_set(plugin, STATE_KEY, data)
@@ -558,6 +726,13 @@ def finish(plugin, transition=None, stage=None, now=None):
     """到达：写到达块、记一条事实、清状态。"""
     data = transition if isinstance(transition, dict) else (_kv_get(plugin, STATE_KEY, {}) or {})
     now = _now(now)
+    if _office_place(data.get("to")) and _no_office_allowed(plugin, now):
+        logger.warning("[amo] 到站后不写公司活动块（病假/夜间/工作日下班后）：to=%s hour=%s",
+                       data.get("to"), now.hour)
+        _kv_set(plugin, STATE_KEY, {})
+        _kv_set(plugin, "activity_now", {})
+        _drop_future_transit(plugin, now)
+        return None
     stage = stage or stage_at(data, now) or {}
     day = now.strftime("%Y-%m-%d") if now else ""
     to_place = str(data.get("to") or "")
@@ -570,6 +745,14 @@ def finish(plugin, transition=None, stage=None, now=None):
         "category": str(data.get("category") or data.get("kind") or "life"),
         "source": "transit", "step": "arrive", "happened": True,
     }
+    # 先定好 end 再落库：以前先写 end="" 的到达块、再改内存对象不提交，
+    # 线上就留下 19:06 end="" 的坏行（bad_time / 阻断 JIT 与块日记）。
+    _chain = str(data.get("then_kind") or "")
+    import datetime as _dt
+    arrive_end = ((now + _dt.timedelta(minutes=5)).strftime("%H:%M")
+                  if now is not None else "")
+    if arrive_end:
+        item["end"] = arrive_end
     written = False
     try:
         if day:
@@ -579,15 +762,21 @@ def finish(plugin, transition=None, stage=None, now=None):
             kept = [row for row in items
                     if not (str(row.get("source") or "") == "transit"
                             and str(row.get("start") or "") >= now_text)]
+            if item.get("end"):
+                # 到达块不能越过紧随其后的块：取两者更早者，保证首尾相接/0 重叠。
+                _next_start = min(
+                    (str(row.get("start") or "") for row in kept
+                     if now_text < str(row.get("start") or "") < str(item["end"])),
+                    default="",
+                )
+                if _next_start:
+                    item["end"] = _next_start
             _commit(plugin, day, kept + [item], items)
             written = True
     except Exception as exc:
         logger.debug("[amo] 过渡到达写日程失败: %s", exc)
-    _chain = str(data.get("then_kind") or "")
     if _chain and day and now is not None:
-        import datetime as _dt
-        arrive_end = (now + _dt.timedelta(minutes=5)).strftime("%H:%M")
-        item["end"] = arrive_end
+        arrive_end = str(item.get("end") or "")
         activity_text = str(data.get("then_activity") or
                             ("和柳如烟逛街" if _chain == "shopping" else "在工位上忙工作"))
         duration = max(15, int(data.get("then_minutes") or (180 if _chain == "shopping" else 120)))
@@ -611,7 +800,7 @@ def finish(plugin, transition=None, stage=None, now=None):
         logger.info("[amo] 到达后进入活动块：%s（%d 分钟）", activity_text, duration)
     fact = "折腾了%d分钟才到%s。" % (elapsed, to_place) if to_place else "折腾了%d分钟才忙完。" % elapsed
     _kv_set(plugin, "transit:last", {"to": to_place, "elapsed": elapsed,
-                                     "fact": fact, "at": time.time()})
+                                     "fact": fact, "at": _amo_clock.now_ts()})
     try:
         writer = getattr(plugin, "_data_call", None)
         spawn = getattr(plugin, "_spawn", None)
@@ -800,6 +989,463 @@ def resolve_overlaps(old_items, new_items):
     return kept, trimmed
 
 
+def _day_start_minute(value):
+    """00:00 是当天起点（_minute 把 00:00 当 24:00 是给 end 用的）。"""
+    body = str(value or "").strip()[:5]
+    if body in ("0:00", "00:00"):
+        return 0
+    return _minute(value)
+
+
+def _day_span(item):
+    """按「一天之内」解析 start/end：00:00 排最前，24:00 排最后。"""
+    if not isinstance(item, dict):
+        return None
+    begin = _day_start_minute(item.get("start"))
+    if begin is None:
+        return None
+    finish = _minute(item.get("end"))
+    if finish is None or finish <= begin:
+        finish = 24 * 60 if begin >= 23 * 60 else begin + 60
+    return begin, finish
+
+
+def resolve_new_overlaps(new_items):
+    """新增块自身去重叠（分钟级）：按 start 排序，后块 start 截到前块 end；
+    被完全覆盖的块丢弃；截断后不足 5 分钟的碎片并入前块。返回 (items, trimmed)。
+
+    为什么还要这一步：commit 的外部 blocker 只算「不在 new 列表里的旧块」，
+    所以「原样旧块 + 一条重叠追加」时旧块被当成同批过滤掉，追加块就没人拦，
+    重叠直接落库。这里把 new_items 自己也按时间轴压直，是外部去重叠之后的第二道闸。
+    """
+    rows = []
+    for index, item in enumerate(new_items or []):
+        if not isinstance(item, dict):
+            rows.append((None, index, item))
+            continue
+        rows.append((_day_span(item), index, item))
+    rows.sort(key=lambda trio: (trio[0][0] if trio[0] else 24 * 60, trio[1]))
+    kept, trimmed = [], []
+    for span, _index, item in rows:
+        row = dict(item) if isinstance(item, dict) else item
+        if span and kept and isinstance(kept[-1], dict):
+            prev_end = _minute(kept[-1].get("end"))
+            begin, finish = span
+            if prev_end is not None and begin < prev_end:
+                trimmed.append(item)
+                if finish <= prev_end:
+                    continue
+                row["start"] = _minute_text(prev_end)
+                tail = _minute(row.get("end"))
+                if tail is not None and tail - prev_end < 5:
+                    kept[-1]["end"] = row.get("end")
+                    continue
+        kept.append(row)
+    return kept, trimmed
+
+
+# ---------- 第十轮 B1：跨地点切换写侧兜底 ----------
+
+
+def _place_zone(place):
+    try:
+        return str(zone_for_place(place) or "")
+    except Exception:
+        return ""
+
+
+def _is_home_place(place):
+    """家/卧室/客厅/沙发/浴室这种「家内部」地点：来回走不用通勤块。"""
+    text = str(place or "").strip()
+    if not text:
+        return False
+    if text in INDOOR_PLACES:
+        return True
+    return _place_zone(text) == "home"
+
+
+def _is_known_place(place):
+    """只给认识的地点补通勤块：脏数据/随便一个词不当成跨地点。"""
+    text = str(place or "").strip()
+    return bool(text) and (text in TRANSIT_KNOWN_PLACES or bool(_place_zone(text)))
+
+
+def transit_minutes(day, start_min, from_place, to_place):
+    """两地点之间的路程分钟；同一段（day+start+两端）永远同一个数。
+
+    回家：按出发地点给 15-40 分钟（医院 25-35、商场 20-30、公司 15-40）；
+    从家出门：沿用现有去程规则 DESTINATION_MINUTES；
+    其它跨地点：15-40；家内部移动（客厅→卧室）返回 0。
+    """
+    from_place = str(from_place or "").strip()
+    to_place = str(to_place or "").strip()
+    if not from_place or not to_place or from_place == to_place:
+        return 0
+    from_home = _is_home_place(from_place)
+    to_home = _is_home_place(to_place)
+    if from_home and to_home:
+        return 0
+    if from_home:
+        base = int(DESTINATION_MINUTES.get(to_place, 20))
+        return max(TRANSIT_MIN_MINUTES, min(TRANSIT_MAX_MINUTES, base))
+    if to_home:
+        low, high = TRANSIT_RETURN_RANGES.get(from_place, TRANSIT_OTHER_RANGE)
+    else:
+        low, high = TRANSIT_OTHER_RANGE
+    rng = random.Random("transit|%s|%s|%s|%s" % (
+        str(day or ""), _minute_text(int(start_min)), from_place, to_place))
+    value = rng.randint(min(low, high), max(low, high))
+    return max(TRANSIT_MIN_MINUTES, min(TRANSIT_MAX_MINUTES, int(value)))
+
+
+def _needs_transit_block(prev, nxt):
+    if not isinstance(prev, dict) or not isinstance(nxt, dict):
+        return False
+    prev_place = str(prev.get("place") or "").strip()
+    next_place = str(nxt.get("place") or "").strip()
+    if not prev_place or not next_place or prev_place == next_place:
+        return False
+    if not (_is_known_place(prev_place) and _is_known_place(next_place)):
+        return False
+    if _is_home_place(prev_place) and _is_home_place(next_place):
+        return False
+    if str(prev.get("zone") or "") == "road" or _place_zone(prev_place) == "road":
+        return False
+    if str(nxt.get("zone") or "") == "road" or _place_zone(next_place) == "road":
+        return False
+    return True
+
+
+def _transit_row(day, start_min, minutes, prev, nxt, now_min):
+    from_place = str(prev.get("place") or "").strip()
+    to_place = str(nxt.get("place") or "").strip()
+    end_min = max(int(start_min) + 1, min(24 * 60, int(start_min) + int(minutes)))
+    to_home = _is_home_place(to_place)
+    from_home = _is_home_place(from_place)
+    if to_home:
+        vehicle = _VEHICLE_RETURN.get(from_place) or vehicle_for(from_place, minutes)
+    else:
+        vehicle = vehicle_for(to_place, minutes)
+    ride = {"出租车": "打车", "地铁": "坐地铁", "公交": "坐公交"}.get(vehicle, "赶路")
+    mode = _TRANSIT_MODE_BY_VEHICLE.get(str(vehicle), "")
+    if to_home:
+        activity = "刚出%s，%s回家（在路上）" % (from_place, ride)
+        kind = "return"
+    elif from_home:
+        activity = "出门去%s，%s（在路上）" % (to_place, ride)
+        kind = "outbound"
+    else:
+        activity = "从%s去%s，%s（在路上）" % (from_place, to_place, ride)
+        kind = "transfer"
+    return {
+        "start": _minute_text(int(start_min)), "end": _minute_text(end_min),
+        "activity": activity, "place": "路上", "zone": "road",
+        "vehicle": vehicle, "category": "commute",
+        "source": "transit_block",
+        "transit": mode or kind, "transit_kind": kind,
+        "happened": int(start_min) <= int(now_min),
+    }
+
+
+def _transit_order(rows):
+    order = []
+    for index, row in enumerate(rows):
+        span = _day_span(row)
+        if span:
+            order.append((span[0], span[1], index))
+    order.sort()
+    return order
+
+
+def _push_after(rows, order, from_pos, floor_min):
+    """通勤块占掉空档后，把还没开始的块依次后移，保持时间轴严格递增。"""
+    cursor = int(floor_min)
+    for start, end, index in order[from_pos:]:
+        if start >= cursor:
+            cursor = end
+            continue
+        duration = max(1, end - start)
+        new_start = cursor
+        new_end = min(24 * 60, new_start + duration)
+        if new_start >= 24 * 60 or new_end - new_start < 5:
+            rows[index] = None
+            logger.warning("[amo] 通勤块放不下，丢弃被挤掉的日程块 day_start=%s",
+                           _minute_text(start))
+            continue
+        row = rows[index]
+        if isinstance(row, dict):
+            row["start"] = _minute_text(new_start)
+            row["end"] = _minute_text(new_end)
+        logger.info("[amo] 通勤块占位：日程块 %s 顺延到 %s", _minute_text(start),
+                    _minute_text(new_start))
+        cursor = new_end
+
+
+def _has_overlap(rows):
+    spans = sorted(span for span in (_day_span(row) for row in rows) if span)
+    return any(left[1] > right[0] for left, right in zip(spans, spans[1:]))
+
+
+def _row_signature(row):
+    if not isinstance(row, dict):
+        return None
+    return (str(row.get("start") or ""), str(row.get("end") or ""),
+            str(row.get("activity") or ""), str(row.get("place") or ""))
+
+
+def insert_transit_blocks(day, items, old_items=None, now=None):
+    """写侧兜底：刚写入的块与按开始时间紧邻的上一块 place 不同时，补一段通勤块。
+
+    - 只在「新旧有变化的那条边界」插，避免整份重排时把前后无关的块也改掉；
+    - 时长按 day+start 稳定取整，刷新/重载不变；
+    - 空档放不下最短 10 分钟时把后块（及其后重叠的块）顺延，绝不省掉通勤；
+    - 已有路上块夹在中间时不再重复插（幂等）。
+    返回 (rows, inserted)。
+    """
+    rows = [dict(row) if isinstance(row, dict) else row for row in (items or [])]
+    old_keys = {_row_signature(row) for row in (old_items or [])}
+    old_keys.discard(None)
+    now = _now(now)
+    now_min = int(now.hour) * 60 + int(now.minute) if now is not None else 0
+    inserted = []
+    order = _transit_order(rows)
+    cursor = 0
+    guard = 0
+    while cursor < len(order) - 1 and guard < 512:
+        guard += 1
+        prev_span, next_span = order[cursor], order[cursor + 1]
+        prev, nxt = rows[prev_span[2]], rows[next_span[2]]
+        touched = (_row_signature(prev) not in old_keys
+                   or _row_signature(nxt) not in old_keys)
+        minutes = 0
+        if (touched and _needs_transit_block(prev, nxt)
+                and prev_span[1] + TRANSIT_MIN_MINUTES <= 24 * 60):
+            # 当天剩余时间不够一段合法通勤就不插：避免 1 分钟碎片和同分钟两个地点
+            minutes = min(
+                transit_minutes(day, prev_span[1], prev.get("place"), nxt.get("place")),
+                24 * 60 - prev_span[1],
+            )
+        if not minutes:
+            cursor += 1
+            continue
+        block = _transit_row(day, prev_span[1], minutes, prev, nxt, now_min)
+        rows.append(block)
+        inserted.append(block)
+        logger.info("[amo] 跨地点补通勤块 %s-%s：%s", block["start"], block["end"],
+                    block["activity"])
+        _push_after(rows, order, cursor + 1, prev_span[1] + minutes)
+        order = _transit_order(rows)
+        cursor = 0
+    rows = [row for row in rows if row is not None]
+    rows.sort(key=lambda row: (_day_span(row)[0] if _day_span(row) else 24 * 60))
+    if inserted and _has_overlap(rows):
+        # 硬兜底：宁可把重叠块压直，也绝不让重叠落库
+        logger.error("[amo] 通勤块插入后仍有重叠，已二次压直 day=%s", day)
+        rows, _trimmed = resolve_new_overlaps(rows)
+    # T1：通勤块也是路上块，插完按文案统一 activity/vehicle/transit，别让两种交通方式并存。
+    try:
+        try:
+            from .schedule_slots import ScheduleSlotsMixin as _slots
+        except ImportError:
+            from schedule_slots import ScheduleSlotsMixin as _slots
+        rows = _slots._sync_transit_vehicle(rows)
+    except Exception as _amo_exc:
+        logger.debug("[amo] 通勤块 activity/vehicle 收口失败：%s", _amo_exc)
+    return rows, inserted
+
+
+def _row_is_road(row):
+    place = str(row.get("place") or "").strip()
+    return (place == "路上" or str(row.get("zone") or "") == "road"
+            or _place_zone(place) == "road")
+
+
+def _trip_generated_rows(rows):
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("source") or "") in ("trip_pool", "trip_rest", "transit"):
+            return True
+        if str(row.get("trip") or "").strip():
+            return True
+    return False
+
+
+def _return_leg_source(rows, home_row):
+    """回程起点：同地点连续段里最大的 end（嵌套子块视为同一次活动）。"""
+    home_span = _day_span(home_row)
+    if not home_span:
+        return None
+    home_start = home_span[0]
+    best = None
+    for row in rows:
+        if row is home_row or not isinstance(row, dict):
+            continue
+        if _is_home_place(row.get("place")) or _row_is_road(row):
+            continue
+        if not _is_known_place(row.get("place")):
+            continue
+        span = _day_span(row)
+        if not span or span[1] > home_start:
+            continue
+        if best is None or span[1] > best[1][1]:
+            best = (row, span)
+    return best
+
+
+def _road_between(rows, floor_min, home_start):
+    for row in rows:
+        if not isinstance(row, dict) or not _row_is_road(row):
+            continue
+        span = _day_span(row)
+        if not span:
+            continue
+        if span[0] <= home_start and span[1] > floor_min:
+            return True
+    return False
+
+
+def _home_already_before(rows, home_row, floor_min):
+    home_span = _day_span(home_row)
+    if not home_span:
+        return False
+    for row in rows:
+        if row is home_row or not isinstance(row, dict):
+            continue
+        if not _is_home_place(row.get("place")):
+            continue
+        span = _day_span(row)
+        if not span:
+            continue
+        if span[0] < home_span[0] and span[1] > floor_min:
+            return True
+    return False
+
+
+def _shift_home_and_after(rows, home_start, floor_min):
+    """只顺延家块及其后的块；活动块（含嵌套子块）的 start 一律不动。"""
+    ordered = sorted(
+        [row for row in rows if isinstance(row, dict)],
+        key=lambda row: (_day_span(row) or (24 * 60, 24 * 60))[0])
+    cursor = int(floor_min)
+    dropped = []
+    for row in ordered:
+        span = _day_span(row)
+        if not span or span[0] < home_start:
+            continue
+        duration = max(1, span[1] - span[0])
+        new_start = max(span[0], cursor)
+        new_end = min(24 * 60, new_start + duration)
+        if new_end <= new_start:
+            # 今天剩下的时间放不下这一段：宁可丢掉它，也不能留下和回程块重叠的幽灵块
+            dropped.append(row)
+            continue
+        row["start"] = _minute_text(new_start)
+        row["end"] = _minute_text(new_end)
+        cursor = new_end
+    if dropped:
+        drop_ids = {id(row) for row in dropped}
+        rows[:] = [row for row in rows if id(row) not in drop_ids]
+
+
+def _has_blocking_overlap(rows):
+    """只把「部分交叠」当重叠；完全嵌套的子块（同一活动）不算。"""
+    spans = sorted(span for span in (_day_span(row) for row in rows) if span)
+    for index, (start, finish) in enumerate(spans):
+        for other_start, other_finish in spans[index + 1:]:
+            if other_start >= finish:
+                break
+            if (start <= other_start and other_finish <= finish) or \
+                    (other_start <= start and finish <= other_finish):
+                continue
+            return True
+    return False
+
+
+def repair_cross_place_blocks(plugin, day, items=None, now=None):
+    """读/加载时只补「回程」：从外面回家时在活动段末尾插一段路上块。
+
+    不改写去医院/去商场的出发时间（历史小日记/记忆不能对不上）；嵌套子块
+    视为同一次活动（取同地点连续段的最大 end 作为回程起点）。只修今天；
+    旅游自己写的块（trip/transit）不重复修。返回 (rows, inserted)。
+    """
+    day = str(day or "")
+    now = _now(now)
+    today = now.strftime("%Y-%m-%d") if now is not None else ""
+    if not day:
+        return [], []
+    rows = items
+    if rows is None:
+        rows = []
+        state = getattr(plugin, "state", None)
+        try:
+            if state is not None:
+                rows = list((getattr(state, "schedule", {}) or {}).get(day) or [])
+        except Exception:
+            rows = []
+        if not rows:
+            try:
+                rows = list(plugin.db.get_schedule(day) or [])
+            except Exception:
+                rows = []
+    rows = [dict(row) if isinstance(row, dict) else row for row in (rows or [])]
+    if today and day != today:
+        return rows, []
+    if _trip_generated_rows(rows):
+        return rows, []
+    now_min = int(now.hour) * 60 + int(now.minute) if now is not None else 0
+    inserted = []
+    guard = 0
+    while guard < 32:
+        guard += 1
+        target = None
+        ordered = sorted(
+            [row for row in rows if isinstance(row, dict)],
+            key=lambda row: (_day_span(row) or (24 * 60, 24 * 60))[0])
+        for home_row in ordered:
+            if not _is_home_place(home_row.get("place")):
+                continue
+            home_span = _day_span(home_row)
+            if not home_span:
+                continue
+            source = _return_leg_source(rows, home_row)
+            if source is None:
+                continue
+            place_row, place_span = source
+            if _road_between(rows, place_span[1], home_span[0]):
+                continue
+            if _home_already_before(rows, home_row, place_span[1]):
+                continue
+            available = 24 * 60 - place_span[1]
+            if available < TRANSIT_MIN_MINUTES:
+                # 今天已经放不下一段合法回程：保持原样，绝不再插 1 分钟/重复块
+                break
+            minutes = min(
+                transit_minutes(day, place_span[1], place_row.get("place"),
+                                home_row.get("place")),
+                available,
+            )
+            if minutes < TRANSIT_MIN_MINUTES:
+                break
+            target = (home_row, place_row, place_span[1], minutes)
+            break
+        if target is None:
+            break
+        home_row, place_row, start_min, minutes = target
+        block = _transit_row(day, start_min, minutes, place_row, home_row, now_min)
+        home_start = (_day_span(home_row) or (start_min, start_min))[0]
+        _shift_home_and_after(rows, home_start, start_min + minutes)
+        rows.append(block)
+        inserted.append(block)
+        logger.info("[amo] 回程通勤修复 %s-%s：%s", block["start"],
+                    block["end"], block["activity"])
+    if inserted and _has_blocking_overlap(rows):
+        logger.error("[amo] 回程修复后仍部分重叠，放弃本次修复 day=%s", day)
+        return [dict(row) for row in (items or []) if isinstance(row, dict)], []
+    rows.sort(key=lambda row: (_day_span(row) or (24 * 60, 24 * 60))[0])
+    return rows, inserted
+
+
 def normalize_day(items):
     """把一天里互相重叠的块压成一条直线（读侧兜底）：较早的块优先，后块起点截到前块 end；
     完全被覆盖的块丢弃；截断后不足 5 分钟的碎片并入前块。返回 (kept, changed)。"""
@@ -866,6 +1512,9 @@ def mark_doing_tree(tree, now=None):
 import re
 
 ACTIVITY_MEM_KEY = "activity_mem_done"
+ACTIVITY_MEM_FALLBACK_KEY = "activity_mem_fallback"
+#: 想记不认 tags 时把 event_id 落这里，标签没写进去也要能查回来，不静默丢
+ACTIVITY_MEM_TAG_LOST_KEY = "activity_mem_tag_lost"
 MEM_CATEGORIES = {"social", "date", "appointment", "health", "shopping",
                   "errand", "travel", "outing", "play"}
 MEM_WORDS = ("逛街", "购物", "买东西", "电影", "看剧", "约会", "看病", "医院",
@@ -942,19 +1591,39 @@ def _memory_uid(plugin):
         return ""
 
 
-def _memory_coro(plugin, uid, text, idem):
-    """优先走想记的 _data_memory_write（支持 tags/idem/importance），没有就退回 _write_memory_checked。"""
+def _memory_coro(plugin, uid, text, idem, event_id=""):
+    """优先走想记的 _data_memory_write（支持 tags/idem_key/importance），没有就退回 _write_memory_checked。
+
+    tags 里带 "event:<id>"：这条长期记忆和日程块 / 账本 / 块日记说的是同一个事件。
+    想记旧版不认 tags 时不硬造：记降级次数 + 把 id 存 ACTIVITY_MEM_TAG_LOST_KEY 留档。
+    """
+    event_id = str(event_id or "").strip()
+    tags = "#活动" + ((" event:%s" % event_id) if event_id else "")
     writer = getattr(plugin, "_data_memory_write", None)
     if callable(writer):
         try:
-            return writer(uid, text, "event", 0, "private", "", subject="bot",
-                          tags="#活动", idem=idem, importance=25)
+            return writer(uid, text, "activity", 1, "private", "", subject="bot",
+                          idem_key=idem, tags=tags, importance=0.25)
         except TypeError as exc:
-            logger.debug("[amo] 想记不支持 tags/idem，退回通用写入口: %s", exc)
+            # 旧版想记没有 tags/idem_key/importance：记一笔降级次数，别静默丢标签/权重
+            logger.warning("[amo] 想记不支持 tags/idem_key/importance（event:%s），"
+                           "退回通用写入口: %s", event_id or "-", exc)
+            try:
+                failed = int(_kv_get(plugin, ACTIVITY_MEM_FALLBACK_KEY, 0) or 0)
+            except (TypeError, ValueError):
+                failed = 0
+            _kv_set(plugin, ACTIVITY_MEM_FALLBACK_KEY, failed + 1)
+            if event_id:
+                try:
+                    lost = dict(_kv_get(plugin, ACTIVITY_MEM_TAG_LOST_KEY, {}) or {})
+                    lost[str(idem)] = event_id
+                    _kv_set(plugin, ACTIVITY_MEM_TAG_LOST_KEY, lost)
+                except Exception as _exc:
+                    logger.debug("[amo] 记录未写入的事件标签失败: %s", _exc)
     checked = getattr(plugin, "_write_memory_checked", None)
     if callable(checked):
         try:
-            return checked(uid, text, "event", 0, "private", "", subject="bot")
+            return checked(uid, text, "activity", 1, "private", "", subject="bot")
         except TypeError as exc:
             logger.debug("[amo] 通用写入口参数不匹配: %s", exc)
             return None
@@ -995,8 +1664,17 @@ def write_activity_memory(plugin, rows, now=None):
         if done.get(idem):
             continue
         done[idem] = True
+        eid = ""
         try:
-            coro = _memory_coro(plugin, uid, text, idem)
+            try:
+                from .amo_timeline import ensure_event_id as _ensure_event_id
+            except ImportError:
+                from amo_timeline import ensure_event_id as _ensure_event_id
+            eid = _ensure_event_id(day, row)
+        except Exception as exc:
+            logger.debug("[amo] 活动记忆取 event_id 失败: %s", exc)
+        try:
+            coro = _memory_coro(plugin, uid, text, idem, eid)
         except Exception as exc:
             logger.debug("[amo] 活动记忆构造失败: %s", exc)
             coro = None
@@ -1041,8 +1719,7 @@ def _spawn_diary(plugin, day, item):
     try:
         items = _state_items(plugin, day)
         version = plugin.db.schedule_version(day)
-        hourly = state._hourly_schedule(items)
-        spawn(day, item, hourly, version, reason="transit_done")
+        spawn(day, item, items, version, reason="transit_done")
     except Exception as exc:
         logger.debug("[amo] 后台小日记入队失败: %s", exc)
     return None
@@ -1101,17 +1778,58 @@ def truncate_open_activity(plugin, now=None):
     return trimmed
 
 
+def guard_road_home(plugin, text, now=None):
+    """在车上时不许说「到家了/瘫在沙发上」：交通还没结束，人还没进门。
+
+    通勤块（place=路上/zone=road）覆盖当前分钟时生效；到站后（家/公司…）自动放行。
+    进行中的过渡优先：state 的日程缓存可能还没刷新到「路上」块。
+    """
+    value = str(text or "")
+    if not value:
+        return value
+    on_road = False
+    try:
+        transition = current(plugin, now)
+        stage = stage_at(transition, now) if transition else None
+        if stage and not stage.get("arrived") and str(stage.get("zone") or "") == "road":
+            on_road = True
+    except Exception as exc:
+        logger.debug("[amo] 路上守卫读过渡失败: %s", exc)
+    state = getattr(plugin, "state", None)
+    if not on_road and state is not None:
+        try:
+            current_activity = state.current_activity() or {}
+        except Exception as exc:
+            logger.debug("[amo] 路上守卫读当前动作失败: %s", exc)
+            current_activity = {}
+        if isinstance(current_activity, dict):
+            place = str(current_activity.get("place") or "").strip()
+            zone = str(current_activity.get("zone") or "").strip() or _place_zone(place)
+            if zone == "road" or place == "路上":
+                on_road = True
+    if not on_road:
+        return value
+    changed = False
+    for old, new in _ROAD_HOME_TERMINAL:
+        if old in value:
+            value = value.replace(old, new)
+            changed = True
+    if changed:
+        value = re.sub(r"(，\s*还在车上)+$", "", value).rstrip("，")
+        logger.info("[amo] 路上终态守卫 -> %s", value[:60])
+    return value
+
 def guard_terminal(plugin, text, now=None):
-    """确定性兜底：过渡期说终态（我在医院/到商场了）→ 改成「在路上/快到了」。"""
+    """确定性兜底：过渡/通勤期说终态（我在医院/到家了）→ 改成「在路上/快到了」。"""
     value = str(text or "")
     if not value:
         return value
     data = current(plugin, now)
     if not data:
-        return value
+        return guard_road_home(plugin, value, now)
     stage = stage_at(data, now)
     if not stage or stage.get("arrived"):
-        return value
+        return guard_road_home(plugin, value, now)
     target = str(data.get("to") or "")
     words = [word for word in DESTINATION_WORDS if word == target and word in value]
     changed = False
@@ -1126,7 +1844,7 @@ def guard_terminal(plugin, text, now=None):
             changed = True
     if changed:
         logger.info("[amo] 过渡期终态守卫 -> %s", value[:60])
-    return value
+    return guard_road_home(plugin, value, now)
 
 
 def maybe_start(plugin, day, new_items, old_items, source, now=None):

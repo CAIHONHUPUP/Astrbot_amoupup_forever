@@ -15,6 +15,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fixtures import FakeDB  # Phase 11 共享测试桩
 
 import astrbot_stub  # noqa: E402
 
@@ -33,19 +34,6 @@ class FakeWallet:
         return 100000
 
 
-class FakeDB:
-    def __init__(self):
-        self.kv = {}
-        self.schedules = {}
-
-    def kv_get(self, key, default=None):
-        return self.kv.get(key, default)
-
-    def kv_set(self, key, value):
-        self.kv[key] = value
-
-    def get_schedule(self, day):
-        return list(self.schedules.get(day) or [])
 
 
 class FakePlugin:

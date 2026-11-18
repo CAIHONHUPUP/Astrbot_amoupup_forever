@@ -10,7 +10,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .clock import from_timestamp as _clock_from_ts
@@ -18,9 +19,15 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .clock import from_timestamp as _clock_from_ts
     except ImportError:  # 直接按文件加载时
-        from clock import from_timestamp as _clock_from_ts
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from clock import from_timestamp as _clock_from_ts
 
 import re
+
+try:  # 包模式
+    from .amo_memory_rerank_mixin import MemoryRerankMixin
+except ImportError:  # 直接按文件加载时
+    from amo_memory_rerank_mixin import MemoryRerankMixin
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -40,13 +47,14 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             to_int,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            _looks_like_time_query,
-            _now,
-            _render_time_block,
-            logger,
-            to_int,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                _looks_like_time_query,
+                _now,
+                _render_time_block,
+                logger,
+                to_int,
+            )
 
 if TYPE_CHECKING:
     from .amo_types import PluginLike as _MixinBase
@@ -67,7 +75,7 @@ def memory_subject(item):
     return "user"
 
 
-class RecallContextMixin(_MixinBase):
+class RecallContextMixin(MemoryRerankMixin, _MixinBase):
     async def _time_recall_context(self, event, uid):
         """按时间回看：他问"昨天下午/前天/上周三"时，去记忆终端取那段时间的聊天。"""
         if not self.cfg_bool("time_recall_enabled", True):
@@ -158,7 +166,7 @@ class RecallContextMixin(_MixinBase):
             if str(item.get("uid") or "") and str(item.get("uid")) != str(uid)
         ]
         recent = detail.get("recent") or []
-        lines = []
+        lines: list[Any] = []
         if others:
             labels = []
             for item in others:
@@ -275,10 +283,17 @@ class RecallContextMixin(_MixinBase):
                 continue
             seen.add(key)
             unique.append(item)
-        memories = unique[:max(1, self.cfg_int("memory_recall_limit", 6))]
+        # 每轮只重排一次：先在候选池里挑，再按 limit 截断（候选 ≤ limit 时不调模型）
+        cap = max(1, int(limit or self.cfg_int("memory_recall_limit", 6)))
+        pool = unique[:max(cap, self.cfg_int("memory_rerank_candidates", 10))]
+        reranker = getattr(self, "_rerank_memories", None)
+        if callable(reranker):
+            memories = await reranker(pool, text, cap, event)
+        else:  # 单测 FakePlugin 没有重排方法：按原顺序截断
+            memories = pool[:cap]
         if not memories:
             return [], ""
-        lines = []
+        lines: list[Any] = []
         _recall_format(self, item, lines, memories)
         text = "\n".join(lines)
         budget = self.cfg_int("memory_inject_max_chars", 1200)
@@ -325,6 +340,8 @@ def _recall_format(self, item, lines, memories):
                     from amo_immersion_guard import time_label as _time_label
                 label = _time_label(created, _now())
                 if label:
+                    if label == "[今日]":
+                        label = "[今日 %s]" % _clock_from_ts(created).strftime("%H:%M")
                     body = label + " " + body
                 elif any(w in body for w in rel_words):
                     body = "（记于 %s）%s" % (_clock_from_ts(created).strftime("%m-%d"), body)
@@ -346,5 +363,9 @@ def _recall_format(self, item, lines, memories):
                      + (" · 来源:" + src_label if src_label else "") + "）")
     if lines:
         lines.append("（每条记忆前的 [今日]/[昨日]/[前天]/[日期] 是记录时间。写职场、出门的事时，"
-                     "昨天或更早的必须说成「昨天」「以前」，不能说成刚刚。）")
+                     "昨天或更早的必须说成「昨天」「以前」，不能说成刚刚。"
+                     "旧的约定/约会按记录日期说，别当成今天或今晚的安排；"
+                     "记忆里她自己的念头（好想吃、想买）不是他的承诺；"
+                     "只有他说定时间（周六、周日、今晚）才算约定，「下次带你去/改天」不算；"
+                     "他没在这次对话里说过的话，不要说成「你刚说/你说过」。）")
 

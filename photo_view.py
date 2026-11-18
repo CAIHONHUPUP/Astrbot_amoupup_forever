@@ -1,73 +1,98 @@
 # -*- coding: utf-8 -*-
-"""照片/画画的「视角」约束（2026-11-11 加入）。
+"""photo_view.py 门面（2026-11-17）。
 
-她要发一张照片，视角只有两种，绝不能混：
-
-- **她本人出镜** → 自拍视角：手机前置摄像头、手臂伸出把镜头举在面前、人物占主体；
-- **风景/环境** → 她的拍摄视角：手机后置摄像头、第一人称、镜头在她眼睛的高度、
-  画面里不出现她本人（顶多露一小截手），环境占主体。
-
-混着说会出问题：模型会画成「第三人在看风景」，或者「自拍里只有半张脸」。
-所以提示词里永远只带一条视角后缀（``view_suffix()``）。
-
-``looks_like_her()`` 给自定义生图（``/amo draw``、面板「画图测试」）判视角用：
-「拍张你在工位的照片」→ 她出镜（自拍）；「画一张你看到的海」→ 她的视角（空镜）。
+实现已搬进 domains/photo/view.py；本文件只做 re-export，旧导入路径与返回值完全不变。
 """
-
 from __future__ import annotations
 
-# 视角后缀（photo_engine / draw_engine 共用；出图日志里肉眼可查）
-VIEW_SELFIE = (
-    "自拍视角：画面主体是bot自己（虚拟角色大肥鱼），不是用户；用户不在画面里；"
-    "手机前置摄像头，她用一只手举着手机伸到面前，"
-    "另一只手自然垂下或放在身侧、不要抬到镜头前；画面里只出现一只举手机的手，"
-    "手腕和手臂连接正常，不要多手、不要错位、不要两只手都入镜；"
-    "不要出现手机背面、后置摄像头或镜头对着画面（自拍是前置摄像头），手机本体不要入镜，"
-    "画面里有她本人、人物占画面主要位置，背景轻微虚化"
-)
-VIEW_POV = (
-    "她的拍摄视角：第一人称手机实拍视角（first-person smartphone perspective），这是bot的第一人称视角，"
-    "不是用户拍的；她举着手机随手拍，镜头在她眼睛的高度，"
-    "画面里不出现她本人、最多只露出一小截手或手臂；"
-    "手机不要入镜，不要出现手机背面、摄像头或镜头对着画面，环境占画面主要位置"
-)
-SCENERY_ONLY = "环境空镜，画面以环境为主，可有路人/游客但不要抢镜，不出现她本人，也不出现用户"
-ROOM_NO_BODY = "画面里不出现任何人，也不出现手、脚、头发、人影等任何人体局部"
+from typing import TYPE_CHECKING
 
-# 自拍（2026-11-15）：正向必须有「她本人 + 举手机」，反向绝不能带「人物/人类」
-SELFIE_FRAMING = (
-    "第一人称自拍视角：她本人出镜，能看到她的脸和举着手机的手臂，人物占画面主体；"
-    "或者对着镜子自拍、或第一人称视角的腿/脚；背景只是陪衬，不要变成房间空镜"
+try:
+    from .domains.photo.view import (  # noqa: F401  re-export
+        VIEW_SELFIE,
+        VIEW_POV,
+        SCENERY_ONLY,
+        ROOM_NO_BODY,
+        SELFIE_FRAMING,
+        SELFIE_STYLE,
+        HEADWEAR_LOCK,
+        SELFIE_NEGATIVE,
+        SELFIE_HINTS,
+        POV_HINTS,
+        POLICY_SENSITIVE_WORDS,
+        _POLICY_REPLACEMENTS,
+        sanitize_selfie_prompt,
+        policy_sensitive_hits,
+        PHOTO_CLAIM_PATTERNS,
+        looks_like_photo_claim,
+        PHOTO_BROKEN_CLAIM_PATTERNS,
+        looks_like_broken_photo_claim,
+        strip_photo_claim,
+        view_suffix,
+        looks_like_her,
+    )
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:
+        from domains.photo.view import (  # noqa: F401  re-export
+        VIEW_SELFIE,
+        VIEW_POV,
+        SCENERY_ONLY,
+        ROOM_NO_BODY,
+        SELFIE_FRAMING,
+        SELFIE_STYLE,
+        HEADWEAR_LOCK,
+        SELFIE_NEGATIVE,
+        SELFIE_HINTS,
+        POV_HINTS,
+        POLICY_SENSITIVE_WORDS,
+        _POLICY_REPLACEMENTS,
+        sanitize_selfie_prompt,
+        policy_sensitive_hits,
+        PHOTO_CLAIM_PATTERNS,
+        looks_like_photo_claim,
+        PHOTO_BROKEN_CLAIM_PATTERNS,
+        looks_like_broken_photo_claim,
+        strip_photo_claim,
+        view_suffix,
+        looks_like_her,
+        )
+
+try:  # 脚趾特写：他点名看脚时才用（普通自拍不裁脚）
+    from .domains.photo.view import (
+        FOOT_CLOSEUP_HINTS, FOOT_CLOSEUP_NEGATIVE, FOOT_CLOSEUP_PROMPT, SELFIE_FRAMING_FOOT, foot_closeup_prompt, wants_foot_closeup,
+    )
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:
+        from domains.photo.view import (
+            FOOT_CLOSEUP_HINTS, FOOT_CLOSEUP_NEGATIVE, FOOT_CLOSEUP_PROMPT, SELFIE_FRAMING_FOOT, foot_closeup_prompt, wants_foot_closeup,
+        )
+
+__all__ = (
+    "VIEW_SELFIE",
+    "VIEW_POV",
+    "SCENERY_ONLY",
+    "ROOM_NO_BODY",
+    "SELFIE_FRAMING",
+    "SELFIE_STYLE",
+    "HEADWEAR_LOCK",
+    "SELFIE_NEGATIVE",
+    "_POLICY_REPLACEMENTS",
+    "FOOT_CLOSEUP_HINTS",
+    "FOOT_CLOSEUP_PROMPT",
+    "FOOT_CLOSEUP_NEGATIVE",
+    "SELFIE_FRAMING_FOOT",
+    "foot_closeup_prompt",
+    "wants_foot_closeup",
+    "SELFIE_HINTS",
+    "POV_HINTS",
+    "POLICY_SENSITIVE_WORDS",
+    "sanitize_selfie_prompt",
+    "policy_sensitive_hits",
+    "PHOTO_CLAIM_PATTERNS",
+    "looks_like_photo_claim",
+    "PHOTO_BROKEN_CLAIM_PATTERNS",
+    "looks_like_broken_photo_claim",
+    "strip_photo_claim",
+    "view_suffix",
+    "looks_like_her",
 )
-SELFIE_STYLE = "手机前置摄像头质感，轻微美颜，真实生活照，像刚发给老公的微信自拍，不是网图也不是插画"
-SELFIE_NEGATIVE = (
-    "多只手，畸形的手指，畸形的手，畸形的脸，多余的人，空房间，只有一只手，"
-    "男人，合影，第二个人，另一个人，多余的手，旁观者视角，第三人称视角，"
-    "第三人称空镜，文字，水印，插画，二次元，"
-    "男人的肩膀，别人的肩膀，男人的手，情侣合影，双人，两人，陌生人，"
-    "man, male, second person, another person, group photo, couple photo, "
-    "third-person view, extra arms, human shoulder, two people, "
-    "床上的鞋，室内穿鞋，穿着鞋躺床上，鞋踩床单，鞋出现在被窝里"
-)
-SELFIE_HINTS = (
-    "自拍", "拍张你", "拍一张你", "拍下你", "拍拍你", "拍一下你", "拍你",
-    "你的照片", "你的样子", "让我看看你", "看看你",
-    "你在干嘛", "你在干什么", "你在做什么", "你在哪",
-)
-# 这些是「她要拍环境」，反过来说明人不出镜；先于 SELFIE_HINTS 判断
-POV_HINTS = ("你看到", "你拍的", "你眼里", "从你那边", "第一人称")
-
-
-def view_suffix(selfie: bool) -> str:
-    """返回该用哪一条视角后缀。"""
-    return VIEW_SELFIE if selfie else VIEW_POV
-
-
-def looks_like_her(text: str) -> bool:
-    """这句话是不是要「她本人出镜」（自拍），而不是「她拍的环境」。"""
-    text = str(text or "")
-    if not text:
-        return False
-    if any(hint in text for hint in POV_HINTS):
-        return False
-    return any(hint in text for hint in SELFIE_HINTS)

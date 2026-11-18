@@ -25,6 +25,7 @@ astrbot_stub.install()
 from amo_db import AmoDB  # noqa: E402
 from amo_human_state import HumanState  # noqa: E402
 from amo_shared import MOOD_BASE, MOOD_KEYS, now_ts, today_str  # noqa: E402
+from fixtures import FixedClock, today_at  # noqa: E402
 
 
 class FakePlugin:
@@ -73,7 +74,7 @@ class StateTestCase(unittest.TestCase):
             module.__path__ = []
             sys.modules[name] = module
         path_module = types.ModuleType("astrbot.core.utils.astrbot_path")
-        path_module.get_astrbot_data_path = lambda: self.tmp
+        setattr(path_module, "get_astrbot_data_path", lambda: self.tmp)
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
         self.plugin = FakePlugin(self.tmp)
         self.state = HumanState(self.plugin)
@@ -642,6 +643,11 @@ class JitBlindBoxTests(StateTestCase):
         self.assertEqual(hit[0]["activity"], "逛街")
 
     def test_sleep_hour_detail_is_placeholder(self) -> None:
+        # 睡眠占位的判断在「这一时段已过完」之后；0 点刚过时 03:00-04:00 还没到，
+        # 会先返回 pending。冻结到当天 15:00，让这条用例和墙钟无关。
+        frozen = FixedClock(today_at(15, 0))
+        frozen.start()
+        self.addCleanup(frozen.stop)
         day = today_str()
         item = {"start": "03:00", "end": "04:00", "activity": "又睡过去了",
                 "place": "家", "zone": "home", "category": "sleep"}

@@ -2,10 +2,8 @@
 from models.database import Database
 from models.schema import get_hp, update_hp, get_sick, set_sick, sick_log
 
-class FakeDB:
-    def __init__(self): self.kv = {}
-    def kv_get(self, k, d=None): return self.kv.get(k, d)
-    def kv_set(self, k, v): self.kv[k] = v
+from fixtures import FakeDB  # Phase 11 共享测试桩
+
 
 def test_schema_roundtrip():
     db = FakeDB()

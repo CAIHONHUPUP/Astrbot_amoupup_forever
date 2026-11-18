@@ -16,14 +16,16 @@ import re
 import shutil
 
 from astrbot.api import logger
+from typing import TYPE_CHECKING
 
 try:
     from .amo_image_common import find_omni
 except Exception:  # pragma: no cover
-    try:
-        from amo_image_common import find_omni
-    except Exception:
-        find_omni = None  # type: ignore[assignment]
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_image_common import find_omni
+        except Exception:
+            find_omni = None  # type: ignore[assignment]
 
 REF_DIR_NAME = "outfit_refs"
 SCOPE_FOLDERS = (
@@ -78,6 +80,76 @@ def category_of(item):
     return category if category in CATEGORY_FOLDERS else "top"
 
 
+#: 一套衣服里参与「平铺参考图」的槽位；顺序固定，外套和长裙都在里面。
+OUTFIT_SLOTS = ("coat", "top", "skirt", "bottom", "shoes")
+
+
+def scope_of_outfit(outfit):
+    """当前这一套衣服属于哪个搭配目录：day / night / hotel / swim。
+
+    口径与 scope_of(item) 一致：泳装 > 酒店睡衣 > 普通睡衣 > 白天搭配。
+    wardrobe.current() 返回的 dict 带 swim / hotel / sleep 标记。
+    """
+    outfit = outfit if isinstance(outfit, dict) else {}
+    if outfit.get("swim"):
+        return "swim"
+    if outfit.get("hotel"):
+        return "hotel"
+    if outfit.get("sleep"):
+        return "night"
+    return "day"
+
+
+def _scope_ref_paths(plugin, name, scope, category=""):
+    """同一 scope 下这件衣服的平铺图；先按槽位分类找，再看同 scope 其它分类。"""
+    filename = safe_name(name) + ".png"
+    folder = dict(SCOPE_FOLDERS).get(str(scope or ""), SCOPE_FOLDERS[0][1])
+    root = os.path.join(base_dir(plugin), folder)
+    folders = []
+    preferred = CATEGORY_FOLDERS.get(str(category or ""), "")
+    if preferred:
+        folders.append(preferred)
+    for folder_name in CATEGORY_FOLDERS.values():
+        if folder_name not in folders:
+            folders.append(folder_name)
+    found = []
+    for category_folder in folders:
+        path = os.path.join(root, category_folder, filename)
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            found.append(path)
+    return found
+
+
+def refs_for_outfit(plugin, outfit, limit=5):
+    """按 wardrobe.current() 的 scope 取整套单品的平铺参考图；缺图跳过。
+
+    - 顺序：外套 → 上衣 → 裙子（长裙/连衣裙）→ 裤子 → 鞋子；
+    - 只认当前 scope 目录（白天 / 晚上 / 酒店睡衣 / 泳装），不会拿别的 scope 的图；
+    - 最多 limit 张，没有图的单品直接跳过，不去现场生成。
+    """
+    outfit = outfit if isinstance(outfit, dict) else {}
+    scope = scope_of_outfit(outfit)
+    try:
+        limit = max(0, int(limit or 0))
+    except (TypeError, ValueError):
+        limit = 5
+    refs = []
+    seen = set()
+    for slot in OUTFIT_SLOTS:
+        name = str(outfit.get(slot) or "").strip()
+        if not name:
+            continue
+        for path in _scope_ref_paths(plugin, name, scope, slot):
+            key = os.path.normcase(os.path.abspath(path))
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(path)
+            if len(refs) >= limit:
+                return refs
+    return refs
+
+
 def item_dir(plugin, item):
     scope = scope_of(item)
     folder = dict(SCOPE_FOLDERS)[scope]
@@ -120,7 +192,7 @@ def _decode_item(item):
 
 
 def _as_png(data):
-    """万象画卷有时返回 JPEG 却按 .png 保存；转成真正的 PNG，避免参考图校验失败。"""
+    """我能永远定格你有时返回 JPEG 却按 .png 保存；转成真正的 PNG，避免参考图校验失败。"""
     if not data:
         return b""
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -233,7 +305,7 @@ async def ensure_ref(plugin, name, session=None, force=False, item=None):
     try:
         from .wardrobe import classify_item, classify_sleep_item
     except Exception:
-        classify_item = classify_sleep_item = None  # type: ignore[assignment]
+        classify_item = classify_sleep_item = None
     if classify_sleep_item is not None:
         sleep_category = classify_sleep_item(name)
         if sleep_category:

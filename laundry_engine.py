@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """生活系统：洗衣状态机 / 家电决策 / 换季整理。只输出结构化事实，不生成人话。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import logging
 logger = logging.getLogger("amo")
@@ -10,7 +11,8 @@ import datetime as _dt
 try:
     from .clock import now as _clock_now
 except ImportError:
-    from clock import now as _clock_now
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from clock import now as _clock_now
 
 WASH_COST = (200, 500)
 DRY_CLEAN_COST = (2000, 3000)

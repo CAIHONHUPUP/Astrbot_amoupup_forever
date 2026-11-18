@@ -138,8 +138,10 @@ class PhotoPromptViewTests(unittest.TestCase):
     def test_bed_selfie_has_no_shoes_fact(self):
         activity = {"place": "卧室", "activity": "躺在床上", "zone": "home_bed"}
         prompt = PhotoEngine._selfie_prompt_for(self.engine, "outfit", "卧室", activity)
-        self.assertIn("脚上没有穿鞋", prompt)
+        self.assertIn("盖着被子", prompt)
         self.assertIn("不要出现鞋", prompt)
+        self.assertNotIn("光着脚", prompt)
+        self.assertNotIn("脚踝", prompt)
 
     def test_bed_selfie_negative_blocks_shoes(self):
         self.assertIn("床上的鞋", SELFIE_NEGATIVE)
@@ -169,6 +171,29 @@ class PhotoPromptViewTests(unittest.TestCase):
         prompt = PhotoEngine._prompt_for(self.engine, "outfit", "", self.activity)
         self.assertIn(SCENERY_ONLY, prompt)
         self.assertIn("米色针织衫", prompt)
+
+
+class HomewearPromptTests(unittest.TestCase):
+    """B2：居家便服自拍只保留具体单品的说法，不再注入泛化模板句。"""
+
+    def test_homewear_selfie_has_exact_items_and_no_generic_template(self):
+        class _Homewear:
+            def current(self, *args, **kwargs):
+                return {"homewear": True, "sleep": False,
+                        "top": "纯棉长袖", "bottom": "米色居家长裤",
+                        "shoes": "居家棉拖鞋"}
+        engine = _FakePhotoEngine()
+        engine.plugin.wardrobe = _Homewear()
+        engine._selfie_outfit_text = lambda zone: "纯棉长袖、米色居家长裤"
+        activity = {"place": "家", "activity": "坐在餐桌前吃饭",
+                    "zone": "home", "category": "meal"}
+        prompt = PhotoEngine._selfie_prompt_for(engine, "daily", "", activity)
+        self.assertIn("纯棉长袖、米色居家长裤", prompt, "具体单品必须在提示词里")
+        self.assertNotIn("穿着宽松居家便服", prompt,
+                         "泛化模板句会被当成另一套衣服，导致穿搭被改写")
+        self.assertNotIn("穿的就是这一套居家服", prompt,
+                         "B2b：第二句泛化服装会和具体单品打架，必须删掉")
+        self.assertIn("姿态松弛", prompt, "只补姿态，不再另起服装描述")
 
 
 if __name__ == "__main__":

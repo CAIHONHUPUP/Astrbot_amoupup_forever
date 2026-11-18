@@ -39,7 +39,7 @@ class AmoDBTests(unittest.TestCase):
             module.__path__ = []
             sys.modules[name] = module
         path_module = types.ModuleType("astrbot.core.utils.astrbot_path")
-        path_module.get_astrbot_data_path = lambda: self.tmp
+        setattr(path_module, "get_astrbot_data_path", lambda: self.tmp)
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
         self.db = AmoDB(self.tmp)
         self.db.init()
@@ -66,7 +66,7 @@ class AmoDBTests(unittest.TestCase):
         self.assertEqual(len(rows), 185)
         self.assertEqual(len({row["term"] for row in rows}), 185)
         self.assertEqual(len({row["region"] for row in rows}), 8)
-        seen = {}
+        seen: dict[str, int] = {}
         for term, _meaning, _region, _example in DIALECT_SEEDS:
             seen[term] = seen.get(term, 0) + 1
         self.assertEqual({t for t, n in seen.items() if n > 1}, {"撇脱", "稀罕"})
@@ -237,6 +237,19 @@ class AmoDBTests(unittest.TestCase):
         self.db.conn.close()
         self.db._conn = None
         self.assertEqual(self.db.kv_get("missing", 1), 1)
+
+    def test_recent_proactive_texts(self) -> None:
+        uid = "302578963"
+        self.db.log_proactive(uid, "decide", "刚把家里大扫除完")
+        self.db.log_proactive(uid, "decide", "晚上吃点啥")
+        self.assertEqual(
+            self.db.recent_proactive_texts(uid, hours=2, limit=2),
+            ["晚上吃点啥", "刚把家里大扫除完"],
+        )
+        self.db.conn.execute("UPDATE proactive_log SET created=? WHERE content=?",
+                             (now_ts() - 3 * 3600, "刚把家里大扫除完"))
+        self.db.conn.commit()
+        self.assertEqual(self.db.recent_proactive_texts(uid, hours=2, limit=3), ["晚上吃点啥"])
 
 
 if __name__ == "__main__":

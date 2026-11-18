@@ -10,6 +10,13 @@
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 from typing import Any
 
@@ -26,23 +33,26 @@ from astrbot.api import logger
 try:  # 原子写 JSON（tmp + fsync + os.replace），三个模块共用一份
     from .amo_fileio import atomic_write_json
 except ImportError:  # pragma: no cover - 直接按文件加载时
-    from amo_fileio import atomic_write_json
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_fileio import atomic_write_json
 
 try:  # 复用服装参考图的解码/转 PNG，避免两份实现漂移
     from .outfit_refs import _as_png, _decode_item
 except Exception:  # pragma: no cover
-    try:
-        from outfit_refs import _as_png, _decode_item
-    except Exception:
-        _as_png = _decode_item = None  # type: ignore[assignment]
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from outfit_refs import _as_png, _decode_item
+        except Exception:
+            _as_png = _decode_item = None  # type: ignore[assignment]
 
 try:
     from .amo_image_common import find_omni
 except Exception:  # pragma: no cover
-    try:
-        from amo_image_common import find_omni
-    except Exception:
-        find_omni = None  # type: ignore[assignment]
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_image_common import find_omni
+        except Exception:
+            find_omni = None  # type: ignore[assignment]
 
 OUTFIT_REF_DIR_NAME = "outfit_refs"
 REF_DIR_NAME = "姿势库"
@@ -79,7 +89,7 @@ def safe_name(name):
 
 
 def _now_ts():
-    return time.time()
+    return _amo_clock.now_ts()
 
 
 def _new_id():
@@ -241,25 +251,40 @@ class PoseLibrary:
         with_ref = len([p for p in poses if p["has_ref"]])
         return {"poses": poses, "count": len(poses), "with_ref": with_ref}
 
-    #: 描述里带这些词 = 床上的姿势，只能在家里用
-    BED_WORDS = ("床", "被窝", "枕", "趴坐", "跪")
+    #: 描述里带这些词 = 床/跪/抬腿/翘臀类私密姿势，只能在卧室/客厅沙发用
+    BED_WORDS = ("床", "被窝", "枕", "趴坐", "跪", "抬腿", "翘臀", "蹲坐")
+    #: 允许上面那 9 种床姿的私密居家 zone；浴室/厨房/户外一律剔除
+    PRIVATE_ZONES = ("home", "home_bed", "home_sofa")
+
+    def is_private_pose(self, pose):
+        """这个姿势是不是床/跪/抬腿类（只能在私密居家用）。"""
+        text = str((pose or {}).get("note") or "") + str((pose or {}).get("name") or "")
+        return any(word in text for word in self.BED_WORDS)
 
     def random_pose(self, zone=None):
-        """随机挑一个姿势。zone 不是家时，跳过床上的那些（地铁上跪坐会穿帮）。"""
+        """按场景随机挑一个姿势；没有合适的返回 None（调用方用通用姿势文字兜底）。
+
+        - 私密居家（home / home_bed / home_sofa）才允许 9 种床姿；
+        - 浴室/厨房/户外/办公等只允许非床姿，全被剔除时返回 None；
+        - 同一天不连续用同一个姿势：先剔掉上一次用过的，再从剩下的里随机。
+        """
         poses = [p for p in self.poses() if str(p.get("name") or "").strip()]
         if not poses:
+            logger.info("[amo] 姿势库是空的，本次用通用姿势文字")
             return None
-        if zone and str(zone) != "home":
-            outdoors = [
-                p for p in poses
-                if not any(w in (str(p.get("note") or "") + str(p.get("name") or ""))
-                           for w in self.BED_WORDS)
-            ]
-            if outdoors:
-                poses = outdoors
-            else:
-                return None
-        return dict(random.choice(poses))
+        key = str(zone or "").strip()
+        private = (not key) or key in self.PRIVATE_ZONES
+        allowed = poses if private else [p for p in poses if not self.is_private_pose(p)]
+        if not allowed:
+            logger.info("[amo] 场景 %s 没有合适的姿势图（床姿不套用），本次用通用姿势", key or "未知")
+            return None
+        last = str(getattr(self, "_last_pose_name", "") or "")
+        pool = [p for p in allowed if str(p.get("name") or "") != last] or allowed
+        chosen = dict(random.choice(pool))
+        self._last_pose_name = str(chosen.get("name") or "")
+        logger.info("[amo] 姿势选择：%s（zone=%s，候选 %d 个%s）", self._last_pose_name,
+                    key or "-", len(pool), "，避开上一次" if last and last != self._last_pose_name else "")
+        return chosen
 
     # ---------- 修改 ----------
 
@@ -369,7 +394,7 @@ async def ensure_pose_ref(plugin, pose, force=False):
         return path
     omni = find_omni(plugin, plugin, "pose_library.ensure_pose_ref") if find_omni is not None else None
     if omni is None:
-        logger.warning("[amo] 姿势参考图：没找到万象画卷")
+        logger.warning("[amo] 姿势参考图：没找到我能永远定格你")
         return ""
     refs = []
     photo = getattr(plugin, "photo", None)

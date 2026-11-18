@@ -12,6 +12,13 @@
 - 目标和现状一样就不写库（避免每句话都落一次盘）。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：_minutes = amo_numbers.minutes_of_loose
+    from .amo_numbers import minutes_of_loose as _minutes
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_numbers import minutes_of_loose as _minutes
 
 import datetime
 import re
@@ -20,7 +27,8 @@ from typing import Any, TypedDict
 try:  # 纯规则模块，不依赖 AstrBot 运行时
     from .photo_rules import zone_for_place
 except ImportError:  # 直接按文件加载时
-    from photo_rules import zone_for_place
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_rules import zone_for_place
 
 
 def _sync_zone(item: dict, place: str = "", category: str = "") -> dict:
@@ -39,6 +47,7 @@ def _sync_zone(item: dict, place: str = "", category: str = "") -> dict:
         item["place"] = current_place or "家"
         item["transit"] = ""
         item["vehicle"] = ""
+        _rewrite_activity_for_zone(item)
         return item
     zone = zone_for_place(current_place)
     if not zone:
@@ -47,8 +56,41 @@ def _sync_zone(item: dict, place: str = "", category: str = "") -> dict:
     if zone != "road":
         item["transit"] = ""
         item["vehicle"] = ""
+        _rewrite_activity_for_zone(item)
     elif not item.get("transit") and old_zone != "road":
         item["transit"] = "walk"
+    return item
+
+
+#: 文案里出现这些词 = 这句在说交通方式/在路上；非路面块不能留着
+_TRAVEL_TEXT_WORDS = (
+    "地铁", "公交", "巴士", "打车", "出租车", "开车", "自驾", "骑车", "骑行",
+    "步行", "走路", "堵车", "车厢", "赶路", "通勤", "在路上", "路上",
+)
+
+
+def _rewrite_activity_for_zone(item):
+    """T1：清掉 transit/vehicle 之后，activity 不能还写着「坐地铁/开车」。
+
+    优先用日程引擎的地点安全文案；引擎不可用时退回「在<地点>待着」。
+    """
+    activity = str(item.get("activity") or "")
+    if not activity or not any(word in activity for word in _TRAVEL_TEXT_WORDS):
+        return item
+    fixed = ""
+    try:
+        try:
+            from .schedule_slots import ScheduleSlotsMixin
+        except ImportError:
+            from schedule_slots import ScheduleSlotsMixin
+        fixed = ScheduleSlotsMixin._place_safe_activity(item) or ""
+    except Exception:  # 纯规则模块，引擎加载失败也不能让改日程崩掉
+        fixed = ""
+    if not fixed:
+        place = str(item.get("place") or "").strip()
+        fixed = ("在%s待着" % place) if place else "在家待着，做点自己的事"
+    item["activity"] = fixed
+    item["detail"] = ""
     return item
 
 
@@ -67,7 +109,7 @@ _RULES: list[Rule] = [
     {
         # 主语是"她"：你来接我 / 你去接我 —— 她去把老公接回来
         "keys": ("你来接我", "你来接下我", "你来接一下我", "你去接我", "你下班来接我"),
-        "activity": "我去接他，一起回家",
+        "activity": "我去接他，接完各回各家",
         "place": "路上",
         "category": "commute",
         "anchor": "off_work",
@@ -77,7 +119,7 @@ _RULES: list[Rule] = [
         # 主语是"他"：我来接你 / 来接我 / 接你下班 —— 他开车来接她
         "keys": ("我来接你", "我下班来接你", "来接我", "来接下我", "接我一下", "过来接我",
                  "开车来接", "来接你", "来接一下", "接你下班", "接你回去"),
-        "activity": "他开车来接我，一起回家",
+        "activity": "他开车来接我，送到楼下就回去",
         "place": "路上",
         "category": "commute",
         "anchor": "off_work",
@@ -265,12 +307,7 @@ def detect_schedule_change(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _minutes(text: Any) -> int | None:
-    try:
-        hour, minute = str(text).split(":")[:2]
-        return int(hour) * 60 + int(minute)
-    except (TypeError, ValueError):
-        return None
+
 
 
 def _pick_target(items: list[dict[str, Any]], anchor: str, now_min: int) -> dict[str, Any] | None:
@@ -432,6 +469,27 @@ def apply_change(items: list[dict[str, Any]], change: dict[str, Any] | None,
                     activity, place, category,
                 )
                 out.extend(pieces)
+                continue
+            # 现在这一段已经过了半小时：聊天里临时改活动要从「此刻」开始，
+            # 不能把 20:18 就改成 20:37 才说好的事；前段保留原活动，后段从 now 起。
+            _split_ok = (
+                str(target.get("category") or "") in ("social", "life", "rest")
+                and category in ("social", "life", "rest"))
+            if (not sleeping and _split_ok and split_start is None
+                    and target_start is not None and target_end is not None
+                    and target_start < now_min < target_end):
+                before = dict(item)
+                before["end"] = _hhmm(now_min)
+                out.append(before)
+                after = dict(item)
+                after["start"] = _hhmm(now_min)
+                after["activity"] = activity
+                after["swim"] = False
+                if place:
+                    after["place"] = place
+                if category:
+                    after["category"] = category
+                out.append(_sync_zone(after, place, category))
                 continue
             out.append(_replace_item(item, activity, place, category))
             continue

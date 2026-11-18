@@ -14,6 +14,13 @@
 3. 发送前校验：编出来的消费直接删掉/改写成事实，或者（charge 模式）先真扣钱再说。
 """
 from __future__ import annotations
+from typing import Any, TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import logging
 logger = logging.getLogger("amo")
@@ -21,10 +28,22 @@ logger = logging.getLogger("amo")
 import datetime as _dt
 import hashlib
 
-#: 说了这些就等于"点了外卖"，必须有账单兜底
-TAKEOUT_WORDS = ("外卖", "美团", "饿了么", "骑手", "送餐", "配送")
+#: 外卖/做饭词表、餐别窗口、账本退回判断都在唯一时间线里（Phase 3），这里只转出；
+#: micro_events 仍然从 amo_fact_binder 导入 COOK_WORDS，调用方不变。
+try:
+    from . import amo_fact_timeline as fact_timeline
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_fact_timeline as fact_timeline
+
+#: 说了这些就等于"点了外卖"（词表唯一源：amo_fact_timeline）
+TAKEOUT_WORDS = fact_timeline.TAKEOUT_WORDS
 #: 日程里出现这些词 = 她自己在家做了饭
-COOK_WORDS = ("做饭", "煮", "下厨", "炒", "炖", "蒸", "煎", "做顿", "做了顿", "包饺子", "煲汤")
+COOK_WORDS = fact_timeline.COOK_WORDS
+#: 餐别窗口 / 账单退回判断（唯一源：amo_fact_timeline）
+meal_band = fact_timeline.meal_band
+reversed_idems = fact_timeline.reversed_idems
+spent_rows = fact_timeline.spent_rows
 #: 表示"花钱买/点"的动作
 CLAIM_VERBS = ("点了", "点了个", "点了份", "点了一份", "叫了", "叫了个", "叫了份",
                "下单", "下了单", "买了", "买了个", "买了一份")
@@ -45,16 +64,7 @@ FOOD_CENTS = 1500
 
 
 def _now():
-    return _dt.datetime.now()
-
-
-def _minutes(text):
-    """'12:30' -> 750；解析不了返回 -1。"""
-    try:
-        hour, minute = [int(x) for x in str(text or "").split(":")[:2]]
-        return hour * 60 + minute
-    except Exception:
-        return -1
+    return _amo_clock.now()
 
 
 def _kv(plugin, key, default=None):
@@ -113,73 +123,13 @@ def ledger_today(plugin, now=None):
     return out
 
 
-def reversed_idems(ledger):
-    """已经被退回的那几笔（退款流水的 ref 指向原扣款的 idem）。"""
-    out = set()
-    for row in ledger or []:
-        ref = str(row.get("ref") or "")
-        if ref and row.get("delta", 0) > 0:
-            out.add(ref)
-    return out
-
-
-def spent_rows(ledger):
-    """真正的支出：已退回的那笔不算（2026-11-15 退 25 元外卖后修正）。"""
-    bounced = reversed_idems(ledger)
-    return [row for row in ledger
-            if row["delta"] < 0 and str(row.get("idem") or "") not in bounced]
-
-
-def meal_band(now=None):
-    """当前这顿饭的窗口：lunch 10-15 / dinner 16-22，其余时间不判"吃了什么"。"""
-    now = now or _now()
-    hour = now.hour
-    if 10 <= hour < 15:
-        return "lunch"
-    if 16 <= hour < 22:
-        return "dinner"
-    return ""
-
-
 def meal_facts(items, ledger, now=None):
-    """这一餐的事实：是不是自己做的、账上有没有外卖（都只看当前这一顿）。"""
-    now = now or _now()
-    band = meal_band(now)
-    minutes = now.hour * 60 + now.minute
-    cooked = []
-    if band:
-        low = 10 * 60 if band == "lunch" else 16 * 60
-        for item in items or []:
-            start = _minutes(item.get("start"))
-            if start < 0 or start > minutes or start < low:
-                continue
-            activity = str(item.get("activity") or "")
-            if any(word in activity for word in COOK_WORDS):
-                cooked.append(item)
-    takeout_rows, cook_rows = [], []
-    band_start = None
-    if band:
-        band_start = int(_dt.datetime.combine(
-            now.date(), _dt.time(10 if band == "lunch" else 16, 0)).timestamp())
-        for row in spent_rows(ledger):
-            if band_start is not None and row["ts"] < band_start:
-                continue
-            reason = row["reason"]
-            if any(word in reason for word in TAKEOUT_WORDS):
-                takeout_rows.append(row)
-            elif any(word in reason for word in COOK_WORDS):
-                # "自己做饭 × 1" 这种扣款：她自己下厨的铁证
-                cook_rows.append(row)
-    return {"band": band, "cooked": bool(cooked or cook_rows),
-            "cooked_items": cooked, "cooked_rows": cook_rows,
-            "takeout": bool(takeout_rows), "takeout_rows": takeout_rows}
+    """这一餐的事实：是不是自己做的、账上有没有外卖（都只看当前这一顿）。
 
-
-def _clock(ts):
-    try:
-        return _dt.datetime.fromtimestamp(ts).strftime("%H:%M")
-    except Exception:
-        return ""
+    唯一实现在 amo_fact_timeline.meal_view：做饭/外卖先落成时间线条目，这里只做投射，
+    不再自己扫一遍日程和账本（否则 binder 和时间线又是两套口径）。
+    """
+    return fact_timeline.meal_view(items, ledger, now)
 
 
 #: 在家的这一小时不许出现的"出门"类词
@@ -205,7 +155,7 @@ def ban_words(plugin, now=None, facts=None):
         zone = str((_get_action(plugin, now) or {}).get("zone") or "home")
     except Exception:
         zone = "home"
-    words = []
+    words: list[Any] = []
     if zone in ("home", "hotel"):
         words.extend(HOME_BAN)
     else:
@@ -249,14 +199,22 @@ def warning_line(plugin, now=None, facts=None):
 
 
 def facts_lines(plugin, now=None):
-    """聊天前注入的最高优先级事实块（清单条数有上限，别把上下文撑爆）。"""
+    """聊天前注入的最高优先级事实块（清单条数有上限，别把上下文撑爆）。
+
+    「已经发生」「这一餐」「今天的账单」全部来自 amo_fact_timeline 的条目，这里只负责
+    排版；事实口径只有一份，binder 不再自己从 schedule + ledger 推第二遍。
+    """
     now = now or _now()
     day = now.strftime("%Y-%m-%d")
     items = schedule_items(plugin, day)
     minutes = now.hour * 60 + now.minute
-    done = [item for item in items if 0 <= _minutes(item.get("start")) <= minutes]
     ledger = ledger_today(plugin, now)
     facts = meal_facts(items, ledger, now)
+    # 唯一时间线：已经发生的块 + 账单都是时间线条目（不是这里二次推的）
+    entries = fact_timeline.collect(day, now, items, ledger)
+    done = [entry for entry in fact_timeline.sort_stable(entries)
+            if entry.get("type") == "日程" and entry.get("start") is not None
+            and entry["start"] <= minutes]
     if not done and not ledger:
         # 今天既没有日程也没有账单：没有事实可钉，就别往上下文里塞空规则
         return []
@@ -265,14 +223,15 @@ def facts_lines(plugin, now=None):
     # 0) 系统警告（硬编码，排在最前面，优先级最高）
     lines.append(warning_line(plugin, now, facts))
 
-    # 1) 绝对事实：已经发生过的日程 + 这一小时在干嘛
+    # 1) 绝对事实：已经发生过的日程 + 这一小时在干嘛（条目来自时间线）
     chunks = []
     day_label = "[今日] "
-    for item in done[-3:]:
+    for entry in done[-3:]:
         chunks.append(day_label + "%s-%s %s（%s）" % (
-            item.get("start", ""), item.get("end", ""),
-            str(item.get("activity") or "").strip() or "在忙",
-            str(item.get("place") or "家").strip() or "家"))
+            fact_timeline.clock_of(entry["start"]),
+            fact_timeline.clock_of(entry.get("end")),
+            str(entry.get("activity") or "").strip() or "在忙",
+            str(entry.get("place") or "家").strip() or "家"))
     if chunks:
         lines.append("【绝对事实】你今天真实发生的事，聊天只能顺着这些说：" + "；".join(chunks) + "。")
 
@@ -292,20 +251,15 @@ def facts_lines(plugin, now=None):
         lines.append("【绝对事实·吃】今天你确实点过一次外卖（账单里有这笔），可以顺着说，"
                      "金额和次数都以账单为准。")
 
-    # 3) 今天的账单流水（最近 5 笔）
-    rows = ledger[-5:]
+    # 3) 今天的账单流水（最近 5 笔，条目来自时间线：方向词/已退回标记都已算好）
+    rows = [entry for entry in entries if entry.get("source") in ("ledger", "date_ledger")]
     if rows:
         pieces = []
-        for row in rows:
-            bounced = reversed_idems(ledger)
-            if row["delta"] < 0:
-                sign = "花"
-                mark = "（已退回）" if str(row.get("idem") or "") in bounced else ""
-            else:
-                sign = "退回" if str(row.get("ref") or "") else "进"
-                mark = ""
+        for entry in rows[-5:]:
             pieces.append(day_label + "%s %s %.2f 元 %s%s" % (
-                _clock(row["ts"]), sign, abs(row["delta"]) / 100.0, row["reason"], mark))
+                entry.get("time"), entry.get("sign"),
+                abs(int(entry.get("delta") or 0)) / 100.0,
+                entry.get("reason") or "", entry.get("mark") or ""))
         lines.append("【今天的账单】" + "；".join(pieces) + "。")
 
     # 4) 红线
@@ -317,6 +271,62 @@ def facts_lines(plugin, now=None):
         lines.append(
             "【顺着事实说】日程写的是在家做饭，你就说自己做的"
             "（比如“（摸了摸肚子）刚刚自己煮了碗面，吃得好撑呀~”），不许改口成点外卖。")
+    return lines
+
+
+def view_lines(plugin, now=None):
+    """回复上下文里的事实视图行：块日记来自 build_day_view（唯一真源）。
+
+    facts_lines 管「这一小时在干嘛 + 今天的账单」；这一层补上事实池没有的
+    块日记（当天每一块真实写了什么），没有小日记就返回空列表。
+    """
+    explicit_now = now
+    now = now or _now()
+    try:
+        # N1：真实时钟路径与回复事实门共用同一份 build_day_view（按请求缓存）。
+        try:
+            from .amo_diary_guard import narrative_view as _narrative_view
+        except ImportError:
+            from amo_diary_guard import narrative_view as _narrative_view
+        view = _narrative_view(plugin, explicit_now, cache=explicit_now is None)
+        return fact_timeline.render_lines(fact_timeline.view_facts(view), "[今日] ")
+    except Exception as exc:
+        logger.debug("[amo] 事实视图读取失败: %r", exc)
+        return []
+
+
+def view_detail(plugin, now=None):
+    """回复/日记消费方可读的「今天的人/东西/场合」：只读唯一事实视图。"""
+    explicit_now = now
+    try:
+        try:
+            from .amo_diary_guard import narrative_view as _narrative_view
+        except ImportError:
+            from amo_diary_guard import narrative_view as _narrative_view
+        view = _narrative_view(plugin, explicit_now, cache=explicit_now is None)
+    except Exception as exc:  # cleanup: 视图读不到就给空细节
+        logger.debug("[amo] 事实视图细节读取失败: %r", exc)
+        return {"day": "", "people": [], "companions": [], "items": [],
+                "occasions": []}
+    return {
+        "day": str((view or {}).get("day") or ""),
+        "people": [str(item) for item in (view or {}).get("people") or ()],
+        "companions": [str(item) for item in (view or {}).get("companions") or ()],
+        "items": [str(item) for item in (view or {}).get("items") or ()],
+        "occasions": [str(item) for item in (view or {}).get("occasions") or ()],
+    }
+
+
+def view_detail_lines(plugin, now=None):
+    """把 view_detail 排成可注入的两三行；没有事实就空列表（不占上下文）。"""
+    detail = view_detail(plugin, now)
+    lines = []
+    if detail["people"]:
+        lines.append("【今天的人】" + "、".join(detail["people"]) + "。")
+    if detail["items"]:
+        lines.append("【今天的东西】" + "、".join(detail["items"]) + "。")
+    if detail["occasions"]:
+        lines.append("【今天的场合】" + "、".join(detail["occasions"]) + "。")
     return lines
 
 
@@ -365,7 +375,7 @@ def claim_kinds(sentence):
 
 def _keywords(sentence, kind):
     text = str(sentence or "")
-    words = []
+    words: list[Any] = []
     if kind == "takeout":
         words.extend(TAKEOUT_WORDS)
     elif kind == "food":

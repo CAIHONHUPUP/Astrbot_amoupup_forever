@@ -20,6 +20,7 @@ from amo_message import (continuity_block, dialogue_guard_blocks,  # noqa: E402
                          rest_state_block, topic_lock_block)
 from amo_social import SocialMixin  # noqa: E402
 from amo_shared import now_ts  # noqa: E402
+from fixtures import FixedClock, today_at  # noqa: E402
 
 
 class BlockContentTests(unittest.TestCase):
@@ -99,6 +100,11 @@ class DisturbGuardTests(unittest.TestCase):
         return {"activity": {"category": "sleep", "activity": "午睡"}}
 
     def test_continuous_chat_never_disturbs(self):
+        # _should_disturb 对「深夜 0-6 点」有豁免：这段时间允许被吓一跳。
+        # 用例本意是白天的连续对话，把墙钟钉在 15:00，别让 0 点后改变语义。
+        frozen = FixedClock(today_at(15, 0))
+        frozen.start()
+        self.addCleanup(frozen.stop)
         stub = StubSocial(last_reply=now_ts() - 120)
         self.assertFalse(stub._should_disturb(self.snap(), "umo", "uid"))
 

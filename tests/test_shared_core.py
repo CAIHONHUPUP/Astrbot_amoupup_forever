@@ -21,6 +21,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+from support import make_temp_dir  # noqa: E402
+
 import amo_shared  # noqa: E402
 from amo_shared import (  # noqa: E402
     _clock_configure,
@@ -306,8 +308,7 @@ class UsageTests(unittest.TestCase):
         self.assertIn("error", usage)
 
     def test_summarize_rows(self) -> None:
-        path = os.path.join(ROOT, ".test-tmp", "usage-%d.db" % int(time.time() * 1000))
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        path = os.path.join(make_temp_dir("amo-usage-"), "usage-%d.db" % int(time.time() * 1000))
         conn = sqlite3.connect(path)
         conn.execute(
             "CREATE TABLE provider_stats (provider_model TEXT, token_input_other INTEGER, "

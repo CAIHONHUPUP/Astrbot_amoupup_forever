@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """日程状态机 mixin：从 amo_human_state.py 按域拆出（只搬方法，行为零变化）。"""
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -9,7 +9,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
     from .amo_state_common import (
@@ -17,20 +18,22 @@ try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
         today_str,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_state_common import (
-        minutes_now,
-        today_str,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_common import (
+            minutes_now,
+            today_str,
+        )
 
 
 try:  # 日类型（纯函数）：工作日/周末/节假日
     from .day_types import normalize_day_types, pick_day_type
 except ImportError:  # 直接按文件加载时
-    try:
-        from day_types import normalize_day_types, pick_day_type
-    except ImportError:
-        normalize_day_types = None  # type: ignore[assignment]
-        pick_day_type = None  # type: ignore[assignment]
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from day_types import normalize_day_types, pick_day_type
+        except ImportError:
+            normalize_day_types = None  # type: ignore[assignment]
+            pick_day_type = None  # type: ignore[assignment]
 
 try:  # amo_shared：时间/日程/心情共享底层
     from .amo_shared import (
@@ -38,10 +41,11 @@ try:  # amo_shared：时间/日程/心情共享底层
         parse_hhmm,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_shared import (
-        logger,
-        parse_hhmm,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import (
+            logger,
+            parse_hhmm,
+        )
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_types import PluginLike as _MixinBase
@@ -52,6 +56,15 @@ else:  # 运行时用 object：协议里的声明不能进 MRO
 
 class ScheduleTodoMixin(_MixinBase):
     """待办、已定行程、时间轴树。"""
+    if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
+        _BOOKED_CATEGORIES: Any
+        _JIT_BLOCKS: Any
+        _fmt_minutes: Any
+        _jit_items: Any
+        _jit_visible_slots: Any
+        _merge_quiet_slots: Any
+        p: Any
+        schedule: Any
 
     def todos(self, day=None, include_done=False):
         """某天已经定下来的事（未来事件只存待办，不提前铺日程）。"""
@@ -75,7 +88,7 @@ class ScheduleTodoMixin(_MixinBase):
                 continue
             source = str(item.get("source") or "")
             category = str(item.get("category") or "")
-            if source in ("chat", "command", "manual", "social", "date") \
+            if source in ("chat", "command", "manual", "social", "date", "watch") \
                     or category in self._BOOKED_CATEGORIES:
                 key = (str(item.get("start")), str(item.get("end")),
                        str(item.get("activity")), str(item.get("place")))
@@ -185,9 +198,9 @@ class ScheduleTodoMixin(_MixinBase):
         raw = self.schedule.get(day) or self.db.get_schedule(day) or []
         return self._booked_of(raw)
 
-    def _booked_tree(self, day):
+    def _booked_tree(self, day, items=None):
         """未来日期：只展示已经定下来的行程（约会/随礼/请假/看病…）。"""
-        items = self._booked_items(day)
+        items = items if isinstance(items, list) else self._booked_items(day)
         if not items:
             return []
         slots = []
@@ -246,10 +259,10 @@ class ScheduleTodoMixin(_MixinBase):
             tree.append(block)
         return tree
 
-    def _jit_schedule_tree(self, day):
+    def _jit_schedule_tree(self, day, items=None):
         now_min = minutes_now()
         slots = self._merge_quiet_slots(
-            self._jit_visible_slots(self._jit_items(day), now_min)
+            self._jit_visible_slots(self._jit_items(day, items=items), now_min)
         )
         tree = []
         for block_start, block_end, title in self._JIT_BLOCKS:

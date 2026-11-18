@@ -5,6 +5,13 @@ amo 的真实模型是状态机：status 字符串 + until 时间戳 + base_hour
 没有 HP。守护插件请用 is_sick / get_sick_status / get_severity 判断。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调 time.time()）
+    from .. import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 SICK_STATUSES = ("轻微不适", "感冒", "低烧", "发烧", "肠胃炎")
 SEVERITY_MAP = {"健康": 0, "疲惫": 1, "轻微不适": 1, "感冒": 2, "低烧": 2,
@@ -48,7 +55,7 @@ def get_sick_duration(target):
         return 0
     import time
     try:
-        return max(0, int(round((time.time() - float(h.get("since") or time.time())) / 3600.0)))
+        return max(0, int(round((_amo_clock.now_ts() - float(h.get("since") or _amo_clock.now_ts())) / 3600.0)))
     except Exception:
         return 0
 

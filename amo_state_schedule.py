@@ -13,7 +13,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
     from .amo_state_common import (
@@ -21,31 +22,41 @@ try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
         _validate_activity,
         minutes_now,
         normalize_place,
+        people_from_text,
         today_str,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_state_common import (
-        _now,
-        _validate_activity,
-        minutes_now,
-        normalize_place,
-        today_str,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_common import (
+            _now,
+            _validate_activity,
+            minutes_now,
+            normalize_place,
+            today_str,
+        )
 
 # 稳定事件：日程写完后发布；当前订阅者为空，行为与直接调用完全兼容。
 try:
     from .amo_events import ScheduleChanged
 except ImportError:  # 直接按文件加载时
-    from amo_events import ScheduleChanged
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_events import ScheduleChanged
+
+try:  # 事实层统一：一个 event_id 贯穿日程 / 账本 / 块日记 / 记忆
+    from .amo_timeline import ensure_event_id, stamp_event_ids
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_timeline import ensure_event_id, stamp_event_ids
 
 try:  # 日类型（纯函数）：工作日/周末/节假日
     from .day_types import normalize_day_types, pick_day_type
 except ImportError:  # 直接按文件加载时
-    try:
-        from day_types import normalize_day_types, pick_day_type
-    except ImportError:
-        normalize_day_types = None  # type: ignore[assignment]
-        pick_day_type = None  # type: ignore[assignment]
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from day_types import normalize_day_types, pick_day_type
+        except ImportError:
+            normalize_day_types = None  # type: ignore[assignment]
+            pick_day_type = None  # type: ignore[assignment]
 
 try:  # amo_shared：时间/日程/心情共享底层
     from .amo_shared import (
@@ -59,16 +70,17 @@ try:  # amo_shared：时间/日程/心情共享底层
         schedule_category_mood,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_shared import (
-        MOOD_KEYS,
-        SCHEDULE_VERSION,
-        city_or_empty,
-        day_meta,
-        logger,
-        now_ts,
-        parse_hhmm,
-        schedule_category_mood,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import (
+            MOOD_KEYS,
+            SCHEDULE_VERSION,
+            city_or_empty,
+            day_meta,
+            logger,
+            now_ts,
+            parse_hhmm,
+            schedule_category_mood,
+        )
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_types import PluginLike as _MixinBase
@@ -76,14 +88,172 @@ else:  # 运行时用 object：协议里的声明不能进 MRO
     _MixinBase = object
 
 
+def _minute_of(text):
+    """'HH:MM' -> 分钟；认不出返回 None（追加日程的重叠判定用）。"""
+    try:
+        hour, minute = str(text or "").strip().split(":", 1)
+        return int(hour) * 60 + int(minute)
+    except (TypeError, ValueError):
+        return None
+
+
+def _item_overlaps_any(row, others):
+    """row 是否与 others 里任一块在分钟上重叠（同日半开区间 [start, end)）。"""
+    start, end = _minute_of((row or {}).get("start")), _minute_of((row or {}).get("end"))
+    if start is None or end is None or end <= start:
+        return False
+    for other in others or []:
+        if not isinstance(other, dict):
+            continue
+        begin, finish = _minute_of(other.get("start")), _minute_of(other.get("end"))
+        if begin is None or finish is None or finish <= begin:
+            continue
+        if start < finish and begin < end:
+            return True
+    return False
+
+
+def _vehicle_text(item):
+    """面板显示用：有 transit 就以 transit 为准，不再让旧的 vehicle 文案打架。"""
+    transit = str((item or {}).get("transit") or "")
+    mapped = {"subway": "地铁", "bus": "公交", "taxi": "打车", "drive": "开车"}.get(transit)
+    return mapped or str((item or {}).get("vehicle") or "")
+
+# ---------------------------------------------------------------- 日程写入收口
+# 纯函数：锁定 / 过去只读 / 写入后体检。由 _commit_schedule_change_locked 调用，
+# tests/test_schedule_guard.py 也直接测。2026-11-18 收口：15 个写入方没有锁、没有边界检查。
+_OFFICE_WORDS = ("公司", "写字楼", "办公室", "工位")
+_LOCK_SOURCES = ("manual", "command", "date")
+_WORK_START_HOUR = 9
+_WORK_END_HOUR = 18
+
+
+def _hm(value):
+    text = str(value or "")
+    if len(text) < 5 or text[2] != ":":
+        return None
+    try:
+        return int(text[:2]) * 60 + int(text[3:5])
+    except ValueError:
+        return None
+
+
+def _row_overlaps(a, b):
+    a_start, a_end = _hm(a.get("start")), _hm(a.get("end"))
+    b_start, b_end = _hm(b.get("start")), _hm(b.get("end"))
+    if a_start is None or b_start is None:
+        return False
+    if a_end is None or b_end is None:
+        return True
+    return a_start < b_end and b_start < a_end
+
+
+def mark_locked(items, source):
+    """面板/命令/约会写的块打锁；返回新 list。"""
+    if str(source or "") not in _LOCK_SOURCES:
+        return list(items or [])
+    return [dict(row, locked=True) if isinstance(row, dict) and row.get("start") else row
+            for row in items or []]
+
+
+def protect_locked(old_items, new_items, source):
+    """非锁定来源不许覆盖已锁块。"""
+    if str(source or "") in _LOCK_SOURCES:
+        return list(new_items or [])
+    locked = [row for row in (old_items or []) if isinstance(row, dict) and row.get("locked")]
+    if not locked:
+        return list(new_items or [])
+    kept = [row for row in new_items or []
+            if not (isinstance(row, dict) and any(_row_overlaps(row, keep) for keep in locked))]
+    kept.extend(locked)
+    return sorted(kept, key=lambda row: str((row or {}).get("start") or ""))
+
+
+def freeze_past(old_items, new_items, now_text, enabled=True):
+    """今天已结束的时段只读：保留旧块，丢掉新块对过去的改写。"""
+    if not enabled:
+        return list(new_items or [])
+    cut = _hm(now_text)
+    if cut is None:
+        return list(new_items or [])
+    past = [row for row in (old_items or [])
+            if isinstance(row, dict) and (_hm(row.get("end")) or 24 * 60) <= cut]
+    out = list(past)
+    for row in new_items or []:
+        if not isinstance(row, dict):
+            continue
+        start, end = _hm(row.get("start")), _hm(row.get("end"))
+        if end is not None and end <= cut:
+            continue
+        if start is not None and start < cut < (end or 24 * 60):
+            row = dict(row, start=now_text)
+        out.append(row)
+    return sorted(out, key=lambda row: str((row or {}).get("start") or ""))
+
+
+def health_problems(items, sick=False, work_start=_WORK_START_HOUR, work_end=_WORK_END_HOUR):
+    """日程体检：时间倒挂、重叠、非上班时间出现在公司。"""
+    problems = []
+    rows = sorted([row for row in (items or []) if isinstance(row, dict) and row.get("start")],
+                  key=lambda row: str(row.get("start") or ""))
+    furthest = None
+    for row in rows:
+        start_text = str(row.get("start") or "")
+        start, end = _hm(start_text), _hm(row.get("end"))
+        if end is not None and start is not None and end <= start:
+            problems.append("bad_time:%s-%s" % (start_text, row.get("end")))
+        if furthest is not None and start is not None and start < furthest:
+            problems.append("overlap:%s<%.2d:%.2d" % (start_text, furthest // 60, furthest % 60))
+        if end is not None:
+            furthest = end if furthest is None else max(furthest, end)
+        place = str(row.get("place") or "")
+        at_office = row.get("zone") == "office" or any(w in place for w in _OFFICE_WORDS)
+        if at_office and start is not None:
+            hour = start // 60
+            if sick or hour < work_start or hour >= work_end:
+                problems.append("office_out_of_window:%s" % start_text)
+    return problems
+
+
 class ScheduleStateMixin(_MixinBase):
     """日程域：主干生成、待办/已定行程、展示优先级、日程读写与持久化。"""
+    if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
+        _booked_tree: Any
+        _commit_todo_day: Any
+        _date_approved: Any
+        _jit_home: Any
+        _jit_items: Any
+        _jit_schedule_tree: Any
+        _schedule_apply_travel: Any
+        _schedule_commit_lock: Any
+        _trip_day_items: Any
+        current_activity: Any
+        decide_sick_action: Any
+        engine: Any
+        ensure_worldview: Any
+        health_info: Any
+        mood: Any
+        nudge: Any
+        period_info: Any
+        refresh_weather: Any
+        roll_health: Any
+        settle_date_end: Any
+        sick_decision: Any
+
+    #: 由 HumanState 注入的插件实例 / JitStateMixin 提供的开关（仅类型声明）
+    p: Any
+    _jit_enabled: Any
 
     # ---------- 日程（主干生成 + 动态展开） ----------
 
     @staticmethod
     def _hourly_schedule(items):
-        """把任意日程整理成 24 条整点日程；最后一条固定 23:00-24:00。"""
+        """[deprecated 兼容层] 把任意日程整理成 24 条整点日程；最后一条固定 23:00-24:00。
+
+        第 1 阶段重构后，日记/详情/调度已经统一读 amo_timeline.Timeline；
+        这里只保留给 changed_hours / _brief_schedule / 非 JIT schedule_tree 与
+        block_diary_enabled=false 的旧整点回滚路径，不再作为块身份的来源。
+        """
         # start 必须是 HH:MM：脏数据（比如「坏数据」）以前会被 parse_hhmm 当成 00:00，
         # 于是午夜凭空多出一段活动，24 小时骨架也不对了。
         def _good_start(item):
@@ -190,8 +360,59 @@ class ScheduleStateMixin(_MixinBase):
         到了那天由 JIT 按待办锚点落实成真实日程。
         """
         day_text = str(day or "")
+        # 旅游目的地锁（10B1 单点）：出发后用户改城市/叫回，进入落库前就拦下，
+        # 日程/城市/状态零改动，只回一句「票都买好了」的 context。
+        if str(source or "") in self._TRIP_GUARD_SOURCES:
+            _guard = self._trip_change_guard(reason)
+            if _guard.get("blocked"):
+                logger.info("[trip] destination_guard blocked source=%s day=%s action=%s",
+                            str(source or ""), day_text, _guard.get("action"))
+                try:
+                    _version = self.db.schedule_version(day_text)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_state_schedule.commit.trip_guard_version", _amo_exc)
+                    _version = 0
+                return {"changed": False, "version": _version, "changed_hours": [],
+                        "cancelled": [], "saved": True,
+                        "blocked": _guard.get("action"),
+                        "context": _guard.get("context") or ""}
         if day_text and day_text > today_str():
-            return self._commit_todo_day(day_text, new_items, source=source)
+            # 10B3：跨午夜长途的第二程是「今晚已经出发」的事实，不是剧透；
+            # 只有 trip_leg 允许落到第二天的时间轴，其它未来日期照旧只进待办。
+            if str(source or "") not in self._FUTURE_OK_SOURCES:
+                return self._commit_todo_day(day_text, new_items, source=source)
+        # 防御：空 end / end<=start 的行绝不落库（过渡到达块曾以 end="" 写进去，
+        # 时间轴 bad_time、JIT 与块日记都按坏区间算）。丢弃并留日志。
+        kept_items = []
+        for row in new_items or []:
+            if not isinstance(row, dict):
+                kept_items.append(row)
+                continue
+            start_text = str(row.get("start") or "").strip()
+            end_text = str(row.get("end") or "").strip()
+            try:
+                span_ok = (bool(start_text and end_text)
+                           and parse_hhmm(end_text) > parse_hhmm(start_text))
+            except Exception:
+                span_ok = False
+            if span_ok:
+                kept_items.append(row)
+            else:
+                logger.warning(
+                    "[amo] 丢弃空/倒置时段的日程行 day=%s start=%s end=%s activity=%s",
+                    day_text, start_text, end_text, str(row.get("activity") or ""))
+        new_items = kept_items
+        try:  # 社交块把同席 NPC 写进 people，日记/照片不必再从文字猜
+            _npc = self.db.kv_get("npc_summary", {}) or {}
+            for _row in new_items:
+                if not isinstance(_row, dict):
+                    continue
+                _names = people_from_text(str(_row.get("activity") or "") + str(_row.get("detail") or ""), _npc)
+                if _names:
+                    _row["people"] = _names
+                    _row["companions"] = _names
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.commit.people", _amo_exc)
         # 第四轮防穿帮：聊天/命令/工具把地点改成户外目的地时，先开过渡（30 分钟路程），
         # 不再瞬间传送（老 bug：被子里 → 医院走廊）。
         try:
@@ -222,11 +443,162 @@ class ScheduleStateMixin(_MixinBase):
                 logger.info("[amo] 日程去重叠：截断/丢弃 %d 条新块（旧块优先）", len(_trimmed))
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.commit.overlap", _amo_exc)
+        # 第十轮 B1：外部 blocker 过滤掉「同批旧块」之后，new_items 自己还会重叠
+        # （原样旧块 + 一条重叠追加），这里再按分钟压直一遍，作为第二道闸。
+        try:
+            try:
+                from .amo_transition import resolve_new_overlaps as _resolve_new
+            except ImportError:
+                from amo_transition import resolve_new_overlaps as _resolve_new
+            new_items, _self_trimmed = _resolve_new(new_items)
+            if _self_trimmed:
+                logger.info("[amo] 日程去重叠：新增块自身重叠，截断/丢弃 %d 条",
+                            len(_self_trimmed))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.commit.self_overlap", _amo_exc)
+        # 第十轮 B1：跨地点切换补一段独立通勤块，别再 5 分钟瞬移回家
+        if day_text == today_str() and str(source or "") in self._TRANSIT_SOURCES:
+            try:
+                try:
+                    from .amo_transition import insert_transit_blocks as _insert_transit
+                except ImportError:
+                    from amo_transition import insert_transit_blocks as _insert_transit
+                _old_for_transit = old_items if old_items is not None else (
+                    self.schedule.get(day_text) or self.db.get_schedule(day_text) or [])
+                new_items, _transit_rows = _insert_transit(
+                    day_text, new_items, old_items=_old_for_transit)
+                if _transit_rows:
+                    logger.info("[amo] 跨地点切换补通勤块 %d 条（day=%s source=%s）",
+                                len(_transit_rows), day_text, source or "-")
+                    self._mark_transit_action(_transit_rows)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.commit.transit_blocks", _amo_exc)
+        # T1：落库前统一收口路上块的 activity/vehicle/transit（锁外纯内存计算）。
+        new_items = self._sync_transit_items(new_items)
         with self._schedule_commit_lock:
             return self._commit_schedule_change_locked(
                 day, new_items, old_items=old_items, source=source,
                 reason=reason, invalidate_from=invalidate_from,
             )
+
+    def _sync_transit_items(self, items):
+        """T1：落库前统一收口路上块的 activity/vehicle/transit；失败返回原列表。"""
+        try:
+            try:
+                from .schedule_slots import ScheduleSlotsMixin as _slots
+            except ImportError:
+                from schedule_slots import ScheduleSlotsMixin as _slots
+            return _slots._sync_transit_vehicle(items)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.commit.transit_sync", _amo_exc)
+            return items
+
+    def _trip_change_guard(self, text):
+        """旅游目的地锁：出发后改城市 → 拦下并带回她该说的那句话；叫回 → 切 returning。"""
+        try:
+            try:
+                from . import amo_trip as _trip
+            except ImportError:
+                import amo_trip as _trip
+            plugin = getattr(self, "p", None) or self
+            result = _trip.guard_change(plugin, text)
+            action = str(result.get("action") or "")
+            if action == "blocked":
+                return {"blocked": True, "action": action,
+                        "context": str(result.get("reply") or "")}
+            if action == "return" and _trip.is_return_command(plugin, text):
+                returned = _trip.early_return(plugin)
+                return {"blocked": True, "action": "return",
+                        "context": str((returned or {}).get("line") or "")}
+            return {}
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule._trip_change_guard", _amo_exc)
+            return {}
+
+    def _mark_transit_action(self, rows):
+        """通勤块覆盖当前分钟时，把 current_action 也切到「在路上」，聊天不再说目的地。"""
+        now_min = minutes_now()
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            try:
+                begin = parse_hhmm(row.get("start"))
+                finish = parse_hhmm(row.get("end"))
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule._mark_transit_action.parse", _amo_exc)
+                continue
+            if not (begin <= now_min < finish):
+                continue
+            try:
+                stamp = now_ts()
+                self.db.kv_set("current_action", {
+                    "action": row.get("activity"), "place": row.get("place") or "路上",
+                    "zone": "road", "category": "commute",
+                    "at": stamp, "until": stamp + max(60, (finish - now_min) * 60),
+                    "hour": begin // 60, "source": "transit_block",
+                })
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule._mark_transit_action.write", _amo_exc)
+            return
+
+    def _repair_transit_blocks(self, day):
+        """读/加载时修复历史「跨地点瞬移」：按日程版本只修一次，不每次读都写库。"""
+        day = str(day or today_str())
+        if day != today_str():
+            return []
+        try:
+            version = str(self.db.schedule_version(day))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.transit_repair.version", _amo_exc)
+            version = "0"
+        flag = "transit_repair:" + day
+        try:
+            if str(self.db.kv_get(flag, "")) == version:
+                return []
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.transit_repair.flag", _amo_exc)
+        try:
+            rows = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
+        except Exception:
+            rows = []
+        try:
+            try:
+                from .amo_transition import repair_cross_place_blocks as _repair
+                from .amo_transition import _has_blocking_overlap as _overlaps
+            except ImportError:
+                from amo_transition import repair_cross_place_blocks as _repair
+                from amo_transition import _has_blocking_overlap as _overlaps
+            repaired, inserted = _repair(getattr(self, "p", None) or self, day, rows)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.transit_repair.compute", _amo_exc)
+            return []
+        if not inserted:
+            try:
+                self.db.kv_set(flag, version)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.transit_repair.mark", _amo_exc)
+            return []
+        if _overlaps(repaired):
+            logger.error("[amo] 通勤块修复后仍有重叠，放弃写入 day=%s", day)
+            return []
+        try:
+            result = self.commit_schedule_change(
+                day, repaired, old_items=rows, source="transit_repair",
+                reason="修复跨地点瞬移")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.transit_repair.commit", _amo_exc)
+            return []
+        try:
+            new_version = str((result or {}).get("version") or version)
+            self.db.kv_set(flag, new_version)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.transit_repair.mark_after", _amo_exc)
+        try:
+            self._mark_transit_action(inserted)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.transit_repair.mark_action", _amo_exc)
+        logger.info("[amo] 修复历史跨地点瞬移：补通勤块 %d 条（day=%s）", len(inserted), day)
+        return inserted
 
     def reconcile_health_schedule(self, day=None, now=None):
         """状态一致性巡检：健康已恢复但日程还挂着病假 → 物理删除那几条。"""
@@ -261,11 +633,28 @@ class ScheduleStateMixin(_MixinBase):
             if isinstance(result, dict) and result.get("changed"):
                 logger.info("[amo] 状态巡检：健康已恢复，清理过期病假日程 %d 条", removed)
                 return removed
-            self.schedule[day] = kept
-            self.db.save_schedule(day, kept)
-            self.db.kv_set("schedule", self.schedule)
+            self.save_day(day, kept)
             logger.info("[amo] 状态巡检：健康已恢复，清理过期病假日程 %d 条", removed)
             return removed
+
+    def save_day(self, day, items):
+        """日程唯一落库入口：schedule 表 + kv['schedule'] 必须同一次写完。
+
+        2026-11-17 事故：amo_runtime_tick 只调 db.save_schedule（只写表），
+        这里的两处是「表 + kv」两份都写，两份存储于是漂移（表 26 项含 06:12
+        finance，kv 25 项）。清理脚本读 kv 就永远看不到那块，面板读表又能看到。
+        以后写日程一律走这里，别再直接 db.save_schedule。
+        """
+        day = str(day or "")
+        if not day:
+            return False
+        rows = [item for item in (items or []) if isinstance(item, dict)]
+        if not isinstance(getattr(self, "schedule", None), dict):
+            self.schedule = {}
+        self.schedule[day] = rows
+        self.db.save_schedule(day, rows)
+        self.db.kv_set("schedule", self.schedule)
+        return True
 
     def add_schedule_item(self, day, item, source="finance", reason=""):
         """在当天日程里追加一条（锁内读改写）；整天覆盖仍走 commit_schedule_change。"""
@@ -296,9 +685,86 @@ class ScheduleStateMixin(_MixinBase):
             current = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
             merged = current + [dict(item)]
             merged.sort(key=lambda row: _minute(str((row or {}).get("start") or "")))
+            # 2026-11-17 06:12 事故：这里以前直接落库，绕过了 commit_schedule_change
+            # 的第二道闸（resolve_new_overlaps）；在 sleep 06:00-07:00 上追加
+            # finance 06:12-06:22，重叠会原样写进 schedule 表，面板/详情都能看到。
+            merged, added = self._resolve_added_item_overlaps(day, current, merged, item)
+            if added is None:
+                return self._skipped_add_result(day, "overlap")
             return self._commit_schedule_change_locked(
                 day, merged, old_items=current, source=source, reason=reason,
             )
+
+    def _skipped_add_result(self, day, skipped):
+        """追加被去重叠拦下时的返回（形状与 _commit_schedule_change_locked 对齐）。"""
+        try:
+            version = self.db.schedule_version(str(day or ""))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.add_skipped.version", _amo_exc)
+            version = 0
+        return {"changed": False, "version": version, "changed_hours": [],
+                "cancelled": [], "saved": True, "skipped": str(skipped or "overlap")}
+
+    def _resolve_added_item_overlaps(self, day, current, merged, item):
+        """追加块也走 commit_schedule_change 的第二道闸 resolve_new_overlaps。
+
+        返回 (可落库的 items, 追加块)。追加块被完全覆盖、或去重叠之后仍与别的块
+        重叠（含去重叠模块不可用）时返回 (merged, None)：宁可整条不写，也不把
+        重叠静默写进库（2026-11-17 06:12 finance 事故）。
+        """
+        try:
+            try:
+                from .amo_transition import resolve_new_overlaps as _resolve_new
+            except ImportError:
+                from amo_transition import resolve_new_overlaps as _resolve_new
+            resolved, trimmed = _resolve_new(merged)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.add_overlap.resolve", _amo_exc)
+            logger.warning("[amo] 追加日程去重叠不可用，拒绝写入 day=%s", day)
+            return merged, None
+        activity = str((item or {}).get("activity") or "")
+        end_text = str((item or {}).get("end") or "")
+        start_text = str((item or {}).get("start") or "")
+        current_ids = {(str(row.get("start") or ""), str(row.get("end") or ""),
+                        str(row.get("activity") or ""))
+                       for row in (current or []) if isinstance(row, dict)}
+        added = None
+        for row in resolved or []:
+            if not isinstance(row, dict):
+                continue
+            if (str(row.get("activity") or "") != activity
+                    or str(row.get("end") or "") != end_text):
+                continue
+            identity = (str(row.get("start") or ""), str(row.get("end") or ""), activity)
+            if str(row.get("start") or "") == start_text or identity not in current_ids:
+                added = row
+                break
+        if added is None:
+            logger.info("[amo] 追加日程与已有块重叠，整条丢弃 day=%s %s-%s %s",
+                        day, start_text, end_text, activity)
+            return merged, None
+        others = [row for row in resolved if row is not added]
+        if _item_overlaps_any(added, others):
+            logger.warning("[amo] 追加日程去重叠后仍重叠，拒绝写入 day=%s %s-%s %s",
+                           day, added.get("start"), added.get("end"), activity)
+            return merged, None
+        if trimmed:
+            logger.info("[amo] 追加日程去重叠：截断/丢弃 %d 条", len(trimmed))
+        if str(added.get("start") or "") != start_text:
+            logger.info("[amo] 追加日程起点挪到 %s（原 %s）day=%s %s",
+                        added.get("start"), start_text, day, activity)
+        return resolved, added
+
+    #: 只有「用户改日程」的写入才过旅游目的地锁；JIT/生成来源不受影响。
+    _TRIP_GUARD_SOURCES = ("chat", "command", "manual", "llm_tool")
+    #: 跨午夜长途第二程（trip_leg）允许写第二天日程：已经出发的事实，不是剧透。
+    _FUTURE_OK_SOURCES = frozenset({"trip_leg"})
+    #: 只有这些来源的当天写入才自动补跨地点通勤块（测试/过渡引擎自己写步骤的不参与）。
+    _TRANSIT_SOURCES = frozenset({
+        "jit", "ensure", "ensure_regen", "chat", "command", "manual", "llm_tool",
+        "self_offwork", "date", "social", "wander", "activity",
+        "travel_overlay", "travel_follow_start", "travel_return",
+    })
 
     #: 只有这些来源生成的活动做主语校验；用户明确改的日程（chat/command/manual）按他说的来。
     ACTIVITY_GUARD_SOURCES = (
@@ -334,8 +800,68 @@ class ScheduleStateMixin(_MixinBase):
             old_items = list(self.schedule.get(day) or [])
         old_items = list(old_items or [])
         new_items = list(new_items or [])
+        # 四道收口（2026-11-18）：过去只读 → 锁块不被覆盖 → 打锁 → 归一 → 体检（不合格不落库）。
+        try:
+            import time as _time
+            _stamp = _time.localtime(now_ts())
+            now_text, today = _time.strftime("%H:%M", _stamp), _time.strftime("%Y-%m-%d", _stamp)
+        except Exception:
+            now_text, today = "", ""
+        try:
+            new_items = protect_locked(old_items, new_items, source)
+            # 只拦「自主生成」的写入改写历史；显式来源（chat/manual/command/test/snapshot）
+            # 仍可改，补历史块/补日记都靠它们。
+            new_items = freeze_past(old_items, new_items, now_text,
+                                    enabled=(str(source or "") == "transit" and day == today))
+            new_items = mark_locked(new_items, source)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.guard.pre", _amo_exc)
         new_items = self._normalize_schedule_items(new_items, source, day)
-        if old_items == new_items and invalidate_from is None:
+        try:
+            _sick_fn = getattr(self, "on_sick_leave", None)
+            _sick = bool(_sick_fn(day)) if callable(_sick_fn) and day else False
+            _introduced = [p for p in health_problems(new_items, sick=_sick)
+                           if p not in health_problems(old_items, sick=_sick)]
+            # 追加型（finance 等）和健康巡检有自己的去重叠，别用体检把它们拦掉。
+            _guard_health = str(source or "") not in ("finance", "health_audit", "snapshot")
+            if _introduced and _guard_health:
+                logger.warning("[amo] 日程体检不通过，拒绝本次写入(%s): %s",
+                               source or "-", _introduced[:6])
+                return {"changed": False, "version": self.db.schedule_version(day),
+                        "changed_hours": [], "cancelled": [], "saved": False,
+                        "rejected": _introduced}
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.guard.health", _amo_exc)
+        # 事实层统一：落库前给每块定 event_id（旧块继承、切块父块保留、新块新 id）。
+        # 放在内容比较之前；内容没变只是补 id 时只落库，不升版本、不让日记失效。
+        try:
+            new_items, _id_stats = stamp_event_ids(day, old_items, new_items)
+            if _id_stats.get("assigned") or _id_stats.get("inherited"):
+                logger.debug("[amo] 事件身份：新分配 %d / 继承 %d（day=%s）",
+                             int(_id_stats.get("assigned") or 0),
+                             int(_id_stats.get("inherited") or 0), day)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.commit_schedule_change.event_id", _amo_exc)
+            _id_stats = {"kept": 0, "inherited": 0, "assigned": 0}
+
+        def _content_without_event_id(rows):
+            out = []
+            for row in rows or []:
+                if isinstance(row, dict):
+                    out.append({key: value for key, value in row.items()
+                                if key != "event_id"})
+                else:
+                    out.append(row)
+            return out
+
+        if (_content_without_event_id(old_items) == _content_without_event_id(new_items)
+                and invalidate_from is None):
+            if old_items != new_items:
+                try:
+                    self.save_day(day, new_items)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_human_state.commit_schedule_change.event_id_save",
+                                    _amo_exc)
             return {
                 "changed": False,
                 "version": self.db.schedule_version(day),
@@ -368,8 +894,8 @@ class ScheduleStateMixin(_MixinBase):
         # 以前这里把异常吞了，调用方永远以为「写成功了」（2026-11-15）。
         saved = True
         try:
-            self.db.save_schedule(day, new_items)
-            self.db.kv_set("schedule", self.schedule)
+            # 表 + kv 一起写（save_day）：只写一张会让两份存储漂移（2026-11-17）。
+            self.save_day(day, new_items)
         except Exception as _amo_exc:
             saved = False
             _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
@@ -430,11 +956,24 @@ class ScheduleStateMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState._commit_schedule_change_locked", _amo_exc)
         try:
-            new_items = self._enforce_zone_activity(new_items, day, source)
+            # 病假当天 / 夜间一律不许出现「公司·上班」：JIT、改安排、过渡三条写路径都从
+            # 这里过闸，所以把判断放在总闸里（2026-11-18 用户反馈 21:18 突然去公司上班）。
+            sick = bool(self.on_sick_leave(day)) if day else False
+            if not sick:
+                try:
+                    sick = bool((self.health_info() or {}).get("sick"))
+                except Exception:
+                    sick = False
+            new_items = self._enforce_zone_activity(new_items, day, source, sick=sick)
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState._enforce_zone_activity", _amo_exc)
         return new_items
 
+    #: 病假/夜间/工作日下班后不许去公司（2026-11-18 用户要求：工作日回家后不准再回公司，周末可加班）。
+    _OFFICE_WORDS = ("公司", "写字楼", "办公室", "工位")
+    #: 只有正常上班时间能去公司：09:00-18:00 之外一律折回家（周末加班也按早 9 晚 6）。
+    _WORK_START_HOUR = 9
+    _WORK_END_HOUR = 18
     #: 区域 vs 文案的强冲突词；只拦“明显不可能”的组合，不碰擦边文案。
     _ZONE_CONFLICT = {
         "home": ("挤地铁", "坐地铁", "在公司", "到公司", "在工位", "办公室", "在商场", "逛街", "在路上", "开车去", "打车去"),
@@ -458,7 +997,7 @@ class ScheduleStateMixin(_MixinBase):
                          "他翻了个身", "他还在屋里", "他在屋里", "躺在他怀里")
 
     @classmethod
-    def _enforce_zone_activity(cls, items, day="", source=""):
+    def _enforce_zone_activity(cls, items, day="", source="", sick=False):
         """所有写日程路径的总闸：zone 和 activity 明显打架时纠正文案，保留物理骨架。"""
         for row in items or []:
             if not isinstance(row, dict):
@@ -470,6 +1009,25 @@ class ScheduleStateMixin(_MixinBase):
             if not act:
                 continue
             category = str(row.get("category") or "")
+            start = str(row.get("start") or "")
+            hour = int(start[:2]) if start[:2].isdigit() else -1
+            place = str(row.get("place") or "")
+            # 只按「所在地」判，不按文案判：08:00 的 zone=road 写「在工位上发呆」是文案问题，
+            # 该走下面的 zone 纠偏，不该被当成「去公司」折回家（2026-11-18）。
+            at_office = zone == "office" or any(word in place for word in cls._OFFICE_WORDS)
+            blocked = bool(sick) or hour >= cls._WORK_END_HOUR or (0 <= hour < cls._WORK_START_HOUR)
+            if at_office and blocked:
+                safe = "在家养病休息" if sick else "在家休息"
+                logger.warning("[amo] 病假/夜间禁止去公司，已折回家: day=%s %s category=%s zone=%s %r -> %r source=%s sick=%s",
+                               day, start, category, zone, act[:40], safe, source, sick)
+                row["activity"] = safe
+                row["place"] = "家"
+                row["zone"] = "home"
+                row["category"] = "rest"
+                row["detail"] = ""
+                row.pop("transit", None)
+                row.pop("vehicle", None)
+                continue
             allowed = cls._CATEGORY_WORDS.get(category)
             if allowed and not any(word in act for word in allowed):
                 safe = cls._CATEGORY_FALLBACK[category]
@@ -497,7 +1055,13 @@ class ScheduleStateMixin(_MixinBase):
         return items
 
     def settle_schedule_costs(self, now=None):
-        """日程块结束后按 LLM 定价结算一次；同一 event_id 绝不重复扣款。"""
+        """日程块结束后按 LLM 定价结算一次；同一 event_id 绝不重复扣款。
+
+        event_id 是块持久化的身份（不是临时拼的 hash）：账本行带同一个 id，
+        kv 标记与钱包幂等键都认它。旧库里没有 event_id 的块按 day+start+end
+        确定性补齐（与迁移同口径），所以升级当天的旧账也不会重复扣；钱包幂等键
+        沿用旧格式 sch_<day>_<start>_<category>，历史已入账的行不会被再扣一次。
+        """
         now = now or _now()
         day = now.date().isoformat()
         now_min = int(now.hour) * 60 + int(now.minute)
@@ -512,8 +1076,10 @@ class ScheduleStateMixin(_MixinBase):
             end = parse_hhmm(item.get("end"), 24 * 60)
             if now_min < end:
                 continue
-            event_id = "sch_%s_%s_%s" % (day, item.get("start"), item.get("category") or "life")
-            flag = "cost_settled:" + event_id
+            eid = ensure_event_id(day, item)
+            item["event_id"] = eid
+            idem = "sch_%s_%s_%s" % (day, item.get("start"), item.get("category") or "life")
+            flag = "cost_settled:" + idem
             try:
                 if self.db.kv_get(flag, False):
                     item["cost_settled"] = True
@@ -523,13 +1089,19 @@ class ScheduleStateMixin(_MixinBase):
             payload = {"ok": False, "reason": "余额不足"}
             try:
                 reason = "日程消费·%s" % (item.get("activity") or "花销")
-                ok = bool(self.p.wallet.debit(cost, reason, event_id,
-                                               category="schedule",
-                                               item_name=str(item.get("activity") or "")))
+                debit = self.p.wallet.debit
+                try:
+                    ok = bool(debit(cost, reason, idem, event_id=eid,
+                                    category="schedule",
+                                    item_name=str(item.get("activity") or "")))
+                except TypeError:
+                    # 旧版钱包没有 event_id 形参：退回旧签名，金额语义不变。
+                    ok = bool(debit(cost, reason, idem, category="schedule",
+                                    item_name=str(item.get("activity") or "")))
                 payload = {"ok": ok, "reason": "" if ok else "余额不足",
-                           "cost_cents": cost, "event_id": event_id}
+                           "cost_cents": cost, "event_id": eid, "idem": idem}
                 if not ok:
-                    logger.warning("[amo] 日程消费失败（余额不足）: %s %s 分", event_id, cost)
+                    logger.warning("[amo] 日程消费失败（余额不足）: %s %s 分", idem, cost)
             except Exception as exc:
                 payload = {"ok": False, "reason": "扣款异常: %s" % exc}
                 logger.warning("[amo] 日程消费异常: %s", exc)
@@ -576,12 +1148,6 @@ class ScheduleStateMixin(_MixinBase):
                         cancelled = cancel(day, start_hour) or []
                     except Exception as _amo_exc:
                         _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
-            daily_mark = getattr(self.p, "_mark_daily_diary_stale", None)
-            if callable(daily_mark):
-                try:
-                    daily_mark(day, version)
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
             wardrobe = getattr(self.p, "wardrobe", None)
             if wardrobe is not None:
                 try:
@@ -721,7 +1287,7 @@ class ScheduleStateMixin(_MixinBase):
                 "category": str(item.get("category") or "rest"),
                 "zone": item.get("zone", ""),
                 "transit": item.get("transit", ""),
-                "vehicle": item.get("vehicle", ""),
+                "vehicle": _vehicle_text(item),
                 "detail": item.get("detail", ""),
                 "event": self._display_event(item.get("event")),
                 "mood": item.get("mood", ""),
@@ -804,7 +1370,7 @@ class ScheduleStateMixin(_MixinBase):
                 return 2
             return 3
 
-        merged = []
+        merged: list[Any] = []
         for slot in slots:
             if merged:
                 last = merged[-1]
@@ -831,6 +1397,27 @@ class ScheduleStateMixin(_MixinBase):
 
     #: 已经答应/约好的事（未来日期也要展示，不能当盲盒藏起来）
     _BOOKED_CATEGORIES = ("social", "date", "appointment", "health", "leave", "travel")
+
+    def apply_schedule_summaries(self, day, tree):
+        """只读缓存：把已生成的 4 字小标题贴回 tree（GET 绝不调 LLM）。"""
+        try:
+            cache = self.db.kv_get("schedule_block_summaries", {}) or {}
+            if not isinstance(cache, dict):
+                return tree
+            for block in tree or []:
+                facts = block.get("facts")
+                if not isinstance(facts, dict) or not facts.get("events"):
+                    continue
+                slot_key = "%s|%s" % (day, block.get("start"))
+                cached = cache.get(slot_key)
+                if not isinstance(cached, dict) or not cached.get("summary"):
+                    continue
+                facts_key = json.dumps(facts, ensure_ascii=False, sort_keys=True)
+                if cached.get("facts") == facts_key:
+                    block["summary"] = str(cached["summary"])
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.apply_schedule_summaries", _amo_exc)
+        return tree
 
     async def enrich_schedule_tree(self, day, tree, umo=""):
         """把每段日程的冷事实交给大模型起 4 字小标题；Python 不写现成人话。"""
@@ -881,7 +1468,11 @@ class ScheduleStateMixin(_MixinBase):
         start = str(start or "").strip()[:5]
         end = str(end or "").strip()[:5]
         try:
-            items = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
+            from .amo_timeline import Timeline
+        except ImportError:  # 直接按文件加载时
+            from amo_timeline import Timeline
+        try:
+            items = Timeline(self).blocks(day)
         except Exception:
             items = []
         for item in items:
@@ -920,22 +1511,23 @@ class ScheduleStateMixin(_MixinBase):
             return "—— 那天还没到，她会怎么过？到时候才知道 ——"
         return "—— 今天还没过完呢，她接下来会做什么？——"
 
-    def schedule_tree(self, day=None):
+    def schedule_tree(self, day=None, items=None):
         """一级 4 段、二级每小时；不再生成三级 10 分钟。
 
         JIT 盲盒模式：今天只展示已经发生的时段和正在进行的这一小时，
         未来不预生成、不占位；未来日期整张表留空，等到了那天再由 Tick 写入。
+
+        P2-6：读接口纯读——不再在这里跑 _repair_transit_blocks / settle_date_end；
+        修复拆到显式维护任务 maintain_schedule_day（后台 tick / 生成日历时调用）。
+        P2-1：items 可由调用方传入（面板 GET 已读过一份），避免二次全日程读。
         """
         day = str(day or today_str())
-        try:
-            self.settle_date_end(day)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_human_state.schedule_tree.settle", _amo_exc)
         if day > today_str():
-            return self._booked_tree(day)
+            return self._booked_tree(day, items=items)
         if self._jit_enabled() and day == today_str():
-            return self._jit_schedule_tree(day)
-        raw = self.schedule.get(day) or self.db.get_schedule(day) or []
+            return self._jit_schedule_tree(day, items=items)
+        raw = items if isinstance(items, list) else (
+            self.schedule.get(day) or self.db.get_schedule(day) or [])
         hourly = self._hourly_schedule(raw)
         if not hourly:
             return []
@@ -965,7 +1557,7 @@ class ScheduleStateMixin(_MixinBase):
                     "category": item.get("category", "rest"),
                     "zone": item.get("zone", ""),
                     "transit": item.get("transit", ""),
-                    "vehicle": item.get("vehicle", ""),
+                    "vehicle": _vehicle_text(item),
                     "detail": item.get("detail", ""),
                     "event": self._display_event(item.get("event")),
                     "mood": item.get("mood", ""),
@@ -974,8 +1566,8 @@ class ScheduleStateMixin(_MixinBase):
                 }
                 children.append(hour)
             block["date"] = day
-            block["children"] = children  # type: ignore[assignment]
-            block["current"] = any(child["current"] for child in children)  # type: ignore[assignment]
+            block["children"] = children
+            block["current"] = any(child["current"] for child in children)
             if children:
                 block["activity"] = ""
                 block["place"] = ""
@@ -994,6 +1586,28 @@ class ScheduleStateMixin(_MixinBase):
                     ],
                 }
         return blocks
+
+    def schedule_tree_from_items(self, day, items):
+        """面板 GET 用：用已经读过的 items 建树（不重复读日程，也不写库）。"""
+        return self.schedule_tree(day, items=items)
+
+    def maintain_schedule_day(self, day=None):
+        """显式维护（后台 tick / 生成日历）：历史瞬移修复 + 约会收尾截断。
+
+        读接口（schedule_tree / 面板 GET）不再触发这两个写操作；维护失败只记日志。
+        """
+        day = str(day or today_str())
+        try:
+            repair = getattr(self, "_repair_transit_blocks", None)
+            if callable(repair):
+                repair(day)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.maintain.transit_repair", _amo_exc)
+        try:
+            self.settle_date_end(day)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.maintain.settle", _amo_exc)
+        return True
 
     @staticmethod
     def _cover_schedule(items):
@@ -1147,7 +1761,14 @@ class ScheduleStateMixin(_MixinBase):
     async def ensure_schedule(self, umo, force=False):
         """每天只生成一次主干；同一日期加锁，避免并发生成两份。"""
         async with self._schedule_gen_lock(today_str()):
-            return await self._ensure_schedule_locked(umo, force=force)
+            result = await self._ensure_schedule_locked(umo, force=force)
+            try:
+                repair = getattr(self, "_repair_transit_blocks", None)
+                if callable(repair):
+                    repair(today_str())
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.ensure_schedule.transit_repair", _amo_exc)
+            return result
 
     async def _ensure_schedule_locked(self, umo, force=False):
         """ensure_schedule 的锁内实现；点击二级卡片时再动态生成这一小时的日记。"""
@@ -1157,6 +1778,11 @@ class ScheduleStateMixin(_MixinBase):
             await self.decide_sick_action(umo, _now())
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.ensure_schedule.sick_decision", _amo_exc)
+        # 旅游日池：旅行日只用旅游事件池，休息日只留「旅游回来累瘫在家」单块。
+        _trip_kind_of = getattr(self, "_trip_day_kind", None)
+        _trip_kind = _trip_kind_of(today) if callable(_trip_kind_of) else ""
+        if _trip_kind:
+            return self._trip_day_items(today, _trip_kind)
         if not force and self._jit_enabled():
             return self._schedule_jit_purge(today)
         if force:

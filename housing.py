@@ -25,21 +25,29 @@
 纯状态 + 文案，不直接生图，方便单测。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import os
 
 try:
     from .amo_shared import city_or_empty, logger
 except ImportError:  # 直接按文件加载时
-    try:
-        from amo_shared import city_or_empty, logger
-    except Exception:  # pragma: no cover
-        import logging
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_shared import city_or_empty, logger
+        except Exception:  # pragma: no cover
+            import logging
 
-        logger = logging.getLogger(__name__)
+            logger = logging.getLogger(__name__)
 
-        def city_or_empty(plugin):
-            return ""
+            def city_or_empty(plugin):
+                return ""
 
 STYLE_DEFAULT = "出租屋简易风"
 COLORS_DEFAULT = "米白色"
@@ -56,15 +64,66 @@ SEASON_SUMMER = "夏季薄毯、电风扇"
 SEASON_WINTER = "冬季厚地毯、暖气片"
 IMAGE_COOLDOWN_SECONDS = 24 * 3600
 BEDROOM_WORDS = ("床", "衣柜", "梳妆台", "床头柜", "台灯", "睡", "卧室")
+BATHROOM_WORDS = ("洗手台", "洗手池", "镜子", "毛巾", "浴", "牙刷", "淋浴")
+KITCHEN_WORDS = ("灶台", "橱柜", "冰箱", "锅", "微波炉", "厨房", "抽油烟机")
+#: 房间画像（P22，2026-11-17 扩到四间）：睡觉/躺床/换衣→卧室，浴室→浴室，厨房→厨房，
+#: 其余在家场景→客厅。写进 housing 配置，生图分房间读它；改默认值只影响新家，
+#: 不动已经落进 kv 的户——老数据里的 home_bath 在 room_profiles() 里按默认值归位。
+ROOM_PROFILES = {
+    "bedroom": {"label": "卧室", "zones": ("home_bed",),
+                "places": ("卧室", "床", "被窝", "睡衣", "衣柜", "换衣")},
+    "living": {"label": "客厅",
+               "zones": ("home", "home_sofa", "home_desk", "home_meal", "home_generic"),
+               "places": ("客厅", "沙发", "茶几", "餐桌", "书桌")},
+    "bathroom": {"label": "浴室", "zones": ("home_bath",),
+                 "places": ("浴室", "洗手台", "洗手池", "镜子", "毛巾", "洗澡", "洗漱", "刷牙")},
+    "kitchen": {"label": "厨房", "zones": ("home_kitchen",),
+                "places": ("厨房", "灶台", "橱柜", "做饭", "煮饭", "下厨", "冰箱")},
+}
+#: 2026-11-17 新增的两间；老 kv 里的 zone 归属要按它们归位
+NEW_ROOMS = ("bathroom", "kitchen")
+#: 浴室/厨房没有专属家具清单时的通用陈设（不许硬套客厅/卧室家具）
+DEFAULT_ROOM_FURNITURE = {
+    "bathroom": ["白色陶瓷洗手台", "方镜", "瓷砖墙面", "毛巾架和毛巾", "淋浴间玻璃隔断"],
+    "kitchen": ["灶台", "油烟机", "橱柜", "冰箱", "小餐桌和两把椅子"],
+}
+
+
+def default_rooms_config():
+    """新家/老数据都补一份房间画像，返回深拷贝，别让实例互相改到。"""
+    return {room: {"label": str(profile.get("label") or ""),
+                   "zones": tuple(profile.get("zones") or ()),
+                   "places": tuple(profile.get("places") or ())}
+            for room, profile in ROOM_PROFILES.items()}
 
 def room_of_item(name):
     body = str(name or "")
-    return "bedroom" if any(word in body for word in BEDROOM_WORDS) else "living"
+    if any(word in body for word in BEDROOM_WORDS):
+        return "bedroom"
+    if any(word in body for word in BATHROOM_WORDS):
+        return "bathroom"
+    if any(word in body for word in KITCHEN_WORDS):
+        return "kitchen"
+    return "living"
+
+
+def room_key_of(value):
+    """把 room id / 中文房名归一成 living|bedroom|bathroom|kitchen（不认识按客厅）。"""
+    text = str(value or "").strip()
+    if text in ("living", "bedroom", "bathroom", "kitchen"):
+        return text
+    if "卧" in text or "床" in text:
+        return "bedroom"
+    if "浴" in text or "厕" in text or "洗手" in text:
+        return "bathroom"
+    if "厨" in text or "灶" in text:
+        return "kitchen"
+    return "living"
 
 
 def season_line(now=None):
     import datetime as _dt
-    month = (now or _dt.datetime.now()).month
+    month = (now or _amo_clock.now()).month
     if 6 <= month <= 9:
         return SEASON_SUMMER
     if month in (12, 1, 2):
@@ -79,9 +138,17 @@ def build_room_image_prompt(room_type, style, colors, furniture_list, now=None):
     colors = str(colors or "米白色")
     base = ("一张空无一人的%s室内图，第一人称视角，广角镜头，照片级写实，室内摄影，"
             "8k分辨率，温馨的生活气息，阳光透过窗户洒进来。" % room_type)
-    furniture_str = "、".join(str(x) for x in (furniture_list or []) if str(x).strip()) or "家具寥寥无几"
-    if "卧" in room_type:
+    room_key = room_key_of(room_type)
+    items = [str(x) for x in (furniture_list or []) if str(x).strip()]
+    if not items:
+        items = list(DEFAULT_ROOM_FURNITURE.get(room_key) or ())
+    furniture_str = "、".join(items) or "家具寥寥无几"
+    if room_key == "bedroom":
         must_not = "沙发、电视柜、茶几、餐桌、马桶、厨房灶台、人物、宠物"
+    elif room_key == "bathroom":
+        must_not = "床、衣柜、梳妆台、沙发、电视柜、茶几、餐桌、厨房灶台、人物、宠物"
+    elif room_key == "kitchen":
+        must_not = "床、衣柜、梳妆台、沙发、电视柜、茶几、马桶、淋浴间、人物、宠物"
     else:
         must_not = "床、衣柜、梳妆台、床头柜、马桶、厨房灶台、人物、宠物"
     attr = ("装修风格为%s，主色调为%s。房间内真实摆放着：%s。"
@@ -155,6 +222,7 @@ class Housing:
             "colors": COLORS_DEFAULT,
             "furniture": list(RENT_LIVING + RENT_BEDROOM),
             "room_furniture": {"living": list(RENT_LIVING), "bedroom": list(RENT_BEDROOM)},
+            "rooms": default_rooms_config(),
             "rent_cents": 150000,
             "status": "living",
             "images": {"living": "", "bedroom": ""},
@@ -198,6 +266,21 @@ class Housing:
                 "living": [str(x) for x in (rooms.get("living") or [])],
                 "bedroom": [str(x) for x in (rooms.get("bedroom") or [])],
             }
+            rooms_cfg = home.get("rooms")
+            rooms_cfg = dict(rooms_cfg) if isinstance(rooms_cfg, dict) else {}
+            defaults = default_rooms_config()
+            for room_key, profile in defaults.items():
+                merged = dict(profile)
+                override = rooms_cfg.get(room_key)
+                if isinstance(override, dict):
+                    if str(override.get("label") or "").strip():
+                        merged["label"] = str(override["label"]).strip()
+                    for field in ("zones", "places"):
+                        values = override.get(field)
+                        if isinstance(values, (list, tuple)) and values:
+                            merged[field] = tuple(str(x) for x in values)
+                rooms_cfg[room_key] = merged
+            home["rooms"] = rooms_cfg
             home.setdefault("rent_cents", 0)
             home.setdefault("status", "living" if home.get("id") == raw.get("residence_id") else "idle")
             images = home.get("images")
@@ -259,6 +342,7 @@ class Housing:
             "colors": str(colors or "米白色"),
             "furniture": [],
             "room_furniture": {"living": [], "bedroom": []},
+            "rooms": default_rooms_config(),
             "rent_cents": int(rent_cents or 0),
             "status": "idle",
             "images": {"living": "", "bedroom": ""},
@@ -509,7 +593,7 @@ class Housing:
     def can_redraw(self, now=None):
         """大件/搬家/换风格才重绘；两次生图至少间隔 24 小时。"""
         import time as _time
-        now = float(now if now is not None else _time.time())
+        now = float(now if now is not None else _amo_clock.now_ts())
         try:
             last = float(self.current().get("last_image_ts") or 0)
         except Exception:
@@ -519,7 +603,7 @@ class Housing:
     def mark_image_ready(self, now=None):
         import time as _time
         home = self.current()
-        home["last_image_ts"] = float(now if now is not None else _time.time())
+        home["last_image_ts"] = float(now if now is not None else _amo_clock.now_ts())
         home["image_status"] = "ready"
         home["images_needed"] = False
         self._save()
@@ -534,20 +618,24 @@ class Housing:
 
     def room_prompt(self, room_type="客厅", now=None):
         home = self.current()
-        key = "bedroom" if "卧" in str(room_type) else "living"
-        items = (home.get("room_furniture") or {}).get(key) or []
+        key = room_key_of(room_type)
+        items = (home.get("room_furniture") or {}).get(key) or DEFAULT_ROOM_FURNITURE.get(key) or []
         return build_room_image_prompt(room_type, home.get("style"), home.get("colors"), items, now)
 
     def room_scene_line(self, room="living"):
         """自拍时给模型的一句话：这个房间该有什么、不该有什么。"""
         home = self.current()
-        key = "bedroom" if str(room or "") in ("bedroom", "卧室") else "living"
-        label = "卧室" if key == "bedroom" else "客厅"
-        items = (home.get("room_furniture") or {}).get(key) or []
+        key = room_key_of(room)
+        label = {"bedroom": "卧室", "bathroom": "浴室", "kitchen": "厨房"}.get(key, "客厅")
+        items = (home.get("room_furniture") or {}).get(key) or DEFAULT_ROOM_FURNITURE.get(key) or []
         if not items:
             return ""
         if key == "bedroom":
             bad = "沙发、电视柜、茶几、餐桌、马桶、厨房灶台"
+        elif key == "bathroom":
+            bad = "床、衣柜、梳妆台、沙发、电视柜、茶几、餐桌、厨房灶台"
+        elif key == "kitchen":
+            bad = "床、衣柜、梳妆台、沙发、电视柜、茶几、马桶、淋浴间"
         else:
             bad = "床、衣柜、梳妆台、床头柜、马桶、厨房灶台"
         return ("背景是她的%s，房间里只能出现这些家具：%s；不要出现%s；"
@@ -555,4 +643,65 @@ class Housing:
                 % (label, "、".join(items), bad))
 
     def room_image(self, room="living"):
-        return str((self.current().get("images") or {}).get(room) or "")
+        """房间参考图路径；配置里那条丢了就按规范文件名回退，都没有返回空串。"""
+        key = room_key_of(room)
+        images = self.current().get("images") or {}
+        stored = str(images.get(key) or "")
+        if stored:
+            return stored
+        fallback = os.path.join(self.image_dir(), "%s-%s.png" % (
+            self.current().get("id") or "home", key))
+        if os.path.isfile(fallback):
+            return fallback
+        return ""
+
+    def room_profiles(self):
+        """当前家的房间画像：每间房认哪些 zone、哪些地点词。
+
+        老数据（改名前的 kv）里 home_bath 写在客厅下面；这里按默认画像归位：
+        zone 由默认值说了算（浴室认 home_bath、厨房认 home_kitchen），地点词以配置为准。
+        """
+        base = default_rooms_config()
+        stored = self.current().get("rooms")
+        stored = {str(key): dict(value) for key, value in stored.items()
+                  if isinstance(value, dict)} if isinstance(stored, dict) else {}
+        merged = {}
+        for room, profile in base.items():
+            data = dict(profile)
+            own = stored.get(room) or {}
+            zones = own.get("zones")
+            if zones:
+                data["zones"] = tuple(str(zone) for zone in zones)
+            places = own.get("places")
+            if places:
+                data["places"] = tuple(places)
+            label = str(own.get("label") or "").strip()
+            if label:
+                data["label"] = label
+            merged[room] = data
+        for room, data in stored.items():
+            if room in merged:
+                continue
+            merged[room] = {"label": str(data.get("label") or room),
+                            "zones": tuple(str(z) for z in (data.get("zones") or ())),
+                            "places": tuple(data.get("places") or ())}
+        # 只给「新增的两间」归位：老 kv 里 home_bath 写在客厅下面，浴室该认它；
+        # 其它 zone 仍然听 housing 配置（用户改过的映射不能被默认值覆盖）。
+        claimed = {}
+        for room in NEW_ROOMS:
+            for zone in base.get(room, {}).get("zones") or ():
+                claimed[str(zone)] = room
+        for room, data in merged.items():
+            zones = [str(zone) for zone in (data.get("zones") or ())
+                     if claimed.get(str(zone), room) == room]
+            if room in NEW_ROOMS:
+                for zone in base.get(room, {}).get("zones") or ():
+                    if zone not in zones:
+                        zones.append(str(zone))
+            data["zones"] = tuple(zones)
+        return merged
+
+    def room_label(self, room="living"):
+        """房间的中文名（提示词里用）；不认识的房间按客厅。"""
+        profile = self.room_profiles().get(str(room or "living")) or {}
+        return str(profile.get("label") or ("卧室" if str(room or "") == "bedroom" else "客厅"))

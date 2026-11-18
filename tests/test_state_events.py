@@ -69,7 +69,7 @@ class BaseCase(unittest.TestCase):
             module.__path__ = []
             sys.modules[name] = module
         path_module = types.ModuleType("astrbot.core.utils.astrbot_path")
-        path_module.get_astrbot_data_path = lambda: self.tmp
+        setattr(path_module, "get_astrbot_data_path", lambda: self.tmp)
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
         self.plugin = FakePlugin(self.tmp)
         self.state = HumanState(self.plugin)

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""穿搭衣柜单测：30 套种子、每日锁定、增删、礼物归类、万象画卷 sidecar。"""
+"""穿搭衣柜单测：30 套种子、每日锁定、增删、礼物归类、我能永远定格你 sidecar。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+from support import make_temp_dir  # noqa: E402
 from wardrobe import Wardrobe, classify_item  # noqa: E402
 
 
@@ -48,7 +49,7 @@ class FakePlugin:
 
 
 def make_wardrobe(temp=20, place="家"):
-    root = tempfile.mkdtemp(prefix="amo-wardrobe-")
+    root = make_temp_dir("amo-wardrobe-")
     os.makedirs(os.path.dirname(FakeDB(root).path), exist_ok=True)
     return Wardrobe(FakePlugin(root, temp, place)), root
 
@@ -238,6 +239,7 @@ class GiftTests(unittest.TestCase):
         self.assertIn("米色开衫", names)
 
 
+# 旧目录 astrbot_plugin_omnidraw 的路径属 legacy fallback，保留为回退测试
 class SidecarTests(unittest.TestCase):
     def test_sidecar_written_for_omnidraw(self):
         wardrobe, root = make_wardrobe()
@@ -247,7 +249,12 @@ class SidecarTests(unittest.TestCase):
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         self.assertEqual(data["day"], "2026-11-11")
-        self.assertEqual(data["text"], current["text"])
+        # B2b：sidecar 只写实际单品，不再写「居家便服」这类泛化标签。
+        expected = "、".join(part for part in (
+            current.get("coat"), current.get("top"), current.get("skirt"),
+            current.get("bottom"), current.get("shoes")) if part)
+        self.assertEqual(data["text"], expected)
+        self.assertNotIn("居家便服", data["text"])
         self.assertEqual(data["outfit"], current["outfit"])
 
     def test_night_sidecar_is_pajamas(self):
@@ -266,6 +273,24 @@ class SidecarTests(unittest.TestCase):
         self.assertFalse(os.path.exists(
             os.path.join(root, "plugin_data", "astrbot_plugin_omnidraw", "amo_outfit.json")
         ))
+
+
+    def test_sidecar_prefers_new_plugin_dir(self):
+        wardrobe, root = make_wardrobe()
+        os.makedirs(os.path.join(root, "plugin_data", "Astrbot_amoupup_photo"), exist_ok=True)
+        os.makedirs(os.path.join(root, "plugin_data", "astrbot_plugin_omnidraw"), exist_ok=True)
+        wardrobe.current("2026-11-11", at_home=False, hour=14)
+        self.assertTrue(os.path.exists(os.path.join(
+            root, "plugin_data", "Astrbot_amoupup_photo", "amo_outfit.json")))
+        self.assertFalse(os.path.exists(os.path.join(
+            root, "plugin_data", "astrbot_plugin_omnidraw", "amo_outfit.json")))
+
+    def test_sidecar_falls_back_to_legacy_dir(self):
+        wardrobe, root = make_wardrobe()
+        os.makedirs(os.path.join(root, "plugin_data", "astrbot_plugin_omnidraw"), exist_ok=True)
+        wardrobe.current("2026-11-11", at_home=False, hour=14)
+        self.assertTrue(os.path.exists(os.path.join(
+            root, "plugin_data", "astrbot_plugin_omnidraw", "amo_outfit.json")))
 
 
 class SleepTests(unittest.TestCase):
@@ -687,19 +712,25 @@ class AtHomeTests(unittest.TestCase):
 
 
 class ChatContextTests(unittest.TestCase):
-    def test_context_line_is_short_but_knows_outfit(self):
+    def _runtime_source(self):
+        # 2026-11-17：amo_runtime 拆成门面 + tick/context/reply，源码断言要看全部子模块。
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "amo_runtime.py"), encoding="utf-8") as fh:
-            source = fh.read()
+        source = ""
+        for name in ("amo_runtime.py", "amo_runtime_context.py",
+                     "amo_runtime_reply.py", "amo_runtime_tick.py"):
+            with open(os.path.join(root, name), encoding="utf-8") as fh:
+                source += fh.read() + "\n"
+        return source
+
+    def test_context_line_is_short_but_knows_outfit(self):
+        source = self._runtime_source()
         self.assertIn("【穿搭】", source)
         self.assertIn('_outfit.get("top")', source)
         self.assertIn('_outfit.get("bottom")', source)
         self.assertIn("被问起穿搭就照这个说", source)
 
     def test_chat_can_reroll_pajamas(self):
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "amo_runtime.py"), encoding="utf-8") as fh:
-            source = fh.read()
+        source = self._runtime_source()
         self.assertIn("is_outfit_change_request", source)
         self.assertIn("is_pajama_change_request", source)
         self.assertIn("set_night(reroll=True)", source)

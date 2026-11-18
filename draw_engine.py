@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""画图引擎（接「万象画卷」OmniDraw）。
+"""画图引擎（接「我能永远定格你」OmniDraw）。
 
 玩法：她正常回完话之后，按配置判断这轮要不要顺手画一张给她发过去。
 
@@ -20,6 +20,13 @@
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import asyncio
 import datetime as _dt
@@ -31,7 +38,13 @@ import time
 
 from astrbot.api import logger
 
-from typing import Any, TYPE_CHECKING
+try:  # Phase 17：结构化事件日志（自动脱敏）
+    from .observability import log_event
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from observability import log_event
+
+from typing import Any
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -41,17 +54,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
     try:
         from .amo_shared import today_str as _today_str
     except Exception:  # pragma: no cover
         try:
             from amo_shared import today_str as _today_str
         except Exception:
-            import datetime as _dt
 
             def _today_str():
-                return _dt.datetime.now().date().isoformat()
+                return _amo_clock.now().date().isoformat()
     try:  # 正常包模式
         from .amo_shared import logger as _amo_logger  # noqa: F401  (保持和主模块同一 logger)
     except Exception:  # pragma: no cover - 只在极端导入方式下走到
@@ -79,50 +92,59 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             split_keywords,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_image_common import (
-            MessageChain,
-            cfg,
-            clean_place,
-            find_omni,
-            image_component,
-            spawn,
-            split_keywords,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_image_common import (
+                MessageChain,
+                cfg,
+                clean_place,
+                find_omni,
+                image_component,
+                spawn,
+                split_keywords,
+            )
 
 try:  # 统一时钟（测试会钉死时间；不要在本文件里散落裸时间调用）
     from .amo_shared import _now as _amo_now
 except Exception:  # pragma: no cover
-    try:
-        from amo_shared import _now as _amo_now
-    except Exception:
-        def _amo_now():
-            return _dt.datetime.fromtimestamp(time.time())
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_shared import _now as _amo_now
+        except Exception:
+            def _amo_now():
+                return _dt.datetime.fromtimestamp(_amo_clock.now_ts())
 
 try:  # 视角后缀：她出镜=自拍视角，她拍环境=她的拍摄视角（空镜）
-    from .photo_view import (SCENERY_ONLY, SELFIE_FRAMING, SELFIE_NEGATIVE,
+    from .photo_view import (FOOT_CLOSEUP_NEGATIVE, HEADWEAR_LOCK, SCENERY_ONLY, SELFIE_FRAMING, SELFIE_FRAMING_FOOT, SELFIE_NEGATIVE,
                              SELFIE_STYLE, looks_like_her, view_suffix)
 except ImportError:  # 直接按文件加载时
-    from photo_view import (SCENERY_ONLY, SELFIE_FRAMING, SELFIE_NEGATIVE,
-                            SELFIE_STYLE, looks_like_her, view_suffix)
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_view import (FOOT_CLOSEUP_NEGATIVE, HEADWEAR_LOCK, SCENERY_ONLY, SELFIE_FRAMING, SELFIE_FRAMING_FOOT, SELFIE_NEGATIVE,
+                                SELFIE_STYLE, looks_like_her, view_suffix)
 
 try:  # 场景：日程地点 → 背景（在家=家里、逛街=商场、旅游=景区）
     from .photo_scene import PLACE_HINTS, scene_for
 except ImportError:  # 直接按文件加载时
-    from photo_scene import PLACE_HINTS, scene_for
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_scene import PLACE_HINTS, scene_for
 
 try:  # 自拍姿势库：随机挑一个姿势
     from .pose_library import pose_line
 except ImportError:  # 直接按文件加载时
-    try:
-        from pose_library import pose_line
-    except Exception:  # pragma: no cover
-        def pose_line(pose):
-            return ""
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from pose_library import pose_line
+        except Exception:  # pragma: no cover
+            def pose_line(pose):
+                return ""
 
-try:  # 场景规则表（照片严格跟随日程）
-    from .photo_rules import locks_for_plan, pick_pose_for_plan, resolve_plan
+try:  # 生图计划：规则表在 photo_rules，计划对象和入口在 photo_plan
+    from .photo_plan import build_plan, locks_for_plan, pick_pose_for_plan
 except ImportError:  # 直接按文件加载时
-    from photo_rules import locks_for_plan, pick_pose_for_plan, resolve_plan
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_plan import build_plan, locks_for_plan, pick_pose_for_plan
+
+#: 兼容：老名字叫 resolve_plan（draw_engine 里的调用点仍按这个名字）
+resolve_plan = build_plan
 
 # 生图可能卡死；最多等 3 分钟就放弃这一次
 GENERATE_TIMEOUT_SECONDS = 180
@@ -293,6 +315,15 @@ DEFAULT_TOPIC_KEYWORDS = (
     "想喝,喝什么,喝啥,想玩,在忙什么"
 )
 
+def swim_outside_request(text, place):
+    """他在外面点名要泳装/比基尼：不生成、不答应，回家再说。"""
+    body = str(text or "")
+    if not any(w in body for w in ("比基尼", "泳衣", "泳装", "泳裤", "三点式")):
+        return False
+    where = str(place or "")
+    home = any(w in where for w in ("家", "客厅", "卧室", "沙发", "床", "阳台", "浴室", "洗手间"))
+    return not home
+
 DEFAULT_EXPLICIT_KEYWORDS = (
     "画一张,画个,画一下,画一幅,画张,给我画,帮我画,替我画,来一张,来张,发张图,发个图,"
     "发一张,拍张,拍一张,拍照给我看看,拍给我看,照片给我看看,发张照片,自拍,画我,来点图,"
@@ -372,6 +403,7 @@ def build_selfie_prompt(scene, outfit, activity, state, extra="", light="", pose
     parts.append("看着镜头微笑（looking at camera, smiling）")
     parts.append(light or _light_line(activity))
     parts.append("真实的手机抓拍画质，轻微噪点，随手拍不摆拍")
+    parts.append(HEADWEAR_LOCK)
     parts.append(SELFIE_WORLDVIEW)
     return "，".join(part for part in parts if part)
 
@@ -387,7 +419,7 @@ class DrawEngine:
         self._omni_checked = 0.0
         self._stats = {"scheduled": 0, "sent": 0, "failed": 0, "skipped": 0, "cached": 0}
         self._last_error = ""
-        self._missing_notice_at = {}   # umo -> monotonic：缺万象画卷时多久提醒一次
+        self._missing_notice_at = {}   # umo -> monotonic：缺我能永远定格你时多久提醒一次
 
     # ---------- 配置 ----------
 
@@ -452,7 +484,10 @@ class DrawEngine:
 
     def _explicit_keywords(self):
         raw = self._cfg_str("draw_explicit_keywords", DEFAULT_EXPLICIT_KEYWORDS)
-        return _split_keywords(raw) or _split_keywords(DEFAULT_EXPLICIT_KEYWORDS)
+        base = _split_keywords(raw) or _split_keywords(DEFAULT_EXPLICIT_KEYWORDS)
+        # 脚/脚趾特写：老配置没有这些词也照样识别（他明确点了才走）
+        extra = ("脚趾", "脚背", "看脚", "拍脚", "脚部", "小脚")
+        return tuple(dict.fromkeys(list(base) + list(extra)))
 
     # ---------- 权限 / 限额 ----------
 
@@ -541,7 +576,7 @@ class DrawEngine:
             ts = float(item.get("ts") or 0)
         except Exception:
             ts = 0.0
-        if not ts or time.time() - ts > minutes * 60:
+        if not ts or _amo_clock.now_ts() - ts > minutes * 60:
             return None
         path = str(item.get("file_path") or "")
         if path and not os.path.exists(path):
@@ -566,7 +601,7 @@ class DrawEngine:
         if not (file_path or url or data_url):
             return
         payload = {
-            "ts": time.time(),
+            "ts": _amo_clock.now_ts(),
             "file_path": file_path,
             "url": url,
             "data_url": data_url,
@@ -710,6 +745,14 @@ class DrawEngine:
         text = str(getattr(event, "message_str", "") or "")
         return any(kw and kw.lower() in text.lower() for kw in self._explicit_keywords())
 
+    @staticmethod
+    def _is_foot_request(text):
+        try:
+            from .photo_view import wants_foot_closeup
+        except ImportError:
+            from photo_view import wants_foot_closeup
+        return bool(wants_foot_closeup(str(text or "")))
+
     def decide(self, event, reply_text):
         """返回 dict(prompt, mode, reason) 或 None。"""
         if not self.enabled:
@@ -719,6 +762,11 @@ class DrawEngine:
         if not self.is_owner(event):
             return self._skip("不是老公/相恋关系")
         text = str(getattr(event, "message_str", "") or "").strip()
+        if self._is_foot_request(text):
+            return self._skip("foot-closeup-handled-by-send-photo")
+        if any(w in text for w in ("比基尼", "泳衣", "泳装", "泳裤", "三点式")):
+            # 泳装请求只走“本人实拍（在家才允许）”，绝不能被 decide 当成环境空镜
+            return self._skip("swim-request-handled-by-send-photo")
         reply_text = str(reply_text or "").strip()
         if not text:
             return self._skip("空消息")
@@ -795,7 +843,7 @@ class DrawEngine:
         reason = "" if photo_direct else self._check_limits(uid)
         if reason:
             if self.debug:
-                logger.info("[amo] 画图跳过：%s（uid=%s）" % (reason, uid))
+                log_event("info", "draw.skip", reason=reason, uid=uid)
             return None
         last = self._last_prompt.get(uid)
         if last and last[0] == prompt and time.monotonic() - last[1] < 120:
@@ -870,8 +918,13 @@ class DrawEngine:
                 _note_swallowed("draw_engine.DrawEngine.decide", _amo_exc)
                 outfit = ""
         explicit_clothes = any(word in str(subject or "") for word in (
-            "穿", "衣服", "裙", "衬衫", "毛衣", "外套", "卫衣", "裤", "鞋", "围巾", "帽子",
+            "穿", "衣服", "裙", "衬衫", "衬衣", "毛衣", "外套", "大衣", "卫衣", "裤",
+            "鞋", "靴", "T恤", "泳衣", "泳装", "睡衣", "吊带", "背心", "西装",
+            "围巾", "帽子",
         ))
+        if plan is not None:
+            # B2b：action 点名衣服时，_run 生成期间要让 omnidraw 的 OUTFIT LOCK 失效。
+            plan.debug["explicit_outfit"] = bool(explicit_clothes)
         locked_today = bool(outfit) and not explicit_clothes
         if locked_today:
             parts.append("女孩穿着" + outfit)
@@ -895,7 +948,12 @@ class DrawEngine:
                 _note_swallowed("draw_engine.DrawEngine.decide.selfie_state", _amo_exc)
                 state_line = ""
         parts.append(plan.guard)
-        parts.extend([item for item in (state_line, SELFIE_WORLDVIEW, SELFIE_FRAMING, SELFIE_STYLE) if item])
+        try:
+            from .photo_view import wants_foot_closeup as _wants_foot
+        except ImportError:
+            from photo_view import wants_foot_closeup as _wants_foot
+        _framing = SELFIE_FRAMING_FOOT if _wants_foot(str(subject or "")) else SELFIE_FRAMING
+        parts.extend([item for item in (state_line, SELFIE_WORLDVIEW, _framing, SELFIE_STYLE) if item])
         parts.extend([_weather_line(getattr(self.plugin, "state", None), activity),
                       _light_line(activity), "看着镜头微笑（looking at camera, smiling）",
                       REALISM_POSITIVE, view_suffix(True), "真实的手机抓拍画质", "生活感"])
@@ -923,7 +981,7 @@ class DrawEngine:
         plan = self.decide(event, reply_text)
         if not plan:
             return None
-        # 明确要图、但本机根本没装万象画卷：别一声不吭（用户只会以为她不理人），
+        # 明确要图、但本机根本没装我能永远定格你：别一声不吭（用户只会以为她不理人），
         # 回一句人话说明缺什么；同一会话 10 分钟只提醒一次。
         notice = self.missing_omni_notice(event)
         if notice:
@@ -959,8 +1017,8 @@ class DrawEngine:
             if last is not None and now - last < 600:
                 return ""
             store[umo] = now
-            logger.info("[amo] 他这轮要照片，但本机没装万象画卷：已回复说明")
-            return "我这台还没装画图插件（万象画卷），装了才能给你拍照片；等我弄好再给你拍。"
+            logger.info("[amo] 他这轮要照片，但本机没装我能永远定格你：已回复说明")
+            return "我这台还没装画图插件（我能永远定格你），装了才能给你拍照片；等我弄好再给你拍。"
         except Exception as _amo_exc:
             _note_swallowed("draw_engine.DrawEngine.missing_omni_notice", _amo_exc)
             return ""
@@ -1015,6 +1073,20 @@ class DrawEngine:
             logger.warning("[amo] 缺画图插件提示发送失败: %s" % exc)
             return False
 
+    def _foot_refs(self):
+        """脚趾特写也要戴参考图：房间背景图 + 今天这套衣服的平铺图（三视图由生图插件自动加）。"""
+        photo = getattr(self.plugin, "photo", None)
+        if photo is None:
+            return []
+        try:
+            # 脚趾图不带房间参考图：家/餐厅的房间图会把桌子、拖鞋带进构图，场景交给提示词和当前日程
+            refs, _pose, _outfit, _scope = photo._selfie_reference_refs(
+                None, {"outfit": True, "pose": False, "room": False}, "")
+            return list(refs or [])
+        except Exception as exc:
+            _note_swallowed("draw_engine.DrawEngine._foot_refs", exc)
+            return []
+
     def send_photo_now(self, event, description, kind="web", force=False):
         """大模型主动决定发图：web=网图/截图分享，real=她自己的实拍。"""
         if not self.enabled:
@@ -1022,6 +1094,13 @@ class DrawEngine:
         if not self.is_owner(event):
             return "这个只给老公用哦"
         text = str(description or "").strip() or "随手拍"
+
+        try:
+            _place = str((self._activity() or {}).get("place") or "")
+        except Exception:
+            _place = ""
+        if swim_outside_request(text, _place):
+            return "在外面呢，等我到家再拍给你看，先别催。"
         # 「自拍/合影/拍照」这类必须走她本人的实拍，不能被当成网图
         if any(word in text for word in ("自拍", "合影", "拍照", "照片", "拍一张")):
             kind = "real"
@@ -1042,10 +1121,31 @@ class DrawEngine:
                 _note_swallowed("draw_engine.DrawEngine.send_photo_now.outfit", _amo_exc)
                 outfit = ""
             detail = text if (text and text != "随手拍") else ""
-            prompt = build_selfie_prompt(scene, outfit, activity,
-                                         getattr(self.plugin, "state", None),
-                                         extra=detail) + "，" + REALISM_POSITIVE
-            self._schedule(event, prompt, "tool", selfie=True)
+            try:
+                from .photo_view import wants_foot_closeup, foot_closeup_prompt
+            except ImportError:
+                from photo_view import wants_foot_closeup, foot_closeup_prompt
+            logger.info("[DRAW_DIAG] send_photo_now real text=%s kind=%s force=%s",
+                        text[:40], kind, force)
+            if wants_foot_closeup(text):
+                try:
+                    _scene = scene_for(self._activity())
+                except Exception:
+                    _scene = ""
+                try:
+                    _shoes = str((self.plugin.wardrobe.current() or {}).get("shoes") or "")
+                except Exception:
+                    _shoes = ""
+                prompt = foot_closeup_prompt(_scene, _shoes) + "。" + REALISM_POSITIVE
+                _refs = self._foot_refs()
+                logger.info("[DRAW_DIAG] foot_refs=%d", len(_refs))
+                if _refs:
+                    prompt += "\n（参考图：三视图是长相；服装平铺图只参考裙摆/裤子和颜色，鞋子按今天的鞋脱在脚边；脚上不穿鞋袜；正常手机距离，不是微距特写。）"
+            else:
+                prompt = build_selfie_prompt(scene, outfit, activity,
+                                             getattr(self.plugin, "state", None),
+                                             extra=detail) + "。" + REALISM_POSITIVE
+            self._schedule(event, prompt, "tool", selfie=True, refs=_refs if wants_foot_closeup(text) else None)
             try:
                 self._last_tool_photo_at = time.monotonic()
             except Exception:  # cleanup: 时间戳失败不影响发图
@@ -1107,7 +1207,7 @@ class DrawEngine:
     def _spawn(self, coro):
         return spawn(self.plugin, coro, "draw_engine.DrawEngine._spawn")
 
-    def _schedule(self, event, prompt, reason, cached=None, cache_key="", selfie=False, photo_plan=None):
+    def _schedule(self, event, prompt, reason, cached=None, cache_key="", selfie=False, photo_plan=None, refs=None):
         uid = str(self.plugin._canonical_uid(event) or "")
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         if umo:
@@ -1117,12 +1217,13 @@ class DrawEngine:
         if self.debug:
             logger.info("[amo] 画图排队（%s%s）：%s" % (reason, "/缓存" if cached else "", prompt))
         if self._spawn(self._run(event, prompt, uid, umo, cached, cache_key, selfie,
-                                 photo_plan, explicit=reason in ("explicit", "manual", "tool"))) is None:
+                                 photo_plan, explicit=reason in ("explicit", "manual", "tool"),
+                                 refs=refs)) is None:
             if umo:
                 self._inflight.discard(umo)
 
     async def _run(self, event, prompt, uid, umo, cached=None, cache_key="", selfie=False,
-                   photo_plan=None, explicit=False):
+                   photo_plan=None, explicit=False, refs=None):
         try:
             delay = max(0.0, self._cfg_float("draw_delay_seconds", 3.0))
             if delay:
@@ -1138,7 +1239,21 @@ class DrawEngine:
                     "自拍视角" if selfie else "她的拍摄视角", prompt))
                 self._stats["skipped"] += 1
                 return
-            image = await self._generate(event, prompt, selfie, plan=photo_plan)
+            wardrobe = getattr(self.plugin, "wardrobe", None)
+            suppress_lock = bool(
+                photo_plan is not None
+                and getattr(photo_plan, "debug", {}).get("explicit_outfit")
+            )
+            if (suppress_lock and wardrobe is not None
+                    and hasattr(wardrobe, "outfit_lock_suspended")):
+                # B2b/B2c：他点名了衣服，本次请求显式跳过 OUTFIT LOCK；
+                # ContextVar 标记只作用于本 task，并发会话照常上锁。
+                with wardrobe.outfit_lock_suspended("explicit_outfit"):
+                    image = await self._generate(event, prompt, selfie, plan=photo_plan,
+                                                skip_outfit_lock=True, refs=refs)
+            else:
+                image = await self._generate(event, prompt, selfie, plan=photo_plan,
+                                             skip_outfit_lock=suppress_lock, refs=refs)
             if not image:
                 self._stats["failed"] += 1
                 await self._notify_failure(event, self._last_error or "生成失败", explicit=explicit)
@@ -1171,18 +1286,29 @@ class DrawEngine:
     # ---------- OmniDraw ----------
 
     def _find_omni(self):
-        """拿万象画卷插件实例；没装/没启用返回 None。"""
+        """拿我能永远定格你插件实例；没装/没启用返回 None。"""
         return find_omni(self.plugin, self, "draw_engine.DrawEngine._find_omni")
 
-    async def _generate(self, event, prompt, selfie=False, plan=None):
+    async def _generate(self, event, prompt, selfie=False, plan=None, skip_outfit_lock=False, refs=None):
         omni = self._find_omni()
         if omni is None:
-            logger.warning("[amo] 没找到万象画卷（astrbot_plugin_omnidraw），画不了。")
+            logger.warning("[amo] 没找到「我能永远定格你」（Astrbot_amoupup_photo），画不了。")
             return None
         args = {"prompt": prompt, "count": 1, "event": event, "record_usage": True}
+        if refs:
+            args["refs"] = list(refs)
+            args["allow_local_refs"] = True
+        if skip_outfit_lock:
+            # B2c：显式按请求告诉 omnidraw 本次不用 OUTFIT LOCK（旧版本会 TypeError，
+            # 下面的回退会把未知参数摘掉后重试）。
+            args["skip_outfit_lock"] = True
         if selfie:
             args["mode"] = "selfie"
-            args["negative_prompt"] = SELFIE_NEGATIVE + "，" + REALISM_NEGATIVE
+            try:
+                from .photo_view import wants_foot_closeup as _wants_foot_neg
+            except ImportError:
+                from photo_view import wants_foot_closeup as _wants_foot_neg
+            args["negative_prompt"] = (FOOT_CLOSEUP_NEGATIVE if _wants_foot_neg(prompt) else SELFIE_NEGATIVE) + "，" + REALISM_NEGATIVE
         else:
             args["negative_prompt"] = "人物，人类，插画，二次元，" + REALISM_NEGATIVE
         if plan is not None:
@@ -1199,10 +1325,11 @@ class DrawEngine:
             result = await asyncio.wait_for(
                 omni.generate_images_for_plugin(**args), timeout=GENERATE_TIMEOUT_SECONDS)
         except TypeError as exc:
+            had_skip = args.pop("skip_outfit_lock", None) is not None
             had_scene = args.pop("scene_lock", None) is not None
             had_pose = args.pop("pose_lock", None) is not None
-            if had_scene or had_pose:
-                logger.warning("[amo] 万象画卷不支持场景锁，已退回普通提示词: %s" % exc)
+            if had_skip or had_scene or had_pose:
+                logger.warning("[amo] 我能永远定格你不支持场景锁，已退回普通提示词: %s" % exc)
                 result = await asyncio.wait_for(
                     omni.generate_images_for_plugin(**args), timeout=GENERATE_TIMEOUT_SECONDS)
             else:
@@ -1211,18 +1338,18 @@ class DrawEngine:
             raise
         except asyncio.TimeoutError:
             self._last_error = "生成超时（%d 秒）" % GENERATE_TIMEOUT_SECONDS
-            logger.warning("[amo] 万象画卷生成超时（%d 秒）" % GENERATE_TIMEOUT_SECONDS)
+            logger.warning("[amo] 我能永远定格你生成超时（%d 秒）" % GENERATE_TIMEOUT_SECONDS)
             return None
         except Exception as exc:
             self._last_error = str(exc)
-            logger.warning("[amo] 万象画卷生成失败: %s" % exc)
+            logger.warning("[amo] 我能永远定格你生成失败: %s" % exc)
             return None
         if not isinstance(result, dict) or not result.get("success"):
             message = ""
             if isinstance(result, dict):
                 message = str(result.get("message") or "")
-            self._last_error = message or "万象画卷没出图"
-            logger.warning("[amo] 万象画卷没出图：%s" % (message or "未知原因"))
+            self._last_error = message or "我能永远定格你没出图"
+            logger.warning("[amo] 我能永远定格你没出图：%s" % (message or "未知原因"))
             return None
         images = result.get("images") or []
         if not images:
@@ -1269,7 +1396,7 @@ class DrawEngine:
         except Exception as _amo_exc:
             _note_swallowed("draw_engine.DrawEngine.diagnostics", _amo_exc)
         lines = [self.status_text()]
-        lines.append("万象画卷：" + ("已连接" if omni is not None else "没找到（插件没装/没启用）"))
+        lines.append("我能永远定格你：" + ("已连接" if omni is not None else "没找到（插件没装/没启用）"))
         lines.append("生图节点：%d 个%s" % (
             node_count,
             ("｜%s @ %s" % (model, base)) if node_count else "（还没配 key）",
@@ -1289,7 +1416,7 @@ class DrawEngine:
                 self._cfg_int("draw_max_per_hour", 3),
                 self._cfg_int("draw_max_per_day", 10),
             ),
-            "万象画卷：" + ("已连接" if omni is not None else "没找到（插件没装/没启用）"),
+            "我能永远定格你：" + ("已连接" if omni is not None else "没找到（插件没装/没启用）"),
             "本轮统计：排 %d｜发 %d｜复用 %d｜失败 %d｜跳过 %d" % (
                 self._stats["scheduled"], self._stats["sent"], self._stats["cached"],
                 self._stats["failed"], self._stats["skipped"],

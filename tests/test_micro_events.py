@@ -120,7 +120,7 @@ class FakePlugin:
         self.sent.append((umo, text))
         return umo
 
-    def _mark_bot_initiated(self, umo):
+    def _mark_bot_initiated(self, umo, text=""):
         pass
 
 

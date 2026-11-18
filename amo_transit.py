@@ -6,11 +6,13 @@
 和旧测试不用改。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 try:
     from . import amo_transition as _engine
 except ImportError:  # 直接按文件加载时
-    import amo_transition as _engine
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_transition as _engine
 
 TRANSIT_KEY = _engine.STATE_KEY
 TRANSIT_MINUTES = _engine.KIND_MINUTES["commute"]

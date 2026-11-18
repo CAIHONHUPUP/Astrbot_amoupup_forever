@@ -24,6 +24,7 @@ astrbot_stub.install()
 
 import amo_human_state  # noqa: E402
 import amo_schedule  # noqa: E402
+import amo_state_common  # noqa: E402
 from amo_db import AmoDB  # noqa: E402
 from amo_human_state import HumanState  # noqa: E402
 from amo_commands import CommandMixin  # noqa: E402
@@ -107,7 +108,7 @@ class BaseCase(unittest.TestCase):
             module.__path__ = []
             sys.modules[name] = module
         path_module = types.ModuleType("astrbot.core.utils.astrbot_path")
-        path_module.get_astrbot_data_path = lambda: self.tmp
+        setattr(path_module, "get_astrbot_data_path", lambda: self.tmp)
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
         self.plugin = FakePlugin(self.tmp)
         self.state = HumanState(self.plugin)
@@ -161,6 +162,24 @@ class CommitTests(BaseCase):
         # 13 点之前的小日记不受影响，不能因为全局版本号变了就一起重算
         self.assertTrue(self.plugin.db.diary_is_valid(self.day, "10:00", result["version"]))
         self.assertEqual(self.plugin.db.get_diary_record(self.day, "10:00")["status"], "valid")
+
+    def test_commit_drops_empty_end_block(self):
+        """过渡到达块曾以 end="" 落库：空/倒置时段的行必须丢弃并留下 warning。"""
+        old = self.hourly()
+        self.install_schedule(old)
+        bad = [dict(item) for item in old] + [{
+            "start": "19:06", "end": "", "activity": "一个人裹着被子睡着",
+            "place": "家", "zone": "home", "category": "rest", "source": "transit",
+        }]
+        import amo_state_schedule
+        with mock.patch.object(amo_state_schedule.logger, "warning") as warned:
+            self.state.commit_schedule_change(
+                self.day, bad, old_items=old, source="test", reason="空 end 防御")
+        rows = self.plugin.db.get_schedule(self.day)
+        self.assertFalse([r for r in rows if not str(r.get("end") or "").strip()], rows)
+        self.assertTrue(warned.called, "丢弃空 end 必须留 warning")
+        messages = " ".join(str(call.args[0]) for call in warned.call_args_list)
+        self.assertIn("丢弃空/倒置", messages)
 
     def test_commit_publishes_schedule_changed_event(self):
         old = self.hourly()
@@ -456,20 +475,26 @@ class ChatPathTests(BaseCase):
             asyncio.run(self.plugin._apply_user_schedule_change(
                 _FakeEvent("你去上班吧"), "你去上班吧"))
         rows = self.state.schedule[self.day]
-        self.assertIn("上班", rows[13]["activity"])
+        self.assertTrue(any("上班" in str(r.get("activity") or "") for r in rows))
 
         async def run_scheduler():
             with mock.patch.object(amo_schedule, "_now", return_value=at_1400), \
                     mock.patch.object(amo_schedule, "today_str", return_value=self.day), \
-                    mock.patch.object(amo_human_state, "_now", return_value=at_1400):
+                    mock.patch.object(amo_human_state, "_now", return_value=at_1400), \
+                    mock.patch.object(amo_state_common, "slot_has_ended", return_value=True):
                 await self.plugin._diary_scheduler_tick()
                 if self.plugin._spawned:
                     await asyncio.gather(*self.plugin._spawned)
 
         asyncio.run(run_scheduler())
-        record = self.plugin.db.get_diary_record(self.day, "13:00")
+        # 块化之后调度只写 block_diary，不再写旧的 hour 键
+        rows = self.state.schedule[self.day]
+        block = next(x for x in rows if str(x.get("start")) == "13:00")
+        record = self.plugin.db.get_block_diary_record(
+            self.day, amo_state_common.block_id(self.day, block))
         self.assertIsNotNone(record)
         self.assertEqual(record["status"], "valid")
+        self.assertEqual(self.plugin.db.get_diary(self.day, "13:00"), "")
         self.assertTrue(any(
             str(item.get("start")) == "13:00" and "上班" in str(item.get("activity"))
             for item in self.engine.seen
@@ -509,13 +534,15 @@ class CommandPathTests(BaseCase):
 
 
 class DailyDiaryTests(BaseCase):
-    def test_schedule_change_marks_written_daily_diary_stale(self):
+    def test_schedule_change_no_longer_marks_daily_stale(self):
         items = self.hourly()
         self.install_schedule(items)
         self.plugin.db.kv_set("diary_written:" + self.day, "/tmp/diary.md")
+        self.plugin.db.kv_set("diary_locked:" + self.day, True)
         new = apply_at(items, "13:00", {"activity": "通勤", "place": "路上", "category": "commute"})
         self.state.commit_schedule_change(self.day, new, old_items=items, source="test")
-        self.assertTrue(self.plugin.db.kv_get("diary_stale:" + self.day, False))
+        # B 方案：日程变更（含宵夜）不再触发当天大日记重写；stale 只留给手动补块/历史修正
+        self.assertFalse(self.plugin.db.kv_get("diary_stale:" + self.day, False))
 
     def test_daily_diary_not_marked_if_not_written(self):
         items = self.hourly()
@@ -524,52 +551,68 @@ class DailyDiaryTests(BaseCase):
         self.state.commit_schedule_change(self.day, new, old_items=items, source="test")
         self.assertFalse(self.plugin.db.kv_get("diary_stale:" + self.day, False))
 
-    def test_stale_daily_waits_until_diary_time(self):
+    def test_today_stale_ignored_and_yesterday_caught_up(self):
         items = self.hourly()
         self.install_schedule(items)
         day = self.day
+        yesterday = datetime.date.fromisoformat(day) - datetime.timedelta(days=1)
         self.plugin.db.kv_set("diary_written:" + day, "/tmp/old-diary.md")
         self.plugin.db.kv_set("diary_stale:" + day, True)
         called = []
 
         async def fake_generate(target_day):
             called.append(target_day)
-            return "不该在白天生成"
+            return "补写的昨天"
+
+        def fake_write(root, target_day, text):
+            return "/tmp/yesterday.md"
 
         self.plugin._generate_daily_diary = fake_generate
         self.plugin._diary_dir = lambda: "/tmp"
         fixed = datetime.datetime.combine(datetime.date.fromisoformat(day), datetime.time(14, 0))
-        with mock.patch.object(amo_schedule, "_now", return_value=fixed):
+        with mock.patch.object(amo_schedule, "_now", return_value=fixed), \
+                mock.patch.object(amo_schedule, "_diary_write", fake_write):
             asyncio.run(self.plugin._maybe_daily_diary())
-        self.assertEqual(called, [])
+        # B：今天还没过完，今天的 stale 不处理；昨天缺失则第二天任意时间立即补写
+        self.assertEqual(called, [yesterday])
         self.assertTrue(self.plugin.db.kv_get("diary_stale:" + day, False))
 
-    def test_stale_daily_diary_regenerates_outside_window(self):
+    def test_stale_contradiction_rewrites_despite_lock(self):
+        # B 方案：日记和事实矛盾才重写；locked 键不再挡修正，事实一致则保留原文
         items = self.hourly()
         self.install_schedule(items)
-        day = self.day
-        self.plugin.db.kv_set("diary_written:" + day, "/tmp/old-diary.md")
+        day = "2026-11-17"
+        path = os.path.join(self.tmp, "old-11-17.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("今天没出门，一直在家。")
+        self.plugin.db.kv_set("diary_written:" + day, path)
+        self.plugin.db.kv_set("diary_locked:" + day, True)
         self.plugin.db.kv_set("diary_stale:" + day, True)
         self.plugin.db.kv_set("diary_version:" + day, 0)
+        # 这一天日程在公司和路上，和「一直在家」矛盾
+        self.plugin.db.save_schedule(day, items)
         written = {}
 
         async def fake_generate(target_day):
-            return "重写后的当天总结"
+            return "重写后的历史修正"
 
         def fake_write(root, target_day, text):
             written["text"] = text
+            written["day"] = target_day
             return "/tmp/new-diary.md"
 
         self.plugin._generate_daily_diary = fake_generate
         self.plugin._diary_dir = lambda: "/tmp"
-        fixed = datetime.datetime.combine(datetime.date.fromisoformat(day), datetime.time(23, 10))
+        fixed = datetime.datetime(2026, 11, 18, 10, 0)
         with mock.patch.object(amo_schedule, "_now", return_value=fixed), \
                 mock.patch.object(amo_schedule, "_diary_write", fake_write):
             asyncio.run(self.plugin._maybe_daily_diary())
 
-        self.assertEqual(written.get("text"), "重写后的当天总结")
+        self.assertEqual(written.get("text"), "重写后的历史修正")
+        self.assertEqual(written.get("day"), datetime.date(2026, 11, 17))
         self.assertEqual(self.plugin.db.kv_get("diary_written:" + day), "/tmp/new-diary.md")
         self.assertFalse(self.plugin.db.kv_get("diary_stale:" + day, False))
+        self.assertTrue(self.plugin.db.kv_get("diary_locked:" + day, False))
         self.assertEqual(
             self.plugin.db.kv_get("diary_version:" + day),
             self.plugin.db.schedule_version(day),
@@ -588,7 +631,7 @@ class DailyDiaryTests(BaseCase):
     def test_silent_retry_uses_new_schedule_after_version_change(self):
         items = self.hourly()
         self.install_schedule(items)
-        day = self.day
+        day = "2026-11-17"
         self.plugin.db.kv_set("diary_written:" + day, "/tmp/old-diary.md")
         self.plugin.db.kv_set("diary_stale:" + day, True)
         written = {}
@@ -607,7 +650,9 @@ class DailyDiaryTests(BaseCase):
 
         self.plugin._generate_daily_diary = fake_generate
         self.plugin._diary_dir = lambda: "/tmp"
-        fixed = datetime.datetime.combine(datetime.date.fromisoformat(day), datetime.time(23, 10))
+        # 这个用例只验证版本重试：直接放行事实门
+        self.plugin.diary_fact_mismatch = lambda target_day, text: True
+        fixed = datetime.datetime(2026, 11, 18, 8, 10)
         with mock.patch.object(amo_schedule, "_now", return_value=fixed), \
                 mock.patch.object(amo_schedule, "_diary_write", fake_write):
             asyncio.run(self.plugin._maybe_daily_diary())
@@ -619,7 +664,7 @@ class DailyDiaryTests(BaseCase):
     def test_daily_diary_version_changed_during_generation_keeps_stale(self):
         items = self.hourly()
         self.install_schedule(items)
-        day = self.day
+        day = "2026-11-17"
         self.plugin.db.kv_set("diary_written:" + day, "/tmp/old-diary.md")
         self.plugin.db.kv_set("diary_stale:" + day, True)
         written = {}
@@ -634,7 +679,9 @@ class DailyDiaryTests(BaseCase):
 
         self.plugin._generate_daily_diary = fake_generate
         self.plugin._diary_dir = lambda: "/tmp"
-        fixed = datetime.datetime.combine(datetime.date.fromisoformat(day), datetime.time(23, 10))
+        # 这个用例只验证「生成期间版本变了」：直接放行事实门
+        self.plugin.diary_fact_mismatch = lambda target_day, text: True
+        fixed = datetime.datetime(2026, 11, 18, 8, 10)
         with mock.patch.object(amo_schedule, "_now", return_value=fixed), \
                 mock.patch.object(amo_schedule, "_diary_write", fake_write):
             asyncio.run(self.plugin._maybe_daily_diary())

@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
 """MessageMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from typing import Any, TYPE_CHECKING
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
+
+from typing import Any
 
 import asyncio
 import json
@@ -16,21 +23,30 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        Comp, MessageChain, clean_reply, logger, looks_like_model_leak, now_ts, to_float, typing_delay_ms,
+        Comp, MessageChain, logger, now_ts, to_float, typing_delay_ms,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            Comp, MessageChain, clean_reply, logger, looks_like_model_leak, now_ts, to_float, typing_delay_ms,
+            Comp, MessageChain, logger, now_ts, to_float, typing_delay_ms,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            Comp, MessageChain, clean_reply, logger, looks_like_model_leak, now_ts, to_float, typing_delay_ms,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                Comp, MessageChain, logger, now_ts, to_float, typing_delay_ms,
+            )
+
+
+try:  # 回复守卫流水线（Phase 6）：发送前的顺序与去重统一在 amo_reply_pipeline
+    from . import amo_reply_pipeline as _reply_pipeline
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_reply_pipeline as _reply_pipeline
 
 
 if TYPE_CHECKING:
@@ -41,11 +57,12 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 try:  # 地点跟日程对齐：她嘴里说的地方和日程对不上时改回来
     from .place_guard import rewrite_reply as _rewrite_reply
 except ImportError:  # 直接按文件加载时
-    try:
-        from place_guard import rewrite_reply as _rewrite_reply
-    except Exception:  # pragma: no cover
-        def _rewrite_reply(text, activity):
-            return str(text or "")
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from place_guard import rewrite_reply as _rewrite_reply
+        except Exception:  # pragma: no cover
+            def _rewrite_reply(text, activity):
+                return str(text or "")
 
 
 _FOOD_WORDS = ("汤", "面", "饭", "菜", "粉", "粥", "火锅", "汉堡", "披萨",
@@ -153,7 +170,70 @@ def strip_repeated_food_question(reply, user_text, bot_text):
     return out or "听着就香。"
 
 
+
+
+_URGE_WORDS = ("催", "快点", "快去", "赶紧", "别磨蹭", "别待太久", "别在里面", "水放了没",
+               "洗快点", "别拖", "去了没", "别看手机")
+_ACK_WORDS = ("好", "嗯", "行", "知道了", "收到", "马上", "我去了")
+_LEAVE_WORDS = ("洗澡", "洗个澡", "去睡", "睡了", "晚安", "拜拜", "先去忙", "去忙", "出门", "我先去")
+
+
+def strip_repeated_urge(reply, user_text, bot_text):
+    """他已经答应/要去做了，就别再催：去掉鼓吹句，只留一句软收尾。"""
+    reply = str(reply or "")
+    user_text = str(user_text or "")
+    bot_text = str(bot_text or "")
+    if not reply or not user_text:
+        return reply
+    short = len(user_text) <= 16
+    ack = short and any(word in user_text for word in _ACK_WORDS)
+    leaving = any(word in user_text for word in _LEAVE_WORDS)
+    if not ack and not leaving:
+        return reply
+    prev_urge = any(word in bot_text for word in _URGE_WORDS)
+    if not prev_urge and not any(word in reply for word in _URGE_WORDS):
+        return reply
+    parts = re.split(r"(?<=[。！？!?~～\n])", reply)
+    kept = [part for part in parts if not any(word in part for word in _URGE_WORDS)]
+    out = "".join(kept).strip()
+    out_parts = re.split(r"(?<=[。！？!?~～\n])", out) if out else []
+    out = "".join(out_parts[:1]).strip() if out_parts else ""
+    out = re.sub(r"[，,]+$", "。", out)
+    return out or "嗯，去吧。"
+
+_SHORT_CONTINUE = ("慢慢看", "慢慢吃", "慢慢来", "慢慢走", "慢慢说", "去吧", "睡吧",
+                   "好", "嗯", "行", "知道了", "好的", "收到", "晚安")
+_CONFUSED_WORDS = ("啥呀", "什么呀", "啥意思", "什么意思", "说啥", "看啥")
+
+
+def strip_confused_short_reply(reply, user_text, bot_text=""):
+    """他只回一个很短的动作词（慢慢看/去吧/好）时，别反问「啥呀」；把空问句接回去。"""
+    reply = str(reply or "")
+    body = str(user_text or "").strip()
+    if not reply or not body or len(body) > 10:
+        return reply
+    if not any(word in body for word in _SHORT_CONTINUE):
+        return reply
+    if not any(word in reply for word in _CONFUSED_WORDS):
+        return reply
+    out = reply
+    for verb in ("慢慢看", "慢慢吃", "慢慢来", "慢慢走", "慢慢说", "看", "吃"):
+        out = out.replace(verb + "啥呀", verb + "呀")
+        out = out.replace(verb + "什么呀", verb + "呀")
+    parts = re.split("(?<=[。！？!?~～" + chr(10) + "])", out)
+    kept = [part for part in parts if not any(word in part for word in ("啥意思", "什么意思", "说啥"))]
+    out = "".join(kept).strip()
+    return out or reply
+
+
 class MessageMixin(_MixinBase):
+
+    def _strip_repeated_urge(self, reply, user_text, bot_text):
+        """他已经答应/要去做了，就别再催（确定性兜底，提示词之外）。"""
+        return strip_repeated_urge(reply, user_text, bot_text)
+    def _strip_confused_short_reply(self, reply, user_text, bot_text=""):
+        """他只回「慢慢看/去吧」这类短句时，别反问「啥呀」（确定性兜底）。"""
+        return strip_confused_short_reply(reply, user_text, bot_text)
     def _strip_repeated_food_question(self, reply, user_text, bot_text):
         """他刚回答「中午吃什么」，就别再问「你点了吗 / 吃了吗」。"""
         reply = str(reply or "")
@@ -658,7 +738,7 @@ class MessageMixin(_MixinBase):
             # 同一句在 3 分钟内又发一次很常见（「嗯嗯」「好呀」）；只有「对应的
             # 他最后那句话也没变」才算重复。以前只看文字，第二次「好呀」会被丢掉，
             # 表里就变成「他还没被回过」，主动消息再把同一句答一遍。
-            if saved and saved[0] == text and time.time() - saved[1] < 180:
+            if saved and saved[0] == text and _amo_clock.now_ts() - saved[1] < 180:
                 saved_user = str(saved[2] if len(saved) > 2 else "")
                 if saved_user == last_user:
                     return
@@ -699,7 +779,7 @@ class MessageMixin(_MixinBase):
                     task.add_done_callback(_log_failed_task)
                 except Exception as _amo_exc:
                     _note_swallowed("amo_message.HumanCorePlugin._remember_bot_message", _amo_exc)
-            self._last_bot_saved[umo] = (text, time.time(), last_user)
+            self._last_bot_saved[umo] = (text, _amo_clock.now_ts(), last_user)
         except Exception as exc:
             logger.debug("[amo] 记录自己的回复失败: %s" % exc)
 
@@ -707,6 +787,10 @@ class MessageMixin(_MixinBase):
         """记下她自己发过的照片/语音：聊天记录里留一条，私聊再写进长期记忆。"""
         marker = str(text or "").strip()
         if not marker:
+            return
+        if "测试图" in marker:
+            # 面板/命令的测试图不是日常经历：聊天记录和长期记忆都不写，主动消息才不会拿它当话题
+            logger.debug("[amo] 测试图不写入媒体记忆: %s", marker[:40])
             return
         try:
             self._remember_bot_message(umo, marker)
@@ -769,70 +853,12 @@ class MessageMixin(_MixinBase):
         return ""
 
     async def _send_to_umo(self, umo, text, quote_id=None, group=False):
-        text = clean_reply(text, self.cfg_int("max_reply_chars", 220))
-        try:
-            try:
-                from .amo_names import foreign_names as _foreign_names, sanitize as _name_sanitize
-            except ImportError:
-                from amo_names import foreign_names as _foreign_names, sanitize as _name_sanitize
-            dirty = _foreign_names(text)
-            if dirty:
-                fixed = await self._rewrite_without_foreign(umo, text, dirty)
-                text = fixed or _name_sanitize(text)
-                logger.info("[amo] 白名单外人名已拦截: %s", dirty)
-        except Exception as exc:
-            logger.debug("[amo] 人名校验失败: %s", exc)
-        try:
-            guarded = await self._guard_zone_reply(text, umo)
-            if guarded and guarded != text:
-                text = guarded
-        except Exception as exc:
-            logger.debug("[amo] 发送前地点校验失败: %s", exc)
-        try:
-            wardrobe = getattr(self, "wardrobe", None)
-            if wardrobe is not None and hasattr(wardrobe, "home_outfit_guard"):
-                text = wardrobe.home_outfit_guard(text)
-        except Exception as exc:
-            _note_swallowed("amo_message.py.692", exc)
-        try:
-            from .amo_diary_guard import sanitize_privacy
-            text = sanitize_privacy(text)
-        except Exception as exc:
-            _note_swallowed("amo_message.py.697", exc)
-        try:
-            from .amo_date_context import guard_reply as _guard_date
-            text = _guard_date(text, self)
-        except Exception as exc:
-            logger.debug("[amo] 发送前约会校验失败: %s", exc)
-        # 防线二/四：极端情绪词改写 + 视角反转兜底（聊天、主动、里程碑都过这里）
-        try:
-            from .amo_immersion_guard import fix_identity, sanitize_extreme
-        except ImportError:
-            from amo_immersion_guard import fix_identity, sanitize_extreme
-        text = fix_identity(sanitize_extreme(text))
-        # 第六轮：她自己说「我去洗澡啦」→ 进过渡；说「刚下车」→ 推进到站（都在守卫之前）
-        try:
-            try:
-                from .amo_transition import maybe_advance as _maybe_advance, maybe_start_from_text as _maybe_transition_text
-            except ImportError:
-                from amo_transition import maybe_advance as _maybe_advance, maybe_start_from_text as _maybe_transition_text
-            _maybe_advance(self, text)
-            _bot_started = _maybe_transition_text(self, text, source="bot")
-            if _bot_started:
-                logger.info("[amo] 她的话开启过渡：%s→%s", _bot_started.get("kind"), _bot_started.get("to"))
-        except Exception as _amo_exc:
-            logger.debug("[amo] 她的过渡意图识别失败: %s", _amo_exc)
-        # 第四轮防穿帮：过渡期间说出目的地（医院/公司…）→ 改成「在路上/快到了」
-        try:
-            try:
-                from .amo_transit import rewrite_sent_text as _transit_rewrite
-            except ImportError:
-                from amo_transit import rewrite_sent_text as _transit_rewrite
-            text = _transit_rewrite(self, text)
-        except Exception as _amo_exc:
-            logger.debug("[amo] 过渡地点守卫失败: %s", _amo_exc)
-        if looks_like_model_leak(text):
-            text = "秘密，不告诉你。"
+        # Phase 6：发送前的守卫不再手写在这里，统一走 amo_reply_pipeline 的 send 阶段
+        # （顺序与该模块文档一致）：clean_reply -> 白名单外人名 -> 地点黑名单 ->
+        # 居家服 -> 隐私词 -> 约会 -> 极端词/视角 -> 过渡推进（副作用）-> 过渡地点 ->
+        # 后台信息泄漏。守卫函数本身没变，只是调用顺序登记在那边。
+        context = _reply_pipeline.context_for_send(self, umo, group=bool(group))
+        text = (await _reply_pipeline.run(text, context))["text"]
         if not text or not umo:
             return False
         segments = self._segment(text)
@@ -840,6 +866,12 @@ class MessageMixin(_MixinBase):
             return False
         last_sent_at = 0.0
         for index, segment in enumerate(segments):
+            # 含分段：每一段发出前和最近 3-5 条 bot 消息 / 本轮前面的段比对，
+            # 整句复读就换一句短的（绝不发空段）。
+            try:
+                segment = _reply_pipeline.apply_segment_repeat_guard(segment, self, umo)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_message.HumanCorePlugin._send_to_umo.segment_dedup", _amo_exc)
             if index > 0:
                 await self._segment_wait(None, segment, segments[index - 1], last_sent_at)
             elif last_sent_at == 0.0:

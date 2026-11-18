@@ -13,8 +13,10 @@ astrbot_stub.install()
 import pytest  # noqa: E402
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if not os.path.isdir(os.path.join(os.path.dirname(_ROOT), "astrbot_plugin_omnidraw")):
-    pytest.skip("omnidraw sibling not checked out", allow_module_level=True)
+# legacy fallback：旧名弟弟目录仍算“已装”，老部署能继续跑
+_SIBLING_PHOTO_NAMES = ("Astrbot_amoupup_photo", "astrbot_plugin_omnidraw")
+if not any(os.path.isdir(os.path.join(os.path.dirname(_ROOT), name)) for name in _SIBLING_PHOTO_NAMES):
+    pytest.skip("photo plugin sibling not checked out", allow_module_level=True)
 
 from draw_engine import DrawEngine  # noqa: E402
 from photo_engine import PhotoEngine  # noqa: E402

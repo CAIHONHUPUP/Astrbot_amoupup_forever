@@ -16,6 +16,7 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import amo_shared  # noqa: E402
+import amo_shared_time  # noqa: E402
 
 
 class HolidayCalendarTests(unittest.TestCase):
@@ -34,7 +35,10 @@ class HolidayCalendarTests(unittest.TestCase):
 
     def test_rest_false_makeup_workday(self):
         fake = {"2028-01-08": {"name": "调休补班", "rest": False}}
-        with mock.patch.object(amo_shared, "_holiday_calendar", return_value=fake):
+        # 拆分后 day_meta 的实现住在 amo_shared_time，门面只做转发：
+        # 真正被调用的是子模块里的 _holiday_calendar，两处一起 patch。
+        with mock.patch.object(amo_shared_time, "_holiday_calendar", return_value=fake), \
+                mock.patch.object(amo_shared, "_holiday_calendar", return_value=fake):
             meta = amo_shared.day_meta("2028-01-08")
         self.assertFalse(meta["rest"])
         self.assertEqual(meta["holiday"], "调休补班")

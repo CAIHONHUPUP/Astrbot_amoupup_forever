@@ -1,7 +1,12 @@
-
-from typing import TYPE_CHECKING
-# -*- coding: utf-8 -*-
 """SQLite 存储层：连接、建表/迁移、kv、消息、记忆、日程落库。"""
+from typing import Any, TYPE_CHECKING
+
+try:  # 兼容层：旧插件名 / 旧数据目录 / 旧配置名的唯一来源
+    from . import amo_compat as _compat
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:
+        import amo_compat as _compat
+# -*- coding: utf-8 -*-
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -9,7 +14,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 from datetime import timedelta
 import json
@@ -35,14 +41,22 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             today_str,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            PLUGIN_NAME,
-            _now,
-            logger,
-            now_ts,
-            today_str,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                PLUGIN_NAME,
+                _now,
+                logger,
+                now_ts,
+                today_str,
+            )
 
+
+
+try:  # DB schema 版本注册表（Phase 7）：PRAGMA user_version + 迁移项
+    from . import amo_db_schema as _db_schema
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_db_schema as _db_schema  # type: ignore[no-redef]
 
 
 DIALECT_SEEDS = (
@@ -235,6 +249,12 @@ DIALECT_SEEDS = (
     ("覅", "不要", "上海", "覅去"),
 )
 
+#: 块日记迁移规则版本。1=首版（整点旧行直接当块日记）；2=只有块窗口完全落在旧整点
+#: 小时内才可信，跨多小时/起点偏移的旧行一律 stale（详情按块窗口重新生成）。
+#: 升版会用 block_diary_migrate_version 触发一次性重判，只动迁移副本，不动新生成的行。
+BLOCK_DIARY_MIGRATE_VERSION = 2
+
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS profiles (
     uid TEXT PRIMARY KEY,
@@ -302,6 +322,20 @@ CREATE TABLE IF NOT EXISTS schedule_diary (
     invalidated_at REAL DEFAULT 0,
     PRIMARY KEY(day, hour)
 );
+CREATE TABLE IF NOT EXISTS block_diary (
+    day TEXT DEFAULT '',
+    block_id TEXT DEFAULT '',
+    start TEXT DEFAULT '',
+    end TEXT DEFAULT '',
+    place TEXT DEFAULT '',
+    text TEXT DEFAULT '',
+    updated REAL DEFAULT 0,
+    version INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'valid',
+    invalidated_at REAL DEFAULT 0,
+    source TEXT DEFAULT '',
+    PRIMARY KEY(day, block_id)
+);
 CREATE TABLE IF NOT EXISTS proactive_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     uid TEXT DEFAULT '',
@@ -326,6 +360,17 @@ CREATE TABLE IF NOT EXISTS relation_network (
 """
 
 
+def _kv_prefix_upper(prefix):
+    """前缀区间的右边界（用范围查询代替 LIKE，避免 '_' 被当成通配符）。"""
+    prefix = str(prefix or "")
+    if not prefix:
+        return ""
+    try:
+        return prefix[:-1] + chr(ord(prefix[-1]) + 1)
+    except (TypeError, ValueError):
+        return prefix + "\uffff"
+
+
 class AmoDB:
     def __init__(self, plugin_dir):
         try:
@@ -345,10 +390,7 @@ class AmoDB:
         try:
             import shutil as _shutil
             data_root = get_astrbot_data_path()
-            legacy_paths = [
-                os.path.join(data_root, "plugin_data", "amo_forever", "amo_forever.db"),
-                os.path.join(data_root, "plugin_data", "astrbot_plugin_amo_forever", "amo_forever.db"),
-            ]
+            legacy_paths = _compat.legacy_db_paths(data_root)
             current_size = os.path.getsize(self.path) if os.path.exists(self.path) else 0
             if current_size < 4096:
                 for legacy_path in legacy_paths:
@@ -414,7 +456,31 @@ class AmoDB:
             self._seed_dialects()
             self._migrate_legacy()
             self._ensure_columns()
+            self._run_schema_migrations()
 
+    def _run_schema_migrations(self):
+        """跑 schema 迁移注册表（Phase 7）：幂等、只前进；失败只记日志，不阻断启动。"""
+        try:
+            report = _db_schema.run(self)
+        except Exception as exc:
+            logger.warning("[amo] DB schema 迁移失败（已忽略）: %s" % exc)
+            return None
+        extra = ""
+        if report.get("applied_now"):
+            extra = "，本次应用 " + ",".join(report["applied_now"])
+        logger.info("[amo] DB schema user_version=%d（applied=%s pending=%s%s）",
+                    report["user_version"], ",".join(report["applied"]) or "-",
+                    ",".join(report["pending"]) or "-", extra)
+        return report
+
+    def schema_status(self):
+        """DB schema 版本快照 {user_version, applied, pending, last_error}（只读）。"""
+        try:
+            return _db_schema.status(self)
+        except Exception as exc:
+            return {"user_version": 0, "latest_version": _db_schema.LATEST_VERSION,
+                    "applied": [], "pending": [],
+                    "last_error": "%s: %s" % (type(exc).__name__, exc), "ahead": False}
 
     def _ensure_columns(self):
         """老库补列：profiles 的 relation_at/profile_updated_at，schedule_diary 的版本/状态字段。"""
@@ -451,6 +517,20 @@ class AmoDB:
             self.conn.commit()
         except Exception as _amo_exc:
             _note_swallowed("amo_db.AmoDB.init.diary_columns", _amo_exc)
+        try:
+            # block_diary 的 source：区分“迁移副本”和之后真正生成/重写过的正文，
+            # 规则升级时只重判迁移副本，绝不误杀新生成的 valid 行。
+            block_cols = {
+                row[1]
+                for row in self.conn.execute("PRAGMA table_info(block_diary)").fetchall()
+            }
+            if block_cols and "source" not in block_cols:
+                self.conn.execute(
+                    "ALTER TABLE block_diary ADD COLUMN source TEXT DEFAULT ''"
+                )
+            self.conn.commit()
+        except Exception as _amo_exc:
+            _note_swallowed("amo_db.AmoDB.init.block_diary_columns", _amo_exc)
 
     def _migrate_legacy(self):
         try:
@@ -505,6 +585,74 @@ class AmoDB:
                 (key, json.dumps(value, ensure_ascii=False), now_ts()),
             )
             self.conn.commit()
+
+    def kv_delete(self, key):
+        """删一个 kv 键，返回是否真的删掉（kv 删除统一入口，禁止外部裸 SQL）。"""
+        with self.lock:
+            cur = self.conn.execute("DELETE FROM kv WHERE key=?", (str(key),))
+            self.conn.commit()
+            return bool(cur.rowcount)
+
+    def kv_delete_many(self, keys):
+        """批量删 kv 键，返回实际删除条数（一次 commit）。"""
+        rows = [str(key) for key in (keys or []) if str(key)]
+        if not rows:
+            return 0
+        with self.lock:
+            cur = self.conn.execute("DELETE FROM kv WHERE key IN (%s)"
+                                    % ",".join("?" * len(rows)), tuple(rows))
+            self.conn.commit()
+            return int(cur.rowcount or 0)
+
+    def kv_keys(self, prefix="", limit=200, offset=0):
+        """按前缀分页取键（有序；prefix='' 表示全部）。"""
+        prefix = str(prefix or "")
+        try:
+            limit = max(1, int(limit))
+            offset = max(0, int(offset))
+        except (TypeError, ValueError):
+            limit, offset = 200, 0
+        with self.lock:
+            if prefix:
+                rows = self.conn.execute(
+                    "SELECT key FROM kv WHERE key >= ? AND key < ? "
+                    "ORDER BY key LIMIT ? OFFSET ?",
+                    (prefix, _kv_prefix_upper(prefix), limit, offset),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT key FROM kv ORDER BY key LIMIT ? OFFSET ?", (limit, offset)
+                ).fetchall()
+        return [str(row["key"]) for row in rows]
+
+    def kv_rows(self, prefix="", limit=10000):
+        """按前缀读 key/value/updated（只读；健康报告/巡检用）。"""
+        prefix = str(prefix or "")
+        try:
+            limit = max(1, int(limit))
+        except (TypeError, ValueError):
+            limit = 10000
+        with self.lock:
+            if prefix:
+                rows = self.conn.execute(
+                    "SELECT key, value, updated FROM kv WHERE key >= ? AND key < ? "
+                    "ORDER BY key LIMIT ?",
+                    (prefix, _kv_prefix_upper(prefix), limit),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT key, value, updated FROM kv ORDER BY key LIMIT ?", (limit,)
+                ).fetchall()
+        out = []
+        for row in rows:
+            raw = row["value"]
+            try:
+                value = json.loads(raw) if raw else None
+            except (TypeError, ValueError):
+                value = None
+            out.append({"key": str(row["key"]), "value": value,
+                        "updated": float(row["updated"] or 0)})
+        return out
 
     # ---------- 档案 ----------
     def get_profile(self, uid):
@@ -690,6 +838,16 @@ class AmoDB:
                 (str(uid), kind, content, now_ts()),
             )
             self.conn.commit()
+
+    def recent_proactive_texts(self, uid, hours=2, limit=3):
+        """最近几小时主动说过的话（防同一件事反复说）。"""
+        cutoff = now_ts() - max(1, int(hours)) * 3600
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT content FROM proactive_log WHERE uid=? AND created>=? ORDER BY id DESC LIMIT ?",
+                (str(uid), cutoff, max(1, int(limit))),
+            ).fetchall()
+        return [str(row["content"] or "") for row in rows if str(row["content"] or "").strip()]
 
     # ---------- 消息 ----------
     def add_message(self, umo, uid, name, role, content):
@@ -1029,7 +1187,13 @@ class AmoDB:
             )
             cur = self.conn.execute(sql, params)
             self.conn.commit()
-            return int(cur.rowcount or 0)
+            marked = int(cur.rowcount or 0)
+        # 块级小日记同步失效：改了这一小时及以后的日程，对应块缓存必须重算。
+        try:
+            self.mark_block_diaries_stale(day, from_hour, version)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_db.AmoDB.mark_diaries_stale.block", _amo_exc)
+        return marked
 
     def clear_diaries(self, day):
         with self.lock:
@@ -1050,7 +1214,382 @@ class AmoDB:
         cutoff = (_now().date() - timedelta(days=max(1, int(days)))).isoformat()
         with self.lock:
             self.conn.execute("DELETE FROM schedule_diary WHERE day < ?", (cutoff,))
+            self.conn.execute("DELETE FROM block_diary WHERE day < ?", (cutoff,))
             self.conn.commit()
+
+    # ---------- 块级小日记（block_diary） ----------
+    _BLOCK_DIARY_FIELDS = ("day, block_id, start, end, place, text, updated, version, "
+                           "status, invalidated_at, source")
+
+    def _block_diary_record_row(self, day, block_id):
+        """按 (day, block_id) 取一行；老库还没有 event_id 列时退回旧列集。"""
+        legacy_sql = ("SELECT %s FROM block_diary WHERE day=? AND block_id=?"
+                      % self._BLOCK_DIARY_FIELDS)
+        try:
+            row = self.conn.execute(
+                "SELECT %s, event_id FROM block_diary WHERE day=? AND block_id=?"
+                % self._BLOCK_DIARY_FIELDS, (str(day), str(block_id))).fetchone()
+        except sqlite3.OperationalError:
+            row = self.conn.execute(legacy_sql, (str(day), str(block_id))).fetchone()
+            if row is None:
+                return None
+            data = dict(row)
+            data["event_id"] = data.get("block_id") or ""
+            return data
+        return dict(row) if row is not None else None
+
+    def get_block_diary_record(self, day, block_id):
+        """按块身份取完整记录（不存在返回 None）。"""
+        with self.lock:
+            row = self._block_diary_record_row(day, block_id)
+        if not row:
+            return None
+        return {
+            "day": str(row["day"] or ""),
+            "block_id": str(row["block_id"] or ""),
+            "event_id": str(row.get("event_id") or row["block_id"] or ""),
+            "start": str(row["start"] or ""),
+            "end": str(row["end"] or ""),
+            "place": str(row["place"] or ""),
+            "text": str(row["text"] or ""),
+            "updated": float(row["updated"] or 0),
+            "version": int(row["version"] or 0),
+            "status": str(row["status"] or "valid"),
+            "invalidated_at": float(row["invalidated_at"] or 0),
+            "source": str(row["source"] or ""),
+        }
+
+    def get_block_diary(self, day, block_id):
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT text FROM block_diary WHERE day=? AND block_id=?",
+                (str(day), str(block_id)),
+            ).fetchone()
+        return str(row["text"] or "") if row else ""
+
+    def save_block_diary(self, day, block_id="", text="", start="", end="", place="",
+                         version=None, status="valid", source="", event_id=""):
+        """按块身份写入小日记；block_id / event_id 两列写同一个身份。
+
+        block_id 仍是主键（旧代码照旧读），event_id 是显式列。两个都传时以 event_id
+        为准并把 block_id 对齐成同一个值——两列永远相等；v4 之前的老库退回旧列。
+        """
+        try:
+            from .amo_diary_guard import sanitize_diary
+        except ImportError:
+            from amo_diary_guard import sanitize_diary
+        text = sanitize_diary(text)
+        ident = str(event_id or block_id or "").strip()
+        if version is None:
+            version = self.schedule_version(day)
+        common = (str(start or ""), str(end or ""), str(place or ""), str(text or ""),
+                  now_ts(), int(version), str(status or "valid"), str(source or ""))
+        legacy_params = (str(day), ident) + common
+        with self.lock:
+            try:
+                self.conn.execute(
+                    "INSERT INTO block_diary(day, block_id, event_id, start, end, place, "
+                    "text, updated, version, status, invalidated_at, source) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,0,?) "
+                    "ON CONFLICT(day, block_id) DO UPDATE SET "
+                    "event_id=excluded.event_id, start=excluded.start, "
+                    "end=excluded.end, place=excluded.place, text=excluded.text, "
+                    "updated=excluded.updated, version=excluded.version, "
+                    "status=excluded.status, invalidated_at=0, source=excluded.source",
+                    (str(day), ident, ident) + common,
+                )
+            except sqlite3.OperationalError:
+                # v4 之前的老库没有 event_id 列：先写旧列，迁移后由 v4 回填。
+                self.conn.execute(
+                    "INSERT INTO block_diary(day, block_id, start, end, place, text, "
+                    "updated, version, status, invalidated_at, source) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,0,?) "
+                    "ON CONFLICT(day, block_id) DO UPDATE SET "
+                    "start=excluded.start, end=excluded.end, place=excluded.place, "
+                    "text=excluded.text, updated=excluded.updated, "
+                    "version=excluded.version, status=excluded.status, "
+                    "invalidated_at=0, source=excluded.source",
+                    legacy_params,
+                )
+            self.conn.commit()
+
+    def block_diary_is_valid(self, day, block_id, version=None):
+        """这一块是否已经有一条有效缓存（只看 status + 正文，和旧表一致）。"""
+        record = self.get_block_diary_record(day, block_id)
+        if not record:
+            return False
+        return record["status"] == "valid" and bool(str(record.get("text") or "").strip())
+
+    def mark_block_diaries_stale(self, day, from_start, version=None):
+        """把某天 from_start 及以后开始的块日记标 stale（不删正文，供失败兜底）。"""
+        try:
+            start_hour = int(str(from_start)[:2])
+        except (TypeError, ValueError):
+            start_hour = 0
+        with self.lock:
+            cur = self.conn.execute(
+                "UPDATE block_diary SET status='stale', invalidated_at=? "
+                "WHERE day=? AND CAST(substr(start, 1, 2) AS INTEGER)>=? "
+                "AND status NOT IN ('stale', 'frozen', 'archived')",
+                (now_ts(), str(day), start_hour),
+            )
+            self.conn.commit()
+            return int(cur.rowcount or 0)
+
+    def mark_block_diary_stale(self, day, block_id):
+        """把某一块的小日记标 stale（日记质检用，不删正文）。
+
+        和 mark_block_diaries_stale 的区别：这里按块身份精确标记，不会把同一小时
+        之后的块一起打掉；frozen / archived 是人工冻结的内容，不动。
+        """
+        with self.lock:
+            cur = self.conn.execute(
+                "UPDATE block_diary SET status='stale', invalidated_at=? "
+                "WHERE day=? AND block_id=? AND status NOT IN ('stale', 'frozen', 'archived')",
+                (now_ts(), str(day), str(block_id)),
+            )
+            self.conn.commit()
+            return int(cur.rowcount or 0)
+
+    def list_block_diaries(self, day):
+        """某天全部块日记（按开始时间排序），迁移/排查用。"""
+        fields = "day, block_id, start, end, place, text, version, status, source"
+        with self.lock:
+            try:
+                rows = self.conn.execute(
+                    "SELECT %s, event_id FROM block_diary WHERE day=? "
+                    "ORDER BY start ASC" % fields, (str(day),)).fetchall()
+                return [dict(row) for row in rows]
+            except sqlite3.OperationalError:
+                rows = self.conn.execute(
+                    "SELECT %s FROM block_diary WHERE day=? ORDER BY start ASC"
+                    % fields, (str(day),)).fetchall()
+                out = []
+                for row in rows:
+                    data = dict(row)
+                    data["event_id"] = data.get("block_id") or ""
+                    out.append(data)
+                return out
+
+    def block_diary_identity_mismatches(self, day=""):
+        """两列不相等的行（健康检查；迁移/双写正常时永远为空）。"""
+        sql = ("SELECT day, block_id, event_id FROM block_diary "
+               "WHERE event_id IS NULL OR event_id<>block_id")
+        params = ()
+        if day:
+            sql += " AND day=?"
+            params = (str(day),)
+        with self.lock:
+            try:
+                rows = self.conn.execute(sql, params).fetchall()
+            except sqlite3.OperationalError:
+                return []
+        return [dict(row) for row in rows]
+
+    def migrate_block_diary(self):
+        """启动时幂等迁移：旧 schedule_diary 行 → 当天日程块。
+
+        旧表按整点落库，新表按块身份落库。旧行的正文只有在**块窗口完全落在旧行
+        覆盖的那一小时里**才可信（block.start == HH:00 且 block.end <= HH+1:00）：
+        - 跨多小时块（16:56-18:26 对应旧 17:00 行）只覆盖 17:00-18:00，18:10 的
+          「25 块外卖」不在旧文里，直接当缓存就会「聊天 25 块、日记 15 块」；
+        - 起点偏移块（16:07-16:56 对应旧 16:00 行）窗口也不相等。
+        这两种都写 stale（或 legacy stale），详情命中按块窗口重新生成。
+        映射规则：
+        - 一个 hour 只对应一个块 → 写该块的 block_diary 行；
+        - 多个候选 / 非整点旧行 → 写 `legacy:<hour>` 只读行；
+        - 没有任何原始块 → 跳过（整点行）/ 留 legacy（非整点行）。
+        INSERT OR IGNORE 保证不覆盖新生成的正文；规则升版时用 block_diary_migrate_version
+        触发一次性重判，只改迁移副本（source='migration' 或正文与旧行逐字相同）。
+        """
+        try:
+            from .amo_state_common import block_id as _block_id
+        except ImportError:
+            from amo_state_common import block_id as _block_id
+        try:
+            stamp = int(self.kv_get("block_diary_migrate_version", 0) or 0)
+        except (TypeError, ValueError):
+            stamp = 0
+        with self.lock:
+            try:
+                rows = self.conn.execute(
+                    "SELECT day, hour, text, version, status FROM schedule_diary"
+                ).fetchall()
+            except sqlite3.Error:
+                return 0
+            plan = self._block_diary_migration_plan(rows, _block_id)
+            migrated = self._insert_block_diary_plan(plan)
+            rejudged = 0
+            if stamp < BLOCK_DIARY_MIGRATE_VERSION:
+                rejudged = self._rejudge_migrated_block_diaries(plan)
+                self.kv_set("block_diary_migrate_version", BLOCK_DIARY_MIGRATE_VERSION)
+            self.conn.commit()
+            if migrated or rejudged:
+                logger.info("[amo] 小日记迁移：旧整点行 → 块日记 %d 条，重判 stale %d 条",
+                            migrated, rejudged)
+            return migrated
+
+    def _block_diary_migration_plan(self, rows, block_id_fn):
+        """旧 schedule_diary 行 → 待写入的 block_diary 计划（纯计算，不写库）。"""
+        plan = []
+        schedule_cache: dict[str, Any] = {}
+        for row in rows:
+            entry = self._block_diary_migration_entry(row, schedule_cache, block_id_fn)
+            if entry is not None:
+                plan.append(entry)
+        return plan
+
+    def _block_diary_migration_entry(self, row, schedule_cache, block_id_fn):
+        """单条旧行 → 一条迁移计划；整点行认不到块时返回 None（不落库）。"""
+        day = str(row["day"] or "")
+        hour = str(row["hour"] or "")
+        text = str(row["text"] or "").strip()
+        if not day or not text:
+            return None
+        hour_key = hour[:5]
+        point = self._clock_minutes(hour_key)
+        if point is None:
+            return None
+        on_hour = (point % 60 == 0)
+        if day not in schedule_cache:
+            schedule_cache[day] = self.get_schedule(day) or []
+        candidates = self._block_diary_candidates(schedule_cache[day] or [], point, on_hour)
+        trusted = self._block_diary_trusted(candidates, point, on_hour)
+        row_status = (str(row["status"] or "valid") if trusted else "stale")
+        if len(candidates) == 1:
+            item = candidates[0]
+            block_key = block_id_fn(day, item)
+            start_text = str(item.get("start") or "")[:5]
+            end_text = str(item.get("end") or "")[:5]
+            place_text = str(item.get("place") or "")
+        elif len(candidates) > 1:
+            block_key = "legacy:" + hour_key
+            start_text = hour_key
+            end_text = ""
+            place_text = ""
+        elif on_hour:
+            return None
+        else:
+            # 认不到块也要留档：只读 legacy 行，不覆盖任何新数据。
+            block_key = "legacy:" + hour_key
+            start_text = hour_key
+            end_text = ""
+            place_text = ""
+        return {"day": day, "key": block_key, "start": start_text,
+                "end": end_text, "place": place_text, "text": text,
+                "version": int(row["version"] or 0), "status": row_status}
+
+    def _block_diary_candidates(self, items, point, on_hour):
+        """和这一小时/这一刻重叠的日程块。"""
+        candidates = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_begin = self._clock_minutes(item.get("start"))
+            if item_begin is None:
+                continue
+            item_finish = self._clock_minutes(item.get("end"))
+            if item_finish is None or item_finish <= item_begin:
+                item_finish = item_begin + 60
+            if on_hour:
+                # 整点旧行 = 那一小时，和它重叠的块都算候选。
+                overlap = item_begin < point + 60 and item_finish > point
+            else:
+                # 非整点旧行（如 16:56）= 那一刻所在的块，按包含关系认。
+                overlap = item_begin <= point < item_finish
+            if overlap:
+                candidates.append(item)
+        return candidates
+
+    def _block_diary_trusted(self, candidates, point, on_hour):
+        """只有「唯一整点块且整块都在这一小时内」旧文才可信。"""
+        if not (len(candidates) == 1 and on_hour):
+            return False
+        only = candidates[0]
+        only_begin = self._clock_minutes(only.get("start"))
+        only_finish = self._clock_minutes(only.get("end"))
+        if only_finish is None or only_finish <= (only_begin or 0):
+            only_finish = (only_begin or 0) + 60
+        # 必须「块起点正好是那一小时、且整块不超出这一小时」：
+        # 16:07-16:56 这种起点偏移块虽然被 16 点窗口包含，但旧 16:00
+        # 行描述的是别的东西（整点/另一段），不能当缓存复用。
+        return (only_begin is not None and only_begin == point
+                and only_finish <= point + 60)
+
+    def _block_diary_has_event_id(self):
+        """block_diary 是否有 event_id 列（v4 迁移前为 False）。"""
+        try:
+            cols = {row[1] for row in self.conn.execute(
+                "PRAGMA table_info(block_diary)")}
+        except sqlite3.Error:
+            return False
+        return "event_id" in cols
+
+    def _insert_block_diary_plan(self, plan):
+        """把迁移计划写进 block_diary；INSERT OR IGNORE 不覆盖新生成的正文。"""
+        migrated = 0
+        has_event_id = self._block_diary_has_event_id()
+        for entry in plan:
+            if has_event_id:
+                cur = self.conn.execute(
+                    "INSERT OR IGNORE INTO block_diary(day, block_id, event_id, start, "
+                    "end, place, text, updated, version, status, invalidated_at, source) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,0,'migration')",
+                    (entry["day"], entry["key"], entry["key"], entry["start"],
+                     entry["end"], entry["place"], entry["text"], now_ts(),
+                     entry["version"], entry["status"]),
+                )
+            else:
+                cur = self.conn.execute(
+                    "INSERT OR IGNORE INTO block_diary(day, block_id, start, end, place, "
+                    "text, updated, version, status, invalidated_at, source) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,0,'migration')",
+                    (entry["day"], entry["key"], entry["start"], entry["end"],
+                     entry["place"], entry["text"], now_ts(), entry["version"],
+                     entry["status"]),
+                )
+            migrated += int(cur.rowcount or 0)
+        return migrated
+
+    def _rejudge_migrated_block_diaries(self, plan):
+        """把“迁移副本”里时间口径对不上的行一次性标 stale。
+
+        只认迁移来源：source='migration'，或旧库还没有 source 列时正文与旧行逐字相同。
+        之后真正生成/重写过的 valid 行（source 为空且正文不同）绝不动。
+        """
+        changed = 0
+        for entry in plan:
+            if entry["status"] != "stale":
+                continue
+            row = self.conn.execute(
+                "SELECT status, text, source FROM block_diary WHERE day=? AND block_id=?",
+                (entry["day"], entry["key"]),
+            ).fetchone()
+            if not row:
+                continue
+            if str(row["status"] or "valid") in ("stale", "frozen", "archived"):
+                continue
+            source = str(row["source"] or "")
+            same_text = str(row["text"] or "").strip() == entry["text"]
+            if source != "migration" and not (not source and same_text):
+                continue
+            self.conn.execute(
+                "UPDATE block_diary SET status='stale', invalidated_at=? "
+                "WHERE day=? AND block_id=?",
+                (now_ts(), entry["day"], entry["key"]),
+            )
+            changed += 1
+        return changed
+
+    @staticmethod
+    def _clock_minutes(value):
+        """HH:MM → 分钟；解析不了返回 None（迁移/窗口判断用）。"""
+        text = str(value or "").strip()[:5]
+        try:
+            hour_text, minute_text = text.split(":")[:2]
+            return int(hour_text) * 60 + int(minute_text)
+        except (TypeError, ValueError):
+            return None
 
     # ---------- 统计 ----------
     def counts(self):

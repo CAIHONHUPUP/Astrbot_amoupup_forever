@@ -4,9 +4,21 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+try:  # 兼容层：旧插件名 / 旧数据目录 / 旧配置名的唯一来源
+    from . import amo_compat as _compat
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:
+        import amo_compat as _compat
+
 import json
 import os
 from datetime import date
+
+try:  # 配置模型（Phase 4）：schema 是唯一真相
+    from .amo_config_model import ConfigModel, coerce_value, mask_secret, run_migrations
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_config_model import ConfigModel, coerce_value, mask_secret, run_migrations
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -14,7 +26,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -26,9 +39,10 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             HeartflowEngine, LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            HeartflowEngine, LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                HeartflowEngine, LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
+            )
 
 
 if TYPE_CHECKING:
@@ -42,49 +56,36 @@ class ConfigMixin(_MixinBase):
     heartflow: Any
     segment_engine: Any
 
+    def _get_config_model(self):
+        """当前 config 对象对应的配置模型；config 被整体替换时自动重建。"""
+        config = getattr(self, "config", None)
+        model = self.__dict__.get("_config_model_cache")
+        if model is not None and getattr(model, "config", None) is config:
+            return model
+        model = ConfigModel.from_plugin_dir(
+            config, getattr(self, "plugin_dir", ""), error_logger=_note_swallowed,
+        )
+        self.__dict__["_config_model_cache"] = model
+        return model
+
     def cfg(self, key, default=None):
-        try:
-            value = self.config.get(key, default)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_config.HumanCorePlugin.cfg", _amo_exc)
-            value = default
-        return default if value is None else value
+        return self._get_config_model().get(key, default)
 
     def cfg_list(self, key, default=None):
         """读列表型配置（template_list 存的是对象数组）；读到的不是 list 就当空。"""
-        value = self.cfg(key, [] if default is None else default)
-        if isinstance(value, list):
-            return value
-        if isinstance(value, (tuple, set)):
-            return list(value)
-        return []
+        return self._get_config_model().get_list(key, default)
 
     def cfg_bool(self, key, default=False):
-        value = self.cfg(key, default)
-        if isinstance(value, bool):
-            return value
-        return str(value).strip().lower() in ("1", "true", "yes", "on", "是")
+        return self._get_config_model().get_bool(key, default)
 
     def cfg_int(self, key, default=0):
-        try:
-            return int(float(self.cfg(key, default)))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_config.HumanCorePlugin.cfg_int", _amo_exc)
-            return default
+        return self._get_config_model().get_int(key, default)
 
     def cfg_float(self, key, default=0.0):
-        try:
-            return float(self.cfg(key, default))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_config.HumanCorePlugin.cfg_float", _amo_exc)
-            return default
+        return self._get_config_model().get_float(key, default)
 
     def cfg_str(self, key, default=""):
-        try:
-            return str(self.cfg(key, default))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_config.HumanCorePlugin.cfg_str", _amo_exc)
-            return default
+        return self._get_config_model().get_str(key, default)
 
     def _core_decor_flags(self, umo=""):
         """AstrBot 核心会不会在插件 hook 之后再加「引用 / @」。
@@ -110,15 +111,12 @@ class ConfigMixin(_MixinBase):
         }
 
     def _migrate_legacy_config(self):
-        """把旧版 amo_forever_config.json 合并到当前插件的配置文件。"""
+        """把旧版配置文件（旧名见 amo_compat.py）合并到当前插件的配置文件。"""
         path = str(getattr(self.config, "config_path", "") or "")
         if not path:
             return
         base = os.path.dirname(path)
-        legacy_candidates = [
-            os.path.join(base, "amo_forever_config.json"),
-            os.path.join(base, "astrbot_plugin_amo_forever_config.json"),
-        ]
+        legacy_candidates = _compat.legacy_config_paths(base)
         legacy = next((item for item in legacy_candidates if os.path.exists(item)), "")
         if not legacy:
             return
@@ -316,44 +314,14 @@ class ConfigMixin(_MixinBase):
 
     @staticmethod
     def _coerce_config_value(kind, value):
-        if kind == "bool":
-            if isinstance(value, bool):
-                return value
-            return str(value).strip().lower() in ("1", "true", "yes", "on", "是")
-        if kind == "int":
-            return int(float(value))
-        if kind == "float":
-            return float(value)
-        if kind in ("list", "template_list"):
-            if isinstance(value, list):
-                return value
-            parsed = json.loads(value) if isinstance(value, str) and value.strip() else []
-            return parsed if isinstance(parsed, list) else []
-        if kind in ("dict", "object"):
-            if isinstance(value, dict):
-                return value
-            parsed = json.loads(value) if isinstance(value, str) and value.strip() else {}
-            return parsed if isinstance(parsed, dict) else {}
-        return str(value)
+        return coerce_value(kind, value)
 
     def _schema_map(self):
-        path = os.path.join(self.plugin_dir, "_conf_schema.json")
-        try:
-            with open(path, encoding="utf-8") as stream:
-                schema = json.load(stream)
-            return schema if isinstance(schema, dict) else {}
-        except Exception as exc:
-            logger.warning("[amo] 读取配置 schema 失败: %s" % exc)
-            return {}
+        return dict(self._get_config_model().schema)
 
     @staticmethod
     def _mask_secret(value):
-        text = str(value or "")
-        if not text:
-            return ""
-        if len(text) <= 8:
-            return "*" * len(text)
-        return text[:4] + "*" * (len(text) - 8) + text[-4:]
+        return mask_secret(value)
 
     def _config_schema_items(self):
         schema = self._schema_map()
@@ -401,6 +369,18 @@ class ConfigMixin(_MixinBase):
                 "sensitive": key in self.SENSITIVE_KEYS,
             })
         return items
+
+    def run_config_migrations(self, boot=False):
+        """迁移统一由 ConfigModel 编排；迁移方法本体仍留在各 mixin。"""
+        return run_migrations(self, boot=boot, logger=logger)
+
+    def config_health(self):
+        """配置健康检查：未知键 / 类型错 / 越界 / 旧键；只报告，不改配置。"""
+        issues = self._get_config_model().health()
+        if issues:
+            logger.info("[amo] 配置健康检查: %d 项（首个 %s: %s）",
+                        len(issues), issues[0]["key"], issues[0]["message"])
+        return issues
 
     async def _apply_runtime_config(self):
         self._admin_cache = {}

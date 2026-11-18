@@ -18,20 +18,27 @@ UMO = "大肥鱼:FriendMessage:302578963"
 NOW = 1_800_000_000
 
 
+# 2026-11-17：amo_runtime 按 tick/context/reply 拆成三个 mixin 模块，
+# 方法可能住在任一子模块里，按顺序找。
+RUNTIME_MODULES = ("amo_runtime.py", "amo_runtime_context.py",
+                   "amo_runtime_reply.py", "amo_runtime_tick.py")
+
+
 def _load_method(name, extra_globals=None):
-    path = os.path.join(ROOT, "amo_runtime.py")
-    with open(path, encoding="utf-8") as fp:
-        tree = ast.parse(fp.read())
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            for item in node.body:
-                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == name:
-                    module = ast.Module(body=[item], type_ignores=[])
-                    ast.fix_missing_locations(module)
-                    namespace = {"__name__": "test_runtime"}
-                    namespace.update(extra_globals or {})
-                    exec(compile(module, "<plugin>", "exec"), namespace)
-                    return namespace[name]
+    for filename in RUNTIME_MODULES:
+        path = os.path.join(ROOT, filename)
+        with open(path, encoding="utf-8") as fp:
+            tree = ast.parse(fp.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == name:
+                        module = ast.Module(body=[item], type_ignores=[])
+                        ast.fix_missing_locations(module)
+                        namespace = {"__name__": "test_runtime"}
+                        namespace.update(extra_globals or {})
+                        exec(compile(module, "<plugin>", "exec"), namespace)
+                        return namespace[name]
     raise AssertionError("找不到方法 %s" % name)
 
 

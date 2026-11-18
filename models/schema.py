@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 """数据模型与 CRUD：健康、生病记录、日程。纯函数，不依赖插件实例。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调 time.time()）
+    from .. import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import time
 
@@ -31,9 +38,9 @@ def get_sick(db):
 
 def set_sick(db, sick, hours=0, reason=""):
     db.kv_set(SICK_KEY, bool(sick))
-    db.kv_set("health:sick_since", time.time() if sick else 0)
+    db.kv_set("health:sick_since", _amo_clock.now_ts() if sick else 0)
     if hours:
-        db.kv_set("health:sick_until", time.time() + 3600 * float(hours))
+        db.kv_set("health:sick_until", _amo_clock.now_ts() + 3600 * float(hours))
     if reason:
         add_sick_log(db, reason)
     return bool(sick)
@@ -41,7 +48,7 @@ def set_sick(db, sick, hours=0, reason=""):
 
 def add_sick_log(db, reason, level="light"):
     rows = db.kv_get(SICK_LOG_KEY, []) or []
-    rows.append({"at": time.time(), "reason": str(reason), "level": str(level)})
+    rows.append({"at": _amo_clock.now_ts(), "reason": str(reason), "level": str(level)})
     db.kv_set(SICK_LOG_KEY, rows[-30:])
     return rows[-1]
 

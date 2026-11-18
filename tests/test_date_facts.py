@@ -19,6 +19,11 @@ DAY = "2026-11-15"
 ITEM = {"start": "19:22", "end": "20:27", "activity": "和老公火锅",
         "place": "楼下小馆", "category": "social"}
 STAMP = datetime.datetime(2026, 11, 15, 19, 25).timestamp()
+#: 约会结束后的块：一个人走回家 + 到家只发消息/视频
+AFTER_ITEM = {"start": "20:27", "end": "20:37", "activity": "一个人走回家（耳机里还连着）",
+              "place": "路上", "zone": "road", "category": "life"}
+HOME_ITEM = {"start": "20:37", "end": "22:07", "activity": "到家给他发消息/视频道晚安",
+             "place": "家", "zone": "home", "category": "rest"}
 
 
 class FakeDB:
@@ -113,6 +118,29 @@ class PoolTests(unittest.TestCase):
         prompt = render_prompt(pool)
         self.assertIn("【线上事实】", prompt)
         self.assertNotIn("【物理场景事实·最高优先级】", prompt)
+
+    def test_after_date_block_is_not_together(self):
+        """约会结束后的小时/块：不再注入「他就在你身边」的硬事实。"""
+        plugin = FakePlugin(items=[ITEM, AFTER_ITEM, HOME_ITEM])
+        pool = asyncio.run(build_fact_pool(
+            plugin, datetime.date(2026, 11, 15),
+            now=datetime.datetime(2026, 11, 15, 23, 0),
+            slot_start="20:37", slot_end="22:07"))
+        self.assertFalse(pool["meta"]["date_together"])
+        details = " ".join(fact["detail"] for fact in pool["facts"])
+        self.assertNotIn("面对面", details)
+        self.assertNotIn("他就在你身边", details)
+
+    def test_date_block_is_still_together(self):
+        """约会进行中的块：面对面事实保留（B 方案不误杀约会当天）。"""
+        plugin = FakePlugin(items=[ITEM, AFTER_ITEM, HOME_ITEM])
+        pool = asyncio.run(build_fact_pool(
+            plugin, datetime.date(2026, 11, 15),
+            now=datetime.datetime(2026, 11, 15, 23, 0),
+            slot_start="19:22", slot_end="20:27"))
+        self.assertTrue(pool["meta"]["date_together"])
+        details = " ".join(fact["detail"] for fact in pool["facts"])
+        self.assertIn("面对面", details)
 
     def test_pool_contextualizes_transfer(self):
         pool = self._pool(items=[ITEM], ledger=[{"ts": STAMP, "delta_cents": 30000, "reason": "转账"}])

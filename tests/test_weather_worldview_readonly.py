@@ -16,6 +16,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from panel_source import panel_source  # noqa: E402
 
 import astrbot_stub  # noqa: E402
 
@@ -122,9 +123,7 @@ class RefreshRouteTests(unittest.TestCase):
 
 class PanelWiringTests(unittest.TestCase):
     def _html(self):
-        path = os.path.join(ROOT, "views", "dashboard", "index.html")
-        with open(path, encoding="utf-8") as fh:
-            return fh.read()
+        return panel_source(ROOT)
 
     def test_panel_refresh_button_uses_write_route(self):
         html = self._html()

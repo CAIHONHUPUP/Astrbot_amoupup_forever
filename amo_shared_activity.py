@@ -6,6 +6,13 @@
 - 有生命周期：到点写「剧看完了，关电视去洗漱」；他说「我不看了/去忙了」立刻打断并写清楚。
 - 回复要带场景感：注入「你们看的是同一段剧情、讨论同一段」的事实。
 """
+from typing import TYPE_CHECKING, Any
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import datetime as _dt
 import re
@@ -13,16 +20,18 @@ import re
 try:
     from .amo_current_action import set_action
 except ImportError:
-    from amo_current_action import set_action
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_current_action import set_action
 
 try:
     from .amo_observability import note as _note_swallowed
 except ImportError:
-    from amo_observability import note as _note_swallowed
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_observability import note as _note_swallowed
 
 
 def _now():
-    return _dt.datetime.now()
+    return _amo_clock.now()
 
 
 KV_KEY = "shared_activity"
@@ -67,8 +76,16 @@ def _minutes_of(text):
 
 
 _TOGETHER = re.compile(r"(一起|一块|咱们|我们|陪你|跟我|和我|和你)")
-_AGREE = re.compile(r"(好|行|可以)[啊呀]?[，,]?.{0,8}(看|玩|听|打)")
-_ACT = re.compile(r"(看|打|玩|听)")
+#: 明确的观看/娱乐对象（光一个「看」不算，避免把「好看」当约定）
+_ACT_OBJECT = re.compile(
+    r"(?:看[^，。！？\n]{0,8}(?:电视|剧|电影|综艺|直播|视频|球赛|节目)"
+    r"|(?:打|玩)(?:游戏|一把|排位|王者)|开黑|听歌|(?:学习|看书|写作业))"
+)
+#: 句首的答应（「好，那看…」「好啊，不过我可能看一会儿」）；「好看」这种形容词不算
+_AGREE = re.compile(
+    r"^(?:好|行|可以|嗯)[啊呀]?(?![看着的不很真太])(?:[，,、。！!\s].{0,8})?"
+    r"(?:那|就|咱们|我们|一起)?\s*(?:看|打|玩|听|学习|看书)"
+)
 _KIND_RULES = (
     ("game", r"(游戏|排位|开黑|王者|打一把|玩一把)"),
     ("music", r"(听歌|音乐|连麦听)"),
@@ -77,16 +94,18 @@ _KIND_RULES = (
 
 
 def detect(text):
-    """聊天里是否约了共同活动；返回 dict(kind/label/minutes/hedged)。
+    """聊天里是否真的约了共同活动；返回 dict(kind/label/minutes/hedged)。
 
-    - 「一起看两小时剧」「陪你一起打游戏」「一块听歌」都算；
-    - 「好啊，不过我可能看一会儿就去睡觉」也算，但标 hedged，不覆盖日程。
+    2026-11-17 修：以前「好|行|可以」+ 8 个字符内出现「看」就算约定，
+    「很好看」「谁让我老婆好看」这类夸奖也会写成「和老公连麦看电视」。现在：
+    - 「一起/我们/陪你…」分支必须带明确的观看/游戏/听歌对象；
+    - 单独答应分支必须出现在句首，且不能是「好看/不好看/很/真/太」这类形容词。
     """
-    text = str(text or "")
-    if not text.strip():
+    text = str(text or "").strip()
+    if not text:
         return None
-    together = bool(_TOGETHER.search(text)) and bool(_ACT.search(text))
-    loose_agree = bool(_AGREE.search(text))
+    together = bool(_TOGETHER.search(text)) and bool(_ACT_OBJECT.search(text))
+    loose_agree = bool(_AGREE.match(text))
     if not (together or loose_agree):
         return None
     kind = "watch"
@@ -97,7 +116,6 @@ def detect(text):
     hedged = any(word in text for word in HEDGE_WORDS)
     return {"kind": kind, "label": LABELS.get(kind, "一起玩"),
             "minutes": _minutes_of(text), "hedged": bool(hedged)}
-
 
 def stop_detected(text):
     text = str(text or "")
@@ -147,6 +165,9 @@ def finish_text(label, interrupted=False):
 
 class SharedActivityMixin:
     """挂在 HumanCorePlugin 上：识别、写日程、收尾、注入事实。"""
+    if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
+        db: Any
+        state: Any
 
     def _sa_kv(self):
         try:

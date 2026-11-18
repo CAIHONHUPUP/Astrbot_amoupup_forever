@@ -14,7 +14,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -26,15 +27,22 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             _CITY_DEFAULT, _city_detect, _city_pick_spots, _follow_block, _follow_invite, _follow_refuse, _now, _wander_agree, _wander_ask_limit, _wander_assess, _wander_follow_agree_text, _wander_offer_block, _wander_pick, _wander_plan_text, _wander_question, _wander_refuse, _wander_solo_agree_text, _wander_solo_block, _wander_solo_refuse_text, _wander_trip_days, _wander_want, logger, now_ts, to_float, today_str,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            _CITY_DEFAULT, _city_detect, _city_pick_spots, _follow_block, _follow_invite, _follow_refuse, _now, _wander_agree, _wander_ask_limit, _wander_assess, _wander_follow_agree_text, _wander_offer_block, _wander_pick, _wander_plan_text, _wander_question, _wander_refuse, _wander_solo_agree_text, _wander_solo_block, _wander_solo_refuse_text, _wander_trip_days, _wander_want, logger, now_ts, to_float, today_str,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                _CITY_DEFAULT, _city_detect, _city_pick_spots, _follow_block, _follow_invite, _follow_refuse, _now, _wander_agree, _wander_ask_limit, _wander_assess, _wander_follow_agree_text, _wander_offer_block, _wander_pick, _wander_plan_text, _wander_question, _wander_refuse, _wander_solo_agree_text, _wander_solo_block, _wander_solo_refuse_text, _wander_trip_days, _wander_want, logger, now_ts, to_float, today_str,
+            )
 
 
 if TYPE_CHECKING:
     from .amo_types import PluginLike as _MixinBase
 else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉别的 mixin 的真实实现
     _MixinBase = object
+
+try:  # 约会会话单一源（Phase 2）
+    from . import amo_date_session as _ds
+except ImportError:
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_date_session as _ds
 
 
 class TravelMixin(_MixinBase):
@@ -421,10 +429,8 @@ class TravelMixin(_MixinBase):
         """旅游最后一天到点回家：换天气、报平安、写记忆/日记。"""
         # 约会中：别推「旅游回家/报平安」这类和现场冲突的消息
         try:
-            _date_now = self.db.kv_get("date_now", {}) or {}
-            if isinstance(_date_now, dict) and str(_date_now.get("line") or "").strip():
-                if float(_date_now.get("until") or 0) > now_ts():
-                    return
+            if _ds.active(self, now_ts()):
+                return
         except Exception as _amo_exc:
             _note_swallowed("amo_travel._maybe_solo_return.dating", _amo_exc)
         trip = self.db.kv_get("wander_trip", {}) or {}
@@ -471,7 +477,7 @@ class TravelMixin(_MixinBase):
                     "我回来了，你吃饭了没？",
                 ))
                 if await self._send_to_umo(umo, text):
-                    self._mark_bot_initiated(umo)
+                    self._mark_bot_initiated(umo, text)
                     if uid:
                         self._set_proactive_pending(uid, "travel_back", text, umo=umo)
         except Exception as exc:

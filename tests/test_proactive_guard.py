@@ -179,3 +179,14 @@ class NearDuplicateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class NonDictRowsTests(unittest.TestCase):
+    def test_junk_rows_are_skipped(self):
+        rows = [None, "junk", 42, {"role": "user", "content": "在吗", "created_at": 1.0}]
+        result = analyze_rows(rows, now=10.0)
+        self.assertEqual(result["unanswered_text"], "在吗")
+
+    def test_all_junk_rows_return_empty(self):
+        result = analyze_rows([None, "junk", 42], now=10.0)
+        self.assertEqual(result["context_text"], "")
+        self.assertEqual(result["unanswered_text"], "")

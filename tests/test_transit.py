@@ -150,7 +150,12 @@ class CompatibilityTests(unittest.TestCase):
         from amo_message import MessageMixin
         from amo_state_schedule import ScheduleStateMixin
 
-        self.assertIn("_transit_rewrite", inspect.getsource(MessageMixin._send_to_umo))
+        from amo_reply_pipeline import PIPELINE
+
+        # Phase 6：发送侧改写走 send.transit_rewrite 阶段
+        self.assertIn("amo_reply_pipeline", inspect.getsource(MessageMixin._send_to_umo))
+        stage = {item.id: item for item in PIPELINE.stages}["send.transit_rewrite"]
+        self.assertIn("_transit_rewrite", inspect.getsource(stage.run))
         self.assertIn("_maybe_transit", inspect.getsource(ScheduleStateMixin.commit_schedule_change))
 
 

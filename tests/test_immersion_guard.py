@@ -28,6 +28,7 @@ import amo_sick_decision  # noqa: E402
 from amo_fact_pool import render_prompt  # noqa: E402
 from amo_llm import LlmMixin  # noqa: E402
 from amo_memory_context import _recall_format  # noqa: E402
+from fixtures import FixedClock  # noqa: E402
 from schedule_engine import ScheduleEngine  # noqa: E402
 
 NOW = dt.datetime(2026, 11, 16, 15, 0, 0)
@@ -228,14 +229,20 @@ class PromptWiringTests(unittest.TestCase):
 
     def test_chat_prompt_block_is_wired(self):
         source = inspect.getsource(LlmMixin._reply_base_parts)
-        self.assertIn("prompt_block()", source)
+        # Phase 4：固定规则块改由注册表登记，文本仍来自 amo_immersion_guard.prompt_block()
+        self.assertIn("guard.immersion", source)
         self.assertIn("emotion_ice_point", source)
+        import amo_prompt_registry as prompts
+        self.assertIn("prompt_block", inspect.getsource(prompts._b_immersion))
 
     def test_send_hook_wired(self):
         from amo_message import MessageMixin
+        from amo_reply_pipeline import PIPELINE
 
-        source = inspect.getsource(MessageMixin._send_to_umo)
-        self.assertIn("fix_identity(sanitize_extreme(text))", source)
+        # Phase 6：守卫搬进流水线，但仍是同一句 fix_identity(sanitize_extreme(text))
+        self.assertIn("amo_reply_pipeline", inspect.getsource(MessageMixin._send_to_umo))
+        stage = {item.id: item for item in PIPELINE.stages}["send.immersion"]
+        self.assertIn("fix_identity(sanitize_extreme(text))", inspect.getsource(stage.run))
 
     def test_diary_prompt_block_wired(self):
         source = inspect.getsource(ScheduleEngine._diary_prompt)
@@ -253,15 +260,18 @@ class _FakeRecallSelf:
 
 class MemoryLabelTests(unittest.TestCase):
     def test_memory_lines_use_time_label(self):
-        created = int(dt.datetime(2026, 11, 15, 12, 0).timestamp())
-        lines = []
-        _recall_format(_FakeRecallSelf(), {}, lines,
-                       [{"content": "昨天中午吃了面", "created_at": created}])
-        self.assertIn("[昨日]", lines[0])
-        today_lines = []
-        _recall_format(_FakeRecallSelf(), {}, today_lines,
-                       [{"content": "刚吃了面", "created_at": int(time.time())}])
-        self.assertIn("[今日]", today_lines[0])
+        # 「昨天」必须按冻结时钟算：用真实 date.today() 的话，跨 0 点后
+        # 2026-11-15 会变成「前天」，[昨日] 就没了。
+        with FixedClock(NOW):
+            created = int(dt.datetime(2026, 11, 15, 12, 0).timestamp())
+            lines = []
+            _recall_format(_FakeRecallSelf(), {}, lines,
+                           [{"content": "昨天中午吃了面", "created_at": created}])
+            self.assertIn("[昨日]", lines[0])
+            today_lines = []
+            _recall_format(_FakeRecallSelf(), {}, today_lines,
+                           [{"content": "刚吃了面", "created_at": int(NOW.timestamp())}])
+            self.assertRegex(today_lines[0], r"\[今日 \d\d:\d\d\]")
 
 
 if __name__ == "__main__":

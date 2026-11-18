@@ -11,24 +11,26 @@ else:
     try:
         from .amo_shared import logger
     except ImportError:
-        from amo_shared import logger
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import logger
 
 try:
     from .pose_library import batch_status as pose_batch_status
     from .pose_library import ensure_batch as pose_ensure_batch
     from .pose_library import pending_poses as pose_pending
 except ImportError:
-    try:
-        from pose_library import batch_status as pose_batch_status
-        from pose_library import ensure_batch as pose_ensure_batch
-        from pose_library import pending_poses as pose_pending
-    except Exception:
-        def pose_batch_status():
-            return {}
-        async def pose_ensure_batch(plugin, poses, force=False):
-            return {"ok": False}
-        def pose_pending(library):
-            return []
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from pose_library import batch_status as pose_batch_status
+            from pose_library import ensure_batch as pose_ensure_batch
+            from pose_library import pending_poses as pose_pending
+        except Exception:
+            def pose_batch_status():
+                return {}
+            async def pose_ensure_batch(plugin, poses, force=False):
+                return {"ok": False}
+            def pose_pending(library):
+                return []
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入

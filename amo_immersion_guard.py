@@ -14,6 +14,13 @@
   place_lock_line —— 熟人名单、人名兜底、视角正反、地点锁定。
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import logging
 import re
@@ -77,12 +84,13 @@ def sanitize_extreme(text):
 try:  # 名单以 amo_names 为唯一来源（7 个人，和守护 npc_roster 一致）
     from .amo_names import ROSTER as _ROSTER, ROSTER_LINE as _ROSTER_LINE
 except ImportError:  # 直接按文件加载时
-    try:
-        from amo_names import ROSTER as _ROSTER, ROSTER_LINE as _ROSTER_LINE
-    except Exception:  # pragma: no cover - 极端环境
-        _ROSTER = ("柳如烟", "白凝冰", "季博达", "方圆", "妈妈", "爸爸", "沈幼微")
-        _ROSTER_LINE = ("你认识的人只有：[%s]。严禁凭空捏造任何其他名字，"
-                        "不要提任何名单外的朋友、同事、亲戚、路人。" % "、".join(_ROSTER))
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_names import ROSTER as _ROSTER, ROSTER_LINE as _ROSTER_LINE
+        except Exception:  # pragma: no cover - 极端环境
+            _ROSTER = ("柳如烟", "白凝冰", "季博达", "方圆", "妈妈", "爸爸", "沈幼微")
+            _ROSTER_LINE = ("你认识的人只有：[%s]。严禁凭空捏造任何其他名字，"
+                            "不要提任何名单外的朋友、同事、亲戚、路人。" % "、".join(_ROSTER))
 
 ROSTER = tuple(_ROSTER)
 ROSTER_LINE = str(_ROSTER_LINE)
@@ -220,7 +228,7 @@ def _end_minutes(end):
 
 def slot_ended(day, end, now=None):
     """这一时段是否真的过完（秒级）：23:59:59 不算结束，次日 00:00:01 才算。"""
-    now = now or datetime.now()
+    now = now or _amo_clock.now()
     day_text = str(day or "")
     today_text = now.strftime("%Y-%m-%d")
     if day_text and day_text < today_text:

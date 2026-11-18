@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 """熬夜：23:30 后仍清醒 → is_staying_up；疲劳加速、次日惩罚、哄睡/转账清空。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import logging
 logger = logging.getLogger("amo")
@@ -11,7 +18,8 @@ import random
 try:
     from .amo_shared import now_ts
 except ImportError:
-    from amo_shared import now_ts
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import now_ts
 
 START_HOUR = 23
 START_MIN = 30
@@ -81,7 +89,7 @@ class LateNightEngine:
         self._set_flag("overtime")
 
     def is_staying_up(self, now=None):
-        now = now or _dt.datetime.now()
+        now = now or _amo_clock.now()
         data = self._roll_night(self._data(), now)
         if data.get("cleared"):
             return False
@@ -91,7 +99,7 @@ class LateNightEngine:
         return bool(late)
 
     def tick(self, now=None):
-        now = now or _dt.datetime.now()
+        now = now or _amo_clock.now()
         data = self._roll_night(self._data(), now)
         if data.get("cleared"):
             return None
@@ -132,9 +140,20 @@ class LateNightEngine:
                     logger.debug("[amo] optional step failed: %r", exc)
                 data["fatigue_hour"] = hour_key
             self._save(data)
-        # 连续两晚熬夜：第二天 100% 感冒/发烧，并清空记录
+        # 连续两晚熬夜：第二天有概率感冒/发烧（不再是 100%，且病好后 3 天免疫）
         try:
-            if 8 <= now.hour < 20 and not data.get("cleared") and not data.get("sick_done") and self.streak() >= 2:
+            already_sick = str((getattr(self.human, "health", {}) or {}).get("status") or "") in (
+                "轻微不适", "感冒", "低烧", "发烧", "肠胃炎")
+            streak = self.streak()
+            chance = 0.25 if streak == 2 else (0.45 if streak >= 3 else 0.0)
+            try:
+                cooldown = float(self.human.db.kv_get("sick_cooldown_until", 0) or 0)
+            except Exception:
+                cooldown = 0.0
+            if (8 <= now.hour < 20 and not data.get("cleared") and not data.get("sick_done")
+                    and streak >= 2 and not already_sick
+                    and _amo_clock.now_ts() >= cooldown
+                    and random.random() < chance):
                 status = random.choice(("感冒", "发烧"))
                 self.human.set_health(status, note="连续熬夜，免疫力垮了", severity="minor")
                 data["history"] = []
@@ -160,7 +179,7 @@ class LateNightEngine:
         data = self._data()
         data.update({"active": False, "cleared": True, "penalty_done": True,
                      "soothed_by": str(reason or ""), "soothed_at": now_ts(),
-                     "cleared_date": self._day_of(_dt.datetime.now())})
+                     "cleared_date": self._day_of(_amo_clock.now())})
         try:
             self.db.kv_set("late_flags", {})
         except Exception as exc:
@@ -187,7 +206,7 @@ class LateNightEngine:
         self._save(data)
 
     def late_yesterday(self, now=None):
-        now = now or _dt.datetime.now()
+        now = now or _amo_clock.now()
         data = self._data()
         if data.get("cleared"):
             return False
@@ -207,7 +226,7 @@ class LateNightEngine:
         return count
 
     def state(self, now=None):
-        now = now or _dt.datetime.now()
+        now = now or _amo_clock.now()
         data = self._data()
         return {
             "active": self.is_staying_up(now),
@@ -222,7 +241,7 @@ class LateNightEngine:
         }
 
     def prompt_line(self, now=None):
-        now = now or _dt.datetime.now()
+        now = now or _amo_clock.now()
         data = self._data()
         if self.is_staying_up(now):
             text = "现在是凌晨%d点，你非常困但睡不着；聊天时语气带点疲惫、打哈欠，可以撒娇让老公哄你睡。" % now.hour

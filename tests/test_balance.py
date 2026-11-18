@@ -23,18 +23,10 @@ astrbot_stub.install()
 
 from amo_shared import fetch_deepseek_balance, fetch_provider_balance  # noqa: E402
 
-
-class FakeResponse(io.BytesIO):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
+from plugin_fakes import BalanceFakeResponse as FakeResponse  # noqa: E402
 
 def json_response(payload):
     return FakeResponse(json.dumps(payload).encode("utf-8"))
-
 
 class BalanceTests(unittest.TestCase):
     def call(self, payload, kind, base="https://api.example.com"):
@@ -132,7 +124,6 @@ class BalanceTests(unittest.TestCase):
 
     def test_deepseek_wrapper_without_key(self) -> None:
         self.assertFalse(fetch_deepseek_balance("")["ok"])
-
 
 if __name__ == "__main__":
     unittest.main()

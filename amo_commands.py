@@ -2,7 +2,7 @@
 """CommandMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import re
 
@@ -12,7 +12,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import snapshot as _swallowed_snapshot
@@ -20,7 +21,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import snapshot as _swallowed_snapshot
     except ImportError:  # 直接按文件加载时
-        from amo_observability import snapshot as _swallowed_snapshot
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import snapshot as _swallowed_snapshot
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .clock import from_timestamp as _clock_from_ts
@@ -28,7 +30,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .clock import from_timestamp as _clock_from_ts
     except ImportError:  # 直接按文件加载时
-        from clock import from_timestamp as _clock_from_ts
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from clock import from_timestamp as _clock_from_ts
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_scope import event_scope as _event_scope
@@ -36,7 +39,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_scope import event_scope as _event_scope
     except ImportError:  # 直接按文件加载时
-        from amo_scope import event_scope as _event_scope
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_scope import event_scope as _event_scope
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -48,9 +52,10 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, city_or_empty, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, city_or_empty, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                AstrMessageEvent, Comp, MessageChain, PLUGIN_VERSION, RELATIONS, SCHEDULE_VERSION, city_or_empty, clamp, day_meta, filter, logger, now_ts, to_float, to_int, today_str,
+            )
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -64,6 +69,16 @@ else:
         except ImportError:
             apply_sched_at = None  # type: ignore[assignment]
             infer_place_category = None  # type: ignore[assignment]
+
+
+if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
+    from . import amo_trip as trip
+else:  # 运行时：旅游引擎（一期手动入口）
+    try:
+        from . import amo_trip as trip
+    except ImportError:
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            import amo_trip as trip
 
 
 if TYPE_CHECKING:
@@ -87,6 +102,14 @@ def memory_backend_line(connected):
 
 
 class CommandMixin(_MixinBase):
+    #: 由 HumanCorePlugin 注入 / 其它 mixin 提供（仅类型声明，不改运行时）
+    if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
+        _jobs_report: Any
+        _obs_health: Any
+        protocol_info: Any
+    housing: Any
+    _ensure_home_images: Any
+
     def _args(self, event):
         raw = (event.message_str or "").strip()
         raw = re.sub(r"^[/／]\s*", "", raw)
@@ -219,7 +242,15 @@ class CommandMixin(_MixinBase):
                 history.append({"date": day.isoformat(), "score": round(score, 1)})
         return history
 
-    async def _status_data(self):
+    async def _status_data(self, fresh=False):
+        # P2：面板同一次刷新会先调 api_status 再调 api_get_status，旧实现把整份
+        # 状态（天气/生理期/健康/计数聚合）算两遍。2 秒内复用同一份只读聚合；
+        # 写状态/手动刷新会清缓存，fresh=True 强制重算。
+        now = now_ts()
+        cached = getattr(self, "_status_cache", None)
+        if (not fresh and isinstance(cached, dict)
+                and now - float(cached.get("at") or 0) <= 2.0):
+            return cached.get("data")
         self._reload_config_if_changed()
         umo = self._last_umo or self._first_private_umo()
         if not self.state.weather:
@@ -269,6 +300,12 @@ class CommandMixin(_MixinBase):
             "threshold": threshold,
             "activity_rate": round(activity, 2),
             "counts": counts,
+            "jobs": self._jobs_report(),
+            # Phase 17：结构化健康快照（plugin/version/uptime/db/jobs/counts）。
+            # 老字段 health 是「人物健康」，语义不同，所以这里用 obs_health，不覆盖。
+            "obs_health": self._obs_health(),
+            # Phase 19：跨插件 feature API 协议摘要（只新增字段）
+            "protocol": self.protocol_info(),
             "mood_narration": "",
             "mood_attribution": "",
             "mood_history": [],
@@ -302,6 +339,16 @@ class CommandMixin(_MixinBase):
             result["mood_history"] = self._mood_history(snap)
         except Exception as _amo_exc:
             _note_swallowed("amo_commands.HumanCorePlugin._status_data.mood_history", _amo_exc)
+        try:
+            try:
+                from .amo_trip_cost import settle_report as _settle_report
+            except ImportError:
+                from amo_trip_cost import settle_report as _settle_report
+            result["trip_settle"] = _settle_report(self) or {}
+        except Exception as _amo_exc:
+            _note_swallowed("amo_commands.HumanCorePlugin._status_data.trip_settle", _amo_exc)
+            result["trip_settle"] = {}
+        self._status_cache = {"at": now_ts(), "data": result}
         return result
 
     def _format_status(self, data):
@@ -322,6 +369,9 @@ class CommandMixin(_MixinBase):
         # 记忆后端连没连上要写在状态里：没装能记的人只会看到「记忆 0」，然后以为功能坏了。
         plugin_state = data.get("data_plugin") or {}
         lines.append(memory_backend_line(bool(plugin_state.get("connected"))))
+        settle = data.get("trip_settle") or {}
+        if settle.get("line"):
+            lines.append("🧳 旅游结算：" + str(settle.get("line")))
         if not city_or_empty(self):
             lines.append("📍 城市：未设置城市（不影响聊天，日程会写得笼统些）")
         return "\n".join(lines)
@@ -370,6 +420,10 @@ class CommandMixin(_MixinBase):
             return await self._cmd_say(event, args, uid)
         if sub == "clean" or sub == "清理":
             return await self._cmd_clean(event, args, uid)
+        if sub in ("trip", "旅游"):
+            return await self._cmd_trip(event, args, uid)
+        if sub in ("audit", "审计", "日记审计"):
+            return await self._cmd_audit(event, args, uid)
         return "未知指令。发送 /amo help 查看帮助。"
     async def _cmd_help(self, event, args, uid):
         """原 _handle_command 的「help」分支，逐行搬来。"""
@@ -382,6 +436,8 @@ class CommandMixin(_MixinBase):
             "管理员：/amo rel @人 关系｜/amo set @人 字段 值｜/amo memo @人 内容 [0/1/2]（写入记忆插件）\n"
             "/amo period set YYYY-MM-DD｜/amo health set 状态\n"
             "/amo draw 描述（测试画图）｜/amo photo（照片概率/状态）\n"
+            "/amo trip [start 城市 天数|status|cancel] 旅游\n"
+            "/amo audit [YYYY-MM-DD] 日记质检（主人）\n"
             "/amo schedule regen｜/amo worldview regen｜/amo say 内容｜/amo clean"
         )
 
@@ -610,6 +666,30 @@ class CommandMixin(_MixinBase):
         lines.append("现在应该在：" + str(activity.get("activity", "")))
         return "\n".join(lines)
 
+    async def _cmd_audit(self, event, args, uid):
+        """/amo audit [YYYY-MM-DD]：日记质检摘要（主人）。"""
+        if not self._is_admin(event):
+            return "只有管理员才能看日记质检。"
+        day = ""
+        if len(args) >= 2:
+            try:
+                from .amo_shared import _diary_parse_day
+            except ImportError:
+                from amo_shared import _diary_parse_day
+            parsed = _diary_parse_day(args[1])
+            if parsed is None:
+                return "日期格式应为 YYYY-MM-DD。"
+            day = parsed.isoformat()
+        try:
+            try:
+                from . import amo_diary_audit as audit
+            except ImportError:
+                import amo_diary_audit as audit
+        except Exception as exc:
+            _note_swallowed("amo_commands.CommandMixin._cmd_audit.import", exc)
+            return "日记质检模块未加载。"
+        return audit.report_text(self, day)
+
     async def _cmd_weather(self, event, args, uid):
         """原 _handle_command 的「weather」分支，逐行搬来。"""
         if len(args) >= 2 and args[1].lower() in ("refresh", "刷新"):
@@ -662,6 +742,75 @@ class CommandMixin(_MixinBase):
             return "只有管理员才能清理。"
         self.db.purge_messages(self.cfg_int("chat_log_days", 14))
         return "✅ 已清理过期聊天记录。"
+
+    async def _cmd_trip(self, event: AstrMessageEvent, args: list[str], uid: str) -> str:
+        """旅游手动入口：/amo trip [start 城市 天数 | status | cancel]。
+
+        引擎（amo_trip）已经负责预算/冷却/城市池/幂等；这里只做主人校验和
+        把结果翻译成人话。主人限制沿用同文件 _is_admin 的写法。
+        """
+        if not self._is_admin(event):
+            return "这个只给主人用哦。"
+        tail = [str(item).strip() for item in args[1:] if str(item).strip()]
+        action = tail[0].lower() if tail else "status"
+        if action in ("status", "状态"):
+            info = trip.status(self)
+            phase = str(info.get("phase") or "")
+            if phase in ("", "done"):
+                return "现在没在旅游。"
+            day = max(1, to_int(info.get("day_no"), 0) + 1)
+            return ("她在%s，第 %d 天 / 共 %d 天，已经花了 %d 元。"
+                    % (str(info.get("city") or "外地"), day,
+                       to_int(info.get("days"), 0), to_int(info.get("spent"), 0)))
+        if action in ("start", "出发"):
+            rest = [token for token in tail[1:]
+                    if token.lower() not in ("force", "强制")]
+            force = len(rest) != len(tail[1:])
+            city = rest[0] if rest else ""
+            days = 0
+            if len(rest) > 2:
+                return "用法：/amo trip start 城市 [天数] [force]"
+            if len(rest) == 2:
+                if not rest[1].isdigit():
+                    return "天数要写数字，比如 /amo trip start 大理 2"
+                days = to_int(rest[1], 0)
+                if days < 1:
+                    return "天数至少 1 天。"
+            result = trip.trip_manual_start(self, city=city, days=days or None, force=force)
+            if not result.get("ok"):
+                return self._trip_error_text(result)
+            info = trip.status(self)
+            return ("出发去%s啦，计划 %d 天，路上小心。"
+                    % (info.get("city") or city or "外地", to_int(info.get("days"), 0)))
+        if action in ("cancel", "取消"):
+            result = trip.cancel(self)
+            if not result.get("ok"):
+                if not str(result.get("phase") or ""):
+                    return "现在没有在计划的旅行，不用取消。"
+                return "已经出发了，取消不了；想回来就跟她说「回来吧」。"
+            return "旅游取消啦，还没出发，随时可以再计划。"
+        return "用法：/amo trip [start 城市 天数 | status | cancel]"
+
+    def _trip_error_text(self, result: dict[str, Any]) -> str:
+        """trip_manual_start 的 reason → 人话（和面板接口同一口径）。"""
+        reason = str(result.get("reason") or "")
+        if reason == "disabled":
+            return "旅游功能没开（travel_enabled=false），先去设置里打开吧。"
+        if reason == "trip_active":
+            return "已经有一次旅行在计划里或路上了，先别急着再出发。"
+        if reason == "cooldown":
+            return "刚旅游回来，还在冷却期（travel_cooldown_days）里，过几天再说吧。"
+        if reason == "city_not_in_pool":
+            pool = [str(city) for city in (result.get("candidates") or []) if str(city)]
+            if pool:
+                return "她不太熟这个城市，从这几个里挑一个吧：" + "、".join(pool)
+            return "她不太熟这个城市，换一个景区城市吧。"
+        if reason == "no_candidate":
+            return "景区名单里还没有可选的城市，先重建一下景区知识库吧。"
+        if reason == "budget":
+            return "钱不够：这趟至少要 %d 元，现在只有 %d 元。" % (
+                to_int(result.get("need"), 0), to_int(result.get("balance"), 0))
+        return "这次没出发成，再试一次看看。"
 
 
     @filter.command("日程")
@@ -837,7 +986,8 @@ class CommandMixin(_MixinBase):
         try:
             from .amo_shared import _diary_parse_day, _diary_write
         except ImportError:
-            from amo_shared import _diary_parse_day, _diary_write
+            if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+                from amo_shared import _diary_parse_day, _diary_write
         day = _diary_parse_day(parts[1])
         if day is None:
             yield event.plain_result("日期格式应为 YYYY-MM-DD")

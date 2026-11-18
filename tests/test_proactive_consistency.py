@@ -85,7 +85,7 @@ class FakePlugin:
     def _remember_bot_message(self, umo, text):
         self.remembered.append((umo, text))
 
-    def _mark_bot_initiated(self, umo):
+    def _mark_bot_initiated(self, umo, text=""):
         self.marked.append(umo)
 
     def state_nudge(self, **kwargs):

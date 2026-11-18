@@ -7,6 +7,7 @@ import datetime as dt
 import os
 import sys
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -18,6 +19,7 @@ astrbot_stub.install()
 
 import amo_transition as tr  # noqa: E402
 from amo_api_schedule import ScheduleApiMixin  # noqa: E402
+from panel_source import panel_source  # noqa: E402
 from amo_state_common import today_str  # noqa: E402
 
 
@@ -96,12 +98,14 @@ class FakeState:
 
 class ApiDoingTests(unittest.TestCase):
     def test_transit_block_marked_doing(self):
-        now = dt.datetime.now().replace(second=0, microsecond=0)
+        # 钉死中午，别在 23:5x/00:0x 跑的时候让「现在±25 分钟」跨过午夜（doing 永远 False）。
+        now = dt.datetime(2026, 11, 16, 15, 12, 0)
         row = {"start": _clock(now, -5), "end": _clock(now, 25),
                "activity": "到达商场，正在往里走", "place": "商场",
                "source": "transit", "happened": True}
         plugin = FakePlugin([row])
-        result = asyncio.run(ScheduleApiMixin.api_schedule.__get__(plugin, type(plugin))())
+        with mock.patch.object(tr, "_now", return_value=now):
+            result = asyncio.run(ScheduleApiMixin.api_schedule.__get__(plugin, type(plugin))())
         child = result["data"]["tree"][0]["children"][0]
         self.assertTrue(child.get("doing"), child)
         self.assertTrue(child.get("current"), child)
@@ -110,8 +114,7 @@ class ApiDoingTests(unittest.TestCase):
 
 class PanelStaticTests(unittest.TestCase):
     def _html(self):
-        with open(os.path.join(ROOT, "views", "dashboard", "index.html"), encoding="utf-8") as fh:
-            return fh.read()
+        return panel_source(ROOT)
 
     def test_doing_tag_and_css(self):
         html = self._html()
@@ -128,8 +131,7 @@ class PanelStaticTests(unittest.TestCase):
 
 class DetailGeneratingTextTests(unittest.TestCase):
     def test_detail_modal_has_generating_wording(self):
-        with open(os.path.join(ROOT, "views", "dashboard", "index.html"), encoding="utf-8") as fh:
-            html = fh.read()
+        html = panel_source(ROOT)
         self.assertIn('data.status === "generating"', html)
         self.assertIn("咬着笔头写日记", html)
         # 专属文案必须排在 empty_message 兜底之前

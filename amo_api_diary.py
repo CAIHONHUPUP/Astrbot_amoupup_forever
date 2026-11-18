@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -12,7 +13,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 try:
     from .amo_shared import (
@@ -26,25 +28,27 @@ try:
         logger,
     )
 except ImportError:
-    from amo_shared import (
-        _diary_import_folder,
-        _diary_append_note,
-        _diary_parse_day,
-        _diary_read,
-        _diary_tree,
-        _diary_write,
-        _now,
-        logger,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import (
+            _diary_import_folder,
+            _diary_append_note,
+            _diary_parse_day,
+            _diary_read,
+            _diary_tree,
+            _diary_write,
+            _now,
+            logger,
+        )
 
 try:
     from .amo_schedule import diary_manual_target
 except ImportError:
-    try:
-        from amo_schedule import diary_manual_target
-    except Exception:  # pragma: no cover
-        def diary_manual_target(now, requested):
-            return requested, ""
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_schedule import diary_manual_target
+        except Exception:  # pragma: no cover
+            def diary_manual_target(now, requested):
+                return requested, ""
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -113,8 +117,54 @@ class DiaryApiMixin(_MixinBase):
             locked = bool(self.db.kv_get("diary_locked:" + day_text, False))
         except Exception:
             locked = False
+        live = {"day": day_text, "count": 0, "entries": [], "text": "", "pending": False}
+        try:
+            try:
+                from .amo_state_diary import diary_live_snapshot
+            except ImportError:
+                from amo_state_diary import diary_live_snapshot
+            live = diary_live_snapshot(self, day_text)
+        except Exception as exc:
+            _note_swallowed("amo_api_diary.DiaryApiMixin.api_diary_read.live", exc)
         return {"code": 0, "data": {"date": day_text, "text": text, "stale": stale,
-                                    "locked": locked}}
+                                    "locked": locked,
+                                    "live": list(live.get("entries") or []),
+                                    "live_text": str(live.get("text") or ""),
+                                    "live_pending": bool(live.get("pending"))}}
+
+    async def api_diary_audit(self):
+        """日记质检报告（只读）：GET /diary/audit?day=YYYY-MM-DD，不带日期取最近一份。"""
+        await self._ensure_ready()
+        payload = await self._body()
+        raw = ""
+        if isinstance(payload, dict):
+            raw = payload.get("day") or payload.get("date") or ""
+        if not raw:
+            raw = self._q("day", "") or self._q("date", "")
+        day = _diary_parse_day(raw) if raw else None
+        if raw and day is None:
+            return {"code": 1, "msg": "日期格式应为 YYYY-MM-DD"}
+        try:
+            try:
+                from . import amo_diary_audit as audit
+            except ImportError:
+                import amo_diary_audit as audit
+        except Exception as exc:
+            _note_swallowed("amo_api_diary.DiaryApiMixin.api_diary_audit.import", exc)
+            return {"code": 1, "msg": "日记质检模块未加载"}
+        day_text = day.isoformat() if day is not None else audit.latest_report_day(self)
+        if not day_text:
+            return {"code": 0, "data": {"day": "", "report": None,
+                                        "text": "还没有日记质检记录"}}
+        report = None
+        try:
+            report = self.db.kv_get(audit.KEY_REPORT + day_text, None)
+        except Exception as exc:
+            _note_swallowed("amo_api_diary.DiaryApiMixin.api_diary_audit.kv", exc)
+        if not isinstance(report, dict):
+            report = None
+        return {"code": 0, "data": {"day": day_text, "report": report,
+                                    "text": audit.report_text(self, day_text)}}
 
     def write_diary_text(self, day, text, force=False):
         """把给定文本写进长日记（金融事件用；不调模型）。
@@ -158,6 +208,14 @@ class DiaryApiMixin(_MixinBase):
                 _note_swallowed("amo_api_diary.py.149", exc)
         except Exception as _amo_exc:
             _note_swallowed("amo_api_diary.DiaryApiMixin.write_diary_text", _amo_exc)
+        try:
+            try:
+                from .amo_state_diary import diary_live_finalize
+            except ImportError:
+                from amo_state_diary import diary_live_finalize
+            diary_live_finalize(self, target.isoformat())
+        except Exception as exc:
+            _note_swallowed("amo_api_diary.DiaryApiMixin.write_diary_text.live", exc)
         logger.info("[amo] 日记已写（外部文本）: %s" % path)
         return {"code": 0, "data": {"date": target.isoformat(), "path": path}}
 
@@ -168,7 +226,17 @@ class DiaryApiMixin(_MixinBase):
         day = _diary_parse_day((payload or {}).get("date"))
         today = _now().date()
         if day is not None and day == today:
-            # 22:30 前点开日记卡：不许临时调模型现编；force=True 是明确要求重写今天
+            clock = getattr(self, "_diary_clock", None)
+            hour = 8
+            if callable(clock):
+                try:
+                    hour = int(clock()[0])
+                except Exception:
+                    hour = 8
+            if hour < 18:
+                # B 方案：第二天写昨天，今天的日记要等第二天，面板不能现编今天
+                return {"code": 1, "msg": "今天的日记第二天会自动写（第二天写昨天），手动只能补昨天及以前"}
+            # 旧配置 22:00：22:30 前点开日记卡不许临时调模型现编；force=True 是明确要求重写今天
             gate = getattr(self, "_diary_gate_open", None)
             if callable(gate) and not gate(_now()) and not force:
                 return {"code": 1, "msg": "她今天还在过呢，大日记还没开始写哦。"}
@@ -192,7 +260,9 @@ class DiaryApiMixin(_MixinBase):
             day, error = diary_manual_target(_now(), day)
         if error:
             return {"code": 1, "msg": error}
-        if day < _now().date() and self.db.kv_get("diary_written:" + day.isoformat()):
+        # 昨天的日记允许用户手动重写（主动点「写昨天」）；更早的历史只读
+        if (day < _now().date() - timedelta(days=1)
+                and self.db.kv_get("diary_written:" + day.isoformat())):
             return {"code": 1, "msg": "历史日记已定稿，只读"}
         text = await self._generate_daily_diary(day)
         cleaner = getattr(self, "_clean_diary_text", None)
@@ -228,6 +298,14 @@ class DiaryApiMixin(_MixinBase):
                 _note_swallowed("amo_api_diary.py.188", exc)
         except Exception as _amo_exc:
             _note_swallowed("amo_api_diary.DiaryApiMixin.api_diary_write", _amo_exc)
+        try:
+            try:
+                from .amo_state_diary import diary_live_finalize
+            except ImportError:
+                from amo_state_diary import diary_live_finalize
+            diary_live_finalize(self, day.isoformat())
+        except Exception as exc:
+            _note_swallowed("amo_api_diary.DiaryApiMixin.api_diary_write.live", exc)
         logger.info("[amo] 日记已写（手动）: %s" % path)
         return {"code": 0, "data": {"date": day.isoformat(), "path": path, "text": text}}
 

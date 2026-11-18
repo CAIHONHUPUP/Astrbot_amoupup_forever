@@ -66,16 +66,42 @@ _NAMEISH = _SUR_CLASS + _C + "{1,2}"
 _TIME_PATTERN = re.compile(r"(%s)(?=(?:%s))" % (_NAMEISH, _TIMES))
 _LIST_PATTERN = re.compile(r"(%s)(?=(?:和|跟|与|、))" % _NAMEISH)
 
+#: 常见词/动补结构：长得像「姓+名」但不是人名。
+#: 宁可少拦一个编造的名字，也不许把「我明白」「还是老样子」这类日常句改坏。
+_NOT_NAMES = frozenset("""
+明白 知道 方便 高兴 开心 安静 安全 常常 常见 平常 实在 时间 成本 家里 家人
+后来 后面 白天 马上 一直 一起 一样 一定 一般 一边 文章 金额 花香 石头 方向
+方法 方案 方面 关系 关于 对于 由于 因为 所以 但是 如果 虽然 而且 不过 然后
+已经 曾经 将来 将近 刚刚 刚才 现在 目前 以后 以前 之后 之前 时候 什么 怎么
+为什么 多少 几个 这些 那些 这个 那个 这样 那样 大家 人家 别人 自己 我们
+你们 他们 她们 它们 咱们 身边 差不多 起来 下来 出来 回来 过来 进去 上去
+下去 出去 回去 过去 看到 看见 听说 说起 想到 记得 觉得 满意 麻烦 照顾
+""".split())
+
+#: 句尾否定/语气词、动补结尾：带这些字的一律不当人名（「笑笑不」「吃完」）
+_NAME_STOP_CHARS = frozenset("不没别吗呢吧啊呀嘛哦哈嗯的了着过完掉好到")
+
 
 def _suspect(token):
-    token = str(token or "")
-    if not token or token in NAME_SET:
+    token = str(token or "").strip()
+    # 人名至少 2 字、最多 4 字
+    if not (2 <= len(token) <= 4):
+        return False
+    if token in NAME_SET:
         return False
     if token in SELF_ALIASES or token in STOPWORDS or token in NICKNAMES:
+        return False
+    if token in _NOT_NAMES:
+        return False
+    # 名单外的人名按「姓 + 名」判：姓氏表里没有这个首字就不算名字。
+    # 这一条挡掉了「笑笑不」「吃完」「老样子」这类整句误报。
+    if token[:1] not in _SURNAMES:
         return False
     if token[:1] in "她他你我它咱您":
         return False
     if any(char in _FUNCTION_CHARS for char in token):
+        return False
+    if any(char in _NAME_STOP_CHARS for char in token):
         return False
     for cut in (token[1:], token[2:]):
         if cut and cut in STOPWORDS:

@@ -11,13 +11,15 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 # 稳定事件：日程写完后发布；当前订阅者为空，行为与直接调用完全兼容。
 try:
     from .amo_events import ScheduleChanged
 except ImportError:  # 直接按文件加载时
-    from amo_events import ScheduleChanged
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_events import ScheduleChanged
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .day_types import normalize_day_types, pick_day_type
@@ -45,11 +47,12 @@ import threading
 try:  # 日程主语校验（纯函数）：生成的活动不能凭空带上老公
     from .schedule_subject import validate_activity as _validate_activity
 except ImportError:  # 直接按文件加载时
-    try:
-        from schedule_subject import validate_activity as _validate_activity
-    except Exception:  # pragma: no cover - 缺模块时退回放行，不让日程写不进去
-        def _validate_activity(activity, approved=False):
-            return {"ok": True, "activity": activity, "changed": False, "reason": "unavailable"}
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from schedule_subject import validate_activity as _validate_activity
+        except Exception:  # pragma: no cover - 缺模块时退回放行，不让日程写不进去
+            def _validate_activity(activity, approved=False):
+                return {"ok": True, "activity": activity, "changed": False, "reason": "unavailable"}
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -111,39 +114,41 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             weekday_cn,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            MOOD_BASE,
-            MOOD_KEYS,
-            SCHEDULE_VERSION,
-        SICK_STATUSES,
-            ScheduleEngine,
-            _CITY_DEFAULT,
-            _city_pick_spots,
-            _city_travel_events,
-            _city_travel_to_events,
-            _now,
-            clamp,
-            day_meta,
-            in_minute_range,
-            logger,
-            md5_int,
-            minutes_now,
-            now_ts,
-            parse_hhmm,
-            parse_weather_daily,
-            schedule_category_mood,
-            city_or_empty,
-        sentiment,
-            to_float,
-            to_int,
-            today_str,
-            weekday_cn,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                MOOD_BASE,
+                MOOD_KEYS,
+                SCHEDULE_VERSION,
+            SICK_STATUSES,
+                ScheduleEngine,
+                _CITY_DEFAULT,
+                _city_pick_spots,
+                _city_travel_events,
+                _city_travel_to_events,
+                _now,
+                clamp,
+                day_meta,
+                in_minute_range,
+                logger,
+                md5_int,
+                minutes_now,
+                now_ts,
+                parse_hhmm,
+                parse_weather_daily,
+                schedule_category_mood,
+                city_or_empty,
+            sentiment,
+                to_float,
+                to_int,
+                today_str,
+                weekday_cn,
+            )
 
 try:  # 纯规则模块：日程 → 地点/场景优先级（照片严格跟随日程用）
     from .photo_rules import CATEGORY_PRIORITY, zone_for_place
 except ImportError:  # 直接按文件加载时
-    from photo_rules import CATEGORY_PRIORITY, zone_for_place
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_rules import CATEGORY_PRIORITY, zone_for_place
 
 # ---- 拆分后的公共层与 mixin：helper/常量走 amo_state_common，方法按域搬进四个 mixin ----
 try:
@@ -162,20 +167,21 @@ try:
         slot_is_future,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_state_common import (
-        DIARY_REWRITE_LIMIT,
-        PLACE_WHITELIST,
-        _PLACE_ALIASES,
-        _PLACE_ZONE_KEEP,
-        _jit_activity,
-        _pick_covering,
-        _pick_stale,
-        _pick_yesterday_hour,
-        _today_items,
-        normalize_place,
-        slot_has_ended,
-        slot_is_future,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_common import (
+            DIARY_REWRITE_LIMIT,
+            PLACE_WHITELIST,
+            _PLACE_ALIASES,
+            _PLACE_ZONE_KEEP,
+            _jit_activity,
+            _pick_covering,
+            _pick_stale,
+            _pick_yesterday_hour,
+            _today_items,
+            normalize_place,
+            slot_has_ended,
+            slot_is_future,
+        )
 
 try:
     from .amo_state_schedule import ScheduleStateMixin
@@ -184,11 +190,12 @@ try:
     from .amo_state_diary import DiaryStateMixin
     from .amo_state_date import DateStateMixin
 except ImportError:  # 直接按文件加载时
-    from amo_state_schedule import ScheduleStateMixin
-    from amo_state_todo import ScheduleTodoMixin
-    from amo_state_jit import JitStateMixin
-    from amo_state_diary import DiaryStateMixin
-    from amo_state_date import DateStateMixin
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_schedule import ScheduleStateMixin
+        from amo_state_todo import ScheduleTodoMixin
+        from amo_state_jit import JitStateMixin
+        from amo_state_diary import DiaryStateMixin
+        from amo_state_date import DateStateMixin
 
 
 class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStateMixin, DateStateMixin):
@@ -440,7 +447,17 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             self.health["status"] = status
             self.db.kv_set("health", self.health)
         until = to_float(self.health.get("until", 0))
-        if status != "健康" and until and now_ts() >= until:
+        if status != "健康" and until <= 0:
+            # 老数据/手工写入可能留下 until=0（旧版「永不过期」）→ 以前永远病着。
+            # 按 since + 48h 兜底写回一个到期时间，再走正常康复判断。
+            since = to_float(self.health.get("since", 0)) or now_ts()
+            until = since + 48 * 3600
+            self.health["until"] = until
+            try:
+                self.db.kv_set("health", self.health)
+            except Exception as exc:
+                _note_swallowed("amo_human_state.health_info.until_fallback", exc)
+        if status != "健康" and now_ts() >= until:
             self.health = {"status": "健康", "since": now_ts(), "until": 0,
                            "note": "", "kind": "", "treatment": "",
                            "severity": "", "base_hours": 0, "doctor": False}
@@ -489,9 +506,17 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             doctor = bool(str(treatment or "").strip())
             base = resolve_hours(hours, severity == "serious", random)
             total = total_hours(base, doctor)
+            # 正在生病时又被同一套触发器 set 一次（连续熬夜/日程），不能把起点重置成今天：
+            # 保留最早的 since，只把 until 往后延，避免「14 号生病、18 号又重新算 3 天」。
+            now = now_ts()
+            current = self.health or {}
+            ongoing = (str(current.get("status") or "") in SICK_STATUSES
+                       and to_float(current.get("until", 0), 0) > now)
+            since = to_float(current.get("since", 0), 0) if ongoing else now
+            until = max(to_float(current.get("until", 0), 0), since + total * 3600)
             self.health = {
-                "status": status, "kind": kind or str(status), "since": now_ts(),
-                "until": now_ts() + total * 3600, "note": note,
+                "status": status, "kind": kind or str(status), "since": since,
+                "until": until, "note": note,
                 "treatment": str(treatment or ""), "severity": severity,
                 "base_hours": base, "doctor": doctor,
             }
@@ -504,6 +529,14 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         except Exception:
             data = {}
         return dict(data) if isinstance(data, dict) else {}
+
+    def on_sick_leave(self, day=None):
+        """今天是否请了病假：请了就是全天在家，病好也不回公司（2026-11-18）。"""
+        day = str(day or today_str())
+        try:
+            return str((self.sick_decision(day) or {}).get("action") or "") == "take_sick_leave"
+        except Exception:
+            return False
 
     async def decide_sick_action(self, umo="", now=None):
         """工作日早晨发烧：让 LLM 在请假/带病上班之间自主选一次，结果落库。"""
@@ -546,15 +579,22 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         decision.update({"day": day, "at": now_ts(), "status": health.get("status")})
 
         if decision["action"] == "take_sick_leave":
-            for amount, idem, label in (
-                (DAILY_WAGE_CENTS, "sick_leave:%s:wage" % day, "病假扣日薪"),
-                (ATTENDANCE_BONUS_CENTS, "sick_leave:%s:attendance" % day, "病假扣全勤"),
-            ):
-                try:
-                    self.p.wallet.debit(amount, label, idem,
-                                        category="work", item_name=label)
-                except Exception as exc:
-                    _note_swallowed("amo_human_state.sick_leave.debit", exc)
+            # 2026-11-18 用户明确：病假扣的是「下个月工资」，不是现金，不能扣钱包余额。
+            # 这里只留一条扣款凭据（watch 工资单读取并计入下月），不再 wallet.debit。
+            try:
+                deductions = self.db.kv_get("salary_deductions", []) or []
+                if not isinstance(deductions, list):
+                    deductions = []
+                deductions.append({
+                    "day": day,
+                    "wage_cents": int(DAILY_WAGE_CENTS),
+                    "attendance_cents": int(ATTENDANCE_BONUS_CENTS),
+                    "at": now_ts(),
+                    "reason": "sick_leave",
+                })
+                self.db.kv_set("salary_deductions", deductions[-60:])
+            except Exception as exc:
+                _note_swallowed("amo_human_state.sick_leave.deduction_record", exc)
             for key, delta in (("平静", 6), ("疲惫", 4), ("委屈", 2)):
                 if key in self.mood:
                     self.mood[key] = max(0.0, min(100.0, float(self.mood[key]) + delta))
@@ -587,8 +627,8 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         treatment = str(treatment or "").strip()
         doctor = bool(treatment)
         base = max(1.0, to_float(self.health.get("base_hours", 0), 0) or 0)
+        severity = str(self.health.get("severity") or self._severity_of(self.health.get("status")))
         if not base:
-            severity = str(self.health.get("severity") or self._severity_of(self.health.get("status")))
             base = random.uniform(72, 96) if severity == "serious" else random.uniform(24, 48)
         since = to_float(self.health.get("since", 0), 0) or now_ts()
         total = base * (1 if doctor else 2)
@@ -606,12 +646,23 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         if self.health.get("status") != "健康" and to_float(self.health.get("until", 0)) <= now:
             self.health = {"status": "健康", "since": now, "until": 0, "note": ""}
             self.db.kv_set("health", self.health)
+            # 病好之后 3 天内不再被随机/熬夜触发，避免「刚好又感冒」
+            try:
+                keep = to_float(self.db.kv_get("sick_cooldown_until", 0), 0)
+            except Exception:
+                keep = 0.0
+            self.db.kv_set("sick_cooldown_until", max(keep, now + 3 * 86400))
         if self.last_health_roll == today_str():
             return
         self.last_health_roll = today_str()
         self.db.kv_set("last_health_roll", self.last_health_roll)
         if self.health.get("status") != "健康":
             return
+        try:
+            if now < to_float(self.db.kv_get("sick_cooldown_until", 0), 0):
+                return
+        except Exception as exc:
+            _note_swallowed("amo_human_state.roll_health.cooldown", exc)
         try:
             from .services.health_engine import pick_illness, sick_probability
         except ImportError:  # 顶层/单文件加载
@@ -833,13 +884,17 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
 
         fresh=True 跳过缓存：晚上发预警前要拿最新的一份，早上判断的那份不算数。
         """
-        cache = self.db.kv_get("weather_daily", {}) or {}
+        try:
+            from .amo_state_store import for_plugin as _state_store_for
+        except ImportError:
+            from amo_state_store import for_plugin as _state_store_for
+        store = _state_store_for(self.p)
+        cache = store.get_fresh("weather_daily") or {}
         city = str(city or "").strip()
         if (
             not fresh
             and isinstance(cache, dict)
             and cache.get("ts")
-            and now_ts() - to_float(cache.get("ts"), 0) < 3 * 3600
             and str(cache.get("city") or "") == city
             and to_int(cache.get("days")) == int(days)
         ):
@@ -878,7 +933,8 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         except Exception as exc:
             logger.warning("[amo] 和风天气预报接口失败: %s %r" % (type(exc).__name__, exc))
             return []
-        self.db.kv_set("weather_daily", {"ts": now_ts(), "city": city, "days": int(days), "items": items})
+        store.set_ttl("weather_daily", {"ts": now_ts(), "city": city,
+                                       "days": int(days), "items": items}, 3 * 3600)
         return items
 
     async def refresh_weather(self, force=False):

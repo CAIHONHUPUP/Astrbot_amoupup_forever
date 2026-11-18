@@ -20,8 +20,10 @@ astrbot_stub.install()
 import pytest  # noqa: E402
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if not os.path.isdir(os.path.join(os.path.dirname(_ROOT), "astrbot_plugin_omnidraw")):
-    pytest.skip("omnidraw sibling not checked out", allow_module_level=True)
+# legacy fallback：旧名弟弟目录仍算“已装”，老部署能继续跑
+_SIBLING_PHOTO_NAMES = ("Astrbot_amoupup_photo", "astrbot_plugin_omnidraw")
+if not any(os.path.isdir(os.path.join(os.path.dirname(_ROOT), name)) for name in _SIBLING_PHOTO_NAMES):
+    pytest.skip("photo plugin sibling not checked out", allow_module_level=True)
 
 from photo_engine import PhotoEngine  # noqa: E402
 from photo_rules import resolve_plan  # noqa: E402
@@ -434,7 +436,10 @@ class PosePromptTests(unittest.TestCase):
         plugin.state.activity = {"activity": "逛景区", "place": "西湖", "zone": "scenic", "category": "travel"}
         run_tick(engine, plugin)
         self.assertEqual(len(plugin.context.sent), 1)
-        self.assertIn("没拍成", plugin.context.sent[0][1].chain[0].text)
+        text = plugin.context.sent[0][1].chain[0].text
+        self.assertTrue(text)
+        self.assertNotIn("图", text)
+        self.assertNotIn("照片", text)
 
     def test_share_now_disabled(self):
         engine, plugin = engine_for({"photo_enable": False})
@@ -447,9 +452,12 @@ class PosePromptTests(unittest.TestCase):
         plugin.state.activity = {"activity": "逛景区", "place": "西湖", "zone": "scenic", "category": "travel"}
         run_tick(engine, plugin)
         self.assertGreaterEqual(len(omni.calls), 1)
-        # 生成/发送失败不再静默：补一句“没拍成”。
+        # 生成/发送失败不再静默：补一句温柔失败话术，但不许声称有图。
         self.assertEqual(len(plugin.context.sent), 1)
-        self.assertIn("没拍成", plugin.context.sent[0][1].chain[0].text)
+        text = plugin.context.sent[0][1].chain[0].text
+        self.assertTrue(text)
+        self.assertNotIn("图", text)
+        self.assertNotIn("照片", text)
 
 
 class SceneLockPassingTests(unittest.TestCase):

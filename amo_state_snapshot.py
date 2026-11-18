@@ -6,6 +6,7 @@
 先让模型按快照重生成，退一步再按快照做确定性改写。
 """
 from __future__ import annotations
+from typing import Any, TYPE_CHECKING
 
 import re
 
@@ -13,13 +14,15 @@ try:
     from .clock import now as _now
     from .amo_shared import day_meta, today_str
 except ImportError:  # 直接按文件加载
-    from clock import now as _now
-    from amo_shared import day_meta, today_str
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from clock import now as _now
+        from amo_shared import day_meta, today_str
 
 try:
     from .photo_scene import place_of, zone_of
 except ImportError:
-    from photo_scene import place_of, zone_of
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_scene import place_of, zone_of
 
 SNAPSHOT_MARK = "【当前状态·最高事实】"
 
@@ -83,13 +86,13 @@ def health_score(health):
 def build_snapshot(plugin, now=None):
     """时间 / 地点 / 健康 / 日程 一次组装；拿不到就退化成空快照，不抛异常。"""
     now = now or _now()
-    snap = {}
+    snap: dict[str, Any] = {}
     try:
         state = getattr(plugin, "state", None)
         if state is not None and callable(getattr(state, "snapshot", None)):
             snap = state.snapshot() or {}
     except Exception:
-        snap = {}
+        snap: dict[str, Any] = {}
     activity = snap.get("activity") or {}
     try:
         zone = zone_of(activity) or "unknown"
@@ -99,16 +102,16 @@ def build_snapshot(plugin, now=None):
         place = place_of(activity) or str(activity.get("place") or "")
     except Exception:
         place = str(activity.get("place") or "")
-    health = {}
+    health: dict[str, Any] = {}
     try:
         health = snap.get("health") or {}
     except Exception:
-        health = {}
+        health: dict[str, Any] = {}
     if not health:
         try:
             health = plugin.state.health_info() or {}
         except Exception:
-            health = {}
+            health: dict[str, Any] = {}
     day = today_str()
     try:
         meta = day_meta(day)

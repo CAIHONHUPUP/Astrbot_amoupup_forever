@@ -15,15 +15,29 @@
 """
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from typing import Any, TYPE_CHECKING
+try:  # 兼容层：旧插件名 / 旧数据目录 / 旧配置名的唯一来源
+    from . import amo_compat as _compat
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:
+        import amo_compat as _compat
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
+
+from typing import Any
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 import asyncio
 import re
@@ -119,7 +133,7 @@ _WARN_AT: dict[str, float] = {}
 
 def _warn_once(logger, key, message, gap=600.0):
     """同一条能力缺失只在 10 分钟内提示一次，避免每轮消息都刷日志。"""
-    now = time.time()
+    now = _amo_clock.now_ts()
     if now - _WARN_AT.get(key, 0.0) < gap:
         return
     _WARN_AT[key] = now
@@ -148,7 +162,7 @@ class ChatBuffer:
             "name": str(name or ""),
             "role": str(role) if str(role) in ("bot", "summary") else "user",
             "content": text,
-            "created_at": _number(created_at, time.time()),
+            "created_at": _number(created_at, _amo_clock.now_ts()),
         }
         with self._lock:
             rows = self._sessions.get(umo)
@@ -273,10 +287,10 @@ class AmoDataProvider(MemoryProvider):
 
     name = "amo_data"
     priority = 10
-    PLUGIN_NAMES = ("Astrbot_amoupup_data", "Astr_Amo_data", "astrbot_plugin_amo_data", "AstrAmoData")
+    PLUGIN_NAMES = _compat.DATA_PLUGIN_NAMES
 
     @property
-    def caps(self):  # type: ignore[override]
+    def caps(self):
         """运行时探测：旧版数据插件缺哪个方法，就不声明哪个能力。"""
         owners = [self._mem(), self._store()]
         found = set()
@@ -389,7 +403,7 @@ class AmoDataProvider(MemoryProvider):
                     continue
                 except Exception as exc:
                     _note_swallowed("memory_hooks.AmoDataProvider.recall", exc)
-                    last_exc = exc  # type: ignore[assignment]
+                    last_exc = exc
                     break  # 这个方法本身坏了，换下一个候选方法名
                 return self.rt.normalize_memories(rows)
         if last_exc is not None:
@@ -470,7 +484,7 @@ class MemoryCompanionProvider(MemoryProvider):
         return service if service is not None else plugin
 
     @property
-    def caps(self):  # type: ignore[override]
+    def caps(self):
         """按目标插件实际暴露的接口声明能力，老版本缺方法时别误判可写。"""
         target = self._target()
         if target is None:
@@ -618,7 +632,7 @@ class MemoryHub:
 
     # -- 探测 --
     def refresh(self, force=False):
-        now = time.time()
+        now = _amo_clock.now_ts()
         if not force and self._active is not None and now - self._probed_at < self.PROBE_TTL:
             return self._active
         self._probed_at = now

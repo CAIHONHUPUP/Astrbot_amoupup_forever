@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """Web 面板写路由表 + handler 模块路径归一（原 main.py）。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 
 try:  # 包模式优先，按文件直接加载时退回绝对导入
     from .amo_observability import note as _note_swallowed
     from .amo_shared import logger, to_int, web_request
 except ImportError:
-    from amo_observability import note as _note_swallowed
-    from amo_shared import logger, to_int, web_request
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_observability import note as _note_swallowed
+        from amo_shared import logger, to_int, web_request
 
 
 WRITE_ROUTES = frozenset({
@@ -20,6 +22,7 @@ WRITE_ROUTES = frozenset({
     "/memory/delete", "/memory_delete",
     "/mood/update", "/mood_update",
     "/schedule/regen", "/schedule_regen",
+    "/schedule/block/update", "/schedule/block/delete", "/schedule/block/restore",
     "/kb/regen", "/kb_regen",
     "/scenic_kb/regen", "/scenic_kb_regen",
     "/worldview/regen", "/worldview_regen",
@@ -48,6 +51,8 @@ WRITE_ROUTES = frozenset({
     "/diary/write",
     "/diary/note", "/diary/import", "/diary/open",
     "/refresh_status",
+    "/trip/start",
+    "/trip/cancel",
 })
 
 
@@ -94,6 +99,9 @@ def align_handler_module_paths(main_module):
 
 class WebRouteMixin:
     """面板注册 / 请求参数工具（原 main.py，行为不变）。"""
+    if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
+        _web_guard: Any
+        context: Any
 
     def _safe_register(self, route, handler, methods, desc):
         # 写接口只收 POST：面板的 WRITE_ACTIONS 已经强制带 body 走 POST，

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, TYPE_CHECKING
 
 MILESTONE_KIND = "milestone"
 DEFAULT_EVERY_TURNS = 20
@@ -71,7 +71,8 @@ def _safety_line() -> str:
     try:
         from .amo_immersion_guard import SAFETY_LINE
     except ImportError:
-        from amo_immersion_guard import SAFETY_LINE
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_immersion_guard import SAFETY_LINE
     return SAFETY_LINE
 
 

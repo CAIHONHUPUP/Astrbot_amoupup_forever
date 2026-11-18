@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import random
 
 try:
@@ -19,11 +21,12 @@ except Exception:  # pragma: no cover - 纯单测环境
 try:
     from .amo_observability import note as _note_swallowed
 except ImportError:
-    try:
-        from amo_observability import note as _note_swallowed
-    except Exception:  # pragma: no cover
-        def _note_swallowed(scope, exc=None):
-            return None
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        try:
+            from amo_observability import note as _note_swallowed
+        except Exception:  # pragma: no cover
+            def _note_swallowed(scope, exc=None):
+                return None
 
 
 HOLIDAY_MIN_DAYS = 4

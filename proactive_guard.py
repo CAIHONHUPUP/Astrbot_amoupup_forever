@@ -12,15 +12,22 @@
 """
 
 from __future__ import annotations
-
 from typing import TYPE_CHECKING
+
+try:  # Phase 11：_to_float = amo_numbers.to_float（空值快路径，输出等价）
+    from .amo_numbers import to_float as _to_float
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_numbers import to_float as _to_float
+
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 import re
 import unicodedata
@@ -41,12 +48,7 @@ BOT_MEMORY = 4
 QUOTE_LIMIT = 40
 
 
-def _to_float(value, default=0.0):
-    try:
-        return float(value)
-    except Exception as _amo_exc:
-        _note_swallowed("proactive_guard._to_float", _amo_exc)
-        return default
+
 
 
 def normalize_text(text):
@@ -109,7 +111,8 @@ def analyze_rows(rows, now=None):
     """
     now_value = _to_float(now, 0.0)
     ordered = sorted(
-        (row for row in (rows or []) if str(row.get("content") or "").strip()),
+        (row for row in (rows or [])
+         if isinstance(row, dict) and str(row.get("content") or "").strip()),
         key=lambda row: _to_float(row.get("created_at")),
     )
     lines = []

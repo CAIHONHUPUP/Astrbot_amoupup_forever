@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """约会/出行 mixin：跟随、回家、出行覆盖层与约会收尾。从 amo_human_state.py 按域拆出。"""
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -9,7 +9,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
     from .amo_state_common import (
@@ -21,14 +22,15 @@ try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
         today_str,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_state_common import (
-        _city_pick_spots,
-        _city_travel_events,
-        _city_travel_to_events,
-        _now,
-        minutes_now,
-        today_str,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_state_common import (
+            _city_pick_spots,
+            _city_travel_events,
+            _city_travel_to_events,
+            _now,
+            minutes_now,
+            today_str,
+        )
 
 try:  # amo_shared：时间/日程/心情共享底层
     from .amo_shared import (
@@ -38,30 +40,52 @@ try:  # amo_shared：时间/日程/心情共享底层
         parse_hhmm,
     )
 except ImportError:  # 直接按文件加载时
-    from amo_shared import (
-        _CITY_DEFAULT,
-        logger,
-        now_ts,
-        parse_hhmm,
-    )
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_shared import (
+            _CITY_DEFAULT,
+            logger,
+            now_ts,
+            parse_hhmm,
+        )
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_types import PluginLike as _MixinBase
 else:  # 运行时用 object：协议里的声明不能进 MRO
     _MixinBase = object
 
+try:  # 约会会话单一源（Phase 2）
+    from . import amo_date_session as _ds
+except ImportError:
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_date_session as _ds
+
 
 class DateStateMixin(_MixinBase):
     """约会/出行域：开始跟随、回家覆盖、出行覆盖层、约会收尾截断与出行日志。"""
+    if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
+        _fmt_minutes: Any
+        _log_follow_day: Any
+        _log_solo_day: Any
+        commit_schedule_change: Any
+        p: Any
+        schedule: Any
+        schedule_ctx: Any
+        schedule_profile: Any
 
 
     def _date_approved(self) -> bool:
         """今天是否真的约过会：/赴约、propose_date 会写 date_now/date_fact。"""
         try:
-            for key in ("date_now", "date_fact"):
-                row = self.db.kv_get(key, {}) or {}
-                if isinstance(row, dict) and float(row.get("until") or 0) > now_ts():
-                    return True
+            if _ds.active(self, now_ts()):
+                return True
+            row = self.db.kv_get("date_fact", {}) or {}
+            try:
+                from .amo_state_store import ttl_fresh as _ttl_fresh
+            except ImportError:
+                if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+                    from amo_state_store import ttl_fresh as _ttl_fresh
+            if _ttl_fresh(row, now_ts(), zero_is_expired=True) is not None:
+                return True
         except Exception:
             return False
         return False
@@ -72,7 +96,7 @@ class DateStateMixin(_MixinBase):
         if day != today_str():
             return []
         try:
-            live = bool((self.db.kv_get("date_now", {}) or {}).get("line"))
+            live = _ds.active(self) is not None
         except Exception:
             live = False
         if live:
@@ -83,7 +107,7 @@ class DateStateMixin(_MixinBase):
             return []
         now_min = minutes_now()
         try:
-            closed = float((self.db.kv_get("date_closed_at", 0) or 0))
+            closed = float((_ds.load(self).get("closed_at") or self.db.kv_get("date_closed_at", 0) or 0))
             if closed:
                 stamp = time.localtime(closed)
                 if time.strftime("%Y-%m-%d", stamp) == day:

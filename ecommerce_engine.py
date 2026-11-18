@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 """网购与物流：只返回结构化事实；下单不瞬间入库。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
+
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
 
 import logging
 logger = logging.getLogger("amo")
@@ -67,7 +74,7 @@ class EcommerceEngine:
 
     def order(self, items, platform="淘宝", amount_cents=None, actor="她",
               fund_source="她余额", user_triggered=False, now=None, idem=""):
-        now = now or time.time()
+        now = now or _amo_clock.now_ts()
         items = [dict(i) for i in (items or []) if str((i or {}).get("name") or "").strip()]
         if not items:
             return {"ok": False, "reason": "empty"}
@@ -118,7 +125,7 @@ class EcommerceEngine:
                           user_triggered=True, now=now)
 
     def tick(self, now=None):
-        now = now or time.time()
+        now = now or _amo_clock.now_ts()
         data = self._state()
         changed = False
         for order in data["orders"]:
@@ -144,7 +151,7 @@ class EcommerceEngine:
         return self.snapshot(now)
 
     def _receive(self, data, order):
-        order["received_at"] = time.time()
+        order["received_at"] = _amo_clock.now_ts()
         for item in order.get("items") or []:
             kind = str(item.get("type") or "clothes")
             if kind == "appliance" or kind in ("washer", "dryer"):
@@ -215,7 +222,7 @@ class EcommerceEngine:
 
 
     def note_price_compare(self, item_name, offline_cents, online_cents=0, now=None):
-        now = now or time.time()
+        now = now or _amo_clock.now_ts()
         data = self._state()
         data.setdefault("price_compare", []).append({
             "id": "pc-" + uuid.uuid4().hex[:8], "item": str(item_name or ""),
@@ -226,7 +233,7 @@ class EcommerceEngine:
         return {"ok": True}
 
     def price_compare_facts(self, now=None):
-        now = now or time.time()
+        now = now or _amo_clock.now_ts()
         data = self._state()
         due = [row for row in data.get("price_compare", []) if float(row.get("due") or 0) <= now]
         return due

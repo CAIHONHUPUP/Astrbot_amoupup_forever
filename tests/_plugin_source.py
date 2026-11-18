@@ -3,7 +3,7 @@
 import os
 
 MODULES = ("main.py", "amo_shared.py", "amo_observability.py", "amo_db.py",
-           "amo_human_state.py",
+           "amo_human_state.py", "amo_timeline.py",
            "amo_state_common.py", "amo_state_schedule.py", "amo_state_todo.py", "amo_state_jit.py",
            "amo_state_diary.py", "amo_state_date.py",
            "amo_llm_service.py", "amo_memory_data.py",
@@ -19,7 +19,22 @@ MODULES = ("main.py", "amo_shared.py", "amo_observability.py", "amo_db.py",
            "draw_engine.py", "photo_engine.py", "photo_view.py",
            "amo_group_guard.py", "amo_state_snapshot.py", "micro_events.py",
            "amo_state_context.py", "amo_date_context.py", "amo_diary_guard.py",
-           "amo_fact_pool.py", "amo_schedule_health.py")
+           "amo_fact_pool.py", "amo_schedule_health.py",
+           # 2026-11-17 structure-b 拆分：amo_shared 按时间/文本/配置/用量/依赖兜底拆出，
+           # amo_runtime 按 tick/context/reply 拆出；源码扫描测试要把子模块也算进来。
+           "amo_shared_deps.py", "amo_shared_time.py", "amo_shared_text.py",
+           "amo_shared_config.py", "amo_shared_usage.py",
+           "amo_runtime_context.py", "amo_runtime_reply.py", "amo_runtime_tick.py",
+           "amo_handshake.py", "amo_init.py", "amo_lifecycle.py", "amo_readiness.py",
+           "domains/schedule/health.py", "domains/reply/brushoff.py",
+           "domains/photo/view.py", "domains/diary/lines.py",
+           "domains/reply/refusal.py", "domains/schedule/segments.py",
+           "domains/schedule/scenic.py", "domains/schedule/swim.py",
+           "domains/schedule/day_segments.py", "domains/schedule/rest_segments.py",
+           "domains/schedule/social_segments.py", "domains/schedule/day_types.py",
+           "domains/schedule/subject.py", "domains/reply/repetition_guard.py",
+           "domains/photo/room_ab.py", "domains/diary/engine.py",
+           "domains/reply/status_text.py", "schedule_banks.py")
 
 
 def module_paths(root):

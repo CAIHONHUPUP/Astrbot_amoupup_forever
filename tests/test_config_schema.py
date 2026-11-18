@@ -38,6 +38,19 @@ class ConfigSchemaTests(unittest.TestCase):
         self.assertFalse(self.schema["photo_enable"]["default"])
         self.assertFalse(self.schema["gift_enable"]["default"])
 
+    def test_diary_live_defaults(self):
+        enabled = self.schema["diary_live_enabled"]
+        self.assertEqual("bool", enabled["type"])
+        self.assertIs(True, enabled["default"])
+        self.assertTrue(enabled.get("description"))
+        self.assertTrue(enabled.get("hint"))
+        debounce = self.schema["diary_live_debounce_minutes"]
+        self.assertEqual("int", debounce["type"])
+        self.assertEqual(7, debounce["default"])
+        self.assertEqual(5, debounce["min"])
+        self.assertEqual(10, debounce["max"])
+        self.assertTrue(debounce.get("hint"))
+
 
 if __name__ == "__main__":
     unittest.main()

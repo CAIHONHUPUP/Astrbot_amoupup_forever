@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
 """UsageMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from typing import Any, TYPE_CHECKING
+try:  # Phase 11：统一时钟（不再裸调系统时钟）
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import clock as _amo_clock
+
+from typing import Any
 
 import asyncio
 import os
@@ -14,7 +21,8 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_observability import note as _note_swallowed
     except ImportError:  # 直接按文件加载时
-        from amo_observability import note as _note_swallowed
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_observability import note as _note_swallowed
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -26,9 +34,10 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             USAGE_DEFAULT_PRICES, _now, fetch_deepseek_balance, fetch_provider_balance, logger, to_float,
         )
     except ImportError:  # 直接按文件加载时
-        from amo_shared import (
-            USAGE_DEFAULT_PRICES, _now, fetch_deepseek_balance, fetch_provider_balance, logger, to_float,
-        )
+        if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+            from amo_shared import (
+                USAGE_DEFAULT_PRICES, _now, fetch_deepseek_balance, fetch_provider_balance, logger, to_float,
+            )
 
 
 if TYPE_CHECKING:
@@ -134,7 +143,7 @@ class UsageMixin(_MixinBase):
 
     async def _provider_balances_cached(self, providers):
         """逐个探测供应商余额；60 秒缓存，失败不阻塞面板。"""
-        now = time.time()
+        now = _amo_clock.now_ts()
         signature = "|".join(sorted(
             item["id"] + ":" + item["api_base"] + ":" + str(item["has_key"]) for item in providers
         ))
@@ -192,7 +201,7 @@ class UsageMixin(_MixinBase):
 
     async def _balance_cached(self):
         """余额 60 秒内复用，避免面板每刷一次就打一次外网。"""
-        now = time.time()
+        now = _amo_clock.now_ts()
         cache = getattr(self, "_balance_cache", None)
         if isinstance(cache, dict) and now - float(cache.get("at") or 0) < 60:
             return cache.get("data") or {"ok": False, "error": "查询失败"}
