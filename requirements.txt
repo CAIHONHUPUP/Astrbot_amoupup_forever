@@ -1,0 +1,4 @@
+# 本项目只依赖标准库 + AstrBot 运行时（requirements-dev.txt 是测试依赖）。
+# GitHub Actions 的 setup-python 缓存需要这个文件：没有 requirements.txt / pyproject.toml 时
+# cache: pip 会直接报「No file ... matched to [**/requirements.txt or **/pyproject.toml]」。
+# 真要加第三方运行期依赖，请同时登记到 docs 的依赖隔离一节。
