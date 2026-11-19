@@ -8,6 +8,7 @@ import os
 import random
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -408,6 +409,28 @@ class PosePromptTests(unittest.TestCase):
         first = engine.outfit_today()
         second_engine = PhotoEngine(plugin)
         self.assertEqual(second_engine.outfit_today(), first)
+
+    def test_outfit_today_uses_swim_while_photo_window(self):
+        engine, plugin = engine_for()
+
+        class _Wardrobe:
+            def __init__(self):
+                self.synced = []
+
+            def swim_outfit(self):
+                return {"text": "黑色比基尼两件套", "pending": False}
+
+            def current(self, day=""):
+                return {"text": "米色雪纺衬衫"}
+
+            def _sync_sidecar(self, outfit):
+                self.synced.append(outfit)
+
+        plugin.wardrobe = _Wardrobe()
+        plugin._swim_photo_until = time.time() + 60
+        self.assertEqual(engine.outfit_today(), "黑色比基尼两件套")
+        plugin._swim_photo_until = 0
+        self.assertEqual(engine.outfit_today(), "米色雪纺衬衫")
 
     def test_selfie_prompt_uses_today_outfit(self):
         engine, plugin = engine_for()

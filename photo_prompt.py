@@ -162,6 +162,24 @@ class PhotoPromptMixin:
 
     def outfit_today(self):
         """今天的固定穿搭：从「穿搭」衣柜里选一套，同一天所有自拍都穿这一套。"""
+        # 2026-11-19：他点了泳装/比基尼后，swim_photo_rule 会把 _swim_photo_until
+        # 设到 3 分钟后并同步泳装 sidecar。这段时间必须先返回泳装；否则下面
+        # wardrobe.current() 会顺手把 sidecar 写回日常，生图锁也跟着变回日常，
+        # 泳装照就白点了。
+        try:
+            until = float(getattr(self.plugin, "_swim_photo_until", 0) or 0)
+        except (TypeError, ValueError):
+            until = 0.0
+        if until and _clock_now().timestamp() < until:
+            wardrobe = getattr(self.plugin, "wardrobe", None)
+            if wardrobe is not None:
+                try:
+                    swim = wardrobe.swim_outfit()
+                    text = str(swim.get("text") or "").strip()
+                    if text and not swim.get("pending"):
+                        return text
+                except Exception as _amo_exc:
+                    _note_swallowed("photo_engine.outfit_today.swim", _amo_exc)
         day = today_str()
         # 先问衣柜：面板「换一套」后要立刻生效，不能吃本模块的旧缓存
         wardrobe = getattr(self.plugin, "wardrobe", None)
