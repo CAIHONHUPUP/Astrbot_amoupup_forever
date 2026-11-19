@@ -408,6 +408,23 @@ def build_selfie_prompt(scene, outfit, activity, state, extra="", light="", pose
     return "，".join(part for part in parts if part)
 
 
+#: 他要求重拍 / 她声称失败的口头禅（2026-11-19：挡住「假装试过」）
+def _photo_turn_key(event):
+    """同一轮消息的标记：两个插件共用，用来判断「这一轮到底试没试过」。"""
+    try:
+        mid = str(getattr(getattr(event, "message_obj", None), "message_id", "") or "")
+        if mid:
+            return mid
+    except Exception:
+        pass
+    return str(id(event))
+
+
+PHOTO_RETRY_WORDS = ("再试", "再拍", "再发", "拍一张", "拍张", "发张", "再来一张")
+PHOTO_FAIL_WORDS = ("不行", "出不来", "没动静", "失败", "卡住", "打不开", "拍不出",
+                    "断了", "超时", "连不上", "没网")
+
+
 class DrawEngine:
     def __init__(self, plugin):
         self.plugin = plugin
@@ -1090,7 +1107,7 @@ class DrawEngine:
             _note_swallowed("draw_engine.DrawEngine._foot_refs", exc)
             return []
 
-    def send_photo_now(self, event, description, kind="web", force=False):
+    def send_photo_now(self, event, description, kind="web", force=False, caption=""):
         """大模型主动决定发图：web=网图/截图分享，real=她自己的实拍。"""
         if not self.enabled:
             return "画图没开（draw_enable=false）"
@@ -1108,6 +1125,7 @@ class DrawEngine:
         if any(word in text for word in ("自拍", "合影", "拍照", "照片", "拍一张")):
             kind = "real"
         umo = str(getattr(event, "unified_msg_origin", "") or "")
+        self._attempt_turn = _photo_turn_key(event)
         if umo and umo in self._inflight:
             return "上一张还在画，等它出来"
         uid = str(self.plugin._canonical_uid(event) or "")
@@ -1148,7 +1166,8 @@ class DrawEngine:
                 prompt = build_selfie_prompt(scene, outfit, activity,
                                              getattr(self.plugin, "state", None),
                                              extra=detail) + "。" + REALISM_POSITIVE
-            self._schedule(event, prompt, "tool", selfie=True, refs=_refs if wants_foot_closeup(text) else None)
+            self._schedule(event, prompt, "tool", selfie=True,
+                           refs=_refs if wants_foot_closeup(text) else None, caption=caption)
             try:
                 self._last_tool_photo_at = time.monotonic()
             except Exception:  # cleanup: 时间戳失败不影响发图
@@ -1156,12 +1175,50 @@ class DrawEngine:
             return "好呀，等我一下，我拍一张发你~"
         prompt = ("网上找的图片，聊天里分享的网图/截图，不是她本人拍的，"
                   "可以是店铺招牌、菜品图或梗图风格，画面里不出现她自己；" + text)
-        self._schedule(event, prompt, "tool", selfie=False)
+        self._schedule(event, prompt, "tool", selfie=False, caption=caption)
         try:
             self._last_tool_photo_at = time.monotonic()
         except Exception:  # cleanup: 时间戳失败不影响发图
             pass
         return "好呀，等我一下，我找张图发你~"
+
+    def enforce_photo_retry(self, event, his_words, reply):
+        """他说「再试一次 / 拍一张」，她却回「不行 / 出不来」且本轮没真拍 → 真跑一次。
+
+        2026-11-19：12:53 那轮她只演了一句「又试了一下，没动静」，日志里根本没有调用，
+        生图通道其实是好的。这里补一道兜底：没真试过就不许说「不行」，先替她真试一次。
+
+        注意：只保证「试过」，不保证出图，也不承诺成功——文案保持中性，
+        免得她嘴上说拍好了、图却没出来。
+        """
+        body = str(reply or "")
+        words = str(his_words or "")
+        if not body or not words:
+            return body
+        if not any(word in words for word in PHOTO_RETRY_WORDS):
+            return body
+        if not any(word in body for word in PHOTO_FAIL_WORDS):
+            return body
+        key = _photo_turn_key(event)
+        if key:
+            if key == getattr(self, "_attempt_turn", None):
+                return body
+            try:
+                omni = self._find_omni()
+            except Exception:
+                omni = None
+            if omni is not None and key == getattr(omni, "_attempt_turn", None):
+                return body
+        try:
+            result = self.send_photo_now(event, words, kind="real", force=True,
+                                         caption="喏，这次真出来了，看吧。")
+        except Exception as exc:
+            logger.warning("[DRAW] 补拍失败: %s", exc)
+            return body
+        if str(result or "").startswith("好呀"):
+            logger.info("[DRAW] 他说要重拍但她只想演，已真试一次（不保证出图）")
+            return "我试试，等我一下。"
+        return body
 
     def enforce_photo_claim(self, event, text):
         """兜底：回话说「拍好了/按下快门」却没调 send_photo → 真补一张自拍。
@@ -1210,7 +1267,7 @@ class DrawEngine:
     def _spawn(self, coro):
         return spawn(self.plugin, coro, "draw_engine.DrawEngine._spawn")
 
-    def _schedule(self, event, prompt, reason, cached=None, cache_key="", selfie=False, photo_plan=None, refs=None):
+    def _schedule(self, event, prompt, reason, cached=None, cache_key="", selfie=False, photo_plan=None, refs=None, caption=""):
         uid = str(self.plugin._canonical_uid(event) or "")
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         if umo:
@@ -1221,12 +1278,12 @@ class DrawEngine:
             logger.info("[amo] 画图排队（%s%s）：%s" % (reason, "/缓存" if cached else "", prompt))
         if self._spawn(self._run(event, prompt, uid, umo, cached, cache_key, selfie,
                                  photo_plan, explicit=reason in ("explicit", "manual", "tool"),
-                                 refs=refs)) is None:
+                                 refs=refs, caption=caption)) is None:
             if umo:
                 self._inflight.discard(umo)
 
     async def _run(self, event, prompt, uid, umo, cached=None, cache_key="", selfie=False,
-                   photo_plan=None, explicit=False, refs=None):
+                   photo_plan=None, explicit=False, refs=None, caption=""):
         try:
             delay = max(0.0, self._cfg_float("draw_delay_seconds", 3.0))
             if delay:
@@ -1234,7 +1291,7 @@ class DrawEngine:
             if not self.enabled:
                 return
             if cached:
-                if await self._send_image(event, cached):
+                if await self._send_image(event, cached, caption=caption):
                     self._stats["cached"] += 1
                 return
             if self.dry_run:
@@ -1269,7 +1326,7 @@ class DrawEngine:
                 except Exception as _amo_exc:
                     _note_swallowed("draw_engine.DrawEngine._run", _amo_exc)
             self._cache_put(cache_key, image)
-            if await self._send_image(event, image):
+            if await self._send_image(event, image, caption=caption):
                 self._record(uid)
                 self._stats["sent"] += 1
             else:
@@ -1370,7 +1427,7 @@ class DrawEngine:
     def _image_component(item):
         return image_component(item)
 
-    async def _send_image(self, event, item):
+    async def _send_image(self, event, item, caption=""):
         component = self._image_component(item)
         if component is None:
             logger.warning("[amo] 画图结果没有可发送的图片字段: %s" % list(item.keys()))
@@ -1378,6 +1435,19 @@ class DrawEngine:
         if MessageChain is None:
             logger.warning("[amo] 画图发送失败：拿不到 MessageChain")
             return False
+        if caption:
+            try:
+                from astrbot.api.message_components import Plain
+            except Exception:
+                try:
+                    from astrbot.api.event.components import Plain
+                except Exception:
+                    Plain = None
+            if Plain is not None:
+                try:
+                    await event.send(MessageChain([Plain(text=str(caption))]))
+                except Exception as exc:
+                    logger.warning("[amo] 照片说明发送失败: %s" % exc)
         try:
             await event.send(MessageChain([component]))
         except Exception as exc:

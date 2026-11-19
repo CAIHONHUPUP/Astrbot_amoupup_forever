@@ -190,6 +190,7 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         try:
             if event.is_private_chat():
                 self._maybe_own_offwork_sync(text)
+                self._maybe_own_desk_sync(text)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
         try:

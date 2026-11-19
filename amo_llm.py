@@ -795,6 +795,13 @@ class LlmMixin(_MixinBase):
                             logger.info("[PHOTO] 他要重发，已发上一张，不重新生图")
                     except Exception as exc:
                         logger.warning("[amo] 重发照片失败: %s", exc)
+            draw = getattr(getattr(self, "p", None), "draw", None)
+            retry_guard = getattr(draw, "enforce_photo_retry", None)
+            if callable(retry_guard):
+                try:
+                    reply = retry_guard(event, text, reply)
+                except Exception as exc:
+                    logger.warning("[amo] 补拍兜底失败: %s", exc)
         return reply
 
 

@@ -491,6 +491,7 @@ def _dec_strip_chat_format(text, ctx):
 
 def _dec_offwork(text, ctx):
     ctx.plugin._maybe_own_offwork_sync(text)
+    ctx.plugin._maybe_own_desk_sync(text)
     return None
 
 

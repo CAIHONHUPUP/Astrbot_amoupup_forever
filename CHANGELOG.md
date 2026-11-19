@@ -1,3 +1,11 @@
+## 7.5.5（2026-11-19 先试后拒 / 她说到哪就去哪）
+
+- 先试后拒：`draw_engine.enforce_photo_retry` —— 他说「再试 / 再拍 / 发张」，她却回「不行 / 出不来 / 断了 / 超时」而这一轮根本没调过生图时，先替她真试一次；不承诺出图，只回「我试试，等我一下。」，真出图时补一句「喏，这次真出来了，看吧。」再发图。
+- 跨插件同轮标记：万象画卷的 `tool_generate_selfie` 与 amo 的 `send_photo_now` 都写 `_attempt_turn`（message_id 优先，回退 id(event)），amo 同时查两边；同一轮已经试过就不再插第二次，避免出两张图。
+- 地点小映射：`amo_schedule.OWN_PLACE_RULES`（工位 / 会议室 / 茶水间 / 食堂）+ `_maybe_own_desk_sync`，她说「走回工位 / 去会议室 / 去食堂」时把当前段改过去；只在公司内、zone 不变，不补通勤块。
+- 新增 `tests/test_photo_retry_guard.py`（7 项）与 `tests/test_own_desk_sync.py`（8 项）。
+- 版本：metadata / main.py / amo_shared_config.py / README / CHANGELOG 五处 7.5.5。
+
 ## 7.5.4（2026-11-19 重发照片 / 主动消息接缝）
 
 - 重发照片：`photo_share._send` 记住每个会话最近发出去的那张；新增 `resend_last(umo)` 原样重发。`amo_message.looks_like_photo_resend_request()` 认「发给我看看 / 再发一遍 / 刚才那张 / 上一张」，「拍一张 / 换一张 / 新的」不算；`amo_llm._reply_postprocess` 命中且重发成功时把回复换成「喏，刚才那张，看吧。」，不再重新生图，也不会再回「再拍就成习惯了」。

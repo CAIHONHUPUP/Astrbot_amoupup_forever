@@ -254,6 +254,15 @@ def _backfill_rollover(plugin, now, tasks, slot_has_ended):
         break
 
 
+#: 她台词里「我去了/回到 X」→ 当前段改成什么（只在公司内，zone 不变，不补通勤块）
+OWN_PLACE_RULES = (
+    (r"(回|坐回|走回|到)(了)?(工位|座位|办公桌|办公室)", "在工位上忙工作", "work"),
+    (r"(去|到|回|进)(了)?(会议室|开会)", "在会议室开会", "work"),
+    (r"(去|到|回|进)(了)?(茶水间|接水|泡茶|泡咖啡)", "在茶水间歇一会儿", "rest"),
+    (r"(去|到|回|进)(了)?(食堂|餐厅|打饭)", "在公司食堂吃午饭", "meal"),
+)
+
+
 class ScheduleMixin(_MixinBase):
     def _schedule_change_allowed(self, event) -> bool:
         """改日程是会落库的副作用：只认老公的私聊，群聊/其他人不算。"""
@@ -521,6 +530,75 @@ class ScheduleMixin(_MixinBase):
             logger.info("[amo] 她说下班了：当前日程改成下班回家")
         except Exception as _amo_exc:
             _note_swallowed("amo_schedule.ScheduleMixin._maybe_own_offwork_sync", _amo_exc)
+
+    def _maybe_own_desk_sync(self, text):
+        """她自己说出「我回工位 / 去会议室 / 去茶水间 / 去食堂」时，把当前段挪到那儿。
+
+        2026-11-19：12:34 她说「把餐盘放回去，走回工位坐下」，日程还停在「食堂吃午饭」，
+        12:5x 就冒出「在饭桌上呢」。规则表 OWN_PLACE_RULES 只覆盖公司内部（zone 不变），
+        所以不补通勤块，也不会把她瞬移出公司。
+        """
+        raw = str(text or "")
+        if not raw:
+            return
+        if re.search(r"(他|她|你|别人)(刚|刚刚|已经)?(回|去|到|进)", raw):
+            return
+        target = None
+        for pattern, activity, category in OWN_PLACE_RULES:
+            if re.search(pattern, raw):
+                target = (activity, category)
+                break
+        if target is None:
+            return
+        activity, category = target
+        day = today_str()
+        current = self.state.current_activity()
+        start = str(current.get("start") or "")
+        if not start:
+            return
+        place = str(current.get("place") or "")
+        if not any(word in place for word in ("公司", "写字楼", "office")):
+            return
+        if str(current.get("activity") or "") == activity:
+            return
+        guard = "own_place:%s:%s:%s" % (day, start, category)
+        try:
+            if self.db.kv_get(guard, False):
+                return
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.ScheduleMixin._maybe_own_desk_sync", _amo_exc)
+            return
+        old_items = self.state.schedule.get(day) or self.db.get_schedule(day) or []
+
+        def _place(rows):
+            patched = [dict(item) if isinstance(item, dict) else item for item in rows]
+            for item in patched:
+                if isinstance(item, dict) and str(item.get("start") or "") == start:
+                    item["activity"] = activity
+                    item["place"] = "公司"
+                    item["zone"] = "office"
+                    item["category"] = category
+                    return patched
+            return None
+
+        if _place(old_items) is None:
+            return
+        reason = "她说自己去了：" + activity
+        try:
+            apply = getattr(self.state, "apply_schedule", None)
+            if callable(apply):
+                result = apply(day, _place, source="self_place", reason=reason)
+            else:
+                result = self.state.commit_schedule_change(
+                    day, _place(old_items), old_items=old_items,
+                    source="self_place", reason=reason,
+                )
+            if isinstance(result, dict) and result.get("skipped"):
+                return
+            self.db.kv_set(guard, True)
+            logger.info("[amo] 她说到某处了：当前日程改成「%s」", activity)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.ScheduleMixin._maybe_own_desk_sync", _amo_exc)
 
     # ---------- 小日记调度（统一 tick，不建 per-hour timer） ----------
     def _diary_lock(self, day, start):
