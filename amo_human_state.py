@@ -908,6 +908,19 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             logger.warning("[amo] 和风天气接口失败: %s %r" % (type(exc).__name__, exc))
             return None
 
+    def _cache_daily_empty(self, city, days, ttl=1800):
+        """预报失败也写一份空缓存：401/断网时别每次问天气都重新打接口。"""
+        try:
+            from .amo_state_store import for_plugin as _state_store_for
+        except ImportError:
+            from amo_state_store import for_plugin as _state_store_for
+        try:
+            store = _state_store_for(self.p)
+            store.set_ttl("weather_daily", {"ts": now_ts(), "city": city,
+                                           "days": int(days), "items": []}, ttl)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state._cache_daily_empty", _amo_exc)
+
     async def _fetch_qweather_daily(self, key, city, days=3, fresh=False):
         """明天/后天的预报；缓存 3 小时，避免后台循环反复打接口。
 
@@ -931,6 +944,7 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             return items if isinstance(items, list) else []
         host = self._weather_base_url(self.p.cfg_str("weather_host", ""))
         if not host:
+            self._cache_daily_empty(city, days)
             return []
         geo_raw = self._weather_base_url(self.p.cfg_str("weather_geo_host", ""))
         if geo_raw:
@@ -949,18 +963,22 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
                     geo_base + "/city/lookup", {"location": location, "number": 1}
                 )
                 if str(geo.get("code") or "") != "200" or not isinstance(geo.get("location"), list):
+                    self._cache_daily_empty(city, days)
                     return []
                 first = geo["location"][0] if geo["location"] else None
                 if not isinstance(first, dict) or not first.get("id"):
+                    self._cache_daily_empty(city, days)
                     return []
                 location = str(first["id"])
             data = await self._qweather_get(host + "/v7/weather/%dd" % int(days), {"location": location})
             if not isinstance(data, dict) or str(data.get("code") or "") != "200":
                 logger.warning("[amo] 和风天气预报返回异常: %s" % str(data)[:160])
+                self._cache_daily_empty(city, days)
                 return []
             items = parse_weather_daily(data)
         except Exception as exc:
             logger.warning("[amo] 和风天气预报接口失败: %s %r" % (type(exc).__name__, exc))
+            self._cache_daily_empty(city, days)
             return []
         store.set_ttl("weather_daily", {"ts": now_ts(), "city": city,
                                        "days": int(days), "items": items}, 3 * 3600)

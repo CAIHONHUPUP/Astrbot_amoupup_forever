@@ -425,6 +425,57 @@ class WeatherTests(StateTestCase):
         brief = self.state.weather_brief()
         self.assertEqual(brief["source"], "simulate")
 
+    def test_qweather_network_only_lives_in_two_functions(self) -> None:
+        # 守卫：和风网络请求只能来自 amo_human_state 的 _fetch_qweather / _fetch_qweather_daily。
+        # 谁在别处直接发请求，这里会红（避免再出现绕过缓存的放大器）。
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parents[1]
+        hits = {}
+        for path in root.rglob("*.py"):
+            if "tests" in path.parts or "_ci_tmp" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            count = text.count("_qweather_get(")
+            if count:
+                hits[path.name] = count
+        self.assertEqual(hits, {"amo_human_state.py": 5}, hits)
+
+    def test_hundred_force_refreshes_still_capped_at_three(self) -> None:
+        calls = self._stub_weather_fetch()
+        self.plugin.config["weather_city_name"] = "东莞"
+
+        async def due_always(now=None):
+            state = self.plugin.db.kv_get("weather_slot_state", {}) or {}
+            done = state.get("done") or {}
+            return "slot%d" % len(done), {"date": today_str(), "done": done}
+
+        self.state._weather_slot_due = due_always
+        for index in range(100):
+            if self.state.weather.get("ts"):
+                self.state.weather["ts"] = float(self.state.weather["ts"]) - 10
+                self.plugin.db.kv_set("weather", self.state.weather)
+            asyncio.run(self.state.refresh_weather(force=True))
+        self.assertEqual(len(calls), 3, calls)
+
+    def test_daily_forecast_failure_is_cached(self) -> None:
+        # 2026-11-19：预报失败以前不写缓存，每问一次天气就打一次接口；
+        # 401/断网时这也是个放大器。失败必须缓存 30 分钟。
+        self.plugin.config["hefeng_key"] = "k"
+        self.plugin.config["weather_host"] = "https://hf.example"
+        self.plugin.config["weather_city_name"] = "东莞"
+        calls = []
+
+        async def boom(url, params=None):
+            calls.append(url)
+            raise RuntimeError("401")
+
+        self.state._qweather_get = boom
+        first = asyncio.run(self.state._fetch_qweather_daily("k", "东莞", 3))
+        second = asyncio.run(self.state._fetch_qweather_daily("k", "东莞", 3))
+        self.assertEqual(first, [])
+        self.assertEqual(second, [])
+        self.assertEqual(len(calls), 1, calls)
+
     def test_empty_weather_text(self) -> None:
         self.state.weather = {}
         self.assertEqual(self.state.weather_text(), "还不知道天气")
