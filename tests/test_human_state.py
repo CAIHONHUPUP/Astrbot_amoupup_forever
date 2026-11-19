@@ -301,6 +301,68 @@ class WeatherTests(StateTestCase):
         second = asyncio.run(self.state.refresh_weather())
         self.assertEqual(first["ts"], second["ts"])
 
+    def _stub_weather_fetch(self):
+        calls = []
+
+        async def fake_fetch(key, city):
+            calls.append(city)
+            return {"city": city, "text": "晴", "tag": "clear", "temp": 20,
+                    "humidity": 50, "wind": "东风1级", "ts": now_ts(),
+                    "source": "qweather", "ok": True, "error": "",
+                    "key_set": True, "host": "https://hf.example"}
+
+        self.state._fetch_qweather = fake_fetch
+        self.plugin.config["hefeng_key"] = "k"
+        return calls
+
+    def test_city_signature_does_not_force_every_tick(self) -> None:
+        # 2026-11-19：日程城市（东莞）和天气城市显示名（清远）不同时，旧代码每次 tick 都
+        # 判定「配置变了」强制刷新，和风一天被打 4 万次。修完后必须稳定命中 30 分钟缓存。
+        calls = self._stub_weather_fetch()
+        self.plugin.config["weather_city_name"] = "清远"
+        self.plugin.config["schedule_city"] = "东莞"
+        first = asyncio.run(self.state.refresh_weather(force=True))
+        second = asyncio.run(self.state.refresh_weather())
+        third = asyncio.run(self.state.refresh_weather())
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual(first["ts"], second["ts"])
+        self.assertEqual(second["ts"], third["ts"])
+
+    def test_failed_fetch_falls_back_without_tick_loop(self) -> None:
+        # 2026-11-19：401 时兜底模拟天气用了日程城市（东莞），和想取的天气城市（清远）对不上，
+        # 签名永远不等 → 每个 tick 重试一次 401，和风被打到 4 万/天。
+        self.plugin.config["hefeng_key"] = "k"
+        self.plugin.config["weather_city_name"] = "清远"
+        self.plugin.config["schedule_city"] = "东莞"
+        calls = []
+
+        async def fail_fetch(key, city):
+            calls.append(city)
+            return None
+
+        self.state._fetch_qweather = fail_fetch
+        first = asyncio.run(self.state.refresh_weather(force=True))
+        second = asyncio.run(self.state.refresh_weather())
+        third = asyncio.run(self.state.refresh_weather())
+        self.assertEqual(first["source"], "simulate")
+        self.assertEqual(first["city"], "清远")
+        self.assertEqual(first["ts"], second["ts"])
+        self.assertEqual(second["ts"], third["ts"])
+        self.assertEqual(len(calls), 1, calls)
+
+    def test_city_change_refreshes_once_then_caches(self) -> None:
+        calls = self._stub_weather_fetch()
+        self.plugin.config["weather_city_name"] = "清远"
+        self.plugin.config["schedule_city"] = "东莞"
+        asyncio.run(self.state.refresh_weather(force=True))
+        self.state.weather["ts"] = float(self.state.weather["ts"]) - 5  # 越过 3 秒去抖
+        self.plugin.db.kv_set("weather", self.state.weather)
+        self.plugin.config["weather_city_name"] = "东莞"
+        changed = asyncio.run(self.state.refresh_weather())
+        self.assertEqual(changed["city"], "东莞")
+        asyncio.run(self.state.refresh_weather())
+        self.assertEqual(calls, ["清远", "东莞"])
+
     def test_refresh_weather_debounces_force(self) -> None:
         first = asyncio.run(self.state.refresh_weather(force=True))
         second = asyncio.run(self.state.refresh_weather(force=True))

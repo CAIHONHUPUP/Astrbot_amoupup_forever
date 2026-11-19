@@ -766,7 +766,8 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             base_temp = 19
         text, tag = rng.choice(choices)
         temp = base_temp + rng.randint(-4, 4)
-        city = city_or_empty(self.p)
+        city = ((self.p.cfg_str("weather_city_name", "") or "").strip()
+                or city_or_empty(self.p))
         return {
             # 存显示名，refresh_weather 的缓存签名才比得上（weather_city 可能是数字 ID）
             "city": city,
@@ -956,6 +957,16 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
                                        "days": int(days), "items": items}, 3 * 3600)
         return items
 
+    def _weather_city(self):
+        """天气用哪个城市：天气配置优先（ID/显示名），没有才退回日程城市。
+
+        2026-11-19：以前这里用 city_or_empty（先日程城市），缓存里却存 weather_city_name，
+        两边一旦不同（示例：日程东莞、天气清远）→ 签名永远不相等 → 每次 tick 都 force 刷新，
+        30 分钟缓存被绕过，和风一天被打 4 万多次。"""
+        raw = (self.p.cfg_str("weather_city", "") or "").strip()
+        name = (self.p.cfg_str("weather_city_name", "") or "").strip()
+        return (name or raw or city_or_empty(self.p)).strip()
+
     async def refresh_weather(self, force=False):
         try:
             self.p._reload_config_if_changed()
@@ -967,7 +978,7 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             _note_swallowed("amo_human_state.HumanState.refresh_weather", _amo_exc)
         current = self.weather or {}
         key = self.p.cfg_str("hefeng_key", "")
-        city = city_or_empty(self.p)
+        city = self._weather_city()
         host = self.p.cfg_str("weather_host", "")
         # 配置里的城市/Key/Host 变了就必须重取，不能继续用旧缓存。
         # 比较用显示名：weather_city 可能是数字 LocationID，缓存里存的却是「东莞」这种名字，
@@ -983,11 +994,21 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         if force and current.get("ts") and now_ts() - to_float(current["ts"], 0) < 3:
             return current
         old_tag = current.get("tag")
+        # 拉取失败先退避 5 分钟：401/断网时别每个 tick 都去撞接口（401 也计费）
+        fail_ts = to_float(getattr(self, "_weather_fail_ts", 0), 0)
+        if not force and fail_ts and now_ts() - fail_ts < 300:
+            return current or self._simulate_weather()
         data = None
         if key and city:
             data = await self._fetch_qweather(key, city)
         if not data:
+            self._weather_fail_ts = now_ts()
             data = self._simulate_weather()
+            # 失败兜底也写「想取的城市」：城市名对不上会让缓存永远失效、每个 tick 重试
+            if city:
+                data["city"] = city
+        else:
+            self._weather_fail_ts = 0
         self.weather = data
         self.db.kv_set("weather", data)
         if data.get("tag") != old_tag:
