@@ -120,7 +120,7 @@ POOL: tuple[dict[str, Any], ...] = (
      "text": "同事拉着我一起去吃午饭", "mood": {"开心": 4}, "social": True},
     {"key": "tea_time", "band": ("noon", "afternoon"), "scene": "both", "cost": 0,
      "tags": ("zone:office", "time:12:00-18:00", "health:>60"),
-     "text": "公司下午茶发了杯奶茶", "mood": {"开心": 6, "满足": 4}},
+     "text": "公司下午茶发了杯热奶茶", "mood": {"开心": 6, "满足": 4}},
     {"key": "cook_feast", "band": ("noon",), "scene": "private", "cost": 0,
      "tags": ("zone:home", "time:11:00-13:00", "health:>60"),
      "text": "做了顿丰盛的午饭，厨房忙了半天", "mood": {"满足": 6, "疲惫": 3}},

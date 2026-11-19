@@ -1231,6 +1231,14 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     try:
         record = self.db.kv_get("micro_event:last", {}) or {}
         micro = _fresh_micro_text(record, now_ts())
+        # 同一条小事只当一次素材：14:26 讲过奶茶，15:00 又讲一遍会显得失忆
+        if micro:
+            shared = float(self.db.kv_get("micro_event:shared_ts", 0) or 0)
+            stamp = float(record.get("ts") or 0)
+            if stamp and abs(stamp - shared) < 1:
+                micro = ""
+            else:
+                self.db.kv_set("micro_event:shared_ts", stamp)
     except Exception:
         micro = ""
     extra = []
