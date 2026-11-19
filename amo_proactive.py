@@ -1213,6 +1213,17 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         ratio = None
     forced = forced_reason(snap, ratio, silence)
     # 她睡了 / 夜间 / 免打扰：只有红线才允许打扰
+    try:
+        try:
+            from .amo_rest import resting_now
+        except ImportError:
+            from amo_rest import resting_now
+        if resting_now(self) and not forced:
+            self.db.kv_set(slot_key, True)
+            logger.info("[amo] 主动消息：他说要先睡，先不打扰")
+            return
+    except Exception as _amo_exc:
+        _note_swallowed("amo_proactive.user_resting", _amo_exc)
     if (quiet or night or category == "sleep") and not forced:
         self.db.kv_set(slot_key, True)
         logger.info("[amo] 主动消息：夜间或免打扰，她把想说的话留到明天")

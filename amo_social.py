@@ -226,6 +226,14 @@ class SocialMixin(_MixinBase):
             profile["is_admin"] = 1
 
         self.state.observe(text)
+        try:
+            try:
+                from .amo_rest import note_user_rest
+            except ImportError:
+                from amo_rest import note_user_rest
+            note_user_rest(self, text)
+        except Exception as exc:
+            logger.debug("[amo] 休息标记失败: %s" % exc)
         if self.cfg_bool("auto_relation", True):
             try:
                 await self._learn_relations(event, text, uid)
