@@ -143,10 +143,22 @@ _IDENTITY_FIXES = (
 
 
 def fix_identity(text):
-    """视角反转兜底：她不能自称老公，老公也不能写成「她老公」。"""
+    """视角反转兜底：她不能自称老公，老公也不能写成「她老公」。
+
+    两种反转分开处理：
+    - 句子里还带着「我是老公」这类成对反转：两个身份整体互换；
+    - 只有一处「你是我老婆」：她是顺着他上一句的句式复述，把人称换回说话人视角
+      「我是你老婆」，否则就变成她在给对面封老婆（「就因为我是你老婆才总跟你要」）。
+    """
     value = str(text or "")
     if not value:
         return value
+    paired = ("我是老公" in value) or ("你是我老公" in value)
+    if not paired:
+        for word in ("老婆", "媳妇", "太太"):
+            token = "你是我" + word
+            if token in value:
+                return value.replace(token, "我是你" + word)
     for old, new in _IDENTITY_FIXES:
         value = value.replace(old, new)
     return value

@@ -244,8 +244,16 @@ def _scene_key(zone: str, activity: dict) -> str:
     return "unknown"
 
 
+#: 手脚还原度守卫：全身/局部照里最常崩的是脚趾（六趾、粘连、指甲糊）。
+#: 正向句钉死「五个脚趾」，不依赖模型自己数；负向词放在 negative_prompt 里。
+_BODY_GUARD = ("比例自然，手和脚结构正常：一只手五个手指、一只脚五个脚趾，"
+               "大脚趾明显最粗最大、其余脚趾依次变短，脚趾分开、指甲清楚，"
+               "不要手部或脚部的局部特写")
+
+
 def _guard_line(rule: dict) -> str:
     positive = str(rule.get("guard") or "").strip()
+    positive = (positive + "；" + _BODY_GUARD) if positive else _BODY_GUARD
     negative = []
     for token in rule.get("banned") or ():
         label = POSTURE_WORDS.get(token) or PROP_WORDS.get(token, token)

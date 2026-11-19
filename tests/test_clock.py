@@ -28,6 +28,10 @@ import clock  # noqa: E402
 @unittest.skipUnless(hasattr(time, "tzset"), "Windows 没有 tzset，进程级时区改不了")
 class ClockTests(unittest.TestCase):
     def setUp(self):
+        # 本类比较的是「真实墙钟」：全量 conftest 会把 clock 冻结到 2026-11-18 15:00，
+        # 这里必须临时解冻，否则 clock.now() 和 datetime.now() 差 20 小时（Linux CI 红）。
+        self._prev_frozen = clock.frozen()
+        clock.unfreeze()
         self._prev = os.environ.get("TZ")
         os.environ["TZ"] = "UTC"   # 模拟线上 AstrBot 容器
         time.tzset()
@@ -40,6 +44,8 @@ class ClockTests(unittest.TestCase):
         else:
             os.environ["TZ"] = self._prev
         time.tzset()
+        if self._prev_frozen is not None:   # 还原全量冻结，别影响后续用例
+            clock.freeze(self._prev_frozen)
 
     def test_configure_moves_process_clock_by_eight_hours(self):
         before = datetime.now()
