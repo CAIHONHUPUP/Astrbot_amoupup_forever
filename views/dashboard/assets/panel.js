@@ -1458,6 +1458,17 @@
       return row;
     }
 
+    async function decideWish(id, action) {
+      if (!id) return;
+      try {
+        const res = await call("gift/wish/" + action, { id });
+        toast((res && res.msg) || (action === "approve" ? "已确认" : "已删除"));
+        await loadGift();
+      } catch (error) {
+        toast((error && error.message) || "操作失败", true);
+      }
+    }
+
     async function loadGift() {
       const wishesBox = document.getElementById("giftWishes");
       const giftsBox = document.getElementById("giftList");
@@ -1474,6 +1485,33 @@
           const tip = giftRow("礼物功能未开启", "在「基础」里打开 gift_enable");
           wishesBox.appendChild(tip);
           return;
+        }
+        const pending = Array.isArray(data.pending) ? data.pending : [];
+        const pendingWrap = document.getElementById("giftPendingWrap");
+        const pendingBox = document.getElementById("giftPending");
+        if (pendingWrap && pendingBox) {
+          pendingBox.innerHTML = "";
+          pendingWrap.hidden = pending.length === 0;
+          pending.forEach((wish) => {
+            const row = giftRow(wish.item || "", "她随口提的 · 确认后才进心愿墙");
+            const actions = document.createElement("div");
+            actions.className = "row";
+            actions.style.gap = "8px";
+            const ok = document.createElement("button");
+            ok.className = "tab";
+            ok.type = "button";
+            ok.textContent = "确认";
+            ok.addEventListener("click", () => decideWish(wish.id, "approve"));
+            const no = document.createElement("button");
+            no.className = "ghost";
+            no.type = "button";
+            no.textContent = "删除";
+            no.addEventListener("click", () => decideWish(wish.id, "reject"));
+            actions.appendChild(ok);
+            actions.appendChild(no);
+            row.appendChild(actions);
+            pendingBox.appendChild(row);
+          });
         }
         if (!wishes.length) {
           wishesBox.appendChild(giftRow("还没有心愿", "她逛街看到喜欢的小东西时会记下来"));

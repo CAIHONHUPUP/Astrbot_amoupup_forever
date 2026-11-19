@@ -854,7 +854,7 @@ class GiftEngine:
         data = _stamp_json_version("gifts", data)
         atomic_write_json(self.path, data, indent=1)
 
-    def add_wish(self, item, raw="", umo="", uid="", source="chat"):
+    def add_wish(self, item, raw="", umo="", uid="", source="chat", confidence=None):
         item = self._enrich_item(clean_item(item), raw)
         if not valid_wish_item(item):
             return {}
@@ -866,12 +866,17 @@ class GiftEngine:
             # 吃的喝的她这边吃不到；拿不到的东西也不惦记
             return {}
         now = _amo_clock.now_ts()
+        status = self._wish_status(confidence, source)
         with self._lock:
             data = self._load()
             for wish in reversed(data["wishes"]):
                 if wish.get("item") == item and now - float(wish.get("ts") or 0) < 6 * 3600:
                     wish["ts"] = now
                     wish["raw"] = (raw or wish.get("raw") or "")[:200]
+                    if status == "wanted":
+                        wish["status"] = "wanted"
+                    if confidence is not None:
+                        wish["confidence"] = float(confidence)
                     self._save()
                     return dict(wish)
             wish = {
@@ -883,12 +888,23 @@ class GiftEngine:
                 "uid": uid or "",
                 "source": source,
                 "place": self._short_place(self._place()),
-                "status": "wanted",
+                "status": status,
+                "confidence": None if confidence is None else float(confidence),
                 "gift_id": "",
             }
             data["wishes"].append(wish)
             self._save()
             return dict(wish)
+
+    @staticmethod
+    def _wish_status(confidence, source):
+        """拿得准才自动进墙：模型 <0.75 或规则兜底一律待确认。"""
+        if source == "chat" and confidence is not None:
+            try:
+                return "wanted" if float(confidence) >= 0.75 else "pending"
+            except (TypeError, ValueError):
+                return "pending"
+        return "pending" if source == "chat" else "wanted"
 
     @staticmethod
     def _enrich_item(item, raw):
@@ -1033,6 +1049,43 @@ class GiftEngine:
                 and valid_wish_item(item.get("item"))
             ][-max(1, int(limit)):][::-1]
 
+
+    def pending_wishes(self, limit=20):
+        """待确认心愿：面板「收下」之后才进心愿墙。"""
+        now = _amo_clock.now_ts()
+        with self._lock:
+            data = self._load()
+            rows = [dict(item) for item in data["wishes"]
+                    if item.get("status") == "pending"
+                    and now - float(item.get("ts") or 0) <= self.ttl
+                    and valid_wish_item(item.get("item"))]
+        return rows[-max(1, int(limit)):][::-1]
+
+    def approve_wish(self, wish_id):
+        """收下一条待确认心愿：转正并刷新时间（面板按钮）。"""
+        now = _amo_clock.now_ts()
+        with self._lock:
+            data = self._load()
+            for wish in data["wishes"]:
+                if wish.get("id") == wish_id and wish.get("status") == "pending":
+                    wish["status"] = "wanted"
+                    wish["ts"] = now
+                    self._save()
+                    return dict(wish)
+        return {}
+
+    def reject_wish(self, wish_id, reason=""):
+        """删除一条待确认心愿：只删这一条，不做长期封禁。"""
+        with self._lock:
+            data = self._load()
+            for index, wish in enumerate(data["wishes"]):
+                if wish.get("id") == wish_id and wish.get("status") == "pending":
+                    gone = dict(wish)
+                    del data["wishes"][index]
+                    self._save()
+                    return {"item": gone.get("item") or ""}
+        return {}
+
     def stats(self):
         with self._lock:
             data = self._load()
@@ -1053,6 +1106,19 @@ class GiftEngine:
                     "id": wish.get("id"), "item": wish.get("item"), "ts": wish.get("ts"),
                     "place": wish.get("place") or "", "raw": wish.get("raw") or "",
                 })
+            pending = []
+            for wish in reversed(data["wishes"]):
+                if wish.get("status") != "pending":
+                    continue
+                if now - float(wish.get("ts") or 0) > self.ttl:
+                    continue
+                if not valid_wish_item(wish.get("item")):
+                    continue
+                pending.append({
+                    "id": wish.get("id"), "item": wish.get("item"), "ts": wish.get("ts"),
+                    "place": wish.get("place") or "", "raw": wish.get("raw") or "",
+                    "confidence": wish.get("confidence"),
+                })
             gifts = []
             for gift in reversed(data["gifts"]):
                 gifts.append({
@@ -1063,6 +1129,7 @@ class GiftEngine:
             "enabled": self.enabled,
             "path": self.path,
             "wishes": wishes[:20],
+            "pending": pending[:20],
             "gifts": gifts[:40],
             "assets": self.asset_text(),
             "worn": self.worn_text(),
@@ -1373,18 +1440,21 @@ class GiftEngine:
         spoken = strip_narration(text)
         if not spoken:
             return
-        item = ""
+        item, confidence = "", None
         if self._bool("gift_extract_with_llm", True):
             try:
-                item = await asyncio.wait_for(self._llm_extract_wish(spoken), timeout=25)
+                item, confidence = await asyncio.wait_for(self._llm_extract_wish(spoken), timeout=25)
             except Exception as exc:
                 logger.debug("[amo] 礼物心愿抽取失败: %s" % exc)
         if not item:
             item = extract_wish_regex(spoken)
+            confidence = None
         if item and valid_wish_item(item):
-            wish = self.add_wish(item, text, umo=umo, uid=uid, source="chat")
+            wish = self.add_wish(item, text, umo=umo, uid=uid, source="chat",
+                                 confidence=confidence)
             if wish:
-                logger.info("[amo] 记下心愿: %s（原话：%s）" % (wish.get("item"), text[:40]))
+                logger.info("[amo] 记下心愿(%s): %s（原话：%s）",
+                            wish.get("status"), wish.get("item"), text[:40])
 
     async def _llm_extract_wish(self, text):
         provider = None
@@ -1405,29 +1475,36 @@ class GiftEngine:
             session_id="amo-gift-wish-" + uuid.uuid4().hex,
         )
         raw = getattr(resp, "completion_text", "") or ""
-        return self._parse_wish_json(raw)
+        return self._parse_wish_json_full(raw)
 
     @staticmethod
     def _parse_wish_json(raw):
+        item, _confidence = GiftEngine._parse_wish_json_full(raw)
+        return item
+
+    @staticmethod
+    def _parse_wish_json_full(raw):
         if not raw:
-            return ""
+            return "", 0.0
         match = re.search(r"\{.*?\}", raw, re.S)
         if not match:
-            return ""
+            return "", 0.0
         try:
             data = json.loads(match.group(0))
         except Exception as _amo_exc:
             _note_swallowed("gift_engine.GiftEngine._parse_wish_json", _amo_exc)
-            return ""
+            return "", 0.0
         try:
             confidence = float(data.get("confidence", 0) or 0)
         except Exception as _amo_exc:
             _note_swallowed("gift_engine.GiftEngine._parse_wish_json", _amo_exc)
             confidence = 0.0
         if confidence < 0.45:
-            return ""
+            return "", confidence
         item = clean_item(str(data.get("item") or ""))
-        return item if valid_wish_item(item) else ""
+        if not valid_wish_item(item):
+            return "", confidence
+        return item, confidence
 
     # ---------- 状态 / 记忆 ----------
     def _nudge_mood(self, kind="small"):

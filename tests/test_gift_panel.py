@@ -28,7 +28,9 @@ class PanelTests(unittest.TestCase):
     def test_main_registers_gift_api(self):
         source = _plugin_source.all_source(ROOT)
         self.assertEqual(source.count('("/gift", "api_gift", ("GET",))'), 1)
-        self.assertEqual(source.count("async def api_gift"), 1)
+        self.assertEqual(source.count("async def api_gift(self)"), 1)
+        self.assertEqual(source.count("async def api_gift_wish_approve(self)"), 1)
+        self.assertEqual(source.count("async def api_gift_wish_reject(self)"), 1)
 
 
 if __name__ == "__main__":

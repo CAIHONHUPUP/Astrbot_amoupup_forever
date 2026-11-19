@@ -214,7 +214,7 @@
       "relation_save", "relation_delete", "memory_add", "memory_delete",
       "say", "city_set", "profiles_sync", "diary/open", "diary/write", "photo/test",
       "wardrobe/add", "wardrobe/delete", "wardrobe/reroll", "wardrobe/today", "wardrobe/night",
-      "weather/refresh",
+      "weather/refresh", "gift/wish/approve", "gift/wish/reject",
     ]);
 
     async function call(action, payload, opts) {

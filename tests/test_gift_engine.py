@@ -221,7 +221,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(self.engine.stats()["gifts"], 0)
 
     def test_wish_then_gift(self):
-        self.engine.add_wish("羊毛围巾", "看到一条羊毛围巾，好想要", umo="test:FriendMessage:" + OWNER, uid=OWNER)
+        self.engine.add_wish("羊毛围巾", "看到一条羊毛围巾，好想要", umo="test:FriendMessage:" + OWNER, uid=OWNER, confidence=0.9)
         hint = asyncio.run(self.engine.build_hint(FakeEvent("送给你")))
         self.assertIn("羊毛围巾", hint)
         self.assertEqual(self.engine.stats()["gifts"], 1)
@@ -265,6 +265,9 @@ class EngineTests(unittest.TestCase):
             await asyncio.sleep(0.05)
 
         asyncio.run(go())
+        pending = self.engine.pending_wishes(1)
+        self.assertTrue(pending, "规则抽取的心愿应先进待确认")
+        self.engine.approve_wish(pending[0]["id"])
         self.assertEqual(self.engine.recent_wishes(1)[0]["item"], "羊绒围巾")
 
     def test_wall_only_on_topic(self):
@@ -380,6 +383,9 @@ class EngineTests(unittest.TestCase):
             await asyncio.sleep(0.05)
 
         asyncio.run(go_shopping())
+        pending = self.engine.pending_wishes(1)
+        self.assertTrue(pending)
+        self.engine.approve_wish(pending[0]["id"])
         self.assertEqual(self.engine.recent_wishes(1)[0]["item"], "围巾")
 
     def test_similar_gift_reminds_already_received(self):
@@ -422,7 +428,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("什么颜色", hint)
 
     def test_generic_gift_uses_detailed_wish(self):
-        self.engine.add_wish("小挂件", "看到一条蓝色鲸鱼的小挂件，好想要", umo="test:FriendMessage:" + OWNER, uid=OWNER)
+        self.engine.add_wish("小挂件", "看到一条蓝色鲸鱼的小挂件，好想要", umo="test:FriendMessage:" + OWNER, uid=OWNER, confidence=0.9)
         hint = asyncio.run(self.engine.build_hint(FakeEvent("送挂件", mid="gd1")))
         self.assertIn("蓝色鲸鱼小挂件", hint)
         self.assertEqual(self.engine.recent_gifts(1)[0]["item"], "蓝色鲸鱼小挂件")
@@ -447,7 +453,7 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn("围巾", self.engine.wear_labels(28))
 
     def test_commands(self):
-        self.engine.add_wish("口红", "好喜欢", uid=OWNER)
+        self.engine.add_wish("口红", "好喜欢", uid=OWNER, confidence=0.9)
         self.assertIn("口红", self.engine.command_text())
         self.assertIn("记下了", self.engine.manual_gift(FakeEvent(""), "包"))
 

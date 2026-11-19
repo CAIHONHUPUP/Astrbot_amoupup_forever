@@ -885,6 +885,33 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
             logger.debug("[amo] 礼物面板数据失败: %s" % exc)
             return {"code": 0, "data": {"enabled": False, "wishes": [], "gifts": []}}
 
+
+    async def api_gift_wish_approve(self):
+        """待确认心愿：确认后进入心愿墙（不是直接送）。"""
+        await self._ensure_ready()
+        gift = getattr(self, "gift", None)
+        if gift is None:
+            return {"code": 1, "msg": "礼物功能没开启"}
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        wish = gift.approve_wish(str(data.get("id") or ""))
+        if not wish:
+            return {"code": 1, "msg": "没找到这条待确认心愿"}
+        return {"code": 0, "msg": "已确认，进入心愿墙", "data": wish}
+
+    async def api_gift_wish_reject(self):
+        """待确认心愿：删除这一条（不做长期封禁）。"""
+        await self._ensure_ready()
+        gift = getattr(self, "gift", None)
+        if gift is None:
+            return {"code": 1, "msg": "礼物功能没开启"}
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        gone = gift.reject_wish(str(data.get("id") or ""))
+        if not gone:
+            return {"code": 1, "msg": "没找到这条待确认心愿"}
+        return {"code": 0, "msg": "已删除这条心愿", "data": gone}
+
     async def api_housing(self):
         """面板「房屋」页：当前住处 + 房产/租房分页 + 场景图状态。"""
         await self._ensure_ready()

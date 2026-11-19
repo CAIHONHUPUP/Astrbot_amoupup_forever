@@ -48,6 +48,8 @@ WRITE_ROUTES = frozenset({
     "/weather/refresh",
     "/poses/save",
     "/poses/refs",
+    "/gift/wish/approve",
+    "/gift/wish/reject",
     "/diary/write",
     "/diary/note", "/diary/import", "/diary/open",
     "/refresh_status",
