@@ -133,6 +133,20 @@ class ApiReadTests(unittest.TestCase):
                 self.assertIsInstance(result, dict, name)
                 self.assertEqual(result.get("code"), 0, "%s -> %s" % (name, result))
 
+    def test_refresh_status_reads_cache_without_calling_weather_api(self):
+        # 2026-11-19：这个接口原来会 force 刷新和风，面板连点就能把当天额度烧完。
+        self.plugin.state.weather = {"city": "清远", "text": "阴", "source": "qweather"}
+        called = []
+
+        async def fake_refresh(*args, **kwargs):
+            called.append(kwargs)
+            return {}
+
+        self.plugin.state.refresh_weather = fake_refresh
+        result = self._call("api_refresh_status")
+        self.assertEqual(result.get("code"), 0)
+        self.assertEqual(called, [])
+
     def test_config_never_leaks_secrets(self):
         # 敏感键只回键名和「已配置」状态，值必须是空的
         for key in ("hefeng_key", "deepseek_api_key"):

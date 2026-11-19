@@ -723,19 +723,14 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
 
     async def api_refresh_status(self):
         await self._ensure_ready()
-        # 限频：这个接口会强制刷新天气（和风额度），被 <img>/外链或连点触发时不能每次都打出去
-        now = now_ts()
-        last = to_float(getattr(self, "_refresh_status_at", 0), 0)
-        if last and now - last < 5:
-            return {"code": 0, "msg": "刚刚刷新过，请稍候", "data": {"throttled": True}}
-        self._refresh_status_at = now
-        try:
-            await self.state.refresh_weather(force=True)
-        except Exception as exc:
-            logger.warning("[amo] 手动刷新天气失败: %s" % exc)
-            return {"code": 1, "msg": "刷新失败：%s" % exc}
-        self._status_cache = None  # 手动刷新后下一次 /status 必须重算
-        return {"code": 0, "msg": "刷新成功"}
+        # 2026-11-19：这里以前会强制刷新和风天气，面板连点/外链预览都能把当天额度烧完。
+        # 现在只重算面板状态，天气只读缓存；真正刷新走 /weather/refresh（用户手动）。
+        self._status_cache = None
+        weather = self.state.weather or {}
+        return {"code": 0, "msg": "已重算状态（天气读缓存）",
+                "data": {"source": weather.get("source", ""),
+                         "city": weather.get("city", ""),
+                         "throttled": False}}
 
     async def api_profiles(self):
         await self._ensure_ready()

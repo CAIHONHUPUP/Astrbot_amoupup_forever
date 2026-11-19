@@ -198,6 +198,15 @@ except ImportError:  # 直接按文件加载时
         from amo_state_date import DateStateMixin
 
 
+#: 一天只允许三次真实天气刷新（硬锁定，2026-11-19 用户要求）：
+#: 早上 07:00、中午 12:00、晚上 19:45（20:00 预报预警前）。窗口内只刷一次，其余时间读缓存。
+WEATHER_REFRESH_WINDOWS = (
+    ("morning", (7 * 60, 9 * 60)),
+    ("noon", (12 * 60, 14 * 60)),
+    ("evening", (19 * 60 + 40, 20 * 60)),
+)
+WEATHER_REFRESH_MAX = 3
+
 class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStateMixin, DateStateMixin):
     def __init__(self, plugin):
         self.p = plugin
@@ -957,6 +966,28 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
                                        "days": int(days), "items": items}, 3 * 3600)
         return items
 
+    async def _weather_slot_due(self, now=None):
+        """一天只允许三次真实刷新：早上 07:00、中午 12:00、晚上 19:45（20:00 预报前）。
+
+        2026-11-19：用户要求硬锁定，一天最多 3 次，其余时间只读缓存/模拟。
+        返回 (slot_key, state)；slot_key 为空表示现在不该打接口。
+        """
+        now = now or _now()
+        day = today_str()
+        state = self.p.db.kv_get("weather_slot_state", {}) or {}
+        if not isinstance(state, dict) or state.get("date") != day:
+            state = {"date": day, "done": {}}
+        done = state.get("done")
+        if not isinstance(done, dict):
+            done = {}
+        minute = now.hour * 60 + now.minute
+        for slot, (start, end) in WEATHER_REFRESH_WINDOWS:
+            if slot in done:
+                continue
+            if start <= minute <= end:
+                return slot, state
+        return "", state
+
     def _weather_city(self):
         """天气用哪个城市：天气配置优先（ID/显示名），没有才退回日程城市。
 
@@ -988,11 +1019,22 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         desired_signature = (city_label, bool(key), host)
         if current_signature != desired_signature:
             force = True
-        if not force and current.get("ts") and now_ts() - current["ts"] < 1800:
-            return current
         # 刚刷过就别再打接口（双击「设置」、面板刷新和后台 tick 撞车）
         if force and current.get("ts") and now_ts() - to_float(current["ts"], 0) < 3:
             return current
+        slot_key, slot_state = await self._weather_slot_due()
+        used = len(slot_state.get("done") or {})
+        need_network = bool(force) or bool(slot_key)
+        if not need_network or used >= WEATHER_REFRESH_MAX:
+            # 没到点 / 今天 3 次额度已用完：只读缓存，没缓存就给模拟数据
+            if current:
+                return current
+            data = self._simulate_weather()
+            if city:
+                data["city"] = city
+            self.weather = data
+            self.db.kv_set("weather", data)
+            return data
         old_tag = current.get("tag")
         # 拉取失败先退避 5 分钟：401/断网时别每个 tick 都去撞接口（401 也计费）
         fail_ts = to_float(getattr(self, "_weather_fail_ts", 0), 0)
@@ -1009,6 +1051,12 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
                 data["city"] = city
         else:
             self._weather_fail_ts = 0
+        slot_state = dict(slot_state)
+        done = dict(slot_state.get("done") or {})
+        done[slot_key or ("manual:%d" % used)] = now_ts()
+        slot_state["done"] = done
+        slot_state["date"] = today_str()
+        self.db.kv_set("weather_slot_state", slot_state)
         self.weather = data
         self.db.kv_set("weather", data)
         if data.get("tag") != old_tag:

@@ -401,7 +401,8 @@ class ConfigMixin(_MixinBase):
                 except Exception as _amo_exc:
                     _note_swallowed("amo_config.HumanCorePlugin._apply_runtime_config", _amo_exc)
             try:
-                await self.state.refresh_weather(force=True)
+                # 启动/重载不算「用户手动刷新」：走每天 3 次的时段额度，避免每次重启烧额度
+                await self.state.refresh_weather()
             except Exception as _amo_exc:
                 _note_swallowed("amo_config.HumanCorePlugin._apply_runtime_config", _amo_exc)
         if HeartflowEngine is not None:

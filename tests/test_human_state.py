@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from unittest import mock
 import sys
 import tempfile
 import types
@@ -327,6 +328,54 @@ class WeatherTests(StateTestCase):
         self.assertEqual(len(calls), 1, calls)
         self.assertEqual(first["ts"], second["ts"])
         self.assertEqual(second["ts"], third["ts"])
+
+    def test_slot_window_boundaries(self) -> None:
+        import amo_human_state as hs
+        state = self.state
+        day = today_str()
+
+        def due(hour, minute, done=None):
+            now = clock.now().replace(hour=hour, minute=minute)
+            return asyncio.run(state._weather_slot_due(now))
+
+        key, data = due(7, 30)
+        self.assertEqual(key, "morning")
+        key2, _ = due(10, 0)
+        self.assertEqual(key2, "")
+        key3, _ = due(12, 5)
+        self.assertEqual(key3, "noon")
+        key4, _ = due(19, 50)
+        self.assertEqual(key4, "evening")
+        key5, _ = due(20, 30)
+        self.assertEqual(key5, "")
+        self.assertEqual(len(hs.WEATHER_REFRESH_WINDOWS), 3)
+
+    def test_slot_done_is_not_repeated(self) -> None:
+        calls = self._stub_weather_fetch()
+        self.plugin.config["weather_city_name"] = "东莞"
+        fixed = clock.now().replace(hour=7, minute=30)
+        with mock.patch("amo_human_state._now", return_value=fixed):
+            first = asyncio.run(self.state.refresh_weather())
+            second = asyncio.run(self.state.refresh_weather())
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual(first["ts"], second["ts"])
+
+    def test_daily_cap_is_three(self) -> None:
+        calls = self._stub_weather_fetch()
+        self.plugin.config["weather_city_name"] = "东莞"
+
+        async def due_always(now=None):
+            state = self.plugin.db.kv_get("weather_slot_state", {}) or {}
+            done = state.get("done") or {}
+            return "slot%d" % len(done), {"date": today_str(), "done": done}
+
+        self.state._weather_slot_due = due_always
+        for _ in range(4):
+            if self.state.weather.get("ts"):
+                self.state.weather["ts"] = float(self.state.weather["ts"]) - 10
+                self.plugin.db.kv_set("weather", self.state.weather)
+            asyncio.run(self.state.refresh_weather(force=True))
+        self.assertEqual(len(calls), 3, calls)
 
     def test_failed_fetch_falls_back_without_tick_loop(self) -> None:
         # 2026-11-19：401 时兜底模拟天气用了日程城市（东莞），和想取的天气城市（清远）对不上，
