@@ -32,6 +32,8 @@ WRITE_ROUTES = frozenset({
     "/photo/prompt",
     "/photo/prompt_saved",
     "/photo/sheet",
+    "/photo/sheet_ref/save",
+    "/photo/persona/import",
     "/photo/persona",
     "/photo/persona/delete",
     "/photo/persona/toggle",

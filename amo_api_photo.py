@@ -132,6 +132,52 @@ class PhotoApiMixin(_MixinBase):
 
         return {"code": 0, "data": {"job": self._photo_job_start("sheet", build())}}
 
+
+    async def api_photo_sheet_ref(self):
+        """三视图参考图：面板预览 + 是否已设置。"""
+        await self._ensure_ready()
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        path = engine.sheet_ref_path()
+        return {"code": 0, "data": {"has_ref": bool(path),
+                                    "name": os.path.basename(path) if path else "",
+                                    "preview": engine.sheet_ref_preview() if path else ""}}
+
+    async def api_photo_sheet_ref_save(self):
+        """上传 / 清除三视图参考图（data URL、http 或本地路径）。"""
+        await self._ensure_ready()
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        if bool(data.get("clear")):
+            engine.clear_sheet_ref()
+            return {"code": 0, "msg": "参考图已清除", "data": {"has_ref": False, "preview": ""}}
+        raw = str(data.get("data") or data.get("url") or "")
+        path = engine.set_sheet_ref(raw)
+        if not path:
+            return {"code": 1, "msg": "参考图保存失败：只支持 png/jpg/webp，且不超过大小限制"}
+        return {"code": 0, "msg": "参考图已保存，下次生成三视图会按它来",
+                "data": {"has_ref": True, "name": os.path.basename(path),
+                         "preview": engine.sheet_ref_preview()}}
+
+
+    async def api_photo_persona_import(self):
+        """导入现成的三视图：{view, data|url} → 存模板并启用。"""
+        await self._ensure_ready()
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        view = str(data.get("view") or "front").strip().lower()
+        raw = str(data.get("data") or data.get("url") or "")
+        message = await engine.import_persona(view, raw)
+        ok = str(message).startswith("✅")
+        return {"code": 0 if ok else 1, "msg": message}
+
     async def api_photo_persona(self):
         """把选中的三视图设为角色模板。"""
         await self._ensure_ready()

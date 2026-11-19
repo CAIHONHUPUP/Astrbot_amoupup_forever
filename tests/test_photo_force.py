@@ -75,6 +75,38 @@ class DynamicSceneTests(unittest.TestCase):
         self.assertIn("只有她一个人", prompt)
         self.assertNotIn("风筝", prompt)
 
+    def test_explicit_bikini_action_skips_daily_outfit(self):
+        # 2026-11-19 19:57：动作写「穿着黑色比基尼」，提示词却拼了今日穿搭（大T恤短裤），
+        # 生图锁也没让位，结果出图是 T 恤。动作点名衣服时今日穿搭必须让位。
+        prompt = build_selfie_prompt("卧室", "宽松白T恤配灰色短裤", {"zone": "home"}, None,
+                                     extra="卧室里，穿着黑色比基尼自拍")
+        self.assertIn("黑色比基尼", prompt)
+        self.assertNotIn("宽松白T恤", prompt)
+        self.assertIn("不要换成今日穿搭", prompt)
+
+    def test_plain_action_still_uses_locked_outfit(self):
+        prompt = build_selfie_prompt("卧室", "米色针织衫配牛仔裤", {"zone": "home"}, None,
+                                     extra="站在窗边拍一张")
+        self.assertIn("米色针织衫配牛仔裤", prompt)
+        self.assertNotIn("不要换成今日穿搭", prompt)
+
+    def test_template_clothes_are_banned_in_selfie_prompt(self):
+        # 2026-11-19 20:04：脚部特写只写了珊瑚绒睡裤，上半身没写，
+        # 三视图里的白衬衫/藏青领结/米色开衫就漏进画面。所有自拍 prompt 都要挡模板衣服。
+        prompt = build_selfie_prompt("客厅", "浅灰色珊瑚绒睡衣上衣、浅橙色珊瑚绒睡裤",
+                                     {"zone": "home"}, None, extra="靠在沙发上拍一张")
+        self.assertIn("白衬衫", prompt)
+        self.assertIn("不要照搬模板里的衣服", prompt)
+
+    def test_foot_closeup_prompt_bans_upper_body(self):
+        engine, plugin = _engine(place="出租屋客厅", activity="吃面", zone="home")
+        engine.send_photo_now(FakeEvent("再看看脚趾"), "再看看脚趾", kind="real")
+        asyncio.run(plugin.tasks[0])
+        prompt = plugin.context.omni.calls[0]["prompt"]
+        self.assertIn("不出现上半身", prompt)
+        self.assertIn("白衬衫", prompt)
+        self.assertIn("她现在的穿搭是", prompt)
+
     def test_worldview_is_stated_in_prompt(self):
         self.assertIn("他不在画面里", SELFIE_WORLDVIEW)
         self.assertIn("合影", SELFIE_WORLDVIEW)

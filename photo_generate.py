@@ -10,6 +10,7 @@ import io
 import json
 import os
 import random
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -474,8 +475,89 @@ class PhotoGenerateMixin:
         images = result.get("images") or []
         return await self._localize(images[0]) if images else None
 
+
+    def sheet_ref_path(self):
+        """三视图参考图（面板上传的那张）；没有就返回空。"""
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            path = os.path.join(self.template_dir(), "amo_sheet_ref" + ext)
+            if os.path.isfile(path):
+                return path
+        return ""
+
+    def sheet_ref_preview(self):
+        path = self.sheet_ref_path()
+        return self.preview_data_url({"file_path": path}) if path else ""
+
+    def set_sheet_ref(self, raw):
+        """保存三视图参考图：支持 data URL / http(s) / 本地文件；返回落盘路径。"""
+        raw = str(raw or "").strip()
+        if not raw:
+            return ""
+        payload = b""
+        if raw.startswith("data:"):
+            try:
+                head, _, body = raw.partition(",")
+                payload = base64.b64decode(body)
+            except Exception as _amo_exc:
+                _note_swallowed("photo_engine.set_sheet_ref.data_url", _amo_exc)
+                return ""
+        elif raw.startswith("http://") or raw.startswith("https://"):
+            try:
+                request = urllib.request.Request(raw, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                  "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"})
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    payload = response.read(_MAX_IMAGE_BYTES + 1)
+            except Exception as _amo_exc:
+                _note_swallowed("photo_engine.set_sheet_ref.url", _amo_exc)
+                return ""
+        elif os.path.isfile(raw):
+            try:
+                with open(raw, "rb") as handle:
+                    payload = handle.read(_MAX_IMAGE_BYTES + 1)
+            except Exception as _amo_exc:
+                _note_swallowed("photo_engine.set_sheet_ref.file", _amo_exc)
+                return ""
+        if not payload or len(payload) > _MAX_IMAGE_BYTES:
+            return ""
+        if payload[:8] == b"\x89PNG\r\n\x1a\n":
+            ext = ".png"
+        elif payload[:4] == b"RIFF":
+            ext = ".webp"
+        else:
+            ext = ".jpg"
+        target_dir = self.template_dir()
+        os.makedirs(target_dir, exist_ok=True)
+        self.clear_sheet_ref()
+        target = os.path.join(target_dir, "amo_sheet_ref" + ext)
+        temp = target + ".tmp"
+        try:
+            with open(temp, "wb") as handle:
+                handle.write(payload)
+            os.replace(temp, target)
+            return target
+        except Exception as _amo_exc:
+            _note_swallowed("photo_engine.set_sheet_ref.write", _amo_exc)
+            try:
+                if os.path.exists(temp):
+                    os.remove(temp)
+            except Exception as _amo_exc2:
+                _note_swallowed("photo_engine.set_sheet_ref.cleanup", _amo_exc2)
+            return ""
+
+    def clear_sheet_ref(self):
+        target_dir = self.template_dir()
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            path = os.path.join(target_dir, "amo_sheet_ref" + ext)
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except Exception as _amo_exc:
+                _note_swallowed("photo_engine.clear_sheet_ref", _amo_exc)
+        return ""
+
     async def persona_sheet(self, view):
-        """角色三视图：正面 / 侧面 / 全身。"""
+        """角色三视图：正面 / 侧面 / 全身。有上传参考图就先按它生成。"""
         prompts = {
             "front": "角色设定图·正面：同一角色的正面站姿半身，二次元动漫风格，纯白背景，"
                      "五官清晰对称，蓝发蓝眼，鲸鱼鳍耳，日常服装，正对镜头",
@@ -484,8 +566,45 @@ class PhotoGenerateMixin:
             "full": "角色设定图·全身：同一角色的正面全身站姿，二次元动漫风格，纯白背景，"
                     "从头到脚完整可见，蓝发蓝眼，鲸鱼鳍耳，日常服装",
         }
-        refs = self.persona_refs()
+        sheet_ref = self.sheet_ref_path()
+        refs = [sheet_ref] if sheet_ref else self.persona_refs()
         return await self.generate_custom(prompts.get(str(view), prompts["front"]), refs=refs)
+
+
+    async def import_persona(self, view, raw):
+        """B：导入现成的三视图，直接存成对应视角的模板并启用。"""
+        raw = str(raw or "").strip()
+        if not raw:
+            return "缺少图片"
+        temp = ""
+        if raw.startswith("data:"):
+            try:
+                _head, _sep, body = raw.partition(",")
+                payload = base64.b64decode(body)
+            except Exception as _amo_exc:
+                _note_swallowed("photo_engine.import_persona.decode", _amo_exc)
+                return "图片解码失败"
+            if not payload or len(payload) > _MAX_IMAGE_BYTES:
+                return "图片为空或太大"
+            target_dir = self.template_dir()
+            os.makedirs(target_dir, exist_ok=True)
+            fd, temp = tempfile.mkstemp(suffix=".png", dir=target_dir)
+            os.close(fd)
+            try:
+                with open(temp, "wb") as handle:
+                    handle.write(payload)
+            except Exception as _amo_exc:
+                _note_swallowed("photo_engine.import_persona.write", _amo_exc)
+                return "图片保存失败"
+            raw = temp
+        try:
+            return await self.adopt_persona(raw, view)
+        finally:
+            if temp:
+                try:
+                    os.remove(temp)
+                except OSError as _amo_exc:  # cleanup: 临时文件删不掉不影响导入结果
+                    _note_swallowed("photo_engine.import_persona.cleanup", _amo_exc)
 
     def _sync_omni_refs(self, omni=None, refs=None):
         """把三视图同步给「我能永远定格你」。

@@ -525,6 +525,74 @@ window.amoScheduleSourceLabel = amoScheduleSourceLabel;
       }
     }
 
+    async function loadPhotoSheetRef() {
+      try {
+        const data = objectFrom(await call("photo/sheet_ref", {}, { get: true }));
+        const status = document.getElementById("photoSheetRefStatus");
+        const thumb = document.getElementById("photoSheetRefThumb");
+        const clear = document.getElementById("photoSheetRefClear");
+        const has = !!(data && data.has_ref);
+        if (status) status.textContent = has ? "参考图已设置" : "未设置参考图（生成会凭人设描述）";
+        if (thumb) {
+          thumb.src = (data && data.preview) || "";
+          thumb.style.display = has && data && data.preview ? "" : "none";
+        }
+        if (clear) clear.hidden = !has;
+      } catch (error) {
+        /* 读不到不影响其它面板 */
+      }
+    }
+
+    function readPhotoSheetRef(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("读取失败"));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function uploadPhotoSheetRef(file) {
+      if (!file) return;
+      try {
+        const dataUrl = await readPhotoSheetRef(file);
+        if (dataUrl.length > 12 * 1024 * 1024) throw new Error("参考图太大（超过 8MB）");
+        const res = objectFrom(await call("photo/sheet_ref/save", { data: dataUrl }));
+        if (res && res.code && res.code !== 0) throw new Error(res.msg || "保存失败");
+        toast("参考图已保存，生成三视图会按它来");
+        await loadPhotoSheetRef();
+      } catch (error) {
+        toast("上传失败：" + (error.message || error), true);
+      }
+    }
+
+    async function importPersonaFile(view, file) {
+      if (!file) return;
+      const status = document.getElementById("photoPersonaImportStatus");
+      if (status) status.textContent = "上传中…";
+      try {
+        const dataUrl = await readPhotoSheetRef(file);
+        const res = objectFrom(await call("photo/persona/import", { view, data: dataUrl }));
+        if (res && res.code && res.code !== 0) throw new Error(res.msg || "导入失败");
+        if (status) status.textContent = "已导入";
+        toast((res && res.msg) || "模板已导入");
+        await loadPhotoTemplate();
+      } catch (error) {
+        if (status) status.textContent = "导入失败";
+        toast("导入失败：" + (error.message || error), true);
+      }
+    }
+
+    async function clearPhotoSheetRef() {
+      try {
+        await call("photo/sheet_ref/save", { clear: true });
+        toast("参考图已清除");
+        await loadPhotoSheetRef();
+      } catch (error) {
+        toast("清除失败：" + (error.message || error), true);
+      }
+    }
+
     async function generatePhotoSheet(view) {
       const status = document.getElementById("photoSheetStatus");
       const candBox = document.querySelector('[data-cand="' + view + '"]');
@@ -761,6 +829,34 @@ window.amoScheduleSourceLabel = amoScheduleSourceLabel;
     if (photoTemplateSaveButton) photoTemplateSaveButton.addEventListener("click", () => savePhotoTemplateDir());
     const photoTemplateOpenButton = document.getElementById("photoTemplateOpen");
     if (photoTemplateOpenButton) photoTemplateOpenButton.addEventListener("click", () => openPhotoTemplateDir());
+    const photoSheetRefPick = document.getElementById("photoSheetRefPick");
+    const photoSheetRefFile = document.getElementById("photoSheetRefFile");
+    if (photoSheetRefPick && photoSheetRefFile) {
+      photoSheetRefPick.addEventListener("click", () => photoSheetRefFile.click());
+      photoSheetRefFile.addEventListener("change", () => {
+        const file = photoSheetRefFile.files && photoSheetRefFile.files[0];
+        photoSheetRefFile.value = "";
+        if (file) uploadPhotoSheetRef(file);
+      });
+    }
+    const photoSheetRefClearButton = document.getElementById("photoSheetRefClear");
+    if (photoSheetRefClearButton) photoSheetRefClearButton.addEventListener("click", () => clearPhotoSheetRef());
+    const personaImportFile = document.getElementById("photoPersonaImportFile");
+    let personaImportView = "front";
+    document.querySelectorAll("[data-persona-import]").forEach((button) => {
+      button.addEventListener("click", () => {
+        personaImportView = button.dataset.personaImport || "front";
+        if (personaImportFile) personaImportFile.click();
+      });
+    });
+    if (personaImportFile) {
+      personaImportFile.addEventListener("change", () => {
+        const file = personaImportFile.files && personaImportFile.files[0];
+        personaImportFile.value = "";
+        if (file) importPersonaFile(personaImportView, file);
+      });
+    }
+    loadPhotoSheetRef();
 
     (function enableTabNav() {
       const wrap = document.querySelector(".tabnav");

@@ -382,6 +382,25 @@ def clean_topic_prompt(text, max_chars=80):
     return text
 
 
+#: action 里点名这些词 = 他自己定了衣服，不再拼「今日穿搭」（B2c 同源）。
+#: 参考图只借长相：三视图里的白衬衫/藏青领结/米色开衫是模板衣服，绝不能漏进画面。
+TEMPLATE_OUTFIT_GUARD = (
+    "参考图只借长相、发型、体型和头饰；三视图里的白衬衫、藏青领结、米色开衫等模板服装不要出现在画面里，"
+    "衣服只按上面的描述/今日穿搭，不要照搬模板里的衣服"
+)
+
+EXPLICIT_OUTFIT_WORDS = (
+    "穿", "衣服", "裙", "衬衫", "衬衣", "毛衣", "外套", "大衣", "卫衣", "裤",
+    "鞋", "靴", "T恤", "泳衣", "泳装", "泳裤", "比基尼", "三点式",
+    "睡衣", "睡裙", "吊带", "背心", "西装", "内衣", "围巾", "帽子",
+)
+
+
+def action_names_outfit(text):
+    body = str(text or "")
+    return any(word in body for word in EXPLICIT_OUTFIT_WORDS)
+
+
 def build_selfie_prompt(scene, outfit, activity, state, extra="", light="", pose_text=""):
     """动态拼装自拍提示词：环境/穿搭/体感/光线全部来自当前事实，不写死任何场景。"""
     parts = ["第一人称手机前置镜头自拍（hand-held front camera selfie），画面里只有她一个人"]
@@ -389,9 +408,13 @@ def build_selfie_prompt(scene, outfit, activity, state, extra="", light="", pose
     if scene:
         parts.append("背景是" + scene + "，要能看出这个地方，不要换成别的场景")
     outfit = str(outfit or "").strip()
-    if outfit:
-        parts.append("女孩穿着" + outfit)
     extra = str(extra or "").strip()
+    explicit = action_names_outfit(extra)
+    if outfit and not explicit:
+        parts.append("女孩穿着" + outfit)
+    elif explicit:
+        # 他点名了衣服（比基尼/睡衣/某条裙子）：以动作为准，别用今日穿搭覆盖
+        parts.append("衣服以上面这句动作里的描述为准，不要换成今日穿搭")
     if extra:
         parts.append(extra)
     pose_text = str(pose_text or "").strip()
@@ -404,6 +427,7 @@ def build_selfie_prompt(scene, outfit, activity, state, extra="", light="", pose
     parts.append(light or _light_line(activity))
     parts.append("真实的手机抓拍画质，轻微噪点，随手拍不摆拍")
     parts.append(HEADWEAR_LOCK)
+    parts.append(TEMPLATE_OUTFIT_GUARD)
     parts.append(SELFIE_WORLDVIEW)
     return "，".join(part for part in parts if part)
 
@@ -1163,7 +1187,11 @@ class DrawEngine:
                     _shoes = str((self.plugin.wardrobe.current() or {}).get("shoes") or "")
                 except Exception:
                     _shoes = ""
-                prompt = foot_closeup_prompt(_scene, _shoes) + "。" + REALISM_POSITIVE
+                outfit_line = ("她现在的穿搭是%s；画面里若出现上半身，衣服必须按这套，" % outfit) if outfit else ""
+                prompt = (foot_closeup_prompt(_scene, _shoes) + "。"
+                          + outfit_line +
+                          "画面里不出现上半身、衣领、开衫、白衬衫；参考图只借长相，不要照搬模板里的衣服。"
+                          + REALISM_POSITIVE)
                 _refs = self._foot_refs()
                 logger.info("[DRAW_DIAG] foot_refs=%d", len(_refs))
                 if _refs:

@@ -153,7 +153,7 @@ class DiaryAuditEntryTests(unittest.TestCase):
         paths = {path: methods for path, _handler, methods in ROUTE_SPECS}
         self.assertEqual(paths["/diary/audit"], ("GET",))
         self.assertEqual(len(ROUTE_SPECS), ROUTE_COUNT_EXPECTED)
-        self.assertEqual(len(ROUTE_SPECS), 100)
+        self.assertEqual(len(ROUTE_SPECS), 103)
 
 
 if __name__ == "__main__":

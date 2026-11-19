@@ -64,6 +64,7 @@ except ImportError:  # 直接按文件加载时
 try:
     from .photo_view import (
     HEADWEAR_LOCK,
+    TEMPLATE_OUTFIT_GUARD,
     ROOM_NO_BODY,
     SCENERY_ONLY,
     SELFIE_FRAMING,
@@ -76,6 +77,7 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from photo_view import (
             HEADWEAR_LOCK,
+            TEMPLATE_OUTFIT_GUARD,
             ROOM_NO_BODY,
             SCENERY_ONLY,
             SELFIE_FRAMING,
@@ -431,7 +433,7 @@ class PhotoPromptMixin:
             outfit_text = self._selfie_outfit_text(zone if zone else ("home_bed" if bed else ""))
         else:
             outfit_text = self.outfit_today()
-        extras = [where_line, motion, camera_line, HEADWEAR_LOCK, light]
+        extras = [where_line, motion, camera_line, HEADWEAR_LOCK, TEMPLATE_OUTFIT_GUARD, light]
         if bed:
             extras.append("她正躺在/坐在床上或沙发上，盖着被子；画面里绝对不要出现鞋")
         elif safe:
