@@ -102,7 +102,7 @@ def ledger_today(plugin, now=None):
         rows = list(plugin.wallet.ledger(200) or [])
     except Exception:
         rows = []
-    out = []
+    out: list[dict[str, Any]] = []
     for row in rows:
         try:
             ts = float(row.get("ts") or 0)

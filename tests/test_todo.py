@@ -14,9 +14,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from amo_human_state import HumanState  # noqa: E402
 from amo_api_schedule import ScheduleApiMixin  # noqa: E402
 
+import clock  # noqa: E402
+
 
 def _day(offset):
-    return (datetime.date.today() + datetime.timedelta(days=offset)).isoformat()
+    return (clock.today() + datetime.timedelta(days=offset)).isoformat()
 
 
 class FakeDB:

@@ -91,7 +91,7 @@ def finish(plugin, trip, now_day, mood="还不错"):
         coro = finalize_async(plugin, trip)
         try:
             spawn(coro)
-            coro = None
+            coro = None  # type: ignore[assignment, unused-ignore]
         except Exception as exc:
             logger.debug("[trip] 记忆后台任务入队失败: %s", exc)
         if coro is not None:

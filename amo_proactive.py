@@ -42,6 +42,7 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             from observability import log_event
 
 import asyncio
+import difflib
 import random
 import re
 from datetime import timedelta
@@ -72,6 +73,36 @@ if TYPE_CHECKING:
     from .amo_types import PluginLike as _MixinBase
 else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉别的 mixin 的真实实现
     _MixinBase = object
+
+
+#: 一轮主动决策最长允许拖多久：超过就丢弃。LLM 慢时（2026-11-19 实测 11 分钟）
+#: 文案还锚在生成那一刻，发出去就是「迟到的早安」，比沉默更糟。
+PROACTIVE_STALE_SECONDS = 120
+#: 追问（「喂喂，人呢？」）之后先静默 2 分钟，别紧接着又开新话题。
+PROACTIVE_AFTER_FOLLOWUP_SECONDS = 120
+#: 主动消息主题去重：最近 6 小时的主动文本相似度 ≥ 阈值就当作复读。
+PROACTIVE_THEME_DEDUP_SECONDS = 6 * 3600
+PROACTIVE_THEME_THRESHOLD = 0.55  # 实测：复读 0.571，正常不同话题 ≤0.47
+
+
+
+def _proactive_plain(text):
+    """只留中文字符：标点/空格/表情不参与相似度。"""
+    return re.sub(r"[^\u4e00-\u9fff]", "", str(text or ""))
+
+
+def proactive_repeated(text, recent, threshold=PROACTIVE_THEME_THRESHOLD):
+    """新文案和最近主动消息是不是同一主题；是就返回那条旧文案。"""
+    mine = _proactive_plain(text)
+    if len(mine) < 4:
+        return ""
+    for old in recent or []:
+        other = _proactive_plain(old)
+        if len(other) < 4:
+            continue
+        if difflib.SequenceMatcher(None, mine, other).ratio() >= threshold:
+            return str(old)
+    return ""
 
 
 PROACTIVE_SLOTS = (8, 12, 15, 19, 23)
@@ -481,6 +512,7 @@ class ProactiveMixin(_MixinBase):
                         pending["followup"] = True
                         pending["followup_at"] = now
                         self.db.kv_set(self._pending_key(uid), pending)
+                        self.db.kv_set("proactive_followup_at_" + uid, now)
                         # 追问本身也是一句她说过的话，不记下来会引出下一轮「你怎么不理我」
                         self._remember_bot_message(umo, followup)
                         self._mark_bot_initiated(umo, followup)
@@ -704,7 +736,7 @@ class ProactiveMixin(_MixinBase):
             reason = "timeout"
             fact = "时间不早了，吃饱喝足了，该回去了；他不在你身边，你自己先回家。"
         else:
-            last_user = 0
+            last_user: float = 0
             try:
                 for row in self._recent(umo, 12):
                     if str(row.get("role") or "") == "user":
@@ -965,7 +997,23 @@ class ProactiveMixin(_MixinBase):
         return kept
 
     async def _maybe_proactive(self):
-        """时段推演：把分享欲/想念/生活小事/红线摆给她，发不发由她自己判断。"""
+        """时段推演：把分享欲/想念/生活小事/红线摆给她，发不发由她自己判断。
+
+        单飞：同一进程里只允许一轮在跑。LLM 慢的时候（2026-11-19 实测出现过
+        11 分钟才回来的决策），下一轮 tick 直接返回，避免两轮各自发一条、
+        用户看到的就是「怎么一直在说早」。
+        """
+        if getattr(self, "_proactive_running", False):
+            logger.debug("[amo] 主动消息：上一轮还在生成，跳过本轮")
+            return
+        self._proactive_running = True
+        try:
+            await self._maybe_proactive_once()
+        finally:
+            self._proactive_running = False
+
+    async def _maybe_proactive_once(self):
+        """_maybe_proactive 的单轮实现（已被单飞包住）。"""
         _dating = getattr(self, "_dating_active", None)
         if callable(_dating) and _dating():
             logger.debug("[amo] 主动消息：约会中，本轮推演静默")
@@ -1116,6 +1164,7 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     if not uid:
         return
     slot_key = "proactive_slot:%s:%s:%02d" % (uid, today_str(), now.hour)
+    started_at = now_ts()
     if self.db.kv_get(slot_key, False):
         return
     target_umo = self._pick_proactive_umo(profile)
@@ -1135,6 +1184,15 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
                     PROACTIVE_PHOTO_SILENCE_SECONDS // 60)
         return
     if self._proactive_user_just_talked(profile, now_ts()):
+        return
+    # 刚追问过（10 分钟没回音的「人呢？」）就先安静两分钟：08:10 追问 + 08:11 新主动
+    # 会让人觉得她在刷屏（2026-11-19 飞书实测）。
+    try:
+        followup_at = to_float(self.db.kv_get("proactive_followup_at_" + uid, 0), 0)
+    except Exception as _amo_exc:
+        _note_swallowed("amo_proactive._proactive_one.followup_gap", _amo_exc)
+        followup_at = 0.0
+    if followup_at and now_ts() - followup_at < PROACTIVE_AFTER_FOLLOWUP_SECONDS:
         return
     pending = self.db.kv_get(self._pending_key(uid), None)
     if isinstance(pending, dict) and pending.get("sent_at"):
@@ -1193,14 +1251,33 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     if said_line:
         extra.append(said_line)
     facts = proactive_facts(snap, hunger, now, extra="".join(extra))
+    # 先占坑再生成：proactive_slot = 「这一小时已经决策过」。以前放在 LLM 之后写，
+    # 两轮并发都能过检查（2026-11-19 08:00 实测 6 秒内 3 条、11 分钟后又补一条）。
+    # 事件循环里 check→set 之间没有 await，等价于原子占坑。
+    self.db.kv_set(slot_key, True)
     try:
         text = await self.llm.gen_proactive(target_umo, profile, snap, "decide", facts=facts)
     except Exception as exc:
         logger.debug("[amo] 主动消息决策失败: %s" % exc)
-        text = ""
-    self.db.kv_set(slot_key, True)
+        self.db.kv_set(slot_key, False)  # 失败释放，下一轮还能重试
+        return
+    elapsed = now_ts() - started_at
+    if elapsed > PROACTIVE_STALE_SECONDS:
+        logger.info("[amo] 主动消息：生成耗时 %.0fs 超过 %ds，本轮丢弃",
+                    elapsed, PROACTIVE_STALE_SECONDS)
+        self.db.kv_set(slot_key, False)
+        return
     if proactive_skip(text):
         logger.info("[amo] 主动消息：她自己决定这次不找你（%02d:00）" % int(now.hour))
+        return
+    try:
+        recent_all = self.db.recent_proactive_texts(uid, 5, PROACTIVE_THEME_DEDUP_SECONDS // 3600)
+    except Exception as _amo_exc:
+        _note_swallowed("amo_proactive._proactive_one.theme_dedup", _amo_exc)
+        recent_all = []
+    repeated = proactive_repeated(text, recent_all)
+    if repeated:
+        logger.info("[amo] 主动消息：与最近一条主题重复，本轮不发（%s）", repeated[:40])
         return
     sent_umo = await self._send_proactive_lines(profile, target_umo, text)
     if not sent_umo:

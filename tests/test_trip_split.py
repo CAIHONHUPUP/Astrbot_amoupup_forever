@@ -33,6 +33,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 import amo_trip as trip  # noqa: E402
 import amo_trip_cost as cost  # noqa: E402
 import amo_trip_report as report  # noqa: E402
@@ -286,7 +288,7 @@ class StateBoundaryTests(unittest.TestCase):
         plugin = _Plugin()
         info = trip.new_trip("三亚", DAY, 3)
         info["phase"] = "outbound"
-        info["outbound_ts"] = int(time.time()) - 60
+        info["outbound_ts"] = int(clock.now_ts()) - 60
         trip.save(plugin, info)
         loaded = trip.load(plugin)
         self.assertEqual(loaded["phase"], "traveling", loaded)

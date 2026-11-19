@@ -22,6 +22,7 @@ astrbot_stub.install()
 
 import amo_api_schedule as api_sched  # noqa: E402
 import amo_fact_pool  # noqa: E402
+import clock  # noqa: E402
 import amo_transition as tr  # noqa: E402
 from amo_api_schedule import ScheduleApiMixin  # noqa: E402
 from amo_state_common import today_str  # noqa: E402
@@ -255,7 +256,7 @@ class CommitSelfReplaceTests(unittest.TestCase):
 
 class ScheduleGetReadOnlyTests(unittest.TestCase):
     def test_schedule_never_generates(self):
-        now = dt.datetime.now()
+        now = clock.now()
         start = (now - dt.timedelta(minutes=10)).strftime("%H:%M")
         end = (now + dt.timedelta(minutes=30)).strftime("%H:%M")
         rows = [{"start": start, "end": end, "activity": "写代码", "place": "公司"}]
@@ -309,7 +310,7 @@ class TickBudgetTests(unittest.TestCase):
         day = today_str()
         plugin.state.schedule = {day: [{"start": "10:00", "end": "11:00",
                                         "activity": "写代码", "happened": True}]}
-        minute = dt.datetime.now().strftime("%Y%m%d%H%M")
+        minute = clock.now().strftime("%Y%m%d%H%M")
         plugin.db.kv["diary_backfill_minute"] = {"minute": minute, "count": 2}
         asyncio.run(_Mixin._diary_scheduler_tick(plugin))
         self.assertEqual(plugin.state.calls, [])
@@ -508,12 +509,14 @@ class BackdoorTests(unittest.TestCase):
                      "amo_runtime_reply.py", "amo_runtime_tick.py"):
             with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
                 text += fh.read() + "\n"
-        # 2026-11-17：落库统一走 HumanState.save_day（表 + kv 一起写），
-        # 快照仍然先 normalize 再存，这里锁住的语义没变。
-        idx = text.find("save_day(save_key, items)")
+        # 2026-11-19：23:59 快照改走唯一提交入口 commit_schedule_change（体检 + 审计），
+        # 不再直接 save_day 旁路；快照仍然先 normalize 再存。
+        idx = text.find("save_key, items,")
         self.assertGreater(idx, 0)
         window = text[max(0, idx - 900):idx]
         self.assertIn("normalize_day", window)
+        self.assertIn("commit_schedule_change(", window)
+        self.assertIn('source="snapshot"', text)
 
 
 class FrontendGeneratingTests(unittest.TestCase):

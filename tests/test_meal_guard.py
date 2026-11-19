@@ -21,10 +21,12 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 import micro_events  # noqa: E402
 from micro_events import MEAL_KEYS, MicroEventEngine, pick_event  # noqa: E402
 
-NOON = _dt.datetime.combine(_dt.date.today(), _dt.time(12, 30))
+NOON = _dt.datetime.combine(clock.today(), _dt.time(12, 30))
 
 
 class FakeDB:
@@ -43,7 +45,7 @@ class FakeDB:
 
 class FakeState:
     def __init__(self, schedule):
-        self.schedule = {_dt.date.today().isoformat(): list(schedule)}
+        self.schedule = {clock.today().isoformat(): list(schedule)}
 
     def current_activity_info(self):
         return {"activity": "在家做饭", "place": "家", "category": "meal"}, "schedule"
@@ -98,7 +100,7 @@ class MealEventFilterTests(unittest.TestCase):
         self.assertTrue(engine._meal_done(NOON))
 
     def test_meal_done_from_ledger(self):
-        ts = _dt.datetime.combine(_dt.date.today(), _dt.time(11, 30)).timestamp()
+        ts = _dt.datetime.combine(clock.today(), _dt.time(11, 30)).timestamp()
         engine = MicroEventEngine(FakePlugin(rows=[
             {"ts": ts, "delta_cents": -1500, "reason": "其他：自己做饭 × 1"}]))
         self.assertTrue(engine._meal_done(NOON))
@@ -109,7 +111,7 @@ class MealEventFilterTests(unittest.TestCase):
 
     def test_meal_done_ignores_outside_meal_window(self):
         engine = MicroEventEngine(FakePlugin(schedule=COOKED))
-        early = _dt.datetime.combine(_dt.date.today(), _dt.time(8, 0))
+        early = _dt.datetime.combine(clock.today(), _dt.time(8, 0))
         self.assertFalse(engine._meal_done(early))
 
 

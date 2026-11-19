@@ -24,9 +24,10 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402  统一时钟：测试取「现在」走 clock.now_ts()
 import main  # noqa: E402
 
-NOW = time.time()
+NOW = clock.now_ts()  # 跟随全量冻结点，不再读真实墙钟
 
 
 class FakeDB:

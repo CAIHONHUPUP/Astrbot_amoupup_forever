@@ -5,7 +5,7 @@
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 try:  # Phase 11：金额/元格式化唯一实现在 amo_numbers
     from .amo_numbers import yuan as _yuan
@@ -196,7 +196,7 @@ def stranded_line(plugin):
             from amo_shared import quiet_now as _quiet_now
     except ImportError as exc:
         logger.debug("[trip] quiet_now 不可用: %s", exc)
-        _quiet_now = None
+        _quiet_now = None  # type: ignore[assignment, unused-ignore]
     if callable(_quiet_now):
         quiet_hours = _cfg_get(plugin, "quiet_hours", "23:30-07:30")
         try:
@@ -451,7 +451,7 @@ def settle_due(plugin, now=None):
     """
     #: trip 只在真的拿到 trip 后才有值；调用方用 isinstance(..., dict) 判空，
     #: 早退分支绝不能塞 {} 进去（会把状态机手里的 trip 覆盖成空）。
-    summary = {"ok": False, "reason": "", "day": "", "settled": [],
+    summary: dict[str, Any] = {"ok": False, "reason": "", "day": "", "settled": [],
                "recovered": [], "duplicate": [], "no_money": [], "future": [],
                "failed": [], "trip": None}
     if not enabled(plugin):

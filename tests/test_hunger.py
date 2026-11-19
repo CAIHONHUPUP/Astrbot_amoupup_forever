@@ -17,6 +17,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 import amo_hunger  # noqa: E402
 
 NOW = 1_800_000_000.0
@@ -30,7 +32,7 @@ class FakeState:
         # 「掉 3 点/小时」在真实日期走进经期窗口时变成 4 点/小时（跨 0 点才暴露）。
         # 默认起点固定成「10 天前」：任何墙钟日期都不在窗口里。
         if period_start is None:
-            period_start = (_dt.date.today() - _dt.timedelta(days=10)).isoformat()
+            period_start = (clock.today() - _dt.timedelta(days=10)).isoformat()
         self.period_start = period_start
         self.health = {"status": status, "sick": status not in ("健康", "疲惫")}
         self.mood = {"疲惫": 30} if mood is None else mood

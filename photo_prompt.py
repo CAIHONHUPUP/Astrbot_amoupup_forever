@@ -353,7 +353,7 @@ class PhotoPromptMixin:
                 worn = wardrobe.current() or {}
         except Exception:
             worn: dict[str, Any] = {}
-        keys = ("coat", "top", "skirt", "bottom")
+        keys: tuple[str, ...] = ("coat", "top", "skirt", "bottom")
         if zone not in ("home_bed", "home_sofa"):
             keys = ("coat", "top", "skirt", "bottom", "shoes")
         parts = [str(worn.get(key) or "").strip() for key in keys]

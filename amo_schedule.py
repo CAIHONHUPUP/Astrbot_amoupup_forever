@@ -409,10 +409,17 @@ class ScheduleMixin(_MixinBase):
                 logger.info("[amo] 拒绝用户改日程提议: %s（%s）",
                             change.get("activity"), decision.get("reason"))
                 return
-            self.state.commit_schedule_change(
-                key, new_items, old_items=items,
-                source="chat", reason=str(change.get("activity") or ""),
-            )
+            reason_text = str(change.get("activity") or "")
+            apply = getattr(self.state, "apply_schedule", None)
+            if callable(apply):
+                def _mutate(rows):
+                    return apply_sched_change(rows, change, _now())
+                apply(key, _mutate, source="chat", reason=reason_text)
+            else:
+                self.state.commit_schedule_change(
+                    key, new_items, old_items=items,
+                    source="chat", reason=reason_text,
+                )
             try:
                 # 日程已经切了，旧的 current_action 不能继续压住新地点
                 self.db.kv_set("current_action", {})
@@ -483,26 +490,33 @@ class ScheduleMixin(_MixinBase):
         if str(current.get("category") or "") != "work":
             return
         old_items = self.state.schedule.get(day) or self.db.get_schedule(day) or []
-        items = [dict(item) if isinstance(item, dict) else item for item in old_items]
         start = str(current.get("start") or "")
-        changed = False
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("start") or "") == start:
-                item["activity"] = "下班回家，路上"
-                item["place"] = "路上"
-                item["zone"] = "road"
-                item["category"] = "commute"
-                changed = True
-                break
-        if not changed:
+
+        def _offwork(rows):
+            patched = [dict(item) if isinstance(item, dict) else item for item in rows]
+            for item in patched:
+                if isinstance(item, dict) and str(item.get("start") or "") == start:
+                    item["activity"] = "下班回家，路上"
+                    item["place"] = "路上"
+                    item["zone"] = "road"
+                    item["category"] = "commute"
+                    return patched
+            return None
+
+        if _offwork(old_items) is None:
             return
         try:
-            self.state.commit_schedule_change(
-                day, items, old_items=old_items,
-                source="self_offwork", reason="她自己说下班了",
-            )
+            apply = getattr(self.state, "apply_schedule", None)
+            if callable(apply):
+                result = apply(day, _offwork, source="self_offwork",
+                               reason="她自己说下班了")
+            else:
+                result = self.state.commit_schedule_change(
+                    day, _offwork(old_items), old_items=old_items,
+                    source="self_offwork", reason="她自己说下班了",
+                )
+            if isinstance(result, dict) and result.get("skipped"):
+                return
             self.db.kv_set(guard, True)
             logger.info("[amo] 她说下班了：当前日程改成下班回家")
         except Exception as _amo_exc:

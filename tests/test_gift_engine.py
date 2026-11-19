@@ -22,6 +22,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 from gift_engine import (  # noqa: E402
     GiftEngine,
     clean_item,
@@ -277,7 +279,7 @@ class EngineTests(unittest.TestCase):
         self.plugin.db.messages = [{
             "role": "user",
             "content": "还记得你刚才喜欢的那个小挂件吗",
-            "created_at": time.time() - 60,
+            "created_at": clock.now_ts() - 60,
         }]
         hint = asyncio.run(self.engine.build_hint(FakeEvent("送给你")))
         self.assertIn("小挂件", hint)
@@ -524,7 +526,7 @@ class ShopHintTests(unittest.TestCase):
         self.plugin.config["gift_shop_hint_max_per_day"] = 1
         self.assertEqual(self._hint(mid="c").count("【逛街】"), 1)
         meta = self.engine._load()["meta"]["shop_hint"]
-        meta["ts"] = time.time() - 10 * 3600
+        meta["ts"] = clock.now_ts() - 10 * 3600
         self.engine._save()
         self.assertNotIn("【逛街】", self._hint(mid="d"))
 
@@ -533,7 +535,7 @@ class ShopHintTests(unittest.TestCase):
         self.assertEqual(self._hint(mid="e").count("【逛街】"), 1)
         meta = self.engine._load()["meta"]["shop_hint"]
         meta["day"] = "2020-01-01"
-        meta["ts"] = time.time() - 10 * 3600
+        meta["ts"] = clock.now_ts() - 10 * 3600
         self.engine._save()
         self.assertEqual(self._hint(mid="f").count("【逛街】"), 1)
 

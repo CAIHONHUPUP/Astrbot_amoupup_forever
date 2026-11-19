@@ -17,6 +17,8 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import amo_date_context as dc  # noqa: E402
+import clock  # noqa: E402  统一时钟：测试取「现在」走 clock.now_ts()
+
 import amo_feature_api as fa  # noqa: E402
 import amo_proactive as pa  # noqa: E402
 
@@ -56,7 +58,7 @@ class _Proactive(pa.ProactiveMixin):
         return "qq:1"
 
     def _recent(self, umo, limit=10):
-        return [{"role": "user", "content": "嗯", "created_at": time.time() - 2400}]
+        return [{"role": "user", "content": "嗯", "created_at": clock.now_ts() - 2400}]
 
     async def _send_proactive_lines(self, profile, umo, text):
         self.sent.append((umo, text))
@@ -77,7 +79,7 @@ class DateEndingTests(unittest.TestCase):
         self.assertEqual(plugin.db.kv_get("date_ending"), {})
 
     def test_prompt_asks_llm_not_template(self):
-        now = time.time()
+        now = clock.now_ts()
         plugin = _Feature()
         plugin.db.kv_set("date_ending", {"fact": "老公说吃好了，准备回去了。",
                                          "reason": "user_done", "until": now + 600})
@@ -87,7 +89,7 @@ class DateEndingTests(unittest.TestCase):
         self.assertIn("不要套用任何固定台词", text)
 
     def test_timeout_wrap_generates_and_sends(self):
-        now = time.time()
+        now = clock.now_ts()
         plugin = _Proactive({"date_now": {"line": "和老公吃火锅", "until": now - 10,
                                           "since": now - 7200}})
         plugin.db.proactive_profiles = lambda limit=20: [{"uid": "u1", "relation": "相恋",

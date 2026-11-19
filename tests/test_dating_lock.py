@@ -15,6 +15,8 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import amo_date_context as dc  # noqa: E402
+import clock  # noqa: E402  统一时钟：测试取「现在」走 clock.now_ts()
+
 import amo_feature_api as fa  # noqa: E402
 import amo_proactive as pa  # noqa: E402
 
@@ -42,8 +44,7 @@ class _Feature(fa.FeatureApiMixin):
 
 class DatingLockTests(unittest.TestCase):
     def test_dating_active_reads_kv(self):
-        import time as _t
-        now = _t.time()
+        now = clock.now_ts()
         plugin = _Plugin({"date_now": {"line": "和老公吃火锅", "until": now + 3600}})
         self.assertTrue(plugin._dating_active())
         plugin = _Plugin({"date_now": {"line": "和老公吃火锅", "until": now - 5}})
@@ -51,8 +52,7 @@ class DatingLockTests(unittest.TestCase):
         self.assertFalse(_Plugin({})._dating_active())
 
     def test_prompt_forbids_on_the_way(self):
-        import time as _t
-        now = _t.time()
+        now = clock.now_ts()
         plugin = _Plugin({"date_now": {"line": "和老公吃火锅", "until": now + 3600,
                                        "since": now}})
         text = dc.prompt_block(plugin)
@@ -61,7 +61,7 @@ class DatingLockTests(unittest.TestCase):
         self.assertIn("绝不可以说还在路上", text)
 
     def test_attend_clears_prep(self):
-        import time as _t
-        plugin = _Feature({"date_prep": {"activity": "火锅", "start_ts": _t.time() + 600}})
-        plugin.set_date_now("和老公吃火锅", _t.time() + 3600, since=_t.time())
+        now = clock.now_ts()
+        plugin = _Feature({"date_prep": {"activity": "火锅", "start_ts": now + 600}})
+        plugin.set_date_now("和老公吃火锅", now + 3600, since=now)
         self.assertEqual(plugin.db.kv_get("date_prep"), {})

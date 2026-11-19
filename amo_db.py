@@ -1110,6 +1110,21 @@ class AmoDB:
             _note_swallowed("amo_db.AmoDB.get_schedule", _amo_exc)
             return None
 
+    def all_schedules(self):
+        """一次读出 schedule 表所有天：kv 镜像重建 / HumanState 读侧单一来源。"""
+        with self.lock:
+            rows = self.conn.execute("SELECT day, items FROM schedule").fetchall()
+        output = {}
+        for row in rows:
+            try:
+                items = json.loads(row["items"])
+            except Exception as _amo_exc:
+                _note_swallowed("amo_db.AmoDB.all_schedules", _amo_exc)
+                continue
+            if isinstance(items, list):
+                output[str(row["day"])] = items
+        return output
+
     def get_diary_record(self, day, hour):
         """返回小日记的完整记录（不存在返回 None）。"""
         with self.lock:
@@ -1375,7 +1390,7 @@ class AmoDB:
         """两列不相等的行（健康检查；迁移/双写正常时永远为空）。"""
         sql = ("SELECT day, block_id, event_id FROM block_diary "
                "WHERE event_id IS NULL OR event_id<>block_id")
-        params = ()
+        params: tuple[str, ...] = ()
         if day:
             sql += " AND day=?"
             params = (str(day),)

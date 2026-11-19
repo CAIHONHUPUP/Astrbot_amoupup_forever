@@ -21,13 +21,20 @@ def _main(argv):
     import sim_lib  # noqa: E402
     import simulate_24h  # noqa: E402
     import simulate_weeks  # noqa: E402  延迟导入：它会给 sys.path 加 work 并装 astrbot 桩
+    import clock  # noqa: E402  仿真自带 set_clock，conftest 的全局冻结点会盖掉它
     original_time = time.time
+    frozen_at = clock.frozen()  # 先记下 conftest 冻在哪个时刻，跑完原样恢复
+    clock.unfreeze()  # 让 clock.now_ts() 跟着仿真 patch 过的 time.time 走
     try:
         return simulate_weeks.main(argv)
     finally:
         simulate_24h.restore_clock()
         sim_lib.restore_clock()
         time.time = original_time
+        if frozen_at is None:
+            clock.unfreeze()
+        else:
+            clock.freeze(frozen_at)
 
 
 def test_simulation_seven_days_is_green(capsys):

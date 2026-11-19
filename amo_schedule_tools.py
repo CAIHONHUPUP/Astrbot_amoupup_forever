@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """日程/天气/消费的 LLM 工具：只执行模型的选择，不替模型做决定。"""
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import json
 
@@ -22,7 +22,7 @@ except ImportError:  # 直接按文件加载时
 
 
 def _current_item(plugin):
-    state = getattr(plugin, "state", None)
+    state: Any = getattr(plugin, "state", None)
     try:
         info = state.current_activity() or {}
     except Exception:
@@ -95,8 +95,30 @@ def make_update_schedule_tool(plugin):
             item["category"] = category or item.get("category") or "rest"
         item.pop("cost_settled", None)
         try:
-            plugin.state.commit_schedule_change(
-                day, items, source="llm_tool", reason=str(reason or "天气/临时改计划"))
+            apply = getattr(plugin.state, "apply_schedule", None)
+            reason_text = str(reason or "天气/临时改计划")
+
+            def _mutate(rows):
+                target_start = str(item.get("start") or "")
+                patched = [dict(row) if isinstance(row, dict) else row for row in rows]
+                for row in patched:
+                    if isinstance(row, dict) and \
+                            str(row.get("start") or "") == target_start:
+                        row["activity"] = text
+                        if place:
+                            row["place"] = place
+                            row["zone"] = zone
+                            row["category"] = (category or row.get("category")
+                                               or "rest")
+                        row.pop("cost_settled", None)
+                        return patched
+                return None
+
+            if callable(apply):
+                apply(day, _mutate, source="llm_tool", reason=reason_text)
+            else:
+                plugin.state.commit_schedule_change(
+                    day, items, source="llm_tool", reason=reason_text)
             plugin.db.kv_set("current_action", {})
         except Exception as exc:
             return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
@@ -139,8 +161,26 @@ def make_set_cost_tool(plugin):
         item["cost_reason"] = str(reason or "日程消费")
         item.pop("cost_settled", None)
         try:
-            plugin.state.commit_schedule_change(
-                day, items, source="llm_tool", reason="自主定价")
+            apply = getattr(plugin.state, "apply_schedule", None)
+            reason_text = "自主定价"
+
+            def _mutate_cost(rows):
+                target_start = str(item.get("start") or "")
+                patched = [dict(row) if isinstance(row, dict) else row for row in rows]
+                for row in patched:
+                    if isinstance(row, dict) and \
+                            str(row.get("start") or "") == target_start:
+                        row["cost_cents"] = cost
+                        row["cost_reason"] = str(reason or "日程消费")
+                        row.pop("cost_settled", None)
+                        return patched
+                return None
+
+            if callable(apply):
+                apply(day, _mutate_cost, source="llm_tool", reason=reason_text)
+            else:
+                plugin.state.commit_schedule_change(
+                    day, items, source="llm_tool", reason=reason_text)
         except Exception as exc:
             return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
         return json.dumps({"ok": True, "cost_cents": cost,

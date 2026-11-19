@@ -58,6 +58,8 @@ ROUTE_SPECS = (
     ("/mood/update", "api_mood_update", ("GET", "POST",)),
     ("/mood_update", "api_mood_update", ("GET", "POST",)),
     ("/schedule/regen", "api_schedule_regen", ("GET", "POST",)),
+    # 日程变更 + 体检拒绝审计（只读；GET/POST 都收，POST 只是带 body 方便传 day/limit）
+    ("/schedule/audit", "api_schedule_audit", ("GET", "POST")),
     # B3：面板日程块删除/修改（写路由只注册 POST，见 amo_routes.WRITE_ROUTES）
     ("/schedule/block/update", "api_schedule_block_update", ("POST",)),
     ("/schedule/block/delete", "api_schedule_block_delete", ("POST",)),
@@ -110,7 +112,7 @@ ROUTE_SPECS = (
 
 
 #: 路由总数（增删接口后只改这里；quality_gate 与 tests/test_route_table 都读它）
-ROUTE_COUNT_EXPECTED = 97
+ROUTE_COUNT_EXPECTED = 98
 
 
 def build_routes(api):

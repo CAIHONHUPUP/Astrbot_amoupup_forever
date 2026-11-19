@@ -1,4 +1,22 @@
 /* 面板展示页：照片 / 设置 / 用户 / 关系图谱；通信层在 assets/api-client.js。 */
+// 日程来源中文化（弱点1 第 6 条）：时间轴行尾小灰字 + 详情弹层共用。
+const AMO_SCHEDULE_SOURCE_LABELS = {
+  jit: "自动", ensure: "自动", ensure_regen: "自动", generated: "自动", auto: "自动",
+  chat: "聊天", shared_activity: "聊天",
+  transit: "过渡", transit_repair: "过渡",
+  date: "约会",
+  manual: "面板", command: "面板", panel: "面板", manual_edit_api: "面板",
+  finance: "财务", food_spend: "财务", meal_ledger: "财务",
+  llm_tool: "工具", snapshot: "快照", health_audit: "体检",
+  social: "社交", travel_overlay: "旅行", travel_follow_start: "旅行",
+  travel_return: "旅行", trip_leg: "旅行", self_offwork: "她说的",
+};
+function amoScheduleSourceLabel(source) {
+  const key = String(source || "").trim().toLowerCase();
+  if (!key) return "";
+  return AMO_SCHEDULE_SOURCE_LABELS[key] || key;
+}
+window.amoScheduleSourceLabel = amoScheduleSourceLabel;
     let photoItems = [];
     const PHOTO_PROB_KEYS = new Set([
       "photo_outfit_prob", "photo_travel_prob", "photo_shopping_prob",

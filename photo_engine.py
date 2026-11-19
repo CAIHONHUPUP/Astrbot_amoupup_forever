@@ -258,7 +258,7 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         self._outfit_text = ""
         self._stats = {"sent": 0, "failed": 0, "rolled": 0}
         self._activity_cache = None  # (天 时:分, 日程快照)；日程变更/换天即失效
-        self._persona_refs_signature = None
+        self._persona_refs_signature: Any = None
         self._persona_synced_ok = False
         # 启动：先把三视图路径从旧 omnidraw 迁到生图插件目录（旧路径只读兜底），
         # 再排一次后台握手把参考图补进生图插件；任何一步失败都不阻塞加载。

@@ -133,10 +133,11 @@ class CheckScriptTests(unittest.TestCase):
         self.assertIn("==", out.getvalue())
 
     def test_under_baseline_hints_downgrade(self):
-        self.assertGreater(self.baseline, 0)
-        count = self.baseline - 1
+        # 基线已压到 0（2026-11-19 两套 mypy 都清零）：注入合成基线，
+        # 只验证「低于基线会提示下调」，不再依赖仓库当前基线大于 0。
+        self.module.read_baseline = lambda *_a, **_k: 5
         self.module.mypy_available = lambda: True
-        self.module.count_errors = lambda: (count, "")
+        self.module.count_errors = lambda: (4, "")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = self.module.main([])

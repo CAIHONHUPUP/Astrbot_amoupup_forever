@@ -75,7 +75,7 @@ class LateNightEngine:
 
     def _set_flag(self, key):
         data = self.flags()
-        data["date"] = _dt.date.today().isoformat()
+        data["date"] = _amo_clock.today().isoformat()
         data[key] = True
         try:
             self.db.kv_set("late_flags", data)
@@ -108,7 +108,7 @@ class LateNightEngine:
             day_key = self._day_of(now)
             if data.get("decided_date") != day_key:
                 flags = self.flags()
-                if flags.get("date") == _dt.date.today().isoformat() or flags.get("date") == day_key:
+                if flags.get("date") == _amo_clock.today().isoformat() or flags.get("date") == day_key:
                     if flags.get("overtime"):
                         stay = True
                     elif flags.get("big_loss"):
@@ -163,7 +163,7 @@ class LateNightEngine:
             logger.debug("[amo] optional step failed: %r", exc)
         # 第二天惩罚：疲惫 +30、皮肤差情绪 -10（只一次）
         if data.get("date") and not data.get("penalty_done") and 8 <= now.hour < 20:
-            yesterday = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
+            yesterday = (_amo_clock.today() - _dt.timedelta(days=1)).isoformat()
             if data.get("date") == yesterday and not data.get("cleared"):
                 try:
                     self.human.nudge(疲惫=30)
@@ -219,7 +219,7 @@ class LateNightEngine:
             return 0
         days = set(hist)
         count = 0
-        cursor = _dt.date.today() - _dt.timedelta(days=1)
+        cursor = _amo_clock.today() - _dt.timedelta(days=1)
         while cursor.isoformat() in days:
             count += 1
             cursor -= _dt.timedelta(days=1)

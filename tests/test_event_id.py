@@ -131,7 +131,7 @@ class BaseCase(unittest.TestCase):
 
     def now_at(self, hour, minute=0):
         return datetime.datetime.combine(
-            datetime.date.today(), datetime.time(hour, minute))
+            datetime.date.fromisoformat(today_str()), datetime.time(hour, minute))
 
     def saved_rows(self):
         return self.plugin.db.get_schedule(self.day) or []

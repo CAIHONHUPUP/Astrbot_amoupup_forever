@@ -16,6 +16,7 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402  统一时钟：测试取「现在」走 clock.now_ts()
 import main  # noqa: E402
 
 
@@ -55,7 +56,7 @@ class DateFactTests(unittest.TestCase):
         self.assertEqual(db.data["current_action"]["place"], "外面")
 
     def test_fact_line_priority_and_expiry(self):
-        now = time.time()
+        now = clock.now_ts()
         db = FakeDb({"date_now": {"line": "进行中", "until": now + 100},
                      "date_fact": {"line": "已发生", "until": now + 100}})
         self.assertEqual(build(db)._date_fact_line(), "进行中")

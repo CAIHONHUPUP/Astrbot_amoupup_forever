@@ -350,9 +350,12 @@ class RuntimeTickMixin(RuntimeMixinBase):
                     except Exception as exc:
                         logger.debug("[amo] 快照归一失败: %s", exc)
                     if items:
-                        # 走唯一的落库入口：schedule 表 + kv['schedule'] 一起写，
-                        # 只写表会让两份存储漂移（2026-11-17 事故）。
-                        self.state.save_day(save_key, items)
+                        # 走唯一提交入口（体检 + 审计 + 表/kv 同写），
+                        # 不再直接 save_day 绕过体检与审计（2026-11-19 收口）。
+                        self.state.commit_schedule_change(
+                            save_key, items,
+                            old_items=list(self.state.schedule.get(save_key) or []),
+                            source="snapshot", reason="23:59 快照兜底")
                     self.db.fade_schedules(7)
                     # 清理走保留策略统一入口（Phase 7），口径与原来的 4 个 purge 调用一致
                     self._apply_retention(now)

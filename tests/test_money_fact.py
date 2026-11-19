@@ -6,6 +6,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import clock  # noqa: E402  统一时钟：测试取「现在」走 clock.now_ts()
 from amo_runtime_context import money_fact_line  # noqa: E402
 
 
@@ -14,7 +15,7 @@ class FakeWallet:
         return 658926
 
     def ledger(self, limit=200):
-        now = time.time()
+        now = clock.now_ts()
         return [
             {"ts": now, "delta_cents": -1500},
             {"ts": now, "delta_cents": -2500},

@@ -22,6 +22,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 import main  # noqa: E402
 from astrbot.api.message_components import At  # noqa: E402
 from astrbot.api.star import Context  # noqa: E402
@@ -181,7 +183,7 @@ class DynamicContextTests(unittest.TestCase):
 
     def test_social_learn_line_injected(self):
         self.plugin.db.kv_set("social_learn:entries", [
-            {"ts": time.time(), "text": "[今日见闻] 热搜：公司周末加班"},
+            {"ts": clock.now_ts(), "text": "[今日见闻] 热搜：公司周末加班"},
         ])
         text = self._ctx("今天好累")
         self.assertIn("【社会见闻】", text)
@@ -189,7 +191,7 @@ class DynamicContextTests(unittest.TestCase):
 
     def test_date_fact_is_top_fact(self):
         self.plugin.db.kv_set("date_fact", {"line": "你今天中午和老公一起吃了火锅，他陪你涮了毛肚。",
-                                             "until": time.time() + 3600})
+                                             "until": clock.now_ts() + 3600})
         text = self._ctx("老婆，中午火锅好吃吗")
         self.assertIn("【最高事实】", text)
         self.assertIn("老公一起吃了火锅", text)
@@ -198,7 +200,7 @@ class DynamicContextTests(unittest.TestCase):
         self.assertIn("【最高事实】", self._ctx("老婆，中午火锅好吃吗"))
 
     def test_date_now_beats_date_fact(self):
-        now = time.time()
+        now = clock.now_ts()
         self.plugin.db.kv_set("date_fact", {"line": "已发生事实", "until": now + 3600})
         self.plugin.db.kv_set("date_now", {"line": "正和老公吃火锅", "until": now + 3600})
         text = self._ctx("在干嘛")
@@ -206,7 +208,7 @@ class DynamicContextTests(unittest.TestCase):
         self.assertNotIn("已发生事实", text)
 
     def test_expired_date_fact_not_injected(self):
-        self.plugin.db.kv_set("date_fact", {"line": "昨天的事", "until": time.time() - 5})
+        self.plugin.db.kv_set("date_fact", {"line": "昨天的事", "until": clock.now_ts() - 5})
         self.assertNotIn("【最高事实】", self._ctx("今天好累"))
 
     def test_lean_parts_helper(self):

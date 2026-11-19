@@ -24,13 +24,15 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 from amo_current_action import get_current_action, set_action  # noqa: E402
 from amo_fact_binder import ban_words, facts_lines, warning_line  # noqa: E402
 from amo_llm import LlmMixin  # noqa: E402
 
-TODAY = _dt.date.today().isoformat()
-NOON = _dt.datetime.combine(_dt.date.today(), _dt.time(12, 30))
-EVENING = _dt.datetime.combine(_dt.date.today(), _dt.time(19, 0))
+TODAY = clock.today().isoformat()
+NOON = _dt.datetime.combine(clock.today(), _dt.time(12, 30))
+EVENING = _dt.datetime.combine(clock.today(), _dt.time(19, 0))
 COOK_ITEMS = [
     {"start": "12:00", "end": "13:00", "activity": "在家做饭", "place": "家", "category": "rest"},
 ]
@@ -131,7 +133,7 @@ class WarningLineTests(unittest.TestCase):
         self.assertNotIn("在公司", words)
 
     def test_ban_words_allows_takeout_when_charged(self):
-        ts = _dt.datetime.combine(_dt.date.today(), _dt.time(12, 0)).timestamp()
+        ts = _dt.datetime.combine(clock.today(), _dt.time(12, 0)).timestamp()
         plugin = FakePlugin(schedule=[],
                             rows=[{"ts": ts, "delta_cents": -2500,
                                    "reason": "点了个外卖", "category": ""}])
@@ -141,7 +143,7 @@ class WarningLineTests(unittest.TestCase):
 
     def test_future_charge_is_not_a_fact(self):
         # 12:30 时 13:32 的外卖还没发生，禁止词里必须有外卖
-        later = _dt.datetime.combine(_dt.date.today(), _dt.time(13, 32)).timestamp()
+        later = _dt.datetime.combine(clock.today(), _dt.time(13, 32)).timestamp()
         plugin = FakePlugin(schedule=COOK_ITEMS,
                             rows=[{"ts": later, "delta_cents": -2500,
                                    "reason": "今天不想做饭，点了个外卖", "category": ""}])
@@ -149,7 +151,7 @@ class WarningLineTests(unittest.TestCase):
         self.assertIn("外卖", words)
 
     def test_past_charge_is_a_fact(self):
-        past = _dt.datetime.combine(_dt.date.today(), _dt.time(11, 30)).timestamp()
+        past = _dt.datetime.combine(clock.today(), _dt.time(11, 30)).timestamp()
         plugin = FakePlugin(schedule=[], rows=[
             {"ts": past, "delta_cents": -2500, "reason": "点了个外卖", "category": ""}])
         words = ban_words(plugin, NOON)
@@ -158,8 +160,8 @@ class WarningLineTests(unittest.TestCase):
 
     def test_refunded_charge_is_not_a_fact(self):
         # 13:32 那笔外卖已原路退回：不能再当成"她真的点过外卖"
-        debit = _dt.datetime.combine(_dt.date.today(), _dt.time(13, 32)).timestamp()
-        credit = _dt.datetime.combine(_dt.date.today(), _dt.time(13, 50)).timestamp()
+        debit = _dt.datetime.combine(clock.today(), _dt.time(13, 32)).timestamp()
+        credit = _dt.datetime.combine(clock.today(), _dt.time(13, 50)).timestamp()
         rows = [
             {"ts": debit, "delta_cents": -2500, "reason": "今天不想做饭，点了个外卖",
              "idem": "micro:today:takeout", "ref": ""},
@@ -167,7 +169,7 @@ class WarningLineTests(unittest.TestCase):
              "idem": "refund:micro:today:takeout", "ref": "micro:today:takeout"},
         ]
         plugin = FakePlugin(schedule=[], rows=rows)
-        now = _dt.datetime.combine(_dt.date.today(), _dt.time(14, 0))
+        now = _dt.datetime.combine(clock.today(), _dt.time(14, 0))
         words = ban_words(plugin, now)
         self.assertIn("外卖", words)
         text = "\n".join(facts_lines(plugin, now))

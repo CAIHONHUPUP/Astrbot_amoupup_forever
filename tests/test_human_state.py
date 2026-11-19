@@ -26,6 +26,7 @@ from amo_db import AmoDB  # noqa: E402
 from amo_human_state import HumanState  # noqa: E402
 from amo_shared import MOOD_BASE, MOOD_KEYS, now_ts, today_str  # noqa: E402
 from fixtures import FixedClock, today_at  # noqa: E402
+import clock  # noqa: E402
 
 
 class FakePlugin:
@@ -91,7 +92,7 @@ class StateTestCase(unittest.TestCase):
                 sys.modules[name] = module
 
     def set_start(self, days_ago: int) -> None:
-        self.state.period_start = (date.today() - timedelta(days=days_ago)).isoformat()
+        self.state.period_start = (clock.today() - timedelta(days=days_ago)).isoformat()
 
 
 class MoodTests(StateTestCase):
@@ -549,14 +550,14 @@ class JitBlindBoxTests(StateTestCase):
         self.assertEqual(llm.calls, first_calls)
 
     def test_future_day_is_empty(self) -> None:
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        tomorrow = (clock.today() + timedelta(days=1)).isoformat()
         self.state.schedule = {tomorrow: [
             {"start": "09:00", "end": "10:00", "activity": "上班", "place": "公司", "category": "work"},
         ]}
         self.assertEqual(self.state.schedule_tree(tomorrow), [])
 
     def test_past_day_keeps_full_history(self) -> None:
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        yesterday = (clock.today() - timedelta(days=1)).isoformat()
         self.state.schedule = {yesterday: [
             {"start": "09:00", "end": "10:00", "activity": "上班", "place": "公司", "category": "work"},
         ]}
@@ -567,19 +568,19 @@ class JitBlindBoxTests(StateTestCase):
 
     def test_blind_hint(self) -> None:
         self.assertIn("还没过完", self.state.schedule_blind_hint(today_str()))
-        self.assertEqual(self.state.schedule_blind_hint((date.today() - timedelta(days=1)).isoformat()), "")
-        self.assertTrue(self.state.schedule_blind_hint((date.today() + timedelta(days=1)).isoformat()))
+        self.assertEqual(self.state.schedule_blind_hint((clock.today() - timedelta(days=1)).isoformat()), "")
+        self.assertTrue(self.state.schedule_blind_hint((clock.today() + timedelta(days=1)).isoformat()))
 
     def test_sleep_merges_after_waking(self) -> None:
         from datetime import datetime as dt
 
-        previous = (date.today() - timedelta(days=1)).isoformat()
+        previous = (clock.today() - timedelta(days=1)).isoformat()
         self.state.schedule = {previous: [
             {"start": "23:00", "end": "24:00", "activity": "入睡", "category": "sleep",
              "source": "jit", "open_sleep": True},
         ]}
         self.plugin.db.kv_set("sleep_open", {"day": previous, "start": "23:00"})
-        result = self.state._finish_open_sleep(dt.combine(date.today(), dt.min.time()).replace(hour=7, minute=10))
+        result = self.state._finish_open_sleep(dt.combine(clock.today(), dt.min.time()).replace(hour=7, minute=10))
         self.assertEqual(result.get("wake"), "07:00")
         previous_rows = self.state.schedule[previous]
         self.assertEqual(previous_rows[0]["activity"], "睡觉")
@@ -597,8 +598,8 @@ class JitBlindBoxTests(StateTestCase):
 
         day = today_str()
         self.state.schedule = {day: []}
-        last = dt.combine(date.today(), dt.min.time()).replace(hour=15, minute=5)
-        now = dt.combine(date.today(), dt.min.time()).replace(hour=15, minute=30)
+        last = dt.combine(clock.today(), dt.min.time()).replace(hour=15, minute=5)
+        now = dt.combine(clock.today(), dt.min.time()).replace(hour=15, minute=30)
         rows = self.state._jit_backfill_gap(now, last)
         self.assertEqual(len(rows), 1)
         # 期望按分钟算（跨分钟边界偶发红就是这个写死字符串造成的）
@@ -662,7 +663,7 @@ class JitBlindBoxTests(StateTestCase):
 
         day = today_str()
         self.state.schedule = {day: []}
-        self.state.jit_tick(dt.combine(date.today(), dt.min.time()).replace(hour=10, minute=5))
+        self.state.jit_tick(dt.combine(clock.today(), dt.min.time()).replace(hour=10, minute=5))
         rows = self.state.schedule[day]
         self.assertTrue(any(row.get("start") == "10:00" for row in rows))
 

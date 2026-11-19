@@ -136,8 +136,8 @@ CHECKS = [
         "label": "摘掉 save_day 的 kv['schedule'] 镜像",
         "target": "amo_state_schedule.py",
         "edits": [{
-            "old": "        self.db.save_schedule(day, rows)\n        self.db.kv_set(\"schedule\", self.schedule)",
-            "new": "        self.db.save_schedule(day, rows)\n        # reverse-check：摘掉 kv['schedule'] 镜像",
+            "old": "        mirror = self._schedule_mirror_from_table()\n        self.db.kv_set(\"schedule\", mirror if mirror is not None else self.schedule)",
+            "new": "        # reverse-check：摘掉 kv['schedule'] 镜像\n        _ = self._schedule_mirror_from_table()",
         }],
         "tests": ["tests/test_schedule_invariants_storage.py::SingleStorageTests::test_save_day_keeps_table_and_kv_identical"],
     },

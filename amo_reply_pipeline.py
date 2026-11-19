@@ -667,7 +667,7 @@ def fact_guard_context(plugin, activity=None, now=None):
     date/trip/today_chat 是会话状态（kv/进程内），不属于四本账，仍走原只读路径。
     """
     moment = now if now is not None else _now()
-    context = {"now": moment, "activity": {}, "health": {}, "nearby": []}
+    context: dict[str, Any] = {"now": moment, "activity": {}, "health": {}, "nearby": []}
     view = None
     try:
         try:

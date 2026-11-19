@@ -426,6 +426,7 @@ def _schedule_audit_visible(plugin, day="", limit=20):
 
 
 class ScheduleApiMixin(_MixinBase):
+    _status_cache: dict | None  # 与 CommandMixin 同一类型（/status 两秒缓存）
     async def api_mood_update(self):
         await self._ensure_ready()
         data = await self._body()
@@ -704,11 +705,57 @@ class ScheduleApiMixin(_MixinBase):
 
     def _schedule_commit_edit(self, day, new_items, old_items, action, before, after,
                               reason="", operator=""):
-        """手动改/删的唯一落库：commit_schedule_change → 对账 → 审计。"""
+        """手动改/删/恢复的唯一落库：网关读改写 → 对账 → 审计。
+
+        面板调用方已经按旧快照算好了 new_items；真实 state 有 apply_schedule 时，
+        在网关锁内以「当前块」为基座重放同一动作（块在面板读完后被别处改掉也能
+        找到它；确实找不到就按没改成回滚），再走唯一提交入口 commit_schedule_change。
+        极简假件（只有 commit_schedule_change）仍按老签名兜底。
+        """
+        written = {"items": list(new_items or [])}
+
+        def _mutate(current):
+            before_row = before if isinstance(before, dict) else {}
+            after_row = after if isinstance(after, dict) else None
+            key_id = str(before_row.get("id") or "").strip()
+            key_start = str(before_row.get("start") or "").strip()[:5]
+            index = None
+            for pos, row in enumerate(current or []):
+                if not isinstance(row, dict):
+                    continue
+                if key_id and key_id in _schedule_row_ids(row):
+                    index = pos
+                    break
+                if key_start and str(row.get("start") or "").strip()[:5] == key_start:
+                    index = pos
+                    break
+            if action == "delete":
+                if index is None:
+                    return None
+                merged = [row for pos, row in enumerate(current) if pos != index]
+            elif after_row is not None:
+                merged = list(current or [])
+                if index is None:
+                    if action != "restore":
+                        return None
+                    merged.append(dict(after_row))
+                else:
+                    merged[index] = dict(after_row)
+                merged.sort(key=lambda row: _schedule_clock((row or {}).get("start")) or 0)
+            else:
+                merged = list(new_items or [])
+            written["items"] = merged
+            return merged
+
+        apply = getattr(self.state, "apply_schedule", None)
         try:
-            result = self.state.commit_schedule_change(
-                day, new_items, old_items=old_items,
-                source="manual_edit_api", reason=str(action or ""))
+            if callable(apply):
+                result = apply(day, _mutate, source="manual_edit_api",
+                               reason=str(action or ""))
+            else:
+                result = self.state.commit_schedule_change(
+                    day, new_items, old_items=old_items,
+                    source="manual_edit_api", reason=str(action or ""))
         except Exception as exc:
             logger.warning("[amo] 日程手动%s落库失败: %s", action, exc)
             return {"code": 1, "msg": "落库失败：%s" % exc}
@@ -717,14 +764,126 @@ class ScheduleApiMixin(_MixinBase):
         reconcile = getattr(self.state, "_reconcile_manual_schedule_edit", None)
         if callable(reconcile):
             try:
-                reconcile(day, old_items, new_items, source="panel_" + str(action or ""))
+                reconcile(day, old_items, written["items"], source="panel_" + str(action or ""))
             except Exception as _amo_exc:
                 _note_swallowed("amo_api_schedule.schedule_commit.reconcile", _amo_exc)
         entry = self._schedule_audit(action, day, before, after, reason=reason,
                                       operator=operator)
         return {"code": 0, "data": {"day": day, "action": str(action or ""), "changed": True,
-                                    "version": result.get("version"), "items": new_items,
+                                    "version": result.get("version"), "items": written["items"],
                                     "audit": {"ts": entry["ts"], "action": entry["action"]}}}
+
+    @staticmethod
+    def _schedule_block_key(row):
+        row = row if isinstance(row, dict) else {}
+        return (str(row.get("start") or ""), str(row.get("end") or ""),
+                str(row.get("activity") or ""))
+
+    @classmethod
+    def _schedule_audit_entries(cls, rows, limit=200):
+        """把 kv schedule_audit:<day> 的原始行归一成面板可直接渲染的结构（最新在前）。"""
+        limit = max(1, min(200, int(limit or 200)))
+        output = []
+        for row in reversed(list(rows or [])):
+            if not isinstance(row, dict):
+                continue
+            try:
+                ts = int(row.get("ts") or 0)
+            except (TypeError, ValueError):
+                ts = 0
+            time_text = ""
+            if ts:
+                try:
+                    time_text = time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+                except Exception:
+                    time_text = ""
+            try:
+                version = int(row.get("version") or 0)
+            except (TypeError, ValueError):
+                version = 0
+            rejected = row.get("rejected") or []
+            hours = []
+            for hour in row.get("changed_hours") or []:
+                try:
+                    hours.append(int(hour))
+                except (TypeError, ValueError):
+                    continue
+            output.append({
+                "ts": ts, "time": time_text,
+                "source": str(row.get("source") or ""),
+                "reason": str(row.get("reason") or ""),
+                "version": version,
+                "changed_hours": hours,
+                "rejected": [str(item) for item in rejected][:20]
+                if isinstance(rejected, list) else [],
+                "before": [dict(item) for item in (row.get("before") or [])
+                           if isinstance(item, dict)],
+                "after": [dict(item) for item in (row.get("after") or [])
+                          if isinstance(item, dict)],
+            })
+            if len(output) >= limit:
+                break
+        return output
+
+    @classmethod
+    def _schedule_audit_replay(cls, entries):
+        """按时间顺序用 before/after 串成「谁在几点改了什么」，直接给面板渲染。"""
+        replay = []
+        ordered = sorted(entries or [], key=lambda row: int(row.get("ts") or 0))
+        for entry in ordered:
+            before = entry.get("before") or []
+            after = entry.get("after") or []
+            before_keys = {cls._schedule_block_key(row) for row in before}
+            after_keys = {cls._schedule_block_key(row) for row in after}
+            added = [row for row in after if cls._schedule_block_key(row) not in before_keys]
+            removed = [row for row in before if cls._schedule_block_key(row) not in after_keys]
+            rejected = entry.get("rejected") or []
+            parts = []
+            for row in removed:
+                parts.append("删掉 %s-%s「%s」" % (row.get("start") or "", row.get("end") or "",
+                                                  row.get("activity") or ""))
+            for row in added:
+                parts.append("加上 %s-%s「%s」" % (row.get("start") or "", row.get("end") or "",
+                                                  row.get("activity") or ""))
+            if rejected:
+                parts.append("体检拒绝：" + "；".join(str(item) for item in rejected[:3]))
+            replay.append({
+                "ts": entry.get("ts") or 0,
+                "time": entry.get("time") or "",
+                "source": entry.get("source") or "",
+                "reason": entry.get("reason") or "",
+                "version": entry.get("version") or 0,
+                "rejected": list(rejected),
+                "added": added,
+                "removed": removed,
+                "summary": "；".join(parts) or (entry.get("reason") or "（无块变化）"),
+            })
+        return replay
+
+    def _schedule_change_audit(self, day, limit=200):
+        """读 kv schedule_audit:<day>：entries 最新在前，replay 按时间正序。"""
+        try:
+            rows = list(self.db.kv_get("schedule_audit:%s" % str(day), []) or [])
+        except Exception as _amo_exc:
+            _note_swallowed("amo_api_schedule.schedule_audit.read", _amo_exc)
+            rows = []
+        entries = self._schedule_audit_entries(rows[-200:], limit)
+        return entries, self._schedule_audit_replay(list(reversed(entries)))
+
+    async def api_schedule_audit(self):
+        """GET/POST /schedule/audit：日程变更 + 体检拒绝审计（day 缺省 = 今天）。"""
+        await self._ensure_ready()
+        data = await self._body()
+        data = dict(data) if isinstance(data, dict) else {}
+        day = str(data.get("day") or data.get("date") or self._q("day", "") or "").strip()
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+            day = today_str()
+        try:
+            limit = int(data.get("limit") or self._q("limit", "") or 200)
+        except (TypeError, ValueError):
+            limit = 200
+        entries, replay = self._schedule_change_audit(day, limit)
+        return {"code": 0, "data": {"day": day, "entries": entries, "replay": replay}}
 
     async def api_schedule_block_update(self):
         """面板：改一块日程（时间/活动/地点）。POST-only + 时间/重叠校验 + 对账 + 审计。"""

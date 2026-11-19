@@ -111,6 +111,12 @@ class FakeState:
         self.calls.append(("save_day", day, len(items)))
         self.schedule[day] = list(items)
 
+    def commit_schedule_change(self, day, items, old_items=None, source="", reason="",
+                               invalidate_from=None):
+        self.calls.append(("commit_schedule_change", day, len(items), source))
+        self.schedule[day] = list(items)
+        return {"changed": True, "version": 1}
+
     async def jit_tick_async(self, now):
         self.calls.append("jit")
 
@@ -556,8 +562,10 @@ class LoopTasksTests(unittest.TestCase):
         with freeze(at(23, 59)), mock.patch("amo_retention.apply",
                                             return_value={"errors": []}):
             asyncio.run(RuntimeTickMixin._tick_loop_tasks(plugin))
-        self.assertIn(DAY, [c[1] for c in plugin.state.calls if isinstance(c, tuple)
-                            and c[0] == "save_day"])
+        commits = [c for c in plugin.state.calls
+                   if isinstance(c, tuple) and c[0] == "commit_schedule_change"]
+        self.assertIn(DAY, [c[1] for c in commits])
+        self.assertIn("snapshot", [c[3] for c in commits])
         self.assertEqual(plugin.db.faded, [7])
 
     def test_first_private_umo(self):

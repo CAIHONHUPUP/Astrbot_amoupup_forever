@@ -179,7 +179,7 @@ def emotion_hint(text):
 
 def _emotion_fallback(umo, refs, hint):
     word = emotion_hint(hint)
-    pool = ()
+    pool: tuple[Any, ...] = ()
     for theme, items in EMOTION_FALLBACKS:
         if theme == word:
             pool = items

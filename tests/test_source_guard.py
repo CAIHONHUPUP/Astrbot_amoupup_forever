@@ -194,8 +194,19 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("def clamp", hits[0])
 
     def test_clock_now_ts_is_epoch_seconds(self):
+        # 这条断言的是「真实 epoch 秒」：必须先把 conftest 的冻结解除，
+        # 结束时再冻结回去（autouse fixture 退出时也会 unfreeze）。
         import clock
-        self.assertLess(abs(clock.now_ts() - time.time()), 5.0)
+
+        frozen = clock.frozen()
+        try:
+            clock.unfreeze()
+            self.assertLess(abs(clock.now_ts() - time.time()), 5.0)
+        finally:
+            if frozen is None:
+                clock.unfreeze()
+            else:
+                clock.freeze(frozen)
 
     def test_clock_now_is_naive_datetime(self):
         import clock

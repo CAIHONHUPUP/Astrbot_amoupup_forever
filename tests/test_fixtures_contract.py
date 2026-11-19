@@ -113,7 +113,15 @@ class FixedClockContractTests(unittest.TestCase):
         self.assertIsNot(clock.now, before)
         frozen.stop()
         self.assertIs(clock.now, before)
-        self.assertLess(abs(clock.now_ts() - time.time()), 5.0)
+        # 这条断言的是「FixedClock.stop() 之后回到真实墙钟」，而 conftest 把插件时钟
+        # 冻结在 2026-11-18 15:00：先临时解冻取真实 epoch，finally 再冻回原值。
+        session_frozen = clock.frozen()
+        try:
+            clock.unfreeze()
+            self.assertLess(abs(clock.now_ts() - time.time()), 5.0)
+        finally:
+            if session_frozen is not None:
+                clock.freeze(session_frozen)
 
     def test_advance_moves_moment(self):
         frozen = FixedClock(datetime(2026, 1, 1, 0, 0, 0))

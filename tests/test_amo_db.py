@@ -21,6 +21,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 from amo_db import AmoDB  # noqa: E402
 from amo_shared import _now, now_ts, today_str  # noqa: E402
 
@@ -223,7 +225,7 @@ class AmoDBTests(unittest.TestCase):
         self.assertEqual(self.db.get_diary(day, 9), "上午")
         self.db.clear_diaries(day)
         self.assertEqual(self.db.get_diary(day, 9), "")
-        old = (date.today() - timedelta(days=60)).isoformat()
+        old = (clock.today() - timedelta(days=60)).isoformat()
         self.db.save_diary(old, 9, "很旧")
         self.db.purge_diaries(days=30)
         self.assertEqual(self.db.get_diary(old, 9), "")

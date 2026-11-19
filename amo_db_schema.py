@@ -546,7 +546,7 @@ def _migration_ledger_event_ids(db):
 
 
 #: 迁移注册表：version 递增，(version, id, fn) 三元组
-MIGRATIONS = (
+MIGRATIONS: tuple[dict[str, Any], ...] = (
     {
         "version": 1,
         "id": "schema_baseline",

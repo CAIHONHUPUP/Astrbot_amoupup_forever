@@ -12,7 +12,7 @@ uid_map.json 例外：它是人工维护的 uid → uid 映射表，往里塞 ve
 解析，所以登记成"只读审计"——版本恒按 0 读，迁移只做校验，从不落盘。
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import json
 import os
@@ -91,7 +91,7 @@ def _migrate_uid_map(data):
 
 
 #: 登记表：名字 → {kind, 文件名或 kv 键, 当前版本, 迁移函数, 是否只读}
-STORE_SPECS = {
+STORE_SPECS: dict[str, dict[str, Any]] = {
     "wardrobe": {
         "kind": "json", "filename": "wardrobe.json", "version": 1,
         "migrate": _migrate_wardrobe, "read_only": False,

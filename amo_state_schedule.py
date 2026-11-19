@@ -216,6 +216,11 @@ def health_problems(items, sick=False, work_start=_WORK_START_HOUR, work_end=_WO
 
 
 class ScheduleStateMixin(_MixinBase):
+    #: 兄弟 mixin / 宿主提供的成员：只做类型声明，运行时由 HumanState 创建
+    schedule_ctx: Any
+    schedule_context: Any
+    _schedule_gen_locks: Any
+    on_sick_leave: Any
     """日程域：主干生成、待办/已定行程、展示优先级、日程读写与持久化。"""
     if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
         _booked_tree: Any
@@ -351,6 +356,45 @@ class ScheduleStateMixin(_MixinBase):
         if hours and len(hours) > limit:
             picked.append("...+%d" % (len(hours) - limit))
         return ",".join(picked) or "-"
+
+    def _schedule_current_items(self, day):
+        """当天真实块：内存缓存优先，schedule 表兜底（网关读侧）。"""
+        try:
+            rows = (self.schedule or {}).get(day)
+        except Exception:
+            rows = None
+        if rows:
+            return [dict(row) if isinstance(row, dict) else row for row in rows]
+        try:
+            return list(self.db.get_schedule(day) or [])
+        except Exception:
+            return []
+
+    def apply_schedule(self, day, mutator, *, source="", reason="", invalidate_from=None):
+        """日程写入网关（唯一「读当前 + 改 + 提交」入口）。
+
+        锁内读当天当前块 → mutator(current) 返回新列表 → 交回唯一提交入口
+        commit_schedule_change（体检/审计/落库都在它里面）。mutator 返回 None
+        表示这次不写（例如追加块与已有块重叠），返回里带 skipped。
+
+        为什么要有这一层：以前调用方各自「读一遍当前 + 改 + 提交」，读和写之间
+        没有同一把锁，改的还是上一次的快照；收敛到网关后读、改、提交在同一把
+        RLock 里串行，旁路（直接 save_day）也没了理由。
+        """
+        day = str(day or "")
+        empty = {"changed": False, "version": 0, "changed_hours": [],
+                 "cancelled": [], "saved": False}
+        if not day or not callable(mutator):
+            empty["skipped"] = "bad_args"
+            return empty
+        with self._schedule_commit_lock:
+            current = self._schedule_current_items(day)
+            new_items = mutator(list(current))
+            if new_items is None:
+                return self._skipped_add_result(day, "mutator")
+            return self.commit_schedule_change(
+                day, list(new_items), old_items=current, source=source,
+                reason=reason, invalidate_from=invalidate_from)
 
     def commit_schedule_change(self, day, new_items, old_items=None, source="",
                                reason="", invalidate_from=None):
@@ -633,8 +677,8 @@ class ScheduleStateMixin(_MixinBase):
             if isinstance(result, dict) and result.get("changed"):
                 logger.info("[amo] 状态巡检：健康已恢复，清理过期病假日程 %d 条", removed)
                 return removed
-            self.save_day(day, kept)
-            logger.info("[amo] 状态巡检：健康已恢复，清理过期病假日程 %d 条", removed)
+            # 未变更（或体检拒绝）时不再手动 save_day：save_day 只留给锁内提交核心。
+            logger.info("[amo] 状态巡检：健康已恢复，日程无需重写（%d 条过期病假）", removed)
             return removed
 
     def save_day(self, day, items):
@@ -652,9 +696,60 @@ class ScheduleStateMixin(_MixinBase):
         if not isinstance(getattr(self, "schedule", None), dict):
             self.schedule = {}
         self.schedule[day] = rows
+        # 表是唯一权威：先写表，再按「表里读回来的一版」写 kv 镜像。
+        # kv_schedule 从此只是只读镜像（读侧见 HumanState.__init__：先读表，
+        # 表为空才回落老 kv 库），直接改 kv 不再影响读出来的块。
         self.db.save_schedule(day, rows)
-        self.db.kv_set("schedule", self.schedule)
+        try:
+            authoritative = self.db.get_schedule(day)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.save_day.readback", _amo_exc)
+            authoritative = None
+        if isinstance(authoritative, list):
+            self.schedule[day] = [dict(row) if isinstance(row, dict) else row
+                                  for row in authoritative]
+        mirror = self._schedule_mirror_from_table()
+        self.db.kv_set("schedule", mirror if mirror is not None else self.schedule)
         return True
+
+    def _schedule_mirror_from_table(self):
+        """从 schedule 表重建 kv schedule 镜像；没有全量读接口时返回 None。"""
+        loader = getattr(self.db, "all_schedules", None)
+        if not callable(loader):
+            return None
+        try:
+            table = loader()
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.mirror.load", _amo_exc)
+            return None
+        return table if isinstance(table, dict) else None
+
+    def _audit_schedule(self, day, source, reason, version, changed, old_items, new_items,
+                        rejected=None):
+        """日程变更审计：谁改的、改前改后、为什么，写 kv schedule_audit:<day>（最多 200 条）。
+
+        rejected 非空 = 体检拒绝写入：changed_hours 固定为空，before/after 仍是本次尝试，
+        面板 /schedule/audit 能直接看到「哪条规则拒了谁」。
+        """
+        key = "schedule_audit:%s" % str(day)
+        try:
+            rows = self.db.kv_get(key, []) or []
+        except Exception:
+            rows = []
+
+        def brief(items):
+            return [{"start": row.get("start"), "end": row.get("end"),
+                     "activity": row.get("activity"), "place": row.get("place"),
+                     "zone": row.get("zone"), "source": row.get("source")}
+                    for row in (items or []) if isinstance(row, dict)]
+
+        entry = {"ts": now_ts(), "source": str(source or ""), "reason": str(reason or ""),
+                 "version": version, "changed_hours": list(changed or []),
+                 "before": brief(old_items), "after": brief(new_items)}
+        if rejected:
+            entry["rejected"] = [str(item) for item in rejected]
+        rows.append(entry)
+        self.db.kv_set(key, rows[-200:])
 
     def add_schedule_item(self, day, item, source="finance", reason=""):
         """在当天日程里追加一条（锁内读改写）；整天覆盖仍走 commit_schedule_change。"""
@@ -681,19 +776,19 @@ class ScheduleStateMixin(_MixinBase):
             except Exception:
                 return 24 * 60
 
-        with self._schedule_commit_lock:
-            current = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
-            merged = current + [dict(item)]
+        def _append(current):
+            merged = list(current) + [dict(item)]
             merged.sort(key=lambda row: _minute(str((row or {}).get("start") or "")))
-            # 2026-11-17 06:12 事故：这里以前直接落库，绕过了 commit_schedule_change
-            # 的第二道闸（resolve_new_overlaps）；在 sleep 06:00-07:00 上追加
-            # finance 06:12-06:22，重叠会原样写进 schedule 表，面板/详情都能看到。
+            # 2026-11-17 06:12 事故：以前这里直接落库，绕过了第二道闸
+            # （resolve_new_overlaps）；在 sleep 06:00-07:00 上追加 finance
+            # 06:12-06:22，重叠会原样写进 schedule 表，面板/详情都能看到。
             merged, added = self._resolve_added_item_overlaps(day, current, merged, item)
-            if added is None:
-                return self._skipped_add_result(day, "overlap")
-            return self._commit_schedule_change_locked(
-                day, merged, old_items=current, source=source, reason=reason,
-            )
+            return merged if added is not None else None
+
+        result = self.apply_schedule(day, _append, source=source, reason=reason)
+        if isinstance(result, dict) and result.get("skipped"):
+            return self._skipped_add_result(day, "overlap")
+        return result
 
     def _skipped_add_result(self, day, skipped):
         """追加被去重叠拦下时的返回（形状与 _commit_schedule_change_locked 对齐）。"""
@@ -827,7 +922,17 @@ class ScheduleStateMixin(_MixinBase):
             if _introduced and _guard_health:
                 logger.warning("[amo] 日程体检不通过，拒绝本次写入(%s): %s",
                                source or "-", _introduced[:6])
-                return {"changed": False, "version": self.db.schedule_version(day),
+                _version = self.db.schedule_version(day)
+                # 只 warning 不够：拒绝也要留痕，面板 /schedule/audit 能看到
+                # 「谁在几点想把块改成什么、被哪条体检规则挡了」。
+                try:
+                    self._audit_schedule(
+                        day, source,
+                        "体检拒绝: " + "；".join(str(item) for item in _introduced[:6]),
+                        _version, [], old_items, new_items, rejected=_introduced)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_state_schedule.audit.rejected", _amo_exc)
+                return {"changed": False, "version": _version,
                         "changed_hours": [], "cancelled": [], "saved": False,
                         "rejected": _introduced}
         except Exception as _amo_exc:
@@ -920,6 +1025,10 @@ class ScheduleStateMixin(_MixinBase):
             start_hour if start_hour is not None else "-", cancelled, reason or "-",
             bool((self.schedule_ctx.get(day) or {}).get("manual_override")),
         )
+        try:
+            self._audit_schedule(day, source, reason, version, changed, old_items, new_items)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.audit", _amo_exc)
         return {
             "changed": True,
             "version": version,
@@ -1257,6 +1366,7 @@ class ScheduleStateMixin(_MixinBase):
         now_min = max(0, min(24 * 60, int(now_min)))
         now_hour_end = min(24 * 60, (now_min // 60 + 1) * 60)
         events = []
+        just_started = []
         for item in raw or []:
             if not isinstance(item, dict):
                 continue
@@ -1264,7 +1374,8 @@ class ScheduleStateMixin(_MixinBase):
                 begin = parse_hhmm(item.get("start"))
             except Exception:
                 continue
-            if begin >= now_min:
+            # 块开始时间 == 当前分钟 → 它已经开始了，不能当未来藏掉（边界语义）。
+            if begin > now_min:
                 continue
             end_text = str(item.get("end") or "").strip()
             try:
@@ -1275,9 +1386,9 @@ class ScheduleStateMixin(_MixinBase):
                 finish = min(24 * 60, begin + 60)
             raw_finish = finish
             finish = min(finish, now_min)
-            if finish <= begin:
+            if finish < begin:
                 continue
-            events.append({
+            event = {
                 "begin": begin,
                 "finish": finish,
                 "raw_finish": raw_finish,
@@ -1293,7 +1404,14 @@ class ScheduleStateMixin(_MixinBase):
                 "mood": item.get("mood", ""),
                 "open_sleep": bool(item.get("open_sleep")),
                 "sleep_from": str(item.get("sleep_from") or ""),
-            })
+            }
+            if finish == begin:
+                # 零长度只可能出现在「块刚好在这一分钟开始」：它不是没发生，而是刚发生。
+                # 先攒着，等分段结束后补一条 current/doing 尾巴（和 15:01 看到的完全一致）。
+                if begin == now_min and raw_finish > now_min:
+                    just_started.append(event)
+                continue
+            events.append(event)
         points = {0, now_min}
         for event in events:
             points.add(max(0, min(now_min, event["begin"])))
@@ -1356,6 +1474,25 @@ class ScheduleStateMixin(_MixinBase):
                     "current": False,
                     "doing": False,
                 })
+        if just_started:
+            winner = max(just_started, key=lambda item: (item["priority"], item["raw_finish"]))
+            slots.append({
+                "start_min": now_min,
+                "end_min": min(winner["raw_finish"], now_hour_end),
+                "activity": winner["activity"],
+                "place": winner["place"],
+                "category": winner["category"],
+                "zone": winner.get("zone", ""),
+                "transit": winner.get("transit", ""),
+                "vehicle": winner.get("vehicle", ""),
+                "detail": winner.get("detail", ""),
+                "event": winner.get("event", ""),
+                "mood": winner.get("mood", ""),
+                "open_sleep": winner["open_sleep"],
+                "sleep_from": winner.get("sleep_from", ""),
+                "current": True,
+                "doing": True,
+            })
         return slots
 
     @staticmethod
@@ -1390,6 +1527,7 @@ class ScheduleStateMixin(_MixinBase):
         if merged:
             last = merged[-1]
             if (str(last.get("category") or "") in ("rest", "life", "sleep")
+                    and not bool(last.get("doing"))  # 刚开始的 doing 块不许被"睡前合并"拉长
                     and int(last.get("start_min") or 0) >= 18 * 60
                     and int(last.get("end_min") or 0) - int(last.get("start_min") or 0) < 60):
                 last["end_min"] = max(int(last["end_min"]), 23 * 60)
@@ -1511,6 +1649,58 @@ class ScheduleStateMixin(_MixinBase):
             return "—— 那天还没到，她会怎么过？到时候才知道 ——"
         return "—— 今天还没过完呢，她接下来会做什么？——"
 
+    def _schedule_provenance(self, day):
+        """当天每块的来源索引（读侧）：从 kv schedule_audit:day 的 before/after 还原。
+
+        返回 index（键 (start, end, activity) -> {source, reason, version}）、
+        latest（当天最后一条审计）和 version（当天版本号）。没有审计的老库全部
+        回落空值，时间轴行仍然带 source/reason/version 三个字段。
+        """
+        index, latest = {}, None
+        try:
+            rows = list(self.db.kv_get("schedule_audit:%s" % str(day), []) or [])
+        except Exception:
+            rows = []
+        for entry in rows[-200:]:
+            if not isinstance(entry, dict):
+                continue
+            latest = entry
+            meta = {"source": str(entry.get("source") or ""),
+                    "reason": str(entry.get("reason") or ""),
+                    "version": entry.get("version") or 0}
+            for row in entry.get("after") or []:
+                if isinstance(row, dict):
+                    index[(str(row.get("start") or ""), str(row.get("end") or ""),
+                           str(row.get("activity") or ""))] = meta
+        try:
+            version = int(self.db.schedule_version(str(day)) or 0)
+        except Exception:
+            version = 0
+        return {"index": index, "latest": latest, "version": version}
+
+    def _row_provenance(self, day, item, prov):
+        """给时间轴每一行补 source/reason/version：审计里找不到就退回当天最后一条。"""
+        prov = prov if isinstance(prov, dict) else {}
+        index = prov.get("index") or {}
+        latest = prov.get("latest")
+        item = item if isinstance(item, dict) else {}
+        meta = index.get((str(item.get("start") or ""), str(item.get("end") or ""),
+                          str(item.get("activity") or ""))) or {}
+        source = str(meta.get("source") or "")
+        reason = str(meta.get("reason") or "")
+        version = meta.get("version") or 0
+        if not source and isinstance(latest, dict):
+            source = str(latest.get("source") or "")
+            reason = reason or str(latest.get("reason") or "")
+            version = version or latest.get("version") or 0
+        try:
+            version = int(version or 0)
+        except (TypeError, ValueError):
+            version = 0
+        if not version:
+            version = int(prov.get("version") or 0)
+        return {"source": source or "unknown", "reason": reason, "version": version}
+
     def schedule_tree(self, day=None, items=None):
         """一级 4 段、二级每小时；不再生成三级 10 分钟。
 
@@ -1528,12 +1718,13 @@ class ScheduleStateMixin(_MixinBase):
             return self._jit_schedule_tree(day, items=items)
         raw = items if isinstance(items, list) else (
             self.schedule.get(day) or self.db.get_schedule(day) or [])
+        prov = self._schedule_provenance(day)
         hourly = self._hourly_schedule(raw)
         if not hourly:
             return []
         now_min = minutes_now()
         is_today = day == today_str()
-        blocks = [
+        blocks: list[dict[str, Any]] = [
             {"start": "00:00", "end": "06:00", "title": "深夜"},
             {"start": "06:00", "end": "12:00", "title": "上午"},
             {"start": "12:00", "end": "18:00", "title": "中午"},
@@ -1564,6 +1755,7 @@ class ScheduleStateMixin(_MixinBase):
                     "current": bool(is_today and start <= now_min < end),
                     "doing": bool(is_today and start <= now_min < end),
                 }
+                hour.update(self._row_provenance(day, item, prov))
                 children.append(hour)
             block["date"] = day
             block["children"] = children

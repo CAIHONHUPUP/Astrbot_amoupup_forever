@@ -20,6 +20,9 @@ except ImportError:  # 直接按文件加载时（测试/模拟器）
 class ScheduleDiaryMixin:
     # 方法体逐字搬运自拆分前的 schedule_engine.py。
 
+    if TYPE_CHECKING:  # 宿主（插件主类/其它 mixin）提供的成员：严格口径用声明而不是 ignore
+        p: Any
+
     @staticmethod
     def _fix_home_diary(text):
         """物理边界：他不在现场，绝不能把手机聊天改写成“当面”。保留原文。"""
@@ -41,7 +44,7 @@ class ScheduleDiaryMixin:
                 rows.append(("他" if who.strip() != "我" else "我", said))
             if not rows:
                 return ""
-            sentences = []
+            sentences: list[str] = []
             index = 0
             while index < len(rows) and len(sentences) < 8:
                 who, said = rows[index]

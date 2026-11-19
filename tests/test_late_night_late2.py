@@ -21,6 +21,7 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 from amo_late_night import LateNightEngine  # noqa: E402
+import clock  # noqa: E402
 
 
 
@@ -54,9 +55,10 @@ class Late2FlagTests(unittest.TestCase):
 
     def test_no_ten_mood_penalty_without_late2(self):
         human = FakeHuman()
-        yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+        today = clock.today()  # 跟生产同一个时钟（全量测试冻结在 2026-11-18）
+        yesterday = (today - dt.timedelta(days=1)).isoformat()
         human.db.kv_set("late_night", {"date": yesterday, "penalty_done": False})
-        LateNightEngine(human).tick(dt.datetime.combine(dt.date.today(), dt.time(8, 30)))
+        LateNightEngine(human).tick(dt.datetime.combine(today, dt.time(8, 30)))
         self.assertEqual(human.nudges, [{"疲惫": 30}],
                          "没熬到两点不该额外扣心情：%s" % human.nudges)
 

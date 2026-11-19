@@ -25,6 +25,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 import main  # noqa: E402
 import amo_shared  # noqa: E402
 from astrbot.api.star import Context  # noqa: E402
@@ -233,7 +235,7 @@ class ApiReadTests(unittest.TestCase):
     def test_schedule_detail_past_subhour_block_is_not_pending(self):
         """13:00-13:41 这种分钟级块，13:41 之后点开必须是结果，不能再说「还没过完」。"""
         import datetime as _dt
-        yesterday = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
+        yesterday = (clock.today() - _dt.timedelta(days=1)).isoformat()
         item = {"id": "t-1", "start": "13:00", "end": "13:41",
                 "activity": "在家休息（日常发呆）", "place": "家", "zone": "home",
                 "category": "rest", "source": "jit_recover"}

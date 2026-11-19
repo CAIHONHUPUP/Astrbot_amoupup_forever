@@ -442,7 +442,7 @@ class WardrobeSeedMixin:
         shoes_pool = [item for item in items if item.get("sleep") and not item.get("hotel")
                       and item.get("category") == "shoes"]
         dress_skirts = [item for item in skirts if is_dress(item.get("name"))]
-        combos = []
+        combos: list[tuple] = []
         for top in tops:
             for bottom in bottoms:
                 for shoe in shoes_pool:

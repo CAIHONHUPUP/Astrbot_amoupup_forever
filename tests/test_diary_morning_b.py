@@ -30,6 +30,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 import amo_schedule  # noqa: E402
 from amo_db import AmoDB  # noqa: E402
 from amo_diary_guard import diary_day_facts, diary_fact_mismatch  # noqa: E402
@@ -305,14 +307,14 @@ class DiaryMorningBTests(unittest.TestCase):
         self.assertFalse(diary_fact_mismatch(self.plugin, target, "今天很平淡，没提宵夜，也没提上班。"))
 
     def test_manual_correction_keeps_lock_and_marks_stale(self):
-        target = date.today() - timedelta(days=1)
+        target = clock.today() - timedelta(days=1)
         self.write_existing(target, "今天在家休息。", locked=True)
         self.assertTrue(self.plugin._mark_daily_diary_stale(target.isoformat(), 0))
         self.assertTrue(self.plugin.db.kv_get("diary_locked:" + target.isoformat(), False))
         self.assertTrue(self.plugin.db.kv_get("diary_stale:" + target.isoformat(), False))
 
     def test_manual_correction_rewrites_locked_history(self):
-        todays = date.today()
+        todays = clock.today()
         target = todays - timedelta(days=1)
         self.save_schedule(target, [WORK_BLOCK])
         self.write_existing(target, "今天没出门，一直在家。", locked=True, stale=True)

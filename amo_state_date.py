@@ -126,10 +126,28 @@ class DateStateMixin(_MixinBase):
                     hours.append(begin // 60)
             patched.append(row)
         if hours:
+            def _truncate(rows):
+                out = []
+                for item in rows:
+                    row = dict(item) if isinstance(item, dict) else item
+                    if isinstance(row, dict) and str(row.get("category")) == "social" \
+                            and "老公" in str(row.get("activity") or ""):
+                        begin = parse_hhmm(row.get("start"))
+                        end = parse_hhmm(row.get("end"))
+                        if begin < now_min < end:
+                            row["end"] = self._fmt_minutes(now_min)
+                    out.append(row)
+                return out
+
             try:
-                self.commit_schedule_change(day, patched, old_items=items,
-                                            source="date", reason="约会收尾截断",
-                                            invalidate_from=min(hours))
+                apply = getattr(self, "apply_schedule", None)
+                if callable(apply):
+                    apply(day, _truncate, source="date", reason="约会收尾截断",
+                          invalidate_from=min(hours))
+                else:
+                    self.commit_schedule_change(day, patched, old_items=items,
+                                                source="date", reason="约会收尾截断",
+                                                invalidate_from=min(hours))
             except Exception as _amo_exc:
                 _note_swallowed("amo_human_state.settle_date_end", _amo_exc)
         return hours

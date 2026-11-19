@@ -351,10 +351,17 @@ def ensure_block_window(plugin, day, start, end, activity, detail="", category="
     ok = False
     try:
         commit = getattr(state, "commit_schedule_change", None)
+        apply = getattr(state, "apply_schedule", None)
         saver = getattr(state, "save_day", None)
-        if callable(commit):
-            saved = commit(day, kept, old_items=rows, source=str(source or "food_spend"),
-                           reason=str(reason or "餐饮落日程"))
+        source_text = str(source or "food_spend")
+        reason_text = str(reason or "餐饮落日程")
+        if callable(apply):
+            saved = apply(day, lambda current: list(kept), source=source_text,
+                          reason=reason_text)
+            ok = bool(saved.get("saved", True)) if isinstance(saved, dict) else bool(saved)
+        elif callable(commit):
+            saved = commit(day, kept, old_items=rows, source=source_text,
+                           reason=reason_text)
             ok = bool(saved.get("saved", True)) if isinstance(saved, dict) else bool(saved)
         elif callable(saver):
             ok = bool(saver(day, kept))

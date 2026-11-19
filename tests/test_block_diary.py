@@ -151,7 +151,7 @@ class BaseCase(unittest.TestCase):
         path_module.get_astrbot_data_path = lambda: self.tmp
         sys.modules["astrbot.core.utils.astrbot_path"] = path_module
         self.now = datetime.datetime.combine(
-            datetime.date.today(), datetime.time(self.HOUR, self.MINUTE))
+            datetime.date.fromisoformat(today_str()), datetime.time(self.HOUR, self.MINUTE))
         self._clock = mock.patch.object(amo_human_state, "_now", return_value=self.now)
         self._clock.start()
         self.day = today_str()
@@ -175,7 +175,7 @@ class BaseCase(unittest.TestCase):
 
     def set_now(self, hour, minute=0):
         self.now = datetime.datetime.combine(
-            datetime.date.today(), datetime.time(hour, minute))
+            datetime.date.fromisoformat(today_str()), datetime.time(hour, minute))
         self._clock.stop()
         self._clock = mock.patch.object(amo_human_state, "_now", return_value=self.now)
         self._clock.start()
@@ -588,7 +588,7 @@ class DetailTests(BaseCase):
 
     def test_detail_finds_scheduler_row_when_request_clamps_midnight(self):
         # 面板把 end=24:00 夹成 23:00；调度按原始块（23:00-24:00）写，详情也要能认出来。
-        self.day = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        self.day = (datetime.date.fromisoformat(today_str()) - datetime.timedelta(days=1)).isoformat()
         block = _block("23:00", "24:00", "准备睡觉", "家", "home", "sleep")
         self.install([block])
         self.plugin.db.save_block_diary(
@@ -779,7 +779,7 @@ class P1RegressionTests(BaseCase):
 
     def test_past_day_without_diary_does_not_loop_generating(self):
         # 过去日期后台只会返回 archived；再入队就是每次刷新都 generating。
-        self.day = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        self.day = (datetime.date.fromisoformat(today_str()) - datetime.timedelta(days=1)).isoformat()
         block = _block("23:00", "24:00", "准备睡觉", "家", "home", "sleep")
         self.install([block])
         self.plugin.body = {"date": self.day, "start": "23:00", "end": "24:00"}
@@ -812,13 +812,24 @@ class SpendingDetailTests(BaseCase):
 
     PLUGIN = DetailPlugin
 
-    def _spend(self, clock, cents, reason, idem):
-        base = __import__("time").mktime(
-            datetime.datetime.strptime(self.day, "%Y-%m-%d").timetuple())
-        hour, minute = [int(x) for x in clock.split(":")]
-        with mock.patch("amo_wallet.time.time", return_value=base + hour * 3600 + minute * 60):
+    def _spend(self, at, cents, reason, idem):
+        # 钱包流水的时间戳取 clock.now_ts()：要落进块窗口，就得把时钟临时拨到消费那一刻
+        # （不能只 patch time.time，账本根本不再读它）。用完恢复原冻结点。
+        import clock as _clock
+
+        day = datetime.date.fromisoformat(self.day)
+        hour, minute = [int(x) for x in at.split(":")]
+        base = __import__("time").mktime(day.timetuple())
+        prev = _clock.frozen()
+        _clock.freeze(datetime.datetime.combine(day, datetime.time(hour, minute)))
+        try:
             self.plugin.wallet.credit(100000, "init", "init-" + idem)
             ok = self.plugin.wallet.debit(cents, reason, idem, category="food", item_name=reason)
+        finally:
+            if prev is None:
+                _clock.unfreeze()
+            else:
+                _clock.freeze(prev)
         self.assertTrue(ok, reason)
         return base
 

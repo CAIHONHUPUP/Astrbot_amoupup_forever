@@ -274,10 +274,17 @@
         box.textContent = "";
         const meta = document.createElement("div");
         meta.className = "diary-meta";
+        // 详情弹层显示「来源 + 版本」：tree 行已经带上 source/reason/version。
+        const detailSource = typeof window.amoScheduleSourceLabel === "function"
+          ? window.amoScheduleSourceLabel(hour.source) : String(hour.source || "");
+        const sourceVersion = detailSource
+          ? "来源 " + detailSource + (hour.version ? " · v" + hour.version : "")
+          : "";
         meta.textContent = [
           (data.start || hour.start) + "-" + (data.end || hour.end),
           data.place || hour.place || "",
           data.mood ? "心情 " + data.mood : "",
+          sourceVersion,
           data.cached ? "已生成 · 直接读取" : "",
         ].filter(Boolean).join(" · ");
         const text = document.createElement("div");
@@ -509,6 +516,17 @@
             doingTag.className = "schedule-doing-tag";
             doingTag.textContent = "进行中";
             activity.appendChild(doingTag);
+          }
+          // 弱点1 第 6 条：行尾小灰字标出来源（自动/聊天/过渡/面板/财务…）。
+          let sourceTag = null;
+          const sourceLabel = typeof window.amoScheduleSourceLabel === "function"
+            ? window.amoScheduleSourceLabel(hour.source) : "";
+          if (sourceLabel) {
+            sourceTag = document.createElement("span");
+            sourceTag.className = "schedule-source-tag";
+            sourceTag.style.cssText = "color:var(--muted);font-size:11px;margin-left:6px";
+            sourceTag.textContent = sourceLabel;
+            activity.appendChild(sourceTag);
           }
           const metaText = [hour.place || "", hour.vehicle || "", hour.current ? "现在" : ""].filter(Boolean).join(" · ");
           const metaLine = document.createElement("span");

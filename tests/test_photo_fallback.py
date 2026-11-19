@@ -96,10 +96,12 @@ class ActivityFallbackTests(unittest.TestCase):
         self.assertIn(activity["activity"], ("早就在做的事", "刚过来的事"))
 
     def test_yesterday_same_hour_when_today_missing(self):
-        from datetime import date, timedelta
+        from datetime import timedelta
+
+        from clock import today as clock_today
 
         hour = minutes_now() // 60
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        yesterday = (clock_today() - timedelta(days=1)).isoformat()
         self.state.schedule = {yesterday: [_slot(hour, "昨天这时候在地铁上", "路上", "road", "commute", transit="subway")]}
         activity, reason = self.state.current_activity_info()
         self.assertEqual(reason, "yesterday_same_hour")

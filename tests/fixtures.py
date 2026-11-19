@@ -36,8 +36,13 @@ def today_at(hour=15, minute=0, second=0):
     跨 0 点才会暴露的用例（时段是否过完、0-6 点免打扰、长途出发落在未来）
     用这个当冻结时刻，日期仍和 today_str() 一致，不会引入新的日期错位。
     """
-    return datetime.now().replace(hour=int(hour), minute=int(minute),
-                                  second=int(second), microsecond=0)
+    try:
+        import clock as _clock
+        base = datetime.combine(_clock.today(), datetime.min.time())
+    except Exception:  # cleanup: 没有插件时钟时退回系统日期
+        base = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return base.replace(hour=int(hour), minute=int(minute),
+                        second=int(second), microsecond=0)
 #: FixedClock 额外要同步 patch 的历史模块级绑定（模块名, 属性名）。
 _CLOCK_BINDINGS = (
     ("amo_shared", "_now"),

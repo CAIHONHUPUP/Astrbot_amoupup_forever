@@ -6,7 +6,7 @@
 - 刚结束：约会结束、他不在身边（同城不同住、各回各家）；她一个人回家，只能手机/视频联系，日记重点回味。
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import logging
 import re
@@ -90,7 +90,7 @@ def finish_date_now(plugin, now=None, reason="user_done"):
     now_min = now.hour * 60 + now.minute
     _ds.finish(plugin, now, reason=reason, title=_title(plugin, now))
     try:
-        state = getattr(plugin, "state", None)
+        state: Any = getattr(plugin, "state", None)
         current = list((getattr(state, "schedule", {}) or {}).get(day) or [])
         patched = []
         for row in current:
@@ -105,8 +105,32 @@ def finish_date_now(plugin, now=None, reason="user_done"):
                 row["end"] = now.strftime("%H:%M")
             patched.append(row)
         if patched != current:
-            state.commit_schedule_change(day, patched, old_items=current,
-                                         source="date", reason="约会结束截断")
+            apply = getattr(state, "apply_schedule", None)
+            if callable(apply):
+                def _mutate(rows):
+                    out = []
+                    for row in rows:
+                        row = dict(row) if isinstance(row, dict) else row
+                        if not isinstance(row, dict):
+                            out.append(row)
+                            continue
+                        try:
+                            begin = (int(str(row.get("start") or "0:00").split(":")[0]) * 60
+                                     + int(str(row.get("start") or "0:00").split(":")[1]))
+                            finish = (int(str(row.get("end") or "0:00").split(":")[0]) * 60
+                                      + int(str(row.get("end") or "0:00").split(":")[1]))
+                        except Exception:
+                            out.append(row)
+                            continue
+                        if str(row.get("category")) in ("social", "date") \
+                                and begin <= now_min < finish:
+                            row["end"] = now.strftime("%H:%M")
+                        out.append(row)
+                    return out
+                apply(day, _mutate, source="date", reason="约会结束截断")
+            else:
+                state.commit_schedule_change(day, patched, old_items=current,
+                                             source="date", reason="约会结束截断")
     except Exception:
         pass  # cleanup：日程截断失败不阻断收尾状态
     home_line = ("今天的约会已经结束，你们各自回到日常；现在你在家，"

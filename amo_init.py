@@ -292,6 +292,7 @@ class InitMixin:
         self._last_purge = 0.0
         self._last_auto_learn = 0.0
         self._proactive_last = 0.0
+        self._proactive_running = False  # 主动消息单飞（2026-11-19）
         self._last_ritual = 0.0
         self._last_relation_decay = 0.0
         self._last_relation_sediment = 0.0

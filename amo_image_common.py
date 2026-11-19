@@ -18,7 +18,7 @@
 - 不 import 两个引擎（避免环形依赖），引擎把自己（holder）传进来。
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 try:  # 兼容层：旧插件名 / 旧数据目录 / 旧配置名的唯一来源
     from . import amo_compat as _compat
@@ -414,8 +414,8 @@ def persona_refs_of(omni):
         return refs
     raw = getattr(omni, "raw_config", None)
     if isinstance(raw, dict):
-        persona = raw.get("persona_config") if isinstance(raw.get("persona_config"), dict) else {}
-        profiles = persona.get("profiles") if isinstance(persona.get("profiles"), list) else []
+        persona = cast(dict[Any, Any], raw.get("persona_config") if isinstance(raw.get("persona_config"), dict) else {})
+        profiles = cast(list[Any], persona.get("profiles") if isinstance(persona.get("profiles"), list) else [])
         for profile in profiles:
             if not isinstance(profile, dict):
                 continue

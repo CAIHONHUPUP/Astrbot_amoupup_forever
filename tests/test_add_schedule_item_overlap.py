@@ -30,6 +30,7 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 from amo_state_common import today_str  # noqa: E402
+import amo_transition  # noqa: E402
 from amo_state_schedule import ScheduleStateMixin, _item_overlaps_any  # noqa: E402
 
 DAY = today_str()
@@ -190,8 +191,14 @@ class AddScheduleItemOverlapTests(unittest.TestCase):
     # ---- 反向证据：去掉闸门 → 重叠就会落库（正向断言也就红了）----
     def test_negative_control_without_gate_overlap_persists(self):
         self._seed([SLEEP])
+        # 2026-11-19：追加闸门（add_schedule_item 的 _resolve_added_item_overlaps）
+        # 之外，commit_schedule_change 里还有第二道 resolve_new_overlaps（第十轮 B1）。
+        # 反向证据要证明“去掉去重叠就会落库”，两道都得关；只关一道，另一道仍会
+        # 把重叠截掉，反向用例就永远绿不了。
         with mock.patch.object(ScheduleStateMixin, "_resolve_added_item_overlaps",
-                               lambda self, day, current, merged, item: (merged, item)):
+                               lambda self, day, current, merged, item: (merged, item)), \
+             mock.patch.object(amo_transition, "resolve_new_overlaps",
+                               lambda items: (list(items), [])):
             self._add(FINANCE)
         persisted = self._persisted()
         self.assertEqual(len(persisted), 2)

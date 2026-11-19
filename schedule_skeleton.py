@@ -31,7 +31,7 @@ except ImportError:  # 直接按文件加载时（测试/模拟器）
 
 # 门面 schedule_engine 会在 ScheduleEngine 定义后把类对象回填到本模块（子模块不能反向
 # import 门面，否则循环导入）。这里先给 pyflakes 一个显式静态绑定，运行期由门面覆盖。
-ScheduleEngine = None
+ScheduleEngine: Any = None
 
 
 class ScheduleSkeletonMixin:

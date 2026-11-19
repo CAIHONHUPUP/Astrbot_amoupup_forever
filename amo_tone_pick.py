@@ -6,7 +6,7 @@ amo_reply_pipeline 的单一实现。同步守卫路径通过 pending 桥把冲�
 交给装饰阶段的 async 钩子，保证 runtime 的同步方法体不被改写。
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import asyncio
 import json
@@ -53,7 +53,7 @@ def _parse_tone_index(answer, count):
     text = str(answer or "").strip()
     if not text:
         return None
-    value = None
+    value: Any = None
     match = re.search(r"\{[^{}]*\}", text, re.S)
     if match:
         try:

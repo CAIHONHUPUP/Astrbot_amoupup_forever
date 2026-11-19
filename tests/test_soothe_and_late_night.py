@@ -17,6 +17,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 from amo_late_night import LateNightEngine  # noqa: E402
 from main import HumanCorePlugin  # noqa: E402
 
@@ -66,10 +68,10 @@ class NightlyResetTests(unittest.TestCase):
 
     def test_cleared_expires_next_night(self):
         engine, db = self._engine()
-        last_night = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+        last_night = (clock.today() - dt.timedelta(days=1)).isoformat()
         db.kv["late_night"] = {"date": last_night, "cleared": True,
                                "penalty_done": True, "sick_done": True}
-        now = dt.datetime.combine(dt.date.today(), dt.time(23, 40))
+        now = dt.datetime.combine(clock.today(), dt.time(23, 40))
         self.assertTrue(engine.is_staying_up(now))
         data = db.kv["late_night"]
         self.assertNotIn("cleared", data)
@@ -78,9 +80,9 @@ class NightlyResetTests(unittest.TestCase):
 
     def test_cleared_holds_within_same_night(self):
         engine, db = self._engine()
-        night = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+        night = (clock.today() - dt.timedelta(days=1)).isoformat()
         db.kv["late_night"] = {"date": night, "cleared": True}
-        now = dt.datetime.combine(dt.date.today(), dt.time(0, 30))  # 凌晨仍算前一晚
+        now = dt.datetime.combine(clock.today(), dt.time(0, 30))  # 凌晨仍算前一晚
         self.assertFalse(engine.is_staying_up(now))
 
 

@@ -290,7 +290,7 @@ class AmoDataProvider(MemoryProvider):
     PLUGIN_NAMES = _compat.DATA_PLUGIN_NAMES
 
     @property
-    def caps(self):
+    def caps(self):  # type: ignore[override, unused-ignore]
         """运行时探测：旧版数据插件缺哪个方法，就不声明哪个能力。"""
         owners = [self._mem(), self._store()]
         found = set()
@@ -386,7 +386,7 @@ class AmoDataProvider(MemoryProvider):
             _warn_once(self.rt.logger, "hub_recall_no_method",
                        "[amo] 记忆终端没有可用的召回接口（recall/search_memory 都没有），这一轮召回为空")
             return []
-        last_exc = None
+        last_exc: Exception | None = None
         for method in methods:
             attempts = (
                 # 带上平台：记忆终端才知道"这条是从飞书问的"，日志才能标 source_platform
@@ -484,7 +484,7 @@ class MemoryCompanionProvider(MemoryProvider):
         return service if service is not None else plugin
 
     @property
-    def caps(self):
+    def caps(self):  # type: ignore[override, unused-ignore]
         """按目标插件实际暴露的接口声明能力，老版本缺方法时别误判可写。"""
         target = self._target()
         if target is None:

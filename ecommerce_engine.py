@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """网购与物流：只返回结构化事实；下单不瞬间入库。"""
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 try:  # Phase 11：统一时钟（不再裸调系统时钟）
     from . import clock as _amo_clock
@@ -175,7 +175,7 @@ class EcommerceEngine:
 
     def _mark_clean(self, item_id):
         try:
-            wardrobe = getattr(self.plugin, "wardrobe", None)
+            wardrobe: Any = getattr(self.plugin, "wardrobe", None)
             data = wardrobe._load()
             for item in data.get("items") or []:
                 if str(item.get("id")) == str(item_id):

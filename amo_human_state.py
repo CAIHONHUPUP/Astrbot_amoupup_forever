@@ -224,7 +224,7 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         }
         self.weather = self.db.kv_get("weather", {}) or {}
         self.worldview = self.db.kv_get("worldview", {}) or {}
-        self.schedule = self.db.kv_get("schedule", {}) or {}
+        self.schedule = self._load_schedule_cache()
         self.schedule_ctx = self.db.kv_get("schedule_ctx", {}) or {}
         if not isinstance(self.schedule_ctx, dict):
             self.schedule_ctx = {}
@@ -247,6 +247,25 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             self.late = LateNightEngine(self)
         except Exception:
             self.late = None
+
+    def _load_schedule_cache(self):
+        """读侧单一来源：schedule 表优先；表为空才回落老 kv schedule（迁移兼容）。
+
+        2026-11-19 起 kv["schedule"] 只是 save_day 写出的只读镜像，不再权威：
+        这里先读表，表里有数据就完全忽略 kv，直接改 kv 不会影响读出来的块。
+        """
+        table: dict[str, Any] = {}
+        loader = getattr(self.db, "all_schedules", None)
+        if callable(loader):
+            try:
+                table = loader() or {}
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.schedule_from_table", _amo_exc)
+                table = {}
+        if isinstance(table, dict) and table:
+            return table
+        legacy = self.db.kv_get("schedule", {}) or {}
+        return legacy if isinstance(legacy, dict) else {}
 
     # ---------- 心情 ----------
     def save_mood(self):

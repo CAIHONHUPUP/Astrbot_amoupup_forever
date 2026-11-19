@@ -99,7 +99,7 @@ def test_settlement_is_idempotent():
     fake_state.schedule = plugin.state.schedule
     fake_state.db = plugin.db
     fake_state.p = plugin
-    now = datetime.datetime.combine(datetime.date.today(), datetime.time(14, 5))
+    now = datetime.datetime.combine(datetime.date.fromisoformat(today_str()), datetime.time(14, 5))
     HumanState.settle_schedule_costs(fake_state, now)
     HumanState.settle_schedule_costs(fake_state, now)
     assert len(plugin.wallet.calls) == 1

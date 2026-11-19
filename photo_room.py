@@ -6,7 +6,7 @@
 - 房间参考图是「同一间房」的锚点，不是像素模板：提示词只锁布局/光线，不锁像素。
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import os
 
@@ -69,7 +69,7 @@ def _text_of(plan, activity):
 
 def room_for_plan(plan, housing=None, activity=None):
     """这条计划在家该拍哪间房：bedroom / living；不在家返回空串。"""
-    data = activity if isinstance(activity, dict) else {}
+    data: Any = activity if isinstance(activity, dict) else {}
     if not data:
         # 没显式传活动时用计划里那份：build_plan 可能把 home_bed 归一成 home_generic，
         # 原始 zone 只在 plan.activity 里，房间图要按它选（否则卧室会被当成客厅）

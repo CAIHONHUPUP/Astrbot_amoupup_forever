@@ -311,7 +311,7 @@ def trip_todo_items(plugin, trip):
 def write_todos(plugin, trip):
     """approved/手动出发后：给未来 2-3 天写旅游待办，不直接写未来日程。"""
     plan = trip_todo_items(plugin, trip)
-    state = getattr(plugin, "state", None)
+    state: Any = getattr(plugin, "state", None)
     commit = getattr(state, "_commit_todo_day", None)
     if not plan or not callable(commit):
         return {"ok": False, "reason": "no_todo_sink", "days": {}}

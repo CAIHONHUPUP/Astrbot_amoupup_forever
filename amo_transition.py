@@ -14,7 +14,7 @@
 - 「刚下车/到楼下了」→ 立刻截断当前块、写下一块并推进状态。
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 try:  # Phase 11：统一时钟（不再裸调系统时钟）
     from . import clock as _amo_clock
@@ -445,6 +445,8 @@ def current(plugin, now=None):
 OFFICE_WORDS = ("公司", "写字楼", "办公室", "工位")
 WORK_START_HOUR = 9
 WORK_END_HOUR = 18
+#: 过渡状态存活期 = 计划分钟数 + 宽限；超过当作废，不再往日程里补旧计划。
+TRANSITION_TTL_GRACE = 10
 
 
 def _office_place(place):
@@ -486,6 +488,17 @@ def start(plugin, kind, to_place="", activity="", category="", minutes=None,
         return None
     state = getattr(plugin, "state", None)
     current_data = _kv_get(plugin, STATE_KEY, {}) or {}
+    # TTL：挂起/排队的过渡过期就作废，避免半夜把旧计划写进日程。
+    if isinstance(current_data, dict) and current_data.get("steps"):
+        _started = float(current_data.get("started_at") or 0)
+        _alive = (total_minutes(current_data.get("steps") or []) + TRANSITION_TTL_GRACE) * 60
+        if _started and now.timestamp() - _started > _alive:
+            logger.warning("[amo] 过渡已过期，作废：%s→%s（%.0f 分钟）",
+                           current_data.get("from"), current_data.get("to"),
+                           (now.timestamp() - _started) / 60.0)
+            _kv_set(plugin, STATE_KEY, {})
+            _kv_set(plugin, "activity_now", {})
+            current_data = {}
     if isinstance(current_data, dict) and current_data.get("steps"):
         stage = stage_at(current_data, now)
         if stage and not stage.get("arrived"):
@@ -517,6 +530,8 @@ def start(plugin, kind, to_place="", activity="", category="", minutes=None,
         "minutes": total, "steps": steps, "emotion": emotion,
         "status": "running", "blocks_written": False, "created_at": _amo_clock.now_ts(),
         "vehicle": vehicle_for(to_place, total),
+        # 幂等键：同一种过渡在同一分钟只允许启动一次。
+        "idem": "%s|%s|%s" % (kind, to_place, now.strftime("%Y%m%d%H%M")),
     }
     # 第八轮 A：新过渡启动先截断与 now 重叠的旧活动块（否则 17:00 的逛街尾巴会穿帮）
     try:
@@ -546,6 +561,11 @@ def _state_items(plugin, day):
 def _commit(plugin, day, items, old_items):
     state = getattr(plugin, "state", None)
     try:
+        apply = getattr(state, "apply_schedule", None)
+        if callable(apply):
+            # 过渡分块也走写入网关：锁内读当前块 → 交回唯一提交入口（审计带 transit）。
+            return apply(day, lambda current: list(items), source="transit",
+                         reason="过渡分块")
         if state is not None and callable(getattr(state, "commit_schedule_change", None)):
             return Timeline(plugin).save(day, items, old_items=old_items,
                                          source="transit", reason="过渡分块")
@@ -1025,7 +1045,8 @@ def resolve_new_overlaps(new_items):
             continue
         rows.append((_day_span(item), index, item))
     rows.sort(key=lambda trio: (trio[0][0] if trio[0] else 24 * 60, trio[1]))
-    kept, trimmed = [], []
+    kept: list[Any] = []
+    trimmed: list[Any] = []
     for span, _index, item in rows:
         row = dict(item) if isinstance(item, dict) else item
         if span and kept and isinstance(kept[-1], dict):

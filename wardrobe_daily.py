@@ -26,6 +26,11 @@ except ImportError:  # 直接按文件加载时（测试/模拟器）
 class WardrobeDailyMixin:
     # 方法体逐字搬运自拆分前的 wardrobe.py。
 
+    if TYPE_CHECKING:  # 宿主（插件主类/其它 mixin）提供的成员：严格口径用声明而不是 ignore
+        _ensure_sleep: Any
+        _ensure_swim: Any
+        _today_cache: Any
+
     # ---------- 查询 ----------
     if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
         _ensure_home: Any

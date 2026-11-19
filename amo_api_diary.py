@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -117,7 +117,7 @@ class DiaryApiMixin(_MixinBase):
             locked = bool(self.db.kv_get("diary_locked:" + day_text, False))
         except Exception:
             locked = False
-        live = {"day": day_text, "count": 0, "entries": [], "text": "", "pending": False}
+        live: Any = {"day": day_text, "count": 0, "entries": [], "text": "", "pending": False}
         try:
             try:
                 from .amo_state_diary import diary_live_snapshot

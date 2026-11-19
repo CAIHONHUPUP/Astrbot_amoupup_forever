@@ -63,6 +63,8 @@ class ScheduleTodoMixin(_MixinBase):
         _jit_items: Any
         _jit_visible_slots: Any
         _merge_quiet_slots: Any
+        _row_provenance: Any
+        _schedule_provenance: Any
         p: Any
         schedule: Any
 
@@ -203,7 +205,8 @@ class ScheduleTodoMixin(_MixinBase):
         items = items if isinstance(items, list) else self._booked_items(day)
         if not items:
             return []
-        slots = []
+        prov = self._schedule_provenance(day)
+        slots: list[dict[str, Any]] = []
         for item in items:
             try:
                 begin = parse_hhmm(item.get("start"))
@@ -232,7 +235,7 @@ class ScheduleTodoMixin(_MixinBase):
             for slot in slots:
                 if slot["start_min"] < bstart or slot["start_min"] >= bend:
                     continue
-                children.append({
+                child = {
                     "id": "%s|%s-%s|%s" % (day, slot["start_min"], slot["end_min"], slot["category"]),
                     "start": self._fmt_minutes(slot["start_min"]),
                     "end": self._fmt_minutes(slot["end_min"]),
@@ -243,7 +246,11 @@ class ScheduleTodoMixin(_MixinBase):
                     "detail": slot.get("detail", ""),
                     "current": False,
                     "doing": False,
-                })
+                }
+                child.update(self._row_provenance(day, {"start": child["start"],
+                                                        "end": child["end"],
+                                                        "activity": slot["activity"]}, prov))
+                children.append(child)
             if not children:
                 continue
             block = {"start": block_start, "end": block_end, "title": title,
@@ -261,6 +268,7 @@ class ScheduleTodoMixin(_MixinBase):
 
     def _jit_schedule_tree(self, day, items=None):
         now_min = minutes_now()
+        prov = self._schedule_provenance(day)
         slots = self._merge_quiet_slots(
             self._jit_visible_slots(self._jit_items(day, items=items), now_min)
         )
@@ -272,7 +280,7 @@ class ScheduleTodoMixin(_MixinBase):
             for slot in slots:
                 if slot["start_min"] < bstart or slot["start_min"] >= bend:
                     continue
-                children.append({
+                child = {
                     "id": "%s|%s-%s|%s" % (day, slot["start_min"], slot["end_min"], slot["category"]),
                     "start": slot["sleep_from"] or self._fmt_minutes(slot["start_min"]),
                     "end": "入睡" if slot["open_sleep"] else self._fmt_minutes(slot["end_min"]),
@@ -289,7 +297,12 @@ class ScheduleTodoMixin(_MixinBase):
                     "doing": bool(slot.get("doing")),
                     "open_sleep": bool(slot.get("open_sleep")),
                     "sleep_from": slot.get("sleep_from", ""),
-                })
+                }
+                child.update(self._row_provenance(day, {
+                    "start": self._fmt_minutes(slot["start_min"]),
+                    "end": self._fmt_minutes(slot["end_min"]),
+                    "activity": slot["activity"]}, prov))
+                children.append(child)
             if not children:
                 continue
             block_title = title

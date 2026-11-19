@@ -255,7 +255,7 @@ def _db_part(db):
 
 def _jobs_part(jobs):
     """job 快照行列表：report()/summary() 都给容错，拿不到就是 []。"""
-    rows: list[Any] = []
+    rows: Any = []
     if isinstance(jobs, dict):
         rows = jobs.get("jobs") if isinstance(jobs.get("jobs"), list) else []
     elif isinstance(jobs, (list, tuple)):
@@ -285,7 +285,7 @@ def _counts_part(counts):
     """counts 只收 dict；数字保留，其它值转字符串，绝不抛。"""
     if not isinstance(counts, dict):
         return {}
-    out = {}
+    out: dict[str, Any] = {}
     for key, value in list(counts.items())[:40]:
         name = _text(key)
         if isinstance(value, bool):

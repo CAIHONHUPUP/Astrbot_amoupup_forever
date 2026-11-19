@@ -17,6 +17,7 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import amo_transition as tr  # noqa: E402
+import clock  # noqa: E402
 
 NOW = dt.datetime(2026, 11, 16, 15, 0, 0)
 
@@ -172,7 +173,7 @@ class ErrandFlowTests(unittest.TestCase):
 
 class AdvanceFlowTests(unittest.TestCase):
     def test_arrival_word_advances_and_writes_blocks(self):
-        api_now = dt.datetime.now().replace(second=0, microsecond=0)
+        api_now = clock.now().replace(second=0, microsecond=0)
         plugin = FakePlugin()
         tr.maybe_start_from_text(plugin, "快去医院", now=api_now - dt.timedelta(minutes=25))
         tr.current(plugin, api_now)
@@ -197,7 +198,7 @@ class ScheduleApiReadTests(unittest.TestCase):
     def test_api_schedule_matches_current_activity(self):
         from amo_api_schedule import ScheduleApiMixin
 
-        api_now = dt.datetime.now().replace(second=0, microsecond=0)
+        api_now = clock.now().replace(second=0, microsecond=0)
         plugin = FakePlugin()
         tr.maybe_start_from_text(plugin, "快去医院", now=api_now)
         tr.current(plugin, api_now)

@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, cast
 
 import asyncio
 
@@ -42,6 +42,7 @@ class ReadinessMixin:
         _init_lock: Any
         _merge_alias_profiles: Any
         _omnidraw_self_use_hint: Any
+        _ready: bool
         _spawn: Any
         _sync_with_data_plugin: Any
         _warm_up: Any
@@ -66,7 +67,7 @@ class ReadinessMixin:
             self.run_config_migrations()
             self.config_health()
             await asyncio.to_thread(self._merge_alias_profiles)
-            self.state = HumanState(self)
+            self.state = cast(Any, HumanState)(self)
             try:
                 # 旧库里提前铺好的未来日程 → 待办表（只搬一次，之后未来事件直接进待办）
                 self.state.migrate_future_todos()

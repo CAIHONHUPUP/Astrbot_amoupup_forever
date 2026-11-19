@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
+import clock  # noqa: E402  统一时钟：测试取「现在」走 clock.now_ts()
 import amo_date_context as dc  # noqa: E402
 from amo_llm import LlmMixin  # noqa: E402
 from amo_message import MessageMixin  # noqa: E402
@@ -32,7 +33,7 @@ class FakePlugin:
         self.db = FakeDB(data)
 
 
-NOW = time.time()
+NOW = clock.now_ts()  # 跟随全量冻结点，不再读真实墙钟
 
 
 def ctx(data):

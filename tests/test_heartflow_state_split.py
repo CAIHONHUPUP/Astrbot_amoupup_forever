@@ -7,6 +7,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import astrbot_stub  # noqa: E402
 astrbot_stub.install()
+import clock  # noqa: E402
 import heartflow_engine  # noqa: E402
 import heartflow_state  # noqa: E402
 from heartflow_engine import HeartflowEngine  # noqa: E402
@@ -46,7 +47,7 @@ def test_get_chat_state_is_stable():
 def test_minutes_since_last_reply():
     e = _engine()
     state = e._get_chat_state("g:1")
-    state.last_reply_time = time.time() - 120
+    state.last_reply_time = clock.now_ts() - 120
     assert e._get_minutes_since_last_reply("g:1") == 2
 
 def test_judgment_paused_roundtrip():
@@ -60,7 +61,7 @@ def test_judgment_pause_times_out():
     e = _engine()
     state = e._get_chat_state("g:1")
     state.judgment_paused = True
-    state.judgment_paused_at = time.time() - 999
+    state.judgment_paused_at = clock.now_ts() - 999
     assert e._is_judgment_paused("g:1") is False
 
 def test_whitelist_matches_group_id():

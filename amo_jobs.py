@@ -24,6 +24,8 @@
 """
 from __future__ import annotations
 
+from typing import Any
+
 import asyncio
 import inspect
 import logging
@@ -161,7 +163,7 @@ class JobManager:
 
     def cancel(self, name):
         """取消单个 job 的调度任务；返回是否真的取消了。"""
-        job = self._jobs.get(name)
+        job: Any = self._jobs.get(name)
         task = job.task if job is not None else None
         if task is None:
             return False

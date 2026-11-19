@@ -68,7 +68,7 @@ BANDS = ("dawn", "morning", "forenoon", "noon", "afternoon", "evening", "night")
 #: 事件标签（2026-11-15）：每个事件必须带 zone: / time:，可选 health:。
 #: health:>60 表示要健康才发生，health:<=60 表示只在她虚弱时发生。
 #: 新加事件漏打标签，validate_pool() 会在导入时直接报错。
-POOL = (
+POOL: tuple[dict[str, Any], ...] = (
     # 凌晨（0-6 点）：只能失眠/噩梦/起夜/喝水；夜宵/刷手机只到 24:00
     {"key": "insomnia", "band": ("dawn",), "scene": "private", "cost": 0,
      "tags": ("zone:home", "time:00:00-06:00"),

@@ -102,6 +102,7 @@ def memory_backend_line(connected):
 
 
 class CommandMixin(_MixinBase):
+    _status_cache: dict | None  # 与 ScheduleApiMixin 同一类型（/status 两秒缓存）
     #: 由 HumanCorePlugin 注入 / 其它 mixin 提供（仅类型声明，不改运行时）
     if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
         _jobs_report: Any
@@ -564,7 +565,7 @@ class CommandMixin(_MixinBase):
             return "用法：/amo set @人 name|alias|birthday|notes|affection 值"
         target = self._resolve_target(event, args, 1)
         field = args[2]
-        value = " ".join(args[3:])
+        value: Any = " ".join(args[3:])
         if field == "relation":
             return "请用 /amo rel 设置关系。"
         if field == "birthday":
@@ -896,10 +897,26 @@ class CommandMixin(_MixinBase):
             if new_items == items:
                 yield event.plain_result("和原来一样，没有改。")
                 return
-            self.state.commit_schedule_change(
-                key, new_items, old_items=old_items,
-                source="command", reason="/改日程 %s %s" % (clock, activity),
-            )
+            reason_text = "/改日程 %s %s" % (clock, activity)
+            hit_start = str(hit.get("start") or clock)
+            apply = getattr(self.state, "apply_schedule", None)
+            if callable(apply):
+                def _mutate(rows):
+                    if callable(apply_sched_at):
+                        return apply_sched_at(rows, hit_start, change)
+                    patched = [dict(row) if isinstance(row, dict) else row for row in rows]
+                    for row in patched:
+                        if isinstance(row, dict) and str(row.get("start") or "") == hit_start:
+                            row.update(change)
+                            break
+                    return patched
+                self.state.apply_schedule(key, _mutate, source="command",
+                                          reason=reason_text)
+            else:
+                self.state.commit_schedule_change(
+                    key, new_items, old_items=old_items,
+                    source="command", reason=reason_text,
+                )
             yield event.plain_result("改好了，%s 那段现在是「%s」。" % (hit.get("start"), activity[:30]))
         except Exception as _amo_exc:
             _note_swallowed("amo_commands.cmd_schedule_edit", _amo_exc)

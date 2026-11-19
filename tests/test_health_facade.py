@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 from services.health_engine import is_sick, get_sick_status, get_severity, get_sick_duration
+import clock  # 统一时钟：取「现在」走 clock.now_ts()
 
 class State:
-    health = {"status": "发烧", "since": __import__("time").time() - 7200, "until": 0}
+    health = {"status": "发烧", "since": clock.now_ts() - 7200, "until": 0}
 
 class Plugin:
     state = State()

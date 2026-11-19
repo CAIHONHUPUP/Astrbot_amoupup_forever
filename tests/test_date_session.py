@@ -16,6 +16,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 import amo_date_context as dc  # noqa: E402
 import amo_date_facts as facts  # noqa: E402
 import amo_date_session as ds  # noqa: E402
@@ -56,7 +58,7 @@ class Holder:
         self.db = db
 
 
-NOW = time.time()   # 锚在真实时钟：date_windows 内部用 now_ts() 收窗
+NOW = clock.now_ts()   # 跟插件时钟同源：date_windows 内部也用 now_ts() 收窗（冻结测试下同一时刻）
 
 
 def day_of(ts):

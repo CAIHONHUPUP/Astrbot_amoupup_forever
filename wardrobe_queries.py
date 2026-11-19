@@ -48,6 +48,7 @@ class WardrobeQueriesMixin:
         _sleep_outfits: Any
         _swim_outfits: Any
         _swim_window: Any
+        _synced: str
         current: Any
         is_swim_activity: Any
         night: Any

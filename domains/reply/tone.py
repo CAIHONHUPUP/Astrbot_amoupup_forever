@@ -203,7 +203,7 @@ def _tone_candidates(rule, prefix, middle, suffix, plugin, activity, variants=No
         return [prefix + item + suffix for item in RECOVERY_TONE]
     if rule == "place":
         scene = _tone_scene(activity)
-        pool = PLACE_TONE.get(scene) or PLACE_TONE["default"]
+        pool: Any = PLACE_TONE.get(scene) or PLACE_TONE["default"]
         if not pool:
             return []
         # 守卫已经按原句结构给了整句候选（reply_fact_guard._place_rule）时优先用：

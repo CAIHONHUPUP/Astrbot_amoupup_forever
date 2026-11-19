@@ -21,6 +21,8 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import clock  # noqa: E402
+
 import amo_fact_binder  # noqa: E402
 from amo_fact_binder import (  # noqa: E402
     claim_kinds,
@@ -70,14 +72,14 @@ class FakeWallet:
     def debit(self, amount_cents, reason, idem, **kwargs):
         self.debits.append({"amount": amount_cents, "reason": reason, "idem": idem})
         self._balance -= amount_cents
-        self.rows.insert(0, {"ts": _dt.datetime.now().timestamp(), "delta_cents": -amount_cents,
+        self.rows.insert(0, {"ts": clock.now().timestamp(), "delta_cents": -amount_cents,
                              "reason": reason, "category": ""})
         return True
 
 
 class FakePlugin:
     def __init__(self, schedule=None, rows=None, flags=None):
-        today = _dt.date.today().isoformat()
+        today = clock.today().isoformat()
         self.state = FakeState({today: list(schedule or [])})
         self.db = FakeDB(schedule={today: list(schedule or [])})
         self.wallet = FakeWallet(rows or [])
@@ -89,7 +91,7 @@ class FakePlugin:
 
 
 def _ts(hour, minute=0):
-    now = _dt.datetime.now()
+    now = clock.now()
     return _dt.datetime.combine(now.date(), _dt.time(hour, minute)).timestamp()
 
 
@@ -103,7 +105,7 @@ class FactsLinesTests(unittest.TestCase):
     def test_cooking_day_says_no_takeout(self):
         plugin = FakePlugin(schedule=COOK_SCHEDULE)
         text = "\n".join(facts_lines(plugin, _dt.datetime.combine(
-            _dt.date.today(), _dt.time(13, 32))))
+            clock.today(), _dt.time(13, 32))))
         self.assertIn("【绝对事实】", text)
         self.assertIn("自己做饭", text)
         self.assertIn("绝对没有点外卖", text)
@@ -114,7 +116,7 @@ class FactsLinesTests(unittest.TestCase):
                 {"ts": _ts(11, 30), "delta_cents": -1500, "reason": "买了点菜", "category": ""}]
         plugin = FakePlugin(schedule=COOK_SCHEDULE, rows=rows)
         text = "\n".join(facts_lines(plugin, _dt.datetime.combine(
-            _dt.date.today(), _dt.time(13, 32))))
+            clock.today(), _dt.time(13, 32))))
         self.assertIn("【今天的账单】", text)
         self.assertIn("一碗热汤面", text)
         self.assertIn("买了点菜", text)
@@ -124,13 +126,13 @@ class FactsLinesTests(unittest.TestCase):
                  "reason": "今天不想做饭，点了个外卖", "category": ""}]
         plugin = FakePlugin(schedule=[], rows=rows)
         text = "\n".join(facts_lines(plugin, _dt.datetime.combine(
-            _dt.date.today(), _dt.time(14, 0))))
+            clock.today(), _dt.time(14, 0))))
         self.assertIn("确实点过一次外卖", text)
 
     def test_meal_facts_cooked(self):
         plugin = FakePlugin(schedule=COOK_SCHEDULE)
         facts = meal_facts(COOK_SCHEDULE, ledger_today(plugin), _dt.datetime.combine(
-            _dt.date.today(), _dt.time(13, 32)))
+            clock.today(), _dt.time(13, 32)))
         self.assertTrue(facts["cooked"])
         self.assertFalse(facts["takeout"])
 
@@ -138,7 +140,7 @@ class FactsLinesTests(unittest.TestCase):
 class ClaimGuardTests(unittest.TestCase):
     def setUp(self):
         # 把「现在」钉到 13:35；账本/饭点的断言都按这个时刻写。
-        fixed = _dt.datetime.combine(_dt.date.today(), _dt.time(13, 35))
+        fixed = _dt.datetime.combine(clock.today(), _dt.time(13, 35))
         self._clock = mock.patch.object(amo_fact_binder, "_now", return_value=fixed)
         self._clock.start()
 
@@ -192,7 +194,7 @@ class ClaimGuardTests(unittest.TestCase):
         import amo_fact_binder
         old_now = amo_fact_binder._now
         amo_fact_binder._now = lambda: _dt.datetime.combine(
-            _dt.date.today(), _dt.time(12, 40))
+            clock.today(), _dt.time(12, 40))
         try:
             plugin = FakePlugin(schedule=COOK_SCHEDULE, flags={"chat_claim_charge": True})
             fixed, changed, _ = guard("老公我点了个外卖，刚吃完", plugin)
@@ -209,7 +211,7 @@ class ClaimGuardTests(unittest.TestCase):
                 {"ts": _ts(13, 32), "delta_cents": -2500,
                  "reason": "今天不想做饭，点了个外卖", "category": ""}]
         plugin = FakePlugin(schedule=[], rows=rows)
-        now = _dt.datetime.combine(_dt.date.today(), _dt.time(13, 32))
+        now = _dt.datetime.combine(clock.today(), _dt.time(13, 32))
         facts = meal_facts([], ledger_today(plugin), now)
         self.assertTrue(facts["cooked"])
         text = "\n".join(facts_lines(plugin, now))
@@ -225,7 +227,7 @@ class ClaimGuardTests(unittest.TestCase):
                 {"ts": _ts(18, 40), "delta_cents": -3000, "reason": "晚饭点了个外卖",
                  "category": ""}]
         plugin = FakePlugin(schedule=COOK_SCHEDULE, rows=rows)
-        now = _dt.datetime.combine(_dt.date.today(), _dt.time(19, 0))
+        now = _dt.datetime.combine(clock.today(), _dt.time(19, 0))
         fixed, changed, _ = guard("晚饭点了个外卖，撑死了", plugin, now)
         self.assertFalse(changed, fixed)
 

@@ -259,42 +259,48 @@ class SharedActivityMixin:
     def _sa_commit_schedule(self, act, now):
         day = now.date().isoformat()
         hour = int(now.hour)
+        def _mutate(rows):
+            items = [dict(item) for item in rows if isinstance(item, dict)]
+            target = None
+            for item in items:
+                start = str(item.get("start") or "")
+                end = str(item.get("end") or "")
+                if len(start) < 5 or len(end) < 2:
+                    continue
+                try:
+                    sh = int(start[:2])
+                    eh = 24 if end.startswith("24") else int(end[:2])
+                except ValueError:
+                    continue
+                if sh <= hour < eh:
+                    target = item
+                    break
+            old_activity = ""
+            if target is None:
+                target = {"start": "%02d:00" % hour,
+                          "end": ("24:00" if hour >= 23 else "%02d:00" % (hour + 1)),
+                          "activity": "", "place": "家", "zone": "home",
+                          "category": "life"}
+                items.append(target)
+            else:
+                old_activity = str(target.get("activity") or "")
+            target["activity"] = entry_activity(act["label"])
+            target["detail"] = hour_detail(old_activity, act["label"],
+                                           now.strftime("%H:%M"))
+            target["place"] = str(target.get("place") or "家")
+            target["zone"] = "home"
+            target["category"] = "life"
+            target["happened"] = True
+            return items
+
         try:
-            items = [dict(item) for item in (self.state.schedule.get(day) or [])]
-        except Exception as _amo_exc:
-            _note_swallowed("amo_shared_activity.schedule_load", _amo_exc)
-            return
-        target = None
-        for item in items:
-            start = str(item.get("start") or "")
-            end = str(item.get("end") or "")
-            if len(start) < 5 or len(end) < 2:
-                continue
-            try:
-                sh = int(start[:2])
-                eh = 24 if end.startswith("24") else int(end[:2])
-            except ValueError:
-                continue
-            if sh <= hour < eh:
-                target = item
-                break
-        old_activity = ""
-        if target is None:
-            target = {"start": "%02d:00" % hour,
-                      "end": ("24:00" if hour >= 23 else "%02d:00" % (hour + 1)),
-                      "activity": "", "place": "家", "zone": "home", "category": "life"}
-            items.append(target)
-        else:
-            old_activity = str(target.get("activity") or "")
-        target["activity"] = entry_activity(act["label"])
-        target["detail"] = hour_detail(old_activity, act["label"], now.strftime("%H:%M"))
-        target["place"] = str(target.get("place") or "家")
-        target["zone"] = "home"
-        target["category"] = "life"
-        target["happened"] = True
-        try:
-            self.state.commit_schedule_change(day, items, source="chat",
-                                              reason="shared_activity_start")
+            apply = getattr(self.state, "apply_schedule", None)
+            if callable(apply):
+                apply(day, _mutate, source="chat", reason="shared_activity_start")
+            else:
+                self.state.commit_schedule_change(
+                    day, _mutate(self.state.schedule.get(day) or []),
+                    source="chat", reason="shared_activity_start")
         except Exception as _amo_exc:
             _note_swallowed("amo_shared_activity.commit", _amo_exc)
 

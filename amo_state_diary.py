@@ -149,6 +149,7 @@ class DiaryStateMixin(_MixinBase):
         period_info: Any
         save: Any
         schedule: Any
+        schedule_ctx: Any
         weather: Any
         worldview: Any
 
@@ -1681,7 +1682,7 @@ def diary_live_purge(plugin, now=None):
                 keep.append(day)
                 continue
             if key == DIARY_LIVE_ARCHIVE_DAYS_KEY:
-                targets = (DIARY_LIVE_ARCHIVE_PREFIX + day,)
+                targets: tuple[str, ...] = (DIARY_LIVE_ARCHIVE_PREFIX + day,)
             else:
                 targets = (diary_live_key(day), DIARY_LIVE_PENDING_PREFIX + day,
                            DIARY_LIVE_SKIP_PREFIX + day)

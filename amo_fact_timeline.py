@@ -30,7 +30,7 @@ meal_band / meal_entries / meal_view。
 _filter_window_facts / _slot_window 都转发到这里，旧调用方与输出保持不变。
 """
 from __future__ import annotations
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, cast
 
 try:  # Phase 11：统一时钟（不再裸调系统时钟）
     from . import clock as _amo_clock
@@ -924,7 +924,8 @@ def _classify_person(word, people, companions):
 def _names_in_text(text):
     """从日程/账本/社交文本里只挑明确出现的人名；没有就返回空（不猜）。"""
     body = str(text or "")
-    people, companions = [], []
+    people: list[str] = []
+    companions: list[str] = []
     for regex in (_REL_NAME_RE, _NAME_VERB_RE):
         for match in regex.finditer(body):
             _classify_person(match.group(1), people, companions)
@@ -977,7 +978,8 @@ def _occasion_from_text(text, category=""):
 def _schedule_detail_fields(event, item):
     """日程块 -> people/companions/occasion（结构化字段优先，文本兜底）。"""
     body = " ".join(str(item.get(key) or "") for key in ("activity", "detail", "event"))
-    people, companions = [], []
+    people: list[str] = []
+    companions: list[str] = []
     for key in ("people", "companions", "with", "who", "with_who"):
         for raw in _as_text_list(item.get(key)):
             for piece in re.split(r"[、，,/\s]+", raw):
@@ -1174,7 +1176,7 @@ def _apply_social_events(day_text, events, rows):
     for row in rows or ():
         if not isinstance(row, dict):
             continue
-        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        payload = cast(dict[Any, Any], row.get("payload") if isinstance(row.get("payload"), dict) else {})
         data = dict(payload)
         for key, value in row.items():
             if key != "payload" and key not in data:
@@ -1257,7 +1259,8 @@ def _ledger_minute(day, row):
 
 def _schedule_view(day, items):
     """日程块 → 事实 + 身份索引（索引给账本/日记归并用）。"""
-    events, index = [], {}
+    events: list[dict[str, Any]] = []
+    index: dict[str, Any] = {}
     for item in items or ():
         if not isinstance(item, dict):
             continue
@@ -1309,7 +1312,8 @@ def _match_view_event(events, index, keys, minute, require_explicit=False):
 def _apply_ledger(day, events, index, ledger):
     """账本流水按 event_id 归并到事实；归不上的按分钟挂到那一块，再不行单列。"""
     bounced = reversed_idems(ledger)
-    seen, by_idem = set(), {}
+    seen: set[str] = set()
+    by_idem: dict[str, Any] = {}
     for row in ledger or ():
         if not isinstance(row, dict):
             continue
@@ -1409,7 +1413,7 @@ def _dedupe_view(events):
     for event in events:
         eid = str(event.get("event_id") or "").strip()
         if eid:
-            key = ("id", eid)
+            key: tuple[Any, ...] = ("id", eid)
         else:
             key = ("line", event.get("time"), event.get("type"), event.get("detail"))
         if key in seen:

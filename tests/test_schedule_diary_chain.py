@@ -263,7 +263,7 @@ class DiaryGenerationTests(BaseCase):
     def setUp(self):
         super().setUp()
         # 把「现在」钉到当天 21:30：所有「上一小时已结束」的断言都与跑测时刻无关。
-        fixed = datetime.datetime.combine(datetime.date.today(), datetime.time(21, 30))
+        fixed = datetime.datetime.combine(datetime.date.fromisoformat(today_str()), datetime.time(21, 30))
         self._clock = mock.patch.object(amo_human_state, "_now", return_value=fixed)
         self._clock.start()
 
@@ -286,7 +286,7 @@ class DiaryGenerationTests(BaseCase):
         last_min = int(last_end[:2]) * 60 + int(last_end[3:])
         # 晚上最后一段允许并到 23:00（避免 10 分钟碎片），其余不能超过此刻
         self.assertLessEqual(last_min, max(amo_shared.minutes_now(), 23 * 60))
-        tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+        tomorrow = (datetime.date.fromisoformat(today_str()) + datetime.timedelta(days=1)).isoformat()
         self.assertEqual(self.state.schedule_tree(tomorrow), [])
 
     def test_future_hour_is_pending_and_not_saved(self):
@@ -430,7 +430,7 @@ class ChatPathTests(BaseCase):
             return self.state.schedule.get(self.day) or []
 
         self.state.ensure_schedule = ensure
-        fixed = datetime.datetime.combine(datetime.date.today(), datetime.time(13, 30))
+        fixed = datetime.datetime.combine(datetime.date.fromisoformat(today_str()), datetime.time(13, 30))
         with mock.patch.object(amo_schedule, "_now", return_value=fixed):
             asyncio.run(self.state.p._apply_user_schedule_change(_FakeEvent("你去上班吧"), "你去上班吧"))
         rows = self.state.schedule[self.day]
@@ -450,7 +450,7 @@ class ChatPathTests(BaseCase):
 
         self.state.ensure_schedule = ensure
         self.plugin.llm = _RejectLLM()
-        fixed = datetime.datetime.combine(datetime.date.today(), datetime.time(13, 30))
+        fixed = datetime.datetime.combine(datetime.date.fromisoformat(today_str()), datetime.time(13, 30))
         with mock.patch.object(amo_schedule, "_now", return_value=fixed):
             asyncio.run(self.state.p._apply_user_schedule_change(
                 _FakeEvent("你去上班吧"), "你去上班吧"))
