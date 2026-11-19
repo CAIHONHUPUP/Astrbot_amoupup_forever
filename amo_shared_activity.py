@@ -100,7 +100,7 @@ def start_at_ts(text, now):
     只说「今晚」不带钟点、或带「可能/看一会儿/再说」的口嗨，仍按现在或 hedged 处理。
     """
     if not isinstance(now, _dt.datetime):
-        now = _dt.datetime.now()
+        now = _now()
     text = str(text or "")
     match = _CLOCK_RE.search(text)
     if match:

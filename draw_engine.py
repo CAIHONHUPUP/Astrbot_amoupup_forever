@@ -326,7 +326,7 @@ def swim_outside_request(text, place):
 
 DEFAULT_EXPLICIT_KEYWORDS = (
     "画一张,画个,画一下,画一幅,画张,给我画,帮我画,替我画,来一张,来张,发张图,发个图,"
-    "发一张,拍张,拍一张,拍照给我看看,拍给我看,照片给我看看,发张照片,自拍,画我,来点图,"
+    "发一张,拍张,拍一张,拍照给我看看,拍照给我看,拍给我看,照片给我看看,发张照片,自拍,画我,来点图,"
     "拍张照,拍个照,拍张照片,来张照片,发个自拍,来张自拍,拍一张照片,发张自拍"
 )
 
@@ -760,7 +760,13 @@ class DrawEngine:
             _note_swallowed("draw_engine.DrawEngine.wants_photo", _amo_exc)
             return False
         text = str(getattr(event, "message_str", "") or "")
-        return any(kw and kw.lower() in text.lower() for kw in self._explicit_keywords())
+        if any(kw and kw.lower() in text.lower() for kw in self._explicit_keywords()):
+            return True
+        # 2026-11-19：泳装/比基尼请求常常不带「拍照」两个字（「穿比基尼给我看看」
+        # 「拍照给我看，我要看你穿比基尼」）。漏判时不会注入泳装口径，她会自己编
+        # 「隔着屏幕我不发」这种边界；这里按「泳装词 + 看/拍/发」认成照片请求。
+        return (any(word in text for word in ("比基尼", "泳衣", "泳装", "泳裤", "三点式"))
+                and any(word in text for word in ("看看", "给我看", "看你穿", "拍", "照片", "发张")))
 
     @staticmethod
     def _is_foot_request(text):

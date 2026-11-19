@@ -339,6 +339,14 @@ class RunTests(unittest.TestCase):
         engine, _ = engine_for()
         self.assertTrue(engine.wants_photo(FakeEvent("拍照给我看看")))
 
+    def test_wants_photo_for_bikini_request(self):
+        # 2026-11-19 线上：他说「穿比基尼给我看看」「拍照给我看，我要看你穿比基尼」，
+        # 触发词里只有「拍照给我看看」，两句话都没命中 → 不注入泳装口径 → 她自己编「隔着屏幕我不发」。
+        engine, _ = engine_for()
+        self.assertTrue(engine.wants_photo(FakeEvent("老婆，穿比基尼给我看看，我好色")))
+        self.assertTrue(engine.wants_photo(FakeEvent("拍照给我看，我要看你穿比基尼")))
+        self.assertFalse(engine.wants_photo(FakeEvent("今天好热")))
+
     def test_explicit_photo_request_works_in_topic_mode(self):
         # 2026-11-15 用户要求：他直接说「拍张照/发张自拍」必须 100% 触发，不看触发模式
         engine, _ = engine_for({"draw_trigger_mode": "topic"})
