@@ -415,7 +415,7 @@ def _photo_turn_key(event):
         mid = str(getattr(getattr(event, "message_obj", None), "message_id", "") or "")
         if mid:
             return mid
-    except Exception:
+    except Exception:  # cleanup: 取不到 message_id 就退回 id(event)
         pass
     return str(id(event))
 
@@ -1441,7 +1441,7 @@ class DrawEngine:
             except Exception:
                 try:
                     from astrbot.api.event.components import Plain
-                except Exception:
+                except Exception:  # cleanup: 拿不到 Plain 就只发图，不阻断发送
                     Plain = None
             if Plain is not None:
                 try:
