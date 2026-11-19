@@ -46,6 +46,17 @@ class DetectTests(unittest.TestCase):
         self.assertEqual("watch", sa.detect("陪你一起看电影")["kind"])
         self.assertEqual("game", sa.detect("我们一起打游戏吧")["kind"])
 
+    def test_food_smalltalk_is_not_an_agreement(self):
+        # 2026-11-19 线上：「可以啊，你看看有什么好吃的」被当成约好一起看电视，
+        # 17:00 被改写成「和老公连麦看电视」，还补了一段 17:00-17:29 通勤块。
+        self.assertIsNone(sa.detect("可以啊，你看看有什么好吃的"))
+        self.assertIsNone(sa.detect("可以啊，你看着办"))
+        self.assertIsNone(sa.detect("行，你看看菜单"))
+
+    def test_real_agreement_with_object_still_detected(self):
+        self.assertEqual("watch", sa.detect("好啊，看会儿电视")["kind"])
+        self.assertEqual("watch", sa.detect("可以，那看电影吧")["kind"])
+
     def test_stop_words(self):
         self.assertTrue(sa.stop_detected("我不看了，我去忙了"))
         self.assertTrue(sa.stop_detected("先睡了，明天再聊"))
@@ -128,6 +139,12 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(action.get("action"), "和老公连麦看电视")
         self.assertIn("正在一起看电视", self.plugin.shared_activity_prompt())
 
+    def test_food_smalltalk_does_not_touch_schedule(self):
+        result = self.plugin.shared_activity_on_message("可以啊，你看看有什么好吃的")
+        self.assertIsNone(result)
+        self.assertIsNone(self.plugin.db.kv_get("shared_activity"))
+        self.assertEqual(self.plugin.state.commits, [])
+
     def test_hedged_does_not_touch_schedule(self):
         result = self.plugin.shared_activity_on_message("好啊，不过我可能看一会儿就去睡觉")
         self.assertEqual(result["action"], "hedged")
@@ -194,6 +211,100 @@ class NotHomeTests(unittest.TestCase):
         self.assertEqual(result["action"], "ignored")
         self.assertIsNone(self.plugin.db.kv_get("shared_activity"))
         self.assertEqual(self.plugin.state.commits, [])
+
+
+class StartTimeTests(unittest.TestCase):
+    def test_evening_clock(self):
+        now = datetime.datetime(2026, 11, 19, 17, 27, 0)
+        self.assertEqual(sa.start_at_ts("今晚八点一起看电视", now),
+                         datetime.datetime(2026, 11, 19, 20, 0).timestamp())
+        self.assertEqual(sa.start_at_ts("晚上8点看剧", now),
+                         datetime.datetime(2026, 11, 19, 20, 0).timestamp())
+        self.assertEqual(sa.start_at_ts("八点半看", now),
+                         datetime.datetime(2026, 11, 19, 20, 30).timestamp())
+        self.assertEqual(sa.start_at_ts("20:00 一起看", now),
+                         datetime.datetime(2026, 11, 19, 20, 0).timestamp())
+
+    def test_soon_and_now(self):
+        now = datetime.datetime(2026, 11, 19, 17, 27, 0)
+        self.assertEqual(sa.start_at_ts("待会一起看", now),
+                         (now + datetime.timedelta(minutes=30)).timestamp())
+        self.assertEqual(sa.start_at_ts("一起看电视", now), now.timestamp())
+
+
+class AgreedTimeTests(unittest.TestCase):
+    def setUp(self):
+        self._old_now = sa._now
+        self.now = datetime.datetime(2026, 11, 19, 17, 27, 0)
+        sa._now = lambda: self.now
+        self.plugin = FakePlugin()
+        self.plugin.state.schedule = {"2026-11-19": [
+            {"start": "17:00", "end": "18:00", "activity": "刚出公司，坐地铁回家（在路上）",
+             "place": "路上", "zone": "road", "category": "commute"},
+            {"start": "20:00", "end": "21:00", "activity": "休息",
+             "place": "家", "zone": "home", "category": "rest"},
+        ]}
+
+    def tearDown(self):
+        sa._now = self._old_now
+
+    def test_agreed_time_does_not_start_now(self):
+        result = self.plugin.shared_activity_on_message("今晚八点一起看电视吧")
+        self.assertEqual(result["action"], "scheduled")
+        self.assertEqual(result["at"], "20:00")
+        self.assertEqual(self.plugin.state.commits, [])
+        self.assertIsNone(self.plugin.db.kv_get("current_action"))
+        act = self.plugin.db.kv_get("shared_activity")
+        self.assertEqual(act["status"], "pending")
+        prompt = self.plugin.shared_activity_prompt()
+        self.assertIn("20:00", prompt)
+        self.assertIn("还没到点", prompt)
+        self.assertNotIn("正在一起", prompt)
+
+    def test_tick_activates_at_agreed_time(self):
+        self.plugin.shared_activity_on_message("今晚八点一起看电视吧")
+        self.now = datetime.datetime(2026, 11, 19, 19, 59, 0)
+        self.assertIsNone(self.plugin.shared_activity_tick())
+        self.assertEqual(self.plugin.db.kv_get("shared_activity")["status"], "pending")
+        self.now = datetime.datetime(2026, 11, 19, 20, 0, 30)
+        self.assertEqual(self.plugin.shared_activity_tick(), "started")
+        act = self.plugin.db.kv_get("shared_activity")
+        self.assertEqual(act["status"], "active")
+        self.assertEqual(len(self.plugin.state.commits), 1)
+        rows = self.plugin.state.schedule["2026-11-19"]
+        target = [row for row in rows if row["start"] == "20:00"][0]
+        self.assertEqual(target["activity"], "和老公连麦看电视")
+        self.assertIn("正在一起", self.plugin.shared_activity_prompt())
+
+    def test_cancel_pending(self):
+        self.plugin.shared_activity_on_message("今晚八点一起看电视吧")
+        result = self.plugin.shared_activity_on_message("不看了，我去忙了")
+        self.assertEqual(result["action"], "cancelled")
+        self.assertEqual(self.plugin.db.kv_get("shared_activity")["status"], "cancelled")
+        self.assertEqual(self.plugin.state.commits, [])
+
+
+class TeleportGuardTests(unittest.TestCase):
+    def setUp(self):
+        self._old_now = sa._now
+        sa._now = lambda: datetime.datetime(2026, 11, 19, 17, 27, 0)
+        self.plugin = FakePlugin()
+        self.plugin.state.schedule = {"2026-11-19": [
+            {"start": "16:00", "end": "17:00", "activity": "在工位上忙工作",
+             "place": "公司", "zone": "office", "category": "work"},
+            {"start": "17:00", "end": "18:00", "activity": "休息",
+             "place": "家", "zone": "home", "category": "rest"},
+        ]}
+
+    def tearDown(self):
+        sa._now = self._old_now
+
+    def test_adjacent_office_to_home_is_not_home(self):
+        # 16:00 公司直接接 17:00 家（还没补通勤）：不能把这段错误放大成「她在家看电视」。
+        result = self.plugin.shared_activity_on_message("今晚一起看电视吧")
+        self.assertEqual(result["action"], "ignored")
+        self.assertEqual(self.plugin.state.commits, [])
+        self.assertIsNone(self.plugin.db.kv_get("shared_activity"))
 
 
 class MoodStoryTests(unittest.IsolatedAsyncioTestCase):

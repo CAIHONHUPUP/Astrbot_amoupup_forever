@@ -1,4 +1,5 @@
 pytest>=7
+pytest-split>=0.9
 pyflakes>=3.0
 mypy==2.4.1
 coverage>=7.0

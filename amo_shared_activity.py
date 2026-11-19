@@ -75,6 +75,60 @@ def _minutes_of(text):
     return DEFAULT_MINUTES
 
 
+_CN_HOURS = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+             "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "十一": 11,
+             "十二": 12, "二十": 20, "二十一": 21}
+_CLOCK_RE = re.compile(
+    r"(凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|今早|明晚|明天)?\s*"
+    r"([0-9]{1,2}|[零一二两三四五六七八九十]{1,3})\s*(?:[:：]|点)\s*"
+    r"([0-9]{1,2}|半)?\s*分?")
+_SOON_RE = re.compile(r"(晚点|晚一点儿|待会|待会儿|等会|等会儿|过会儿|一会儿|等下)")
+
+
+def _hour_of(token):
+    token = str(token or "")
+    if token.isdigit():
+        return int(token)
+    return _CN_HOURS.get(token)
+
+
+def start_at_ts(text, now):
+    """解析聊天里约好的开始时间；解析不到就是现在（立即开始）。
+
+    2026-11-19 用户要求：说好「八点」就八点，中间只说约好了，不能一到消息就开演。
+    支持「今晚八点 / 晚上8点 / 20:00 / 八点半 / 明晚八点 / 待会 / 晚点」；
+    只说「今晚」不带钟点、或带「可能/看一会儿/再说」的口嗨，仍按现在或 hedged 处理。
+    """
+    if not isinstance(now, _dt.datetime):
+        now = _dt.datetime.now()
+    text = str(text or "")
+    match = _CLOCK_RE.search(text)
+    if match:
+        prefix = str(match.group(1) or "")
+        hour = _hour_of(match.group(2))
+        minute_token = str(match.group(3) or "0")
+        minute = 30 if minute_token == "半" else (_hour_of(minute_token) or 0)
+        if hour is not None and 0 <= hour <= 24:
+            if prefix in ("晚上", "今晚", "明晚", "傍晚") and hour < 12:
+                hour += 12
+            elif prefix == "下午" and hour < 12:
+                hour += 12
+            elif prefix == "中午" and hour < 11:
+                hour += 12
+            elif not prefix and hour < 12 and now.hour >= 12:
+                hour += 12
+            day = now.date()
+            if prefix in ("明晚", "明天"):
+                day = day + _dt.timedelta(days=1)
+            target = _dt.datetime.combine(day, _dt.time(hour % 24, minute))
+            if target <= now:
+                return now.timestamp()
+            return target.timestamp()
+    if _SOON_RE.search(text):
+        return (now + _dt.timedelta(minutes=30)).timestamp()
+    return now.timestamp()
+
+
 _TOGETHER = re.compile(r"(一起|一块|咱们|我们|陪你|跟我|和我|和你)")
 #: 明确的观看/娱乐对象（光一个「看」不算，避免把「好看」当约定）
 _ACT_OBJECT = re.compile(
@@ -104,8 +158,14 @@ def detect(text):
     text = str(text or "").strip()
     if not text:
         return None
+    hedged = any(word in text for word in HEDGE_WORDS)
     together = bool(_TOGETHER.search(text)) and bool(_ACT_OBJECT.search(text))
-    loose_agree = bool(_AGREE.match(text))
+    # 2026-11-19 修：「可以啊，你看看有什么好吃的」句首答应 + 8 字内出现「看」，
+    # 被当成约好一起看电视：17:00 的「在工位上忙工作」被改写成「和老公连麦看电视」，
+    # 还补了一段 17:00-17:29 的通勤块，她会从工位瞬移回家、40 秒后又窝在沙发上。
+    # 单独答应分支也必须带明确的观看/游戏/听歌对象；只有带含糊词的口嗨
+    #（看一会儿/可能/再说…）才放行，由调用方按 hedged 处理，不写日程。
+    loose_agree = bool(_AGREE.match(text)) and (bool(_ACT_OBJECT.search(text)) or hedged)
     if not (together or loose_agree):
         return None
     kind = "watch"
@@ -113,7 +173,6 @@ def detect(text):
         if re.search(pattern, text):
             kind = name
             break
-    hedged = any(word in text for word in HEDGE_WORDS)
     return {"kind": kind, "label": LABELS.get(kind, "一起玩"),
             "minutes": _minutes_of(text), "hedged": bool(hedged)}
 
@@ -156,6 +215,23 @@ def prompt_block(activity, now_ts=None):
     )
 
 
+def pending_block(activity, now_ts=None):
+    """还没到约定时间：只说她「约好了几点」，不能按「正在一起」演。"""
+    label = str((activity or {}).get("label") or "看电视")
+    try:
+        start = float((activity or {}).get("starts_at") or 0)
+    except (TypeError, ValueError):
+        start = 0
+    if not start:
+        return ""
+    at = _dt.datetime.fromtimestamp(start).strftime("%H:%M")
+    return (
+        "【约好了 %s 一起%s】现在还没到点，别当成已经在%s；"
+        "可以期待、问他要不要提前，到点再连。到点会自动开始，不用说「正在看」。"
+        % (at, label, label)
+    )
+
+
 def finish_text(label, interrupted=False):
     label = str(label or "看电视")
     if interrupted:
@@ -195,12 +271,45 @@ class SharedActivityMixin:
         return None
 
     def _sa_at_home(self):
-        item = self._sa_current_item()
+        now = _now()
+        try:
+            items = self.state.schedule.get(now.date().isoformat()) or []
+        except Exception:
+            return True
+        item = None
+        prev = None
+        cur = now.hour * 60 + now.minute
+        for index, row in enumerate(items):
+            if not isinstance(row, dict):
+                continue
+            start, end = str(row.get("start") or ""), str(row.get("end") or "")
+            try:
+                sh, sm = [int(x) for x in start[:5].split(":")]
+                eh, em = (24, 0) if end.startswith("24") else [int(x) for x in end[:5].split(":")]
+            except Exception:
+                continue
+            if sh * 60 + sm <= cur < eh * 60 + em:
+                item = row
+                prev = items[index - 1] if index else None
+                break
         if item is None:
             return True  # 没有当前小时行时按在家处理（旧测试/首启）；有行就必须是 home
         zone = str(item.get("zone") or "")
         category = str(item.get("category") or "")
-        return zone == "home" and category not in ("commute", "work")
+        if not (zone == "home" and category not in ("commute", "work")):
+            return False
+        # 2026-11-19 修：上一块还在公司/外面、时间上却与当前「在家」块首尾相接，
+        # 说明日程本身是瞬移（还没补通勤）。这种日程不能当「她已在家」，
+        # 否则聊天里一句「一起看电视」就会把这段错误放大成真的回家。
+        if isinstance(prev, dict):
+            prev_zone = str(prev.get("zone") or "")
+            prev_place = str(prev.get("place") or "")
+            prev_end = str(prev.get("end") or "")[:5]
+            cur_start = str(item.get("start") or "")[:5]
+            if (prev_place and prev_zone not in ("home", "road")
+                    and prev_end and prev_end == cur_start):
+                return False
+        return True
 
     def shared_activity_active(self):
         act = self._sa_kv()
@@ -211,13 +320,28 @@ class SharedActivityMixin:
         return act
 
     def shared_activity_prompt(self):
+        act = self._sa_kv()
+        if act.get("status") == "pending":
+            return pending_block(act)
         act = self.shared_activity_active()
         return prompt_block(act) if act else ""
 
     def shared_activity_on_message(self, text):
         text = str(text or "")
         act = self._sa_kv()
-        if act.get("status") == "active":
+        status = str(act.get("status") or "")
+        if status == "pending":
+            # 已约好但还没到点：不写日程、不演「正在看」；改口/取消/换时间才动。
+            if stop_detected(text):
+                self._sa_cancel(act)
+                return {"action": "cancelled"}
+            hit = detect(text)
+            if not hit:
+                return None
+            if hit.get("hedged"):
+                return {"action": "hedged", "label": hit["label"]}
+            return self._sa_start(hit, text)
+        if status == "active":
             if stop_detected(text):
                 self._sa_finish(act, interrupted=True)
                 return {"action": "finish", "interrupted": True}
@@ -226,35 +350,46 @@ class SharedActivityMixin:
         hit = detect(text)
         if not hit:
             return None
-        if not self._sa_at_home():
-            # 她在路上/公司/外面：不能把当前小时改写成“和老公看电视”
-            return {"action": "ignored", "reason": "not_home"}
         if hit.get("hedged"):
             try:
                 self.db.kv_set("shared_activity_hedged", {"label": hit["label"], "at": _now().timestamp()})
             except Exception as _amo_exc:
                 _note_swallowed("amo_shared_activity.hedged", _amo_exc)
             return {"action": "hedged", "label": hit["label"]}
-        self._sa_start(hit)
-        return {"action": "start", "label": hit["label"]}
+        return self._sa_start(hit, text)
 
-    def _sa_start(self, hit):
+    def _sa_start(self, hit, text=""):
         now = _now()
+        start_ts = start_at_ts(text, now)
+        future = start_ts > now.timestamp() + 60
+        if not future and not self._sa_at_home():
+            # 她在路上/公司/外面：不能把当前小时改写成“和老公看电视”
+            return {"action": "ignored", "reason": "not_home"}
         label = hit["label"]
+        minutes = int(hit["minutes"])
         act = {
-            "kind": hit["kind"], "label": label,
-            "started_at": now.timestamp(),
-            "ends_at": now.timestamp() + int(hit["minutes"]) * 60,
-            "status": "active", "interrupted": False,
-            "day": now.date().isoformat(),
+            "kind": hit["kind"], "label": label, "minutes": minutes,
+            "created_at": now.timestamp(),
+            "ends_at": start_ts + minutes * 60,
+            "status": "pending" if future else "active",
+            "interrupted": False,
+            "day": _dt.datetime.fromtimestamp(start_ts).date().isoformat(),
         }
-        set_action(self, entry_activity(label), until_ts=act["ends_at"],
-                   place="家", category="life", source="shared_activity")
+        if future:
+            act["starts_at"] = start_ts
+        else:
+            act["started_at"] = now.timestamp()
         try:
             self.db.kv_set(KV_KEY, act)
         except Exception as _amo_exc:
             _note_swallowed("amo_shared_activity.set", _amo_exc)
+        if future:
+            return {"action": "scheduled", "label": label,
+                    "at": _dt.datetime.fromtimestamp(start_ts).strftime("%H:%M")}
+        set_action(self, entry_activity(label), until_ts=act["ends_at"],
+                   place="家", category="life", source="shared_activity")
         self._sa_commit_schedule(act, now)
+        return {"action": "start", "label": label}
 
     def _sa_commit_schedule(self, act, now):
         day = now.date().isoformat()
@@ -306,12 +441,50 @@ class SharedActivityMixin:
 
     def shared_activity_tick(self):
         act = self._sa_kv()
-        if act.get("status") != "active":
+        status = str(act.get("status") or "")
+        if status == "pending":
+            try:
+                starts = float(act.get("starts_at") or 0)
+            except (TypeError, ValueError):
+                starts = 0
+            if not starts or _now().timestamp() < starts:
+                return None
+            if not self._sa_at_home():
+                # 到点了但人还在外面：先不演，下一分钟再试。
+                return None
+            return self._sa_activate(act)
+        if status != "active":
             return None
         if not expired(act):
             return None
         self._sa_finish(act, interrupted=False)
         return "finished"
+
+    def _sa_activate(self, act):
+        now = _now()
+        active = dict(act)
+        active["status"] = "active"
+        active["started_at"] = now.timestamp()
+        active.pop("starts_at", None)
+        label = str(active.get("label") or "看电视")
+        set_action(self, entry_activity(label),
+                   until_ts=float(active.get("ends_at") or 0),
+                   place="家", category="life", source="shared_activity")
+        try:
+            self.db.kv_set(KV_KEY, active)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_shared_activity.activate", _amo_exc)
+        self._sa_commit_schedule(active, now)
+        return "started"
+
+    def _sa_cancel(self, act):
+        done = dict(act)
+        done.update({"status": "cancelled", "ended_at": _now().timestamp()})
+        done.pop("starts_at", None)
+        try:
+            self.db.kv_set(KV_KEY, done)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_shared_activity.cancel", _amo_exc)
 
     def _sa_finish(self, act, interrupted=False):
         now = _now()
