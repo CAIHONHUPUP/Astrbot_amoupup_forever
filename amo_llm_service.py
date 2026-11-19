@@ -218,8 +218,8 @@ class LLMService:
                 prompt = "你的名字是" + name + "。\n" + prompt
         except Exception as _amo_exc:
             _note_swallowed("amo_llm_service.LLMService.persona", _amo_exc)
-        anchor = ("你的人设是一个普通的、有点小财迷、会在意物价、偶尔犯懒、但内心极度依赖老公的女孩；"
-                  "不管发生什么，说话都像普通女孩，不要像客服、不要像哲学家、不要像 AI。")
+        anchor = ("你的人设是一个普通的、有点小财迷、会在意物价、偶尔犯懒、但心里很有数的成年女人；"
+                  "不管发生什么，说话都像真人，不要像客服、不要像哲学家、不要像 AI。")
         prompt = anchor + "\n" + prompt
         self._persona_cache[key] = (now_ts(), prompt)
         return prompt

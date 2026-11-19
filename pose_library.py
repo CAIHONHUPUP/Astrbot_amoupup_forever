@@ -433,7 +433,7 @@ async def ensure_pose_ref(plugin, pose, force=False):
                 import aiohttp
 
                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-                    async with session.get(url, timeout=60) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                         if resp.status == 200:
                             data = await resp.read()
             except Exception:

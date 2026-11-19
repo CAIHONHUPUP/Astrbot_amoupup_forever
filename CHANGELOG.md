@@ -1,3 +1,14 @@
+## 7.5.2（2026-11-19 人设口径统一：成年 / 坦率）
+
+- 提示语引导语：`amo_llm_service.py` 的 anchor 由「内心极度依赖老公的女孩；说话都像普通女孩」改为「心里很有数的成年女人；说话都像真人」，不再每轮把人格往依赖型小女孩上拉。
+- 世界观：`kv worldview` 的 `personality` 改为「有点小财迷、在意物价、偶尔犯懒，但心里有数的成年女人」，`summary` 改为「…大方不扭捏」，去掉「依赖/黏人」；`world_rules`、`age=25` 等其余字段不动。
+- 泳装口径去「害羞」脚本：`amo_llm.py` 生病分支只留「撒娇、病恹恹地推掉」，在家健康分支改为「别推三阻四…别往回缩」；`amo_runtime_context.py` 请假病愈条改为「就逗他一句然后答应」。三处都是模型照演的确定性指令，去掉后不再和人格「不装淡定」打架。
+- 短回复块：`amo_prompt_registry.py` 的 `short.rules` 由「偶尔撒娇、有小情绪的女孩」改为「会撒娇也会撩人的女人」。
+- 新增 `tests/test_persona_tone.py`：锁住引导语含「成年女人」且不含「依赖老公」、两处泳装分支不含「害羞」、请假病愈条不含「害羞」、短回复块含「会撒娇也会撩人」。
+- 黄金快照：`tests/golden/prompts_golden.json` 重新生成，逐字段复核只 diff 这一处文本（9 个派生 prompt），`private_system` 4160 字 / `group_system` 4538 字。
+- 顺手修：`pose_library.py` 姿势参考图下载兜底把 `timeout=60` 整数传给 `session.get`，aiohttp 3.14 的类型/运行时都收紧了；改为 `ClientTimeout(total=60)`，严格 mypy 从 1 error 回到 0。
+- 版本：metadata / main.py / amo_shared_config.py / README / CHANGELOG 五处 7.5.2。
+
 ## 7.5.1（2026-11-19 日程边界 / 主动消息去重 / 质量收口）
 
 - 脚趾照片：改成低机位脚部视角（镜头与脚同高、只到小腿、不拍脸、不套「举在脸前的自拍」模板），任何场景都可以脱鞋；两只脚底不会同时正对镜头。
