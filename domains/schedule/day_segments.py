@@ -2,6 +2,8 @@
 """工作日/外出/室内休息骨架：纯函数，seg/place_of 由 engine 注入。"""
 from __future__ import annotations
 
+import random
+
 
 def workday_segments(ctx, seg, overtime=False):
     home = ctx["home"]
@@ -11,6 +13,12 @@ def workday_segments(ctx, seg, overtime=False):
     sick_work = sick and str(ctx.get("sick_action") or "") == "go_to_work_sick"
     wake = "硬撑着洗漱，量了体温还是烧" if sick else "急急忙忙洗漱，准备出门"
     has_car = bool(ctx.get("has_gift_car"))
+    # 通勤是分钟级的：早 36-52 分钟、晚 34-55 分钟，开车更久（2026-11-19）。
+    rng = random.Random(int(ctx.get("seed") or 0) ^ 0x51A7)
+    morning_minutes = min(52, rng.randint(36, 48) + (4 if has_car else 0))
+    evening_minutes = min(55, rng.randint(34, 46) + (5 if has_car else 0))
+    morning_arrive = "08:%02d" % morning_minutes
+    evening_home = "18:%02d" % evening_minutes
     if has_car:
         commute = "戴着口罩开车去公司" if sick_work else "开车去公司"
     elif sick_work:
@@ -37,10 +45,11 @@ def workday_segments(ctx, seg, overtime=False):
         ]
     else:
         evening = [
-            seg("18:00", "19:00", "下班开车回家" if has_car else "下班回家", "路上", "road", "commute",
+            seg("18:00", evening_home, "下班开车回家" if has_car else "下班回家", "路上", "road", "commute",
                 transit="drive" if has_car else "subway",
                 vehicle=ctx.get("car") if has_car else "",
                 detail="晚高峰，慢慢挪" if has_car else ""),
+            seg(evening_home, "19:00", "到家换鞋，先瘫一会儿", home, "home", "life"),
             seg("19:00", "20:00", "吃晚饭", home, "home", "meal"),
             seg("20:00", "22:00", "休息", home, "home", "rest"),
             seg("22:00", "23:00", "洗澡护肤", home, "home", "life"),
@@ -49,10 +58,11 @@ def workday_segments(ctx, seg, overtime=False):
     return [
         seg("00:00", "07:00", "睡觉", home, "home", "sleep"),
         seg("07:00", "08:00", wake, home, "home", "life", detail="昨晚没睡好，强撑着起来" if late else ""),
-        seg("08:00", "09:00", commute, "路上", "road", "commute",
+        seg("08:00", morning_arrive, commute, "路上", "road", "commute",
             transit="drive" if has_car else "subway",
             vehicle=ctx.get("car") if has_car else "",
             detail="早高峰有点堵，到公司还得找车位" if has_car else ""),
+        seg(morning_arrive, "09:00", "到楼下便利店买了早餐，边吃边等电梯", "路上", "road", "commute"),
         seg("09:00", "12:00", work_activity, office, "office", "work"),
         seg("12:00", "13:00", lunch_activity, office + "附近", "restaurant", "meal"),
         seg("13:00", "14:00", "午休", office, "office", "rest"),

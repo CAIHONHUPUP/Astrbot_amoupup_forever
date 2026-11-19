@@ -110,8 +110,10 @@ class CloseoutEntryTests(unittest.TestCase):
 
     def test_validate_exit_syncs_vehicle(self):
         items = [row("开车回去，路上有点堵", "地铁")]
-        self.engine._validate(items, {})
-        self.assertEqual(items[0]["vehicle"], "开车")
+        rows = self.engine._validate(items, {})
+        commute = [item for item in rows if "开车" in str(item.get("activity"))]
+        self.assertTrue(commute)
+        self.assertEqual(commute[0]["vehicle"], "开车")
 
 
 class RemovingCloseoutTests(unittest.TestCase):

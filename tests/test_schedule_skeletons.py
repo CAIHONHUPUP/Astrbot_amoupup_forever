@@ -68,10 +68,13 @@ def build(**overrides):
 
 class SkeletonShapeTests(unittest.TestCase):
     def _check(self, items):
-        self.assertEqual(len(items), 24)
-        for index, item in enumerate(items):
-            self.assertEqual(item.get("start"), fmt_hhmm(index * 60))
-            self.assertEqual(item.get("end"), fmt_hhmm((index + 1) * 60))
+        """2026-11-19 起时间轴是分钟级：不要求 24 行整点，只要求连续覆盖 24 小时。"""
+        self.assertEqual(items[0].get("start"), "00:00")
+        self.assertEqual(items[-1].get("end"), "24:00")
+        for prev, cur in zip(items, items[1:]):
+            self.assertEqual(prev.get("end"), cur.get("start"), "%s | %s" % (prev, cur))
+        for item in items:
+            self.assertGreater(parse_hhmm(item.get("end")), parse_hhmm(item.get("start")), item)
             self.assertTrue(str(item.get("activity") or "").strip())
             self.assertTrue(str(item.get("place") or "").strip())
             self.assertIn(str(item.get("zone") or ""), ZONES)

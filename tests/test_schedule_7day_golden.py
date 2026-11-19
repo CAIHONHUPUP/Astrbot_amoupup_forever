@@ -98,11 +98,12 @@ class Schedule7DayGoldenTests(unittest.TestCase):
         self.assertEqual(golden7.dumps(golden7.payload(again)),
                          golden7.dumps(golden7.payload(self.days)))
 
-    def test_every_day_is_24_contiguous_blocks(self):
+    def test_every_day_is_contiguous_blocks(self):
+        """2026-11-19 起时间轴是分钟级（工作日 26 块），只要求连续覆盖 24 小时。"""
         for day, item in self.days.items():
             with self.subTest(day=day):
                 blocks = item["blocks"]
-                self.assertEqual(len(blocks), 24)
+                self.assertGreaterEqual(len(blocks), 24, day)
                 self.assertEqual(blocks[0][0], "00:00")
                 self.assertEqual(blocks[-1][1], "24:00")
                 for index, block in enumerate(blocks):

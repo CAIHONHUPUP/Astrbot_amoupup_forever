@@ -44,6 +44,8 @@ UPDATE_POLICY = (
     "改时段切分、改 zone/place 映射、调整事件概率）。更新方式：python "
     "work/schedule_7day.py --write；更新前必须人工看 diff，确认变化只来自这次"
     "规则改动，并在 CHANGELOG/PR 说明里写原因。禁止为了「让测试变绿」随手刷新。",
+    "2026-11-19：通勤改成分钟级（早 08:00-08:4x、晚 18:00-18:3x，随后是到公司/到家的短段），"
+    "时间轴不再强制整点，按 work/schedule_7day.py --write 重新生成。",
 )
 
 

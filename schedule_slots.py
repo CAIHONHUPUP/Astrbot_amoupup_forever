@@ -46,7 +46,13 @@ class ScheduleSlotsMixin:
         llm_json: Any
         p: Any
     def _expand(self, segments, ctx):
-        items = []
+        """把段展开成时间轴行：按整点切片，但保留段的真实分钟边界。
+
+        2026-11-19 起每行不再被强行拉成整点：`18:00-18:40 下班回家` 和
+        `18:40-19:00 到家换鞋` 是两条真行，面板能显示分钟，日记按「一小时里占时更长的那段」取。
+        后写的段覆盖先写的段（13:30 改日程顶掉旧段尾部），空档按小时补默认状态，保证 24 小时连续。
+        """
+        rows = []
         for seg in segments:
             start = parse_hhmm(seg.get("start"), 0)
             end = parse_hhmm(seg.get("end"), start + 60)
@@ -54,50 +60,90 @@ class ScheduleSlotsMixin:
                 end = start + 60
             start = max(0, min(24 * 60, start))
             end = max(start, min(24 * 60, end))
-            first_hour = start // 60
-            last_hour = (end + 59) // 60
-            for hour in range(first_hour, last_hour):
-                if hour >= 24:
-                    break
-                slot_start = hour * 60
-                slot_end = min(end, (hour + 1) * 60)
-                item = {
-                    "start": fmt_hhmm(slot_start),
-                    "end": fmt_hhmm(slot_end),
-                    "activity": str(seg.get("activity") or "休息"),
-                    "place": str(seg.get("place") or ctx["home"]),
-                    "zone": str(seg.get("zone") or "home"),
-                    "category": str(seg.get("category") or "rest"),
-                    "transit": str(seg.get("transit") or ""),
-                    "vehicle": str(seg.get("vehicle") or ""),
-                    "detail": str(seg.get("detail") or "") if hour == first_hour else "",
-                    "spot": str(seg.get("spot") or ""),
-                    "swim": bool(seg.get("swim")),
-                    "soothe": bool(seg.get("soothe")),
-                    "event": str(seg.get("event") or "") if hour == first_hour else "",
-                    "effects": dict(seg.get("effects") or {}) if hour == first_hour else {},
-                }
-                items.append(item)
-        # 补洞：极端情况下骨架没有覆盖完整 24 小时。
-        by_start = {}
-        for item in items:
-            by_start[parse_hhmm(item.get("start"))] = item
-        result = []
-        for hour in range(24):
-            key = hour * 60
-            item: Any = by_start.get(key)
-            if item is None:
-                item = {
-                    "start": fmt_hhmm(key), "end": fmt_hhmm(key + 60),
-                    "activity": "睡觉" if hour < 7 or hour >= 23 else "休息",
-                    "place": ctx["home"], "zone": "home",
-                    "category": "sleep" if hour < 7 or hour >= 23 else "rest",
-                    "transit": "", "vehicle": "", "detail": "", "spot": "",
-                    "swim": False, "soothe": False, "event": "", "effects": {},
-                }
-            item["end"] = fmt_hhmm(key + 60)
-            result.append(item)
-        return result
+            if end <= start:
+                continue
+            base = {
+                "activity": str(seg.get("activity") or "休息"),
+                "place": str(seg.get("place") or ctx["home"]),
+                "zone": str(seg.get("zone") or "home"),
+                "category": str(seg.get("category") or "rest"),
+                "transit": str(seg.get("transit") or ""),
+                "vehicle": str(seg.get("vehicle") or ""),
+                "detail": str(seg.get("detail") or ""),
+                "spot": str(seg.get("spot") or ""),
+                "swim": bool(seg.get("swim")),
+                "soothe": bool(seg.get("soothe")),
+                "event": str(seg.get("event") or ""),
+                "effects": dict(seg.get("effects") or {}),
+            }
+            cursor = start
+            while cursor < end:
+                slot_end = min(end, (cursor // 60 + 1) * 60)
+                rows.append(dict(base, start=cursor, end=slot_end))
+                cursor = slot_end
+        items = self._fill_hour_gaps(self._clip_overlaps(rows), ctx)
+        return [dict(row, start=fmt_hhmm(row["start"]), end=fmt_hhmm(row["end"]))
+                for row in items]
+
+    @staticmethod
+    def _clip_overlaps(rows):
+        """后写的段顶掉先写的段（13:30 改日程：新段截断旧段尾部）；返回 (start, end, row)。"""
+        kept: list[tuple[int, int, dict]] = []
+        for row in rows:
+            start = int(row["start"])
+            end = int(row["end"])
+            next_kept = []
+            for piece_start, piece_end, piece_row in kept:
+                if piece_end <= start or piece_start >= end:
+                    next_kept.append((piece_start, piece_end, piece_row))
+                    continue
+                if piece_start < start:
+                    next_kept.append((piece_start, start, piece_row))
+                if piece_end > end:
+                    next_kept.append((end, piece_end, piece_row))
+            next_kept.append((start, end, row))
+            kept = next_kept
+        return kept
+
+    def _fill_hour_gaps(self, placed, ctx):
+        """把 (start, end, row) 铺成连续 24 小时；缺口按整点补默认状态。"""
+        placed.sort(key=lambda entry: entry[0])
+        items = []
+        cursor = 0
+        for piece_start, piece_end, row in placed:
+            if piece_start > cursor:
+                items.extend(self._filler_rows(cursor, piece_start, ctx))
+            if piece_end <= cursor:
+                continue
+            item = dict(row)
+            item["start"] = piece_start
+            item["end"] = piece_end
+            items.append(item)
+            cursor = piece_end
+        if cursor < 24 * 60:
+            items.extend(self._filler_rows(cursor, 24 * 60, ctx))
+        return items
+
+    @staticmethod
+    def _filler_rows(start, end, ctx):
+        """空档补默认状态：仍是整点行，别把一天切得更碎。"""
+        rows = []
+        cursor = start
+        while cursor < end:
+            slot_end = min(end, (cursor // 60 + 1) * 60)
+            hour = cursor // 60
+            if hour < 7 or hour >= 23:
+                activity, zone, category = "睡觉", "home", "sleep"
+            else:
+                activity, zone, category = "休息", "home", "rest"
+            rows.append({
+                "start": cursor, "end": slot_end,
+                "activity": activity, "place": ctx.get("home") or "家", "zone": zone,
+                "category": category, "transit": "", "vehicle": "", "detail": "",
+                "spot": "", "swim": False, "soothe": False, "event": "", "effects": {},
+            })
+            cursor = slot_end
+        return rows
 
     # ------------------------------------------------------------------
     # 4. 活动文案（LLM 不可用时的真人化兜底）
@@ -337,17 +383,26 @@ class ScheduleSlotsMixin:
     # 6. 物理校验：时间连续 + 不瞬移
     # ------------------------------------------------------------------
     def _validate(self, items, ctx):
+        """收口：格式统一、24 小时连续、不重叠、不丢段；区域切换仍然补「在路上」。"""
+        rows = []
         for item in items:
             item.pop("segments", None)
-            item["start"] = fmt_hhmm(parse_hhmm(item.get("start"), 0))
-            item["end"] = fmt_hhmm(parse_hhmm(item.get("end"), parse_hhmm(item.get("start"), 0) + 60))
-            if parse_hhmm(item["end"]) <= parse_hhmm(item["start"]):
-                item["end"] = fmt_hhmm(parse_hhmm(item["start"]) + 60)
-        for index, item in enumerate(items):
-            expected = fmt_hhmm(index * 60)
-            if item.get("start") != expected:
-                item["start"] = expected
-            item["end"] = fmt_hhmm((index + 1) * 60)
+            start = parse_hhmm(item.get("start"), 0)
+            end = parse_hhmm(item.get("end"), start + 60)
+            if end <= start:
+                end = start + 60
+            start = max(0, min(24 * 60, start))
+            end = max(start, min(24 * 60, end))
+            if end <= start:
+                continue
+            row = dict(item)
+            row["start"] = start
+            row["end"] = end
+            rows.append(row)
+        items = self._fill_hour_gaps(self._clip_overlaps(rows), ctx)
+        for item in items:
+            item["start"] = fmt_hhmm(item["start"])
+            item["end"] = fmt_hhmm(item["end"])
         # 最后一条必须是 24:00 闭环，不能留 23:59。
         if items:
             items[-1]["end"] = "24:00"
@@ -376,7 +431,7 @@ class ScheduleSlotsMixin:
                 continue
             if (prev_zone, zone) in direct_ok:
                 continue
-            # 兜底修复：把当前小时改成“在路上”，下一小时再到达。
+            # 兜底修复：把这一段改成「在路上」，下一段再到达。
             original_place = str(cur.get("place") or "")
             cur["activity"] = "从%s赶去%s" % (prev.get("place") or "上一个地方", original_place)
             cur["place"] = "路上"
@@ -384,7 +439,7 @@ class ScheduleSlotsMixin:
             cur["category"] = "commute"
             cur["transit"] = cur.get("transit") or ("drive" if ctx.get("car") else "taxi")
             cur["vehicle"] = cur.get("vehicle") or (ctx.get("car") if cur["transit"] == "drive" else "")
-            cur["detail"] = "上一小时还在%s，这一小时在路上" % (prev.get("place") or "别处")
+            cur["detail"] = "上一段还在%s，这一段在路上" % (prev.get("place") or "别处")
             cur["effects"] = {}
         # 周末景区必须体现资产绑定：开车、堵车、找停车位。
         if (ctx.get("meta") or {}).get("rest") and ctx.get("scenic") and ctx.get("good_weather"):

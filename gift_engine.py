@@ -174,6 +174,43 @@ def valid_item(item: str) -> bool:
     return not re.fullmatch(r"[的了啊呀呢吧哦嘛哈哟]+", item)
 
 
+_WISH_FRAGMENT = re.compile(
+    r"(?:当然|其实|就是|还是|只是|已经|有点|真的|特别|非常|所以|因为|但是|不过|然后|"
+    r"而且|或者|如果|就算|虽然|好像|感觉|觉得|知道|时候|东西|地方|样子|声音|味道)"
+)
+_WISH_PARTICLE = re.compile(r"[的地得了着过吗呢吧啊呀哦嗯唔诶唉咦嘿哈嗬噢嘛咯嘞]")
+_WISH_PUNCT = re.compile(r"[，。！？、；：…—～\"'“”‘’（）()\[\]{}<>《》!?,.;:~]")
+_WISH_BODY = re.compile(r"(?:腮|脸|眼|嘴|脖子|耳朵|鼻子|舌头|牙齿|呆毛|尾巴|肩膀|腿|腰|背|胳膊)")
+
+
+def valid_wish_item(item: object) -> bool:
+    """心愿必须是「具体物品名」：2-12 字，不含语气词/助词/标点/身体部位/句子碎片。"""
+    item = str(item or "").strip()
+    if not valid_item(item):
+        return False
+    if len(item) < 2:
+        return False
+    if _WISH_PUNCT.search(item):
+        return False
+    if _WISH_PARTICLE.search(item):
+        return False
+    if _WISH_FRAGMENT.search(item):
+        return False
+    if _WISH_BODY.search(item):
+        return False
+    if WISH_CUE_RE.fullmatch(item):
+        return False
+    return True
+
+
+def strip_narration(text: str) -> str:
+    """剥掉旁白：（）/()/【】/[] 里的动作、表情不算她说的话。"""
+    body = str(text or "")
+    body = re.sub(r"[（(【\[][^）)】\]]*[）)】\]]", " ", body)
+    body = re.sub(r"\s+", " ", body).strip()
+    return body
+
+
 # ---------------------------------------------------------------------------
 # 老公在送礼吗
 # ---------------------------------------------------------------------------
@@ -294,10 +331,6 @@ def extract_wish_regex(text: str) -> str:
         candidate = _trim_object_phrase(before)
         if valid_item(candidate) and not _WISH_EXCLUDE.match(candidate):
             return candidate
-        if index > 0:
-            candidate = _trim_object_phrase(clauses[index - 1].rstrip("，,、 ").split("，")[-1].split(",")[-1])
-            if valid_item(candidate) and not _WISH_EXCLUDE.match(candidate):
-                return candidate
     return ""
 
 
@@ -356,7 +389,8 @@ def wall_text(gifts) -> str:
 # ---------------------------------------------------------------------------
 
 WISH_EXTRACT_SYSTEM = (
-    "你在做信息抽取。输入是用户自己说的一句话。\n"
+    "你在做信息抽取。输入是她自己刚说的一句回复，可能夹着动作/表情旁白（括号里的），"
+    "旁白不算她说的话。\n"
     "只判断：她有没有明确说出自己想要、喜欢、想买的某件具体东西。\n"
     "不算的情况：她喜欢的是某个人（喜欢你/喜欢他/夸对方可爱）、她说的是对方想要什么、"
     "她只是在客气、她说的是已经有的东西、她说的是抽象的感觉（今天心情不错）。\n"
@@ -365,7 +399,8 @@ WISH_EXTRACT_SYSTEM = (
     "比如「豆沙色口红」「格纹羊绒围巾」「银色小表盘手表」「蓝色鲸鱼挂件」，"
     "不要只写「口红/围巾/手表/挂件」；原话确实没特征时才用通用名。\n"
     "如果她说的是车、房子、钻戒、手表、电脑这类贵重东西，输出空——她不会开口要这些，只能对方主动送。\n"
-    "有的话输出 JSON：{\"item\": \"东西的短名字，2-12个字，去掉好想要/一条/那个之类\", \"confidence\": 0.0到1.0}\n"
+    "item 只能是具体物品名（2-12 个字）：语气词（唔/嗯/啊）、动作、表情、身体部位"
+    "（腮帮子/呆毛/抖了抖）、句子碎片一律不要。有的话输出 JSON：{\"item\": \"东西的短名字，2-12个字，去掉好想要/一条/那个之类\", \"confidence\": 0.0到1.0}\n"
     "没有就输出：{\"item\": \"\", \"confidence\": 0.0}\n"
     "只输出这一行 JSON，不要解释，不要代码块。"
 )
@@ -791,7 +826,26 @@ class GiftEngine:
         if not isinstance(data.get("meta"), dict):
             data["meta"] = {}
         self._data = data
+        if self._sanitize_wishes(data):
+            try:
+                atomic_write_json(self.path, _stamp_json_version("gifts", data), indent=1)
+                logger.info("[amo] 清理了 gifts.json 里不像物品的心愿条目")
+            except Exception as _amo_exc:
+                _note_swallowed("gift_engine.GiftEngine._load.sanitize", _amo_exc)
         return data
+
+    @staticmethod
+    def _sanitize_wishes(data):
+        """老数据迁移：删掉语气词/旁白/句子碎片这类脏心愿，返回是否改过。"""
+        wishes = data.get("wishes")
+        if not isinstance(wishes, list):
+            return False
+        kept = [wish for wish in wishes
+                if isinstance(wish, dict) and valid_wish_item(wish.get("item"))]
+        if len(kept) == len(wishes):
+            return False
+        data["wishes"] = kept
+        return True
 
     def _save(self):
         data = self._load()
@@ -802,7 +856,7 @@ class GiftEngine:
 
     def add_wish(self, item, raw="", umo="", uid="", source="chat"):
         item = self._enrich_item(clean_item(item), raw)
-        if not valid_item(item):
+        if not valid_wish_item(item):
             return {}
         if self.classify(item) != "small":
             # 车/房/贵重物品不会成为她的心愿：只能他主动送
@@ -974,7 +1028,9 @@ class GiftEngine:
             data = self._load()
             return [
                 dict(item) for item in data["wishes"]
-                if item.get("status") == "wanted" and now - float(item.get("ts") or 0) <= self.ttl
+                if item.get("status") == "wanted"
+                and now - float(item.get("ts") or 0) <= self.ttl
+                and valid_wish_item(item.get("item"))
             ][-max(1, int(limit)):][::-1]
 
     def stats(self):
@@ -1314,15 +1370,18 @@ class GiftEngine:
         return any(text.startswith(prefix) for prefix in _SELF_OUTPUT_PREFIXES)
 
     async def _extract_and_store(self, text, umo, uid):
+        spoken = strip_narration(text)
+        if not spoken:
+            return
         item = ""
         if self._bool("gift_extract_with_llm", True):
             try:
-                item = await asyncio.wait_for(self._llm_extract_wish(text), timeout=25)
+                item = await asyncio.wait_for(self._llm_extract_wish(spoken), timeout=25)
             except Exception as exc:
                 logger.debug("[amo] 礼物心愿抽取失败: %s" % exc)
         if not item:
-            item = extract_wish_regex(text)
-        if item and valid_item(item):
+            item = extract_wish_regex(spoken)
+        if item and valid_wish_item(item):
             wish = self.add_wish(item, text, umo=umo, uid=uid, source="chat")
             if wish:
                 logger.info("[amo] 记下心愿: %s（原话：%s）" % (wish.get("item"), text[:40]))
@@ -1368,7 +1427,7 @@ class GiftEngine:
         if confidence < 0.45:
             return ""
         item = clean_item(str(data.get("item") or ""))
-        return item if valid_item(item) else ""
+        return item if valid_wish_item(item) else ""
 
     # ---------- 状态 / 记忆 ----------
     def _nudge_mood(self, kind="small"):

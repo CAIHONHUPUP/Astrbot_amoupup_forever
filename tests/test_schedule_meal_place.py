@@ -169,7 +169,8 @@ class SevenDayInvariantTests(unittest.TestCase):
         for index, variant in enumerate(WEEK):
             for seed in (20261117 + index, 7, 99, 20261117):
                 items = build(seed=seed, **variant)
-                self.assertEqual(24, len(items))
+                self.assertEqual("00:00", items[0]["start"])
+                self.assertEqual("24:00", items[-1]["end"])
                 self.assertEqual([], conflicts(items),
                                  "day=%d seed=%d" % (index, seed))
 

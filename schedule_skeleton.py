@@ -370,6 +370,8 @@ class ScheduleSkeletonMixin:
             if label not in labels:
                 extras.append(self._wear_phrase(label, False))
         suffix = "；".join(extras)
+        # 一天只在「第一条离家出门」的块上提一次穿戴：分钟级把通勤切成多段后，
+        # 每段都追加会得到「戴了围巾（他送的）；戴了围巾（他送的）」这种重复。
         for item in items:
             if item.get("category") not in ("commute", "play"):
                 continue
@@ -379,6 +381,7 @@ class ScheduleSkeletonMixin:
             detail = str(item.get("detail") or "").strip()
             if suffix and suffix not in detail:
                 item["detail"] = (detail + "；" + suffix).strip("；")
+            break
         return items
 
     def _gift_log(self):
