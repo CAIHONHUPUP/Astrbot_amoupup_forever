@@ -46,7 +46,7 @@ EXPECTED_METHODS = [
     "_deco_text_cleanup", "_diary_audit_tick", "_digest_profile_lines", "_digest_profile_write",
     "_dynamic_context", "_ensure_home_images", "_first_private_umo", "_lean_parts",
     "_maybe_daily_digest", "_maybe_milestone_archive", "_maybe_send_voice_reply",
-    "_milestone_archive_once", "_rain_fact_line", "_schedule_proposal_line",
+    "_milestone_archive_once", "_rain_fact_line", "_recent_micro_line", "_schedule_proposal_line",
     "_schedule_tool_line", "_self_identity", "_tick", "_tick_housekeeping", "_tick_loop_tasks",
     "_tick_schedule_media", "_tick_social", "_trip_sync", "on_after_message_sent",
     "on_decorating_result", "on_message", "sync_current_state",
@@ -120,7 +120,7 @@ class RuntimeSplitTests(unittest.TestCase):
 
     def test_method_set_unchanged(self):
         self.assertEqual(_method_names(), sorted(EXPECTED_METHODS))
-        self.assertEqual(len(_method_names()), 53)
+        self.assertEqual(len(_method_names()), 54)
 
     def test_facade_methods_are_same_objects(self):
         for mixin in (amo_runtime_context.RuntimeContextMixin,

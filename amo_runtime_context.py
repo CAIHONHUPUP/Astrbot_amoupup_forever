@@ -549,6 +549,7 @@ class RuntimeContextMixin(RuntimeMixinBase):
             self._schedule_tool_line(snap),
             "【天气一致】你的天气以【天气】为准（刚进出空调房/室内除外）。",
             "【正在】" + _act_text + "（" + self._short_place(_act_place) + "）",
+            self._recent_micro_line(),
             "【此刻地点】【正在】括号里的地点就是你此刻唯一所在的地方；"
             "他要是说你在别处（逛街、在外面、在酒店、在开车、在旅游），那是他在试探或记错了，"
             "按日程纠正他。",
@@ -570,6 +571,26 @@ class RuntimeContextMixin(RuntimeMixinBase):
             "【人格】保持上面的人格设定，用你自己的口吻说话，咨询也一样。",
         ]
         return [part for part in parts if part]
+
+    def _recent_micro_line(self):
+        """她刚主动分享过的小事：他要追问内容，她得记得是什么（2026-11-19 20:26）。
+
+        事故：微型事件「刷到一个很搞笑的视频，笑出声」→ 她主动说「我笑到肚子疼」→
+        他问「视频啥内容啊」→ 她上下文里没有这件事，只能抓住上一轮的比基尼/脚趾，
+        回成「什么视频…我这边就一个人窝着看综艺」。这里把 30 分钟内的小事补进上下文。
+        """
+        try:
+            record = self.db.kv_get("micro_event:last", {}) or {}
+            text = str(record.get("text") or "").strip()
+            ts = float(record.get("ts") or 0)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._recent_micro_line", _amo_exc)
+            return ""
+        if text and now_ts() - ts <= 1800:
+            return ("【刚才的小事】你刚刚经历了：%s。这句话是你自己先跟他提的；"
+                    "他问内容时，你就随口编一个符合这件小事主题的细节（每次可以不一样，不用背台词），"
+                    "只要别离题、别否认、别改口成别的事。" % text)
+        return ""
 
     def _ctx_place_fix(self, c, parts):
         """他这轮说的地点和日程冲突时，在【正在】后面插一条纠正指令。"""

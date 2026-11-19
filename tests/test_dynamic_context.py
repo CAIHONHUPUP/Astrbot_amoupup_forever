@@ -120,6 +120,22 @@ class DynamicContextTests(unittest.TestCase):
         self.assertIn("【此刻地点】", text)
         self.assertIn("唯一所在的地方", text)
 
+    def test_recent_micro_event_is_kept_in_context(self):
+        # 2026-11-19 20:26：她主动说「我笑到肚子疼」（微型事件：刷到一个很搞笑的视频），
+        # 他问「视频啥内容啊」，上下文里却没有这件事，她回成「什么视频…看综艺」。
+        self.plugin.db.kv_set("micro_event:last",
+                              {"text": "刷到一个很搞笑的视频，笑出声", "ts": clock.now().timestamp()})
+        text = self._ctx("视频啥内容啊")
+        self.assertIn("【刚才的小事】", text)
+        self.assertIn("刷到一个很搞笑的视频", text)
+        self.assertIn("随口编", text)
+        self.assertIn("别否认", text)
+
+    def test_stale_micro_event_is_not_used(self):
+        self.plugin.db.kv_set("micro_event:last",
+                              {"text": "刷到一个很搞笑的视频", "ts": clock.now().timestamp() - 3600})
+        self.assertNotIn("【刚才的小事】", self._ctx("在干嘛"))
+
     def test_conflicting_place_gets_correction_hint(self):
         text = self._ctx("你在逛街吧？")
         self.assertIn("【地点纠正】", text)
