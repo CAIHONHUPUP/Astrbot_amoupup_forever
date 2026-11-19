@@ -369,6 +369,7 @@
     "amo_date_session",
     "amo_observability",
     "amo_reply_pipeline",
+    "amo_rest",
     "amo_shared",
     "amo_types",
     "group_scene",
@@ -412,6 +413,9 @@
     "reply_fact_guard",
     "short_reply",
     "tone_guard"
+  ],
+  "amo_rest.py": [
+    "clock"
   ],
   "amo_retention.py": [
     "amo_shared",
@@ -552,6 +556,7 @@
   ],
   "amo_social.py": [
     "amo_observability",
+    "amo_rest",
     "amo_shared",
     "amo_types",
     "clock",
@@ -941,9 +946,6 @@
   ],
   "photo_room.py": [
     "housing"
-  ],
-  "photo_room_ab.py": [
-    "domains"
   ],
   "photo_rules.py": [
     "amo_place",

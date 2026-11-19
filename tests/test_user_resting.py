@@ -48,6 +48,22 @@ class RestingTests(unittest.TestCase):
         note_user_rest(plugin, "中午吃啥")
         self.assertFalse(resting_now(plugin))
 
+    def test_says_busy_marks_resting(self):
+        plugin = FakePlugin()
+        note_user_rest(plugin, "我先忙了，晚点聊")
+        self.assertTrue(resting_now(plugin))
+
+    def test_busy_finished_clears(self):
+        plugin = FakePlugin()
+        note_user_rest(plugin, "我在开会")
+        note_user_rest(plugin, "忙完了")
+        self.assertFalse(resting_now(plugin))
+
+    def test_not_busy_does_not_mark(self):
+        plugin = FakePlugin()
+        note_user_rest(plugin, "今天不忙")
+        self.assertFalse(resting_now(plugin))
+
     def test_plain_message_does_not_mark(self):
         plugin = FakePlugin()
         note_user_rest(plugin, "在干嘛")
