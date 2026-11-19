@@ -31,7 +31,7 @@ except ImportError:  # 按文件直接加载（离线单测）
 #: 插件载入时刻，用来给 /status 的 obs_health.uptime_s 当起点
 _OBS_STARTED_AT = _obs_now_ts()
 
-PLUGIN_VERSION = "7.5.5"
+PLUGIN_VERSION = "7.5.6"
 
 try:  # 包模式优先（AstrBot 正常加载）
     from .amo_bootstrap import (

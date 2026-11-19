@@ -118,7 +118,7 @@ POOL: tuple[dict[str, Any], ...] = (
     {"key": "colleague_lunch", "band": ("noon",), "scene": "private", "cost": 0,
      "tags": ("zone:office", "time:11:30-14:00", "health:>60"),
      "text": "同事拉着我一起去吃午饭", "mood": {"开心": 4}, "social": True},
-    {"key": "tea_time", "band": ("noon", "afternoon"), "scene": "both", "cost": 1500,
+    {"key": "tea_time", "band": ("noon", "afternoon"), "scene": "both", "cost": 0,
      "tags": ("zone:office", "time:12:00-18:00", "health:>60"),
      "text": "公司下午茶发了杯奶茶", "mood": {"开心": 6, "满足": 4}},
     {"key": "cook_feast", "band": ("noon",), "scene": "private", "cost": 0,
