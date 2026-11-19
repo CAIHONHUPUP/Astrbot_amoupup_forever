@@ -59,12 +59,12 @@ except ImportError:  # 直接按文件加载时
 
 try:  # 脚趾特写：他点名看脚时才用（普通自拍不裁脚）
     from .domains.photo.view import (
-        FOOT_CLOSEUP_HINTS, FOOT_CLOSEUP_NEGATIVE, FOOT_CLOSEUP_PROMPT, SELFIE_FRAMING_FOOT, foot_closeup_prompt, wants_foot_closeup,
+        FOOT_CLOSEUP_HINTS, FOOT_CLOSEUP_NEGATIVE, FOOT_CLOSEUP_PROMPT, SELFIE_FRAMING_FOOT, VIEW_FOOT, foot_closeup_prompt, wants_foot_closeup,
     )
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:
         from domains.photo.view import (
-            FOOT_CLOSEUP_HINTS, FOOT_CLOSEUP_NEGATIVE, FOOT_CLOSEUP_PROMPT, SELFIE_FRAMING_FOOT, foot_closeup_prompt, wants_foot_closeup,
+            FOOT_CLOSEUP_HINTS, FOOT_CLOSEUP_NEGATIVE, FOOT_CLOSEUP_PROMPT, SELFIE_FRAMING_FOOT, VIEW_FOOT, foot_closeup_prompt, wants_foot_closeup,
         )
 
 __all__ = (
@@ -81,6 +81,7 @@ __all__ = (
     "FOOT_CLOSEUP_PROMPT",
     "FOOT_CLOSEUP_NEGATIVE",
     "SELFIE_FRAMING_FOOT",
+    "VIEW_FOOT",
     "foot_closeup_prompt",
     "wants_foot_closeup",
     "SELFIE_HINTS",

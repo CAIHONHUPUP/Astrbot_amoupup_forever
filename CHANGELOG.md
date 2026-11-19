@@ -1,5 +1,7 @@
 ## 7.5.1（2026-11-19 日程边界 / 主动消息去重 / 质量收口）
 
+- 脚趾照片：改成低机位脚部视角（镜头与脚同高、只到小腿、不拍脸、不套「举在脸前的自拍」模板），任何场景都可以脱鞋；两只脚底不会同时正对镜头。
+- 照片去重：同一轮模型已经自己发了图，amo 不再补一张（修 09:12 连发两张：真实脚趾图 + 普通自拍）。
 - 日程单写入口：新增 `apply_schedule` 网关，聊天/命令/工具/财务/过渡/面板统一走它；`save_day` 先写 schedule 表再按表重建 kv 镜像，读侧一律以表为准。
 - 审计与来源：每次提交写 `kv schedule_audit:<day>`（体检拒绝带 rejected）；时间轴每行带 source/reason/version，面板显示来源与版本；新增 `GET/POST /schedule/audit`（entries + 时间正序 replay）。
 - 时间确定性：三插件 `clock.freeze/unfreeze` 与 conftest 全量冻结（`AMO_NO_FREEZE=1` 可排查）；守护基金/收盘缓存/财务提醒、想记维护任务、能陪熬夜惩罚改走 clock，跨天不再红。

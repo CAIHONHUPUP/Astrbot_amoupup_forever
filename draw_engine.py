@@ -115,11 +115,11 @@ except Exception:  # pragma: no cover
 
 try:  # 视角后缀：她出镜=自拍视角，她拍环境=她的拍摄视角（空镜）
     from .photo_view import (FOOT_CLOSEUP_NEGATIVE, HEADWEAR_LOCK, SCENERY_ONLY, SELFIE_FRAMING, SELFIE_FRAMING_FOOT, SELFIE_NEGATIVE,
-                             SELFIE_STYLE, looks_like_her, view_suffix)
+                             SELFIE_STYLE, VIEW_FOOT, looks_like_her, view_suffix)
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from photo_view import (FOOT_CLOSEUP_NEGATIVE, HEADWEAR_LOCK, SCENERY_ONLY, SELFIE_FRAMING, SELFIE_FRAMING_FOOT, SELFIE_NEGATIVE,
-                                SELFIE_STYLE, looks_like_her, view_suffix)
+                                SELFIE_STYLE, VIEW_FOOT, looks_like_her, view_suffix)
 
 try:  # 场景：日程地点 → 背景（在家=家里、逛街=商场、旅游=景区）
     from .photo_scene import PLACE_HINTS, scene_for
@@ -952,11 +952,14 @@ class DrawEngine:
             from .photo_view import wants_foot_closeup as _wants_foot
         except ImportError:
             from photo_view import wants_foot_closeup as _wants_foot
-        _framing = SELFIE_FRAMING_FOOT if _wants_foot(str(subject or "")) else SELFIE_FRAMING
+        _foot = bool(_wants_foot(str(subject or "")))
+        _framing = SELFIE_FRAMING_FOOT if _foot else SELFIE_FRAMING
         parts.extend([item for item in (state_line, SELFIE_WORLDVIEW, _framing, SELFIE_STYLE) if item])
         parts.extend([_weather_line(getattr(self.plugin, "state", None), activity),
-                      _light_line(activity), "看着镜头微笑（looking at camera, smiling）",
-                      REALISM_POSITIVE, view_suffix(True), "真实的手机抓拍画质", "生活感"])
+                      _light_line(activity),
+                      "" if _foot else "看着镜头微笑（looking at camera, smiling）",
+                      REALISM_POSITIVE, (VIEW_FOOT if _foot else view_suffix(True)),
+                      "真实的手机抓拍画质", "生活感"])
         if locked_today:
             parts.append("人物长相参考模板，衣服锁定为上面的今日穿搭，不要换别的衣服，也不要照搬模板里的衣服")
         else:
@@ -1308,7 +1311,11 @@ class DrawEngine:
                 from .photo_view import wants_foot_closeup as _wants_foot_neg
             except ImportError:
                 from photo_view import wants_foot_closeup as _wants_foot_neg
-            args["negative_prompt"] = (FOOT_CLOSEUP_NEGATIVE if _wants_foot_neg(prompt) else SELFIE_NEGATIVE) + "，" + REALISM_NEGATIVE
+            _foot = bool(_wants_foot_neg(prompt))
+            args["negative_prompt"] = (FOOT_CLOSEUP_NEGATIVE if _foot else SELFIE_NEGATIVE) + "，" + REALISM_NEGATIVE
+            if _foot:
+                # 脚部特写不要套「举在脸前的自拍」模板（万象画卷 selfie 模式会硬加）
+                args["skip_selfie_template"] = True
         else:
             args["negative_prompt"] = "人物，人类，插画，二次元，" + REALISM_NEGATIVE
         if plan is not None:
@@ -1328,7 +1335,8 @@ class DrawEngine:
             had_skip = args.pop("skip_outfit_lock", None) is not None
             had_scene = args.pop("scene_lock", None) is not None
             had_pose = args.pop("pose_lock", None) is not None
-            if had_skip or had_scene or had_pose:
+            had_foot = args.pop("skip_selfie_template", None) is not None
+            if had_skip or had_scene or had_pose or had_foot:
                 logger.warning("[amo] 我能永远定格你不支持场景锁，已退回普通提示词: %s" % exc)
                 result = await asyncio.wait_for(
                     omni.generate_images_for_plugin(**args), timeout=GENERATE_TIMEOUT_SECONDS)

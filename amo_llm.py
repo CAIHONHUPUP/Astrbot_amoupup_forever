@@ -437,7 +437,8 @@ class LlmMixin(_MixinBase):
                 # 他明确要照片：不管模型说没说「拍好了」，都补一张真图（一小时内只补一次）
                 try:
                     if (not _added_photo and self.draw is not None
-                            and self.draw.wants_photo(event)):
+                            and self.draw.wants_photo(event)
+                            and not self._photo_already_sent(event)):
                         last = float(getattr(self.draw, "_last_tool_photo_at", 0) or 0)
                         if not last or time.monotonic() - last > 60:
                             self.draw.send_photo_now(event, str(getattr(event, "message_str", "") or "拍一张自拍发给他"),
@@ -447,6 +448,26 @@ class LlmMixin(_MixinBase):
             except Exception as _amo_exc:
                 logger.debug("[amo] 假拍照兜底失败: %s" % _amo_exc)
         return reply
+
+    def _photo_already_sent(self, event):
+        """这一轮是不是已经有图发出：模型直接调生图插件 / amo 刚发过。
+
+        2026-11-19 09:12 事故：amo 在 on_llm_request 里先发一张脚趾图，主模型这一轮
+        又调了生图插件的 generate_selfie，同一轮发两张。现在提前发送改到回复后兜底，
+        这里用生图插件记的 umo 证据 + 自己的最近发送时间统一判重。
+        """
+        umo = str(getattr(event, "unified_msg_origin", "") or "")
+        photo = getattr(self, "photo", None)
+        guard = getattr(photo, "photo_guard_state", None)
+        if callable(guard) and umo:
+            try:
+                if guard(umo) == "ok":
+                    return True
+            except Exception as _amo_exc:
+                _note_swallowed("amo_llm.photo_guard", _amo_exc)
+        draw = getattr(self, "draw", None)
+        last = float(getattr(draw, "_last_tool_photo_at", 0) or 0)
+        return bool(last and time.monotonic() - last <= 120)
 
     def _enforce_photo_intent(self, event, reply):
         """防线三：命中拍照意图词却没真发图 → 强制补一张；发不出来就删掉口头承诺。
@@ -463,6 +484,8 @@ class LlmMixin(_MixinBase):
         draw = getattr(self, "draw", None)
         if draw is None:
             return strip_photo_promise(body)
+        if LlmMixin._photo_already_sent(self, event):
+            return body
         sent = False
         try:
             if getattr(draw, "enabled", True):
@@ -864,23 +887,12 @@ class LlmMixin(_MixinBase):
                     try:
                         if self.photo is not None:
                             self.photo.note_llm_handled()
-                            self.photo.note_sent()
                     except Exception as _amo_exc:
                         _note_swallowed("amo_llm.photo_handled", _amo_exc)
                     logger.info(
                         "[IDENTITY_DEBUG] action=photo executor=bot subject=user request=%s route=normal",
                         truncate(str(getattr(event, "message_str", "") or ""), 40),
                     )
-                    try:  # 直达兜底：模型不调 send_photo 工具时也真的发一张
-                        _last_pre = float(getattr(self, "_photo_pre_sent_at", 0) or 0)
-                        if not _last_pre or time.monotonic() - _last_pre > 60:
-                            _sent = self.draw.send_photo_now(
-                                event, str(getattr(event, "message_str", "") or "拍一张"),
-                                kind="real", force=True)
-                            self._photo_pre_sent_at = time.monotonic()
-                            logger.info("[DRAW_DIAG] pre_send=%s", _sent)
-                    except Exception as _amo_exc:
-                        _note_swallowed("amo_llm.photo_pre_send", _amo_exc)
             except Exception as _amo_exc:
                 _note_swallowed("amo_llm.LlmMixin.on_llm_request", _amo_exc)
             parts = getattr(req, "extra_user_content_parts", None)

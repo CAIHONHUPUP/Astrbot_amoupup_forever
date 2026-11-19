@@ -1,90 +1,70 @@
 # -*- coding: utf-8 -*-
-"""自拍不重复：全程离线，不调用生图、不发消息，只验去重闸门。"""
-import asyncio
-import time
-import types
-
+"""照片去重：同一轮模型自己发了图，amo 不再补一张。"""
 import os
+import sys
+import time
+from types import SimpleNamespace
 
-import astrbot_stub  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-astrbot_stub.install()
-
-import pytest  # noqa: E402
-
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# legacy fallback：旧名弟弟目录仍算“已装”，老部署能继续跑
-_SIBLING_PHOTO_NAMES = ("Astrbot_amoupup_photo", "astrbot_plugin_omnidraw")
-if not any(os.path.isdir(os.path.join(os.path.dirname(_ROOT), name)) for name in _SIBLING_PHOTO_NAMES):
-    pytest.skip("photo plugin sibling not checked out", allow_module_level=True)
-
-from draw_engine import DrawEngine  # noqa: E402
-from photo_engine import PhotoEngine  # noqa: E402
+from amo_llm import LlmMixin  # noqa: E402
 
 
-def _photo():
-    engine = PhotoEngine.__new__(PhotoEngine)
-    engine._suppress_until = 0
-    engine._last_sent_at = 0
-    return engine
+class FakeEvent:
+    unified_msg_origin = "lark:FriendMessage:u1"
+    message_str = "看看脚趾"
 
 
-def test_proactive_blocked_by_pending_llm_photo():
-    photo = _photo()
-    assert photo.proactive_blocked() is False
-    photo.note_llm_handled()
-    assert photo.suppressed() is True
-    assert photo.proactive_blocked() is True
-
-
-def test_proactive_blocked_after_a_photo_was_sent():
-    photo = _photo()
-    photo.note_sent()
-    assert photo.sent_recently() is True
-    assert photo.proactive_blocked() is True
-
-
-def test_draw_engine_skips_auto_photo_when_llm_already_sent():
-    engine = DrawEngine.__new__(DrawEngine)
-    photo = _photo()
-    photo.note_sent()
-    engine.plugin = types.SimpleNamespace(photo=photo)
-    # 不触发生成：这一轮已经发过图，直接返回 None
-    assert engine.maybe_after_reply(None, "拍好了") is None
-
-
-def test_draw_engine_claims_slot_before_generating():
-    engine = DrawEngine.__new__(DrawEngine)
-    photo = _photo()
-    engine.plugin = types.SimpleNamespace(photo=photo)
-    engine.decide = lambda event, text: {"prompt": "p", "reason": "topic", "cached": None,
-                                        "cache_key": "", "selfie": True, "plan": None}
-    engine.missing_omni_notice = lambda event: ""
-    scheduled = []
-    engine._schedule = lambda *a, **k: scheduled.append(a)
-    assert engine.maybe_after_reply(None, "发张自拍") is not None
-    assert scheduled and photo.sent_recently() is True
-    # 生成期间再来一轮：不会再排第二张
-    assert engine.maybe_after_reply(None, "再来一张") is None
-
-
-class _ShareEngine(PhotoEngine):
+class FakeDraw:
     enabled = True
 
+    def __init__(self):
+        self._last_tool_photo_at = 0.0
+        self.calls = []
 
-def test_share_marks_sent_only_after_success():
-    engine = _ShareEngine.__new__(_ShareEngine)
-    engine._cfg_int = lambda key, default=0: default
-    engine.today_count = lambda: 0
-    calls = []
-    engine._target_umo = lambda profile: "umo"
-    engine._notify_failure = lambda umo, reason="": calls.append(reason)
-
-    async def fake_share(kind, scene, profile, **kw):
+    def wants_photo(self, event):
         return True
 
-    engine._share = fake_share
-    engine._last_sent_at = 0
-    asyncio.run(engine._run_share("daily", "scene", {}))
-    assert engine.sent_recently() is True
-    assert calls == []
+    def send_photo_now(self, event, text, kind="web", force=False):
+        self.calls.append((text, kind, force))
+        return "好呀，等我一下，我拍一张发你~"
+
+
+class FakePhoto:
+    def __init__(self, state):
+        self.state = state
+
+    def photo_guard_state(self, umo="", **kwargs):
+        return self.state
+
+
+def plugin_with(state):
+    plugin = SimpleNamespace()
+    plugin.draw = FakeDraw()
+    plugin.photo = FakePhoto(state)
+    return plugin
+
+
+def test_intent_skipped_when_model_already_sent():
+    plugin = plugin_with("ok")
+    out = LlmMixin._enforce_photo_intent(plugin, FakeEvent(), "我拍一张发给你")
+    assert out == "我拍一张发给你"
+    assert plugin.draw.calls == []
+
+
+def test_intent_sends_when_idle():
+    plugin = plugin_with("idle")
+    out = LlmMixin._enforce_photo_intent(plugin, FakeEvent(), "我拍一张发给你")
+    assert out == "我拍一张发给你"
+    assert plugin.draw.calls
+
+
+def test_photo_already_sent_by_recent_send():
+    plugin = plugin_with("idle")
+    plugin.draw._last_tool_photo_at = time.monotonic()
+    assert LlmMixin._photo_already_sent(plugin, FakeEvent()) is True
+
+
+def test_photo_already_sent_when_idle():
+    plugin = plugin_with("idle")
+    assert LlmMixin._photo_already_sent(plugin, FakeEvent()) is False
