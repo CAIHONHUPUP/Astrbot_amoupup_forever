@@ -71,6 +71,26 @@ class FakePlugin:
         self._swim_photo_until = 0
 
 
+class ColorWardrobe(FakeWardrobe):
+    def __init__(self):
+        super().__init__()
+        self.chosen = None
+
+    def swim_sets(self):
+        return [
+            {"top": "黑色比基尼泳衣上衣", "set": "黑色比基尼", "top_id": "t1", "bottom_id": "b1"},
+            {"top": "蓝色条纹泳衣上衣", "set": "蓝色条纹泳衣", "top_id": "t2", "bottom_id": "b2"},
+        ]
+
+    def set_swim(self, top="", bottom=""):
+        self.chosen = (top, bottom)
+
+    def swim_outfit(self):
+        text = ("蓝色条纹泳衣上衣、蓝色条纹泳裤" if self.chosen == ("t2", "b2")
+                else "黑色比基尼泳衣上衣、黑色比基尼泳裤")
+        return {"text": text, "pending": False}
+
+
 class RuleTests(unittest.TestCase):
     def test_home_healthy_locks_swim_outfit(self):
         plugin = FakePlugin("家", "健康")
@@ -79,6 +99,15 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(len(plugin.wardrobe.synced), 1)
         self.assertGreater(plugin._swim_photo_until, 0)
         self.assertIn("拍完就换回", text)
+
+    def test_color_request_picks_matching_swim_set(self):
+        # 2026-11-19 线上：说「蓝色比基尼」却出了大T恤；除了锁没上，颜色也得跟着他点的那套走。
+        plugin = FakePlugin("家", "健康")
+        plugin.wardrobe = ColorWardrobe()
+        text = swim_photo_rule(plugin, "穿蓝色比基尼给我看看")
+        self.assertEqual(plugin.wardrobe.chosen, ("t2", "b2"))
+        self.assertIn("蓝色条纹泳衣", text)
+        self.assertIn("蓝色条纹泳衣", plugin.wardrobe.synced[-1]["text"])
 
     def test_outside_does_not_lock(self):
         plugin = FakePlugin("公司", "健康")

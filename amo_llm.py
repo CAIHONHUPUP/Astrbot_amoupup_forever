@@ -168,6 +168,21 @@ def swim_photo_rule(plugin, text):
         try:
             wardrobe = getattr(plugin, "wardrobe", None)
             swim = wardrobe.swim_outfit() if wardrobe is not None else {}
+            # 他点名「蓝色/黑色…」时优先挑同色那套：否则按日期随机那套可能不是他要的颜色。
+            try:
+                color = next((item for item in ("蓝", "黑", "白", "粉", "绿", "紫", "黄", "红")
+                              if item in lowered), "")
+                if color and wardrobe is not None:
+                    match = None
+                    for entry in wardrobe.swim_sets():
+                        if color in str(entry.get("top") or "") or color in str(entry.get("set") or ""):
+                            match = entry
+                            break
+                    if match and match.get("top_id") and match.get("bottom_id"):
+                        wardrobe.set_swim(top=match["top_id"], bottom=match["bottom_id"])
+                        swim = wardrobe.swim_outfit()
+            except Exception as _amo_exc:
+                _note_swallowed("amo_llm.swim_photo.color", _amo_exc)
             if (wardrobe is not None and isinstance(swim, dict)
                     and swim.get("text") and not swim.get("pending")):
                 wardrobe._sync_sidecar(swim)
@@ -900,21 +915,27 @@ class LlmMixin(_MixinBase):
                 + context_text + "\n</amo_state>"
             )
             try:
-                if self.draw is not None and self.draw.wants_photo(event):
-                    body += PHOTO_REQUEST_RULE
-                    try:
-                        body += swim_photo_rule(self, str(getattr(event, "message_str", "") or ""))
-                    except Exception as _amo_exc:
-                        _note_swallowed("amo_llm.swim_photo", _amo_exc)
-                    try:
-                        if self.photo is not None:
-                            self.photo.note_llm_handled()
-                    except Exception as _amo_exc:
-                        _note_swallowed("amo_llm.photo_handled", _amo_exc)
-                    logger.info(
-                        "[IDENTITY_DEBUG] action=photo executor=bot subject=user request=%s route=normal",
-                        truncate(str(getattr(event, "message_str", "") or ""), 40),
-                    )
+                if self.draw is not None:
+                    _text = str(getattr(event, "message_str", "") or "")
+                    if self.draw.wants_photo(event):
+                        body += PHOTO_REQUEST_RULE
+                        try:
+                            if self.photo is not None:
+                                self.photo.note_llm_handled()
+                        except Exception as _amo_exc:
+                            _note_swallowed("amo_llm.photo_handled", _amo_exc)
+                        logger.info(
+                            "[IDENTITY_DEBUG] action=photo executor=bot subject=user request=%s route=normal",
+                            truncate(_text, 40),
+                        )
+                    # 2026-11-19：泳装请求不一定带「拍照」字样（「老婆，蓝色比基尼呢」）。
+                    # 这轮只要提到泳装，就把泳装口径 + sidecar 锁上；否则动作写「穿比基尼」，
+                    # 生图锁还是日常穿搭，出图就是大T恤。非泳装消息交给 200 秒定时换回。
+                    if any(word in _text for word in SWIM_PHOTO_WORDS):
+                        try:
+                            body += swim_photo_rule(self, _text)
+                        except Exception as _amo_exc:
+                            _note_swallowed("amo_llm.swim_photo", _amo_exc)
             except Exception as _amo_exc:
                 _note_swallowed("amo_llm.LlmMixin.on_llm_request", _amo_exc)
             parts = getattr(req, "extra_user_content_parts", None)
