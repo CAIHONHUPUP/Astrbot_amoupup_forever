@@ -49,7 +49,7 @@ def note_user_rest(plugin, text):
     try:
         if float(db.kv_get(KEY, 0) or 0) > now:
             db.kv_set(KEY, 0)
-    except Exception:
+    except Exception:  # cleanup: 读不到标记不算错，下一句会重设
         pass
 
 
