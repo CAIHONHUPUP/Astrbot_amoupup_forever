@@ -780,6 +780,21 @@ class LlmMixin(_MixinBase):
                 if _group_changed:
                     logger.info("[GROUP_GUARD] 群聊私密/超长回复已拦截重写")
                 self._maybe_group_private_tease(event, uid, text, scene)
+        if reply:
+            try:
+                from .amo_message import looks_like_photo_resend_request
+            except ImportError:
+                from amo_message import looks_like_photo_resend_request
+            if looks_like_photo_resend_request(text):
+                photo = getattr(getattr(self, "p", None), "photo", None)
+                resend = getattr(photo, "resend_last", None)
+                if callable(resend):
+                    try:
+                        if await resend(umo):
+                            reply = "喏，刚才那张，看吧。"
+                            logger.info("[PHOTO] 他要重发，已发上一张，不重新生图")
+                    except Exception as exc:
+                        logger.warning("[amo] 重发照片失败: %s", exc)
         return reply
 
 

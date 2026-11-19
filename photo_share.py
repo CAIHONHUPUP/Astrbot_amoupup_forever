@@ -475,10 +475,26 @@ class PhotoShareMixin:
         components.append(component)
         try:
             await self.plugin.context.send_message(umo, MessageChain(components))
+            try:
+                store = getattr(self, "_last_sent", None)
+                if not isinstance(store, dict):
+                    store = {}
+                    self._last_sent = store
+                store[str(umo)] = item
+            except Exception as exc:
+                _note_swallowed("photo_share._send.remember", exc)
             return True
         except Exception as exc:
             logger.warning("[amo] 照片发送失败: %s" % exc)
             return False
+
+    async def resend_last(self, umo):
+        """他要「发给我看看」时，把最近发过的那张原样再发一次，不重新生图。"""
+        store = getattr(self, "_last_sent", None)
+        item = (store or {}).get(str(umo or ""))
+        if not item:
+            return False
+        return await self._send(str(umo), item)
 
     async def _share(self, kind, scene, profile, target_umo="", lock_scene=True,
                      room_refs=None, test=False):

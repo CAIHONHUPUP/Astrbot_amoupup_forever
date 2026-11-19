@@ -204,6 +204,10 @@ def compose_task(
     else:
         task = "你突然想起" + name + "，想主动发一条消息。"
 
+    if kind not in ("morning", "goodnight"):
+        task += (" 开场别用「醒醒」「你睡了没」「在等你呢」这类假设他睡着/在等你的说法；"
+                 "上一条是你自己发的、他还没回时，接着上一条往下说，或者换个由头。")
+
     if recent_bot:
         quotes = "；".join("“" + _clip(item) + "”" for item in recent_bot[-3:])
         task += (

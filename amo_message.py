@@ -140,6 +140,24 @@ def dialogue_guard_blocks(snap, asked=False):
     return parts
 
 
+_PHOTO_RESEND_HINTS = ("再发", "重发", "重新发", "刚才那张", "上一张", "之前那张",
+                       "刚那张", "那张图", "刚拍的那张")
+_PHOTO_RESEND_SOFT = ("发给我看看", "发我看看", "发过来看看", "发来看看", "发给我看")
+_PHOTO_NEW_HINTS = ("拍一张", "拍张", "来一张", "换一张", "新的", "新拍", "重新拍")
+
+
+def looks_like_photo_resend_request(text):
+    """他是不是要「把刚才那张再发一次」，而不是让她重新拍一张。"""
+    value = str(text or "")
+    if not value:
+        return False
+    if any(word in value for word in _PHOTO_RESEND_HINTS):
+        return True
+    if any(word in value for word in _PHOTO_RESEND_SOFT):
+        return not any(word in value for word in _PHOTO_NEW_HINTS)
+    return False
+
+
 def strip_repeated_food_question(reply, user_text, bot_text):
     """他刚回答「中午吃什么」，就别再问「你点了吗 / 吃了吗」。
 
