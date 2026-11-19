@@ -230,6 +230,17 @@ class RuntimeTickMixin(RuntimeMixinBase):
             _note_swallowed("amo_runtime.HumanCorePlugin._tick.memory_audit", _amo_exc)
 
     async def _tick_schedule_media(self, umo):
+        try:
+            try:
+                from .laundry_engine import maybe_auto_wash
+            except ImportError:
+                from laundry_engine import maybe_auto_wash
+            washed = maybe_auto_wash(self)
+            if washed.get("ok"):
+                logger.info("[amo] 自动洗衣（%s）：%d 件" % (
+                    washed.get("wash_mode"), washed.get("count")))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.auto_laundry", _amo_exc)
         # 日程补齐、web 路由重试、穿搭 tick、小日记调度
         if now_ts() - to_float(getattr(self, "_last_home_image_check", 0), 0) > 600:
             self._last_home_image_check = now_ts()

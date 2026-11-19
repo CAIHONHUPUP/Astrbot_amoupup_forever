@@ -567,3 +567,32 @@
 .sched-modal-actions > .primary { background: var(--pink); color: #fff; }
 .sched-modal-actions > .danger { background: transparent; border-color: var(--pink); color: var(--pink); }
 .sched-modal-actions > .ghost { background: transparent; border-color: var(--line); color: var(--text); }
+
+.shop-block {
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(120, 160, 200, 0.22);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  backdrop-filter: blur(4px);
+}
+.shop-block .label { margin-top: 0; }
+.shop-block .profile-list { margin-top: 8px; max-height: none; }
+
+.shop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.shop-head .shop-badge { color: #8aa0b8; font-size: 12px; }
+.shop-head .shop-arrow { transition: transform 0.18s ease; color: #9bb0c6; }
+.shop-head.open .shop-arrow { transform: rotate(180deg); }
+.shop-block .shop-body { margin-top: 8px; }
+.shop-body[hidden] { display: none !important; }

@@ -12,6 +12,7 @@
     "amo_schedule",
     "amo_shared",
     "amo_types",
+    "ecommerce_engine",
     "observability",
     "pose_library"
   ],
@@ -192,7 +193,8 @@
     "amo_food_event",
     "amo_shared",
     "amo_state_store",
-    "clock"
+    "clock",
+    "outfit_refs"
   ],
   "amo_fileio.py": [],
   "amo_food_audit.py": [],
@@ -284,6 +286,7 @@
     "amo_state_store",
     "draw_engine",
     "ecommerce_engine",
+    "housing",
     "laundry_engine"
   ],
   "amo_llm.py": [
@@ -473,6 +476,7 @@
     "amo_shared",
     "amo_transition",
     "home_refs",
+    "laundry_engine",
     "observability"
   ],
   "amo_schedule.py": [
@@ -792,14 +796,17 @@
     "pose_library"
   ],
   "ecommerce_engine.py": [
-    "clock"
+    "clock",
+    "housing",
+    "outfit_refs"
   ],
   "errors.py": [],
   "gift_engine.py": [
     "amo_fileio",
     "amo_json_schema",
     "amo_observability",
-    "clock"
+    "clock",
+    "housing"
   ],
   "greet_route.py": [
     "amo_observability"
@@ -1108,6 +1115,7 @@
     "outfit_refs"
   ],
   "wardrobe_queries.py": [
+    "outfit_refs",
     "wardrobe_data"
   ],
   "wardrobe_seed.py": [

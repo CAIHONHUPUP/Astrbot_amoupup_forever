@@ -88,9 +88,9 @@ class PromptTests(unittest.TestCase):
         h = Housing(p)
         living, _ = h.room_prompt("客厅")
         bedroom, _ = h.room_prompt("卧室")
-        self.assertIn("二手布艺沙发", living)
+        self.assertIn("沙发", living)
         self.assertNotIn("1.2米单人床", living)
-        self.assertIn("1.2米单人床", bedroom)
+        self.assertIn("床", bedroom)
 
 
 class RedrawTests(unittest.TestCase):
@@ -99,13 +99,13 @@ class RedrawTests(unittest.TestCase):
         self.h = Housing(self.p)
         self.home = self.h.current()
 
-    def test_small_item_does_not_trigger_redraw(self):
+    def test_small_item_also_triggers_redraw(self):
         self.home["images_needed"] = False
-        out = self.h.add_furniture("抱枕")
+        out = self.h.add_furniture("台灯")
         self.assertTrue(out["ok"])
         self.assertFalse(out["big"])
-        self.assertFalse(out["redraw"])
-        self.assertFalse(self.home["images_needed"])
+        self.assertTrue(out["redraw"])
+        self.assertTrue(self.home["images_needed"])
 
     def test_big_item_triggers_redraw_when_cool(self):
         self.home["last_image_ts"] = 0
@@ -114,14 +114,13 @@ class RedrawTests(unittest.TestCase):
         self.assertTrue(out["redraw"])
         self.assertTrue(self.home["images_needed"])
 
-    def test_big_item_waits_for_cooldown(self):
+    def test_furniture_change_clears_cooldown(self):
         import time
         self.home["last_image_ts"] = time.time()
         out = self.h.add_furniture("双人床")
         self.assertTrue(out["big"])
-        self.assertFalse(out["redraw"])
+        self.assertTrue(out["redraw"], "换家具要立刻允许重画")
         self.assertEqual(self.home["image_status"], "pending")
-        self.assertTrue(self.h.can_redraw(now=time.time() + 25 * 3600))
 
     def test_image_status_helpers(self):
         self.h.mark_image_failed()

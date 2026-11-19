@@ -60,7 +60,7 @@ class SeedTests(unittest.TestCase):
         data = wardrobe.snapshot()
         self.assertGreaterEqual(data["outfit_count"], 30)
         categories = {item["key"]: item for item in data["categories"]}
-        self.assertEqual(set(categories), {"coat", "top", "bottom", "skirt", "shoes"})
+        self.assertEqual(set(categories), {"coat", "top", "bottom", "skirt", "shoes", "socks"})
         for key in ("coat", "top", "bottom", "skirt", "shoes"):
             self.assertTrue(categories[key]["items"], key + " 不该为空")
 

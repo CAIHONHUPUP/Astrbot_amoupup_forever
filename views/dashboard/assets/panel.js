@@ -1434,6 +1434,110 @@
       }
     }
 
+
+    function shopTime(ts) {
+      if (!ts) return "—";
+      const d = new Date(Number(ts) * 1000);
+      const pad = (n) => String(n).padStart(2, "0");
+      return (d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+
+    function shopRow(order) {
+      const row = document.createElement("div");
+      row.className = "profile-item";
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = (order.items || []).join("、") || "（无商品）";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const parts = ["¥" + Number(order.amount || 0).toFixed(2)];
+      if (order.platform) parts.push(order.platform);
+      parts.push("下单 " + shopTime(order.created));
+      if (order.status === "已下单") parts.push("预计 " + shopTime(order.transit_at) + " 发出");
+      if (order.status === "运输中") parts.push("预计 " + shopTime(order.deliver_at) + " 到货");
+      if (order.status === "想买") parts.push("还没下单");
+      if (order.status === "已到货") parts.push(order.kind === "furniture" ? "已入屋" : "已入衣柜");
+      if (order.status === "已退货") parts.push("已退款 ¥" + Number(order.refund || 0).toFixed(2));
+      meta.textContent = parts.join(" · ");
+      row.appendChild(name);
+      row.appendChild(meta);
+      return row;
+    }
+
+    function bindShopAccordion() {
+      document.querySelectorAll(".shop-head").forEach(function (head) {
+        if (head.dataset.bound) return;
+        head.dataset.bound = "1";
+        head.addEventListener("click", function () {
+          var target = head.dataset.shopToggle;
+          var body = document.getElementById(target);
+          var open = body && !body.hidden;
+          document.querySelectorAll(".shop-body").forEach(function (el) { el.hidden = true; });
+          document.querySelectorAll(".shop-head").forEach(function (el) { el.classList.remove("open"); });
+          if (!open && body) {
+            body.hidden = false;
+            head.classList.add("open");
+          }
+        });
+      });
+    }
+
+    async function loadShop() {
+      bindShopAccordion();
+      const boxes = {
+        wished: document.getElementById("shopWished"),
+        ordered: document.getElementById("shopOrdered"),
+        transit: document.getElementById("shopTransit"),
+        delivered: document.getElementById("shopDelivered"),
+        returned: document.getElementById("shopReturned"),
+        household: document.getElementById("shopHousehold"),
+      };
+      if (!boxes.ordered) return;
+      Object.keys(boxes).forEach((key) => { if (boxes[key]) boxes[key].innerHTML = '<div class="sub">加载中…</div>'; });
+      try {
+        const data = objectFrom(await call("shop/orders"));
+        const groups = (data && data.groups) || {};
+        const limits = (data && data.limits) || {};
+        const sub = document.getElementById("shopSub");
+        if (sub) {
+          sub.textContent = "本月 " + (limits.used_total || 0) + "/" + (limits.total || 5) + " 单 · 衣服 "
+            + (limits.used_clothes || 0) + "/" + (limits.clothes || 2) + " 件 · 大件 "
+            + (limits.used_furniture || 0) + "/" + (limits.furniture || 1) + " 件 · 总消费不超过活期存款 20%";
+        }
+        const tabLabel = document.querySelector('[data-tab="shop"] span');
+        if (tabLabel) tabLabel.textContent = data.arrival ? "网购●" : "网购";
+        const counts = { household: (data.household || []).length };
+        Object.keys(groups).forEach((key) => { counts[key] = (groups[key] || []).length; });
+        document.querySelectorAll("[data-shop-badge]").forEach((badge) => {
+          const n = counts[badge.dataset.shopBadge] || 0;
+          badge.textContent = n ? "· " + n + " 条" : "";
+        });
+        Object.keys(boxes).forEach((key) => {
+          const box = boxes[key];
+          if (!box) return;
+          if (key === "household") {
+            const list = Array.isArray(data.household) ? data.household : [];
+            box.innerHTML = list.length ? "" : '<div class="sub">暂无</div>';
+            list.forEach((row) => {
+              const item = document.createElement("div");
+              item.className = "profile-item";
+              item.textContent = (row.name || "") + " · " + shopTime(row.at);
+              box.appendChild(item);
+            });
+            return;
+          }
+          const rows = Array.isArray(groups[key]) ? groups[key] : [];
+          box.innerHTML = rows.length ? "" : '<div class="sub">暂无</div>';
+          rows.forEach((order) => box.appendChild(shopRow(order)));
+        });
+        if (data.arrival) {
+          try { await call("shop/arrival/seen", {}); } catch (error) { /* 忽略 */ }
+        }
+      } catch (error) {
+        toast((error && error.message) || "网购数据加载失败", true);
+      }
+    }
+
     function giftTime(ts) {
       const value = Number(ts);
       if (!value) return "";
@@ -1548,6 +1652,7 @@
       { key: "bottom", label: "裤子" },
       { key: "skirt", label: "裙子" },
       { key: "shoes", label: "鞋子" },
+      { key: "socks", label: "袜子" },
     ];
 
     function wardrobeRow(label, value) {
@@ -1565,13 +1670,13 @@
     }
 
     let wardrobeData = {};
-    let wardrobeSel = { top: "", bottom: "", shoes: "" };
+    let wardrobeSel = { coat: "", top: "", bottom: "", skirt: "", shoes: "", socks: "" };
     let wardrobeSwimSel = { top: "", bottom: "" };
     let wardrobeDirty = false;
     let wardrobeMode = "";
 
     function wardrobeNames(sel) {
-      const names = { coat: "", top: "", bottom: "", skirt: "", shoes: "" };
+      const names = { coat: "", top: "", bottom: "", skirt: "", shoes: "", socks: "" };
       (wardrobeData.categories || []).forEach((cat) => {
         (cat.items || []).forEach((item) => {
           if (item.id && item.id === sel[cat.key]) names[cat.key] = item.name || "";
@@ -1635,7 +1740,7 @@
       if (!wardrobeDirty) {
         wardrobeSel = {
           coat: ids[0] || "", top: ids[1] || "", bottom: ids[2] || "",
-          skirt: ids[3] || "", shoes: ids[4] || "",
+          skirt: ids[3] || "", shoes: ids[4] || "", socks: today.socks_id || "",
         };
       }
       const categories = Array.isArray(data.categories) ? data.categories : [];
@@ -1652,7 +1757,7 @@
         (cat.items || []).forEach((item) => set.add(item.id));
         exists[cat.key] = set;
       });
-      ["coat", "top", "bottom", "skirt", "shoes"].forEach((key) => {
+      ["coat", "top", "bottom", "skirt", "shoes", "socks"].forEach((key) => {
         if (wardrobeSel[key] && exists[key] && !exists[key].has(wardrobeSel[key])) wardrobeSel[key] = "";
         if (wardrobeSwimSel[key] && exists[key] && !exists[key].has(wardrobeSwimSel[key])) {
           wardrobeSwimSel[key] = "";
@@ -1663,7 +1768,7 @@
       const shown = atHomeNow ? current : wardrobeSel;
       const names = atHomeNow
         ? { coat: current.coat || "", top: current.top || "", bottom: current.bottom || "",
-            skirt: current.skirt || "", shoes: current.shoes || "" }
+            skirt: current.skirt || "", shoes: current.shoes || "", socks: current.socks || "" }
         : wardrobeNames(shown);
       const dayState = String(data.day_state || "");
       const todayLabel = document.getElementById("wardrobeTodayLabel");
@@ -1690,6 +1795,7 @@
           todayBox.appendChild(wardrobeRow("裙子", skirtName || "—"));
           todayBox.appendChild(wardrobeRow("裤子", names.skirt ? "—" : (names.bottom || "—")));
           todayBox.appendChild(wardrobeRow("鞋子", names.shoes || "—"));
+          todayBox.appendChild(wardrobeRow("袜子", names.socks || "—"));
         }
       }
       const meta = document.getElementById("wardrobeTodayMeta");
@@ -1732,6 +1838,7 @@
           nightBox.appendChild(wardrobeRow("裙子", night.skirt || "—"));
           nightBox.appendChild(wardrobeRow("裤子", night.skirt ? "—" : (night.bottom || "—")));
           nightBox.appendChild(wardrobeRow("鞋子", night.shoes || "—"));
+          nightBox.appendChild(wardrobeRow("袜子", "—"));
         }
       }
       const nightMeta = document.getElementById("wardrobeNightMeta");
@@ -2140,6 +2247,21 @@
       }
       const names = wardrobeNames(wardrobeSel);
       const skirtIsDress = /连衣裙|长裙|连身裙|睡裙/.test(names.skirt || "");
+      const socksName = names.socks || "";
+      const isTights = /连裤袜|打底袜|丝袜/.test(socksName);
+      const isLongSocks = /连裤袜|打底袜|丝袜|长筒袜|过膝袜|渔网袜|堆堆袜/.test(socksName);
+      if (skirtIsDress && socksName && isLongSocks && !isTights) {
+        toast("长裙可以配连裤袜/丝袜/短袜，不能配长筒袜/过膝袜/渔网袜", true);
+        return;
+      }
+      if (isTights && wardrobeSel.bottom && !/短/.test(names.bottom || "")) {
+        toast("连裤袜只能配短裤/短裙，不能配长裤", true);
+        return;
+      }
+      if (!isTights && isLongSocks && wardrobeSel.bottom && !/短/.test(names.bottom || "")) {
+        toast("长袜只能配短裤", true);
+        return;
+      }
       if (!skirtIsDress) {
         if (!wardrobeSel.top && !wardrobeSel.skirt) {
           toast("先选上衣+裤子；长裙只选裙子就行", true);
@@ -2149,7 +2271,7 @@
           toast("短裙要配一件上衣", true);
           return;
         }
-        if (!wardrobeSel.skirt && !wardrobeSel.bottom) {
+        if (!wardrobeSel.skirt && !wardrobeSel.bottom && !isTights) {
           toast("先选一条裤子", true);
           return;
         }
@@ -2157,6 +2279,7 @@
       try {
         const res = await call("wardrobe/today", {
           coat: wardrobeSel.coat || "",
+          socks: wardrobeSel.socks || "",
           top: wardrobeSel.top,
           bottom: wardrobeSel.bottom,
           skirt: wardrobeSel.skirt || "",

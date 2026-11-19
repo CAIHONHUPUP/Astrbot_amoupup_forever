@@ -440,6 +440,44 @@ class WeatherTests(StateTestCase):
                 hits[path.name] = count
         self.assertEqual(hits, {"amo_human_state.py": 5}, hits)
 
+    def test_city_switch_gets_one_extra_refresh(self) -> None:
+        # 2026-11-19：换城市每天单独放行 1 次，不占 3 次时段额度；同一天第二次换城市不再请求。
+        calls = self._stub_weather_fetch()
+        self.plugin.config["weather_city_name"] = "东莞"
+
+        async def due_always(now=None):
+            state = self.plugin.db.kv_get("weather_slot_state", {}) or {}
+            done = state.get("done") or {}
+            return "slot%d" % len(done), {"date": today_str(), "done": done}
+
+        self.state._weather_slot_due = due_always
+        for _ in range(3):
+            if self.state.weather.get("ts"):
+                self.state.weather["ts"] = float(self.state.weather["ts"]) - 10
+                self.plugin.db.kv_set("weather", self.state.weather)
+            asyncio.run(self.state.refresh_weather(force=True))
+        self.assertEqual(len(calls), 3, calls)
+        self.state.weather["ts"] = float(self.state.weather["ts"]) - 10
+        asyncio.run(self.state.refresh_weather(force=True, city_switch=True))
+        self.assertEqual(len(calls), 4, calls)
+        self.state.weather["ts"] = float(self.state.weather["ts"]) - 10
+        asyncio.run(self.state.refresh_weather(force=True, city_switch=True))
+        self.assertEqual(len(calls), 4, calls)
+
+    def test_failure_cache_holds_two_hours(self) -> None:
+        self.plugin.config["hefeng_key"] = "k"
+        self.plugin.config["weather_host"] = "https://hf.example"
+        self.plugin.config["weather_city_name"] = "东莞"
+
+        async def boom(url, params=None):
+            raise RuntimeError("401")
+
+        self.state._qweather_get = boom
+        asyncio.run(self.state._fetch_qweather_daily("k", "东莞", 3))
+        from amo_state_store import for_plugin
+        raw = for_plugin(self.plugin).get("weather_daily") or {}
+        self.assertGreaterEqual(float(raw.get("until") or 0) - float(raw.get("ts") or 0), 7000)
+
     def test_hundred_force_refreshes_still_capped_at_three(self) -> None:
         calls = self._stub_weather_fetch()
         self.plugin.config["weather_city_name"] = "东莞"

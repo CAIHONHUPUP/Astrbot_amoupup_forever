@@ -9,8 +9,8 @@ try:  # 包模式（AstrBot 加载插件）
         COOL_BOTTOM_WORDS, HOME_PLACE_WORDS, HOTEL_PLACE_WORDS, OUTSIDE_PLACE_WORDS,
         SLEEP_HOUR_FROM, SLEEP_HOUR_TO, SUMMER_BAD_WORDS, SUMMER_DRESS_WORDS,
         SWIM_NEGATIVE_WORDS, SWIM_STRONG_WORDS, SWIM_WORDS, WARM_WORDS, WORK_SCENE_WORDS,
-        _amo_clock, _clock_now, _new_id, _note_swallowed, date, is_dress, logger, random, re,
-        timedelta, today_str,
+        _amo_clock, _clock_now, _new_id, _note_swallowed, date, is_dress, is_home_socks, is_long_socks,
+        is_short_socks, is_tights, logger, random, re, timedelta, today_str,
     )
 except ImportError:  # 直接按文件加载时（测试/模拟器）
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
@@ -18,8 +18,8 @@ except ImportError:  # 直接按文件加载时（测试/模拟器）
             COOL_BOTTOM_WORDS, HOME_PLACE_WORDS, HOTEL_PLACE_WORDS, OUTSIDE_PLACE_WORDS,
             SLEEP_HOUR_FROM, SLEEP_HOUR_TO, SUMMER_BAD_WORDS, SUMMER_DRESS_WORDS,
             SWIM_NEGATIVE_WORDS, SWIM_STRONG_WORDS, SWIM_WORDS, WARM_WORDS, WORK_SCENE_WORDS,
-            _amo_clock, _clock_now, _new_id, _note_swallowed, date, is_dress, logger, random, re,
-            timedelta, today_str,
+            _amo_clock, _clock_now, _new_id, _note_swallowed, date, is_dress, is_home_socks, is_long_socks,
+            is_short_socks, is_tights, logger, random, re, timedelta, today_str,
         )
 
 
@@ -162,6 +162,69 @@ class WardrobeDailyMixin:
                  for key in ("coat", "top", "bottom", "skirt", "shoes")]
         return any(word in name for name in names for word in WARM_WORDS + COOL_BOTTOM_WORDS)
 
+    def _repair_outfit(self, data, outfit):
+        """整套里只有部分单品脏/在洗：只换那几件，别把整套扔掉（2026-11-19）。"""
+        items = self._items_map(data)
+        out = dict(outfit)
+        changed = False
+        for slot in ("coat", "top", "bottom", "skirt", "shoes"):
+            item = items.get(out.get(slot) or "") or {}
+            if str(item.get("clean_status") or "clean") not in ("dirty", "washing"):
+                continue
+            pool = [row for row in data.get("items", [])
+                    if row.get("category") == slot
+                    and str(row.get("clean_status") or "clean") == "clean"
+                    and bool(row.get("sleep")) == bool(outfit.get("sleep"))
+                    and bool(row.get("hotel")) == bool(outfit.get("hotel"))
+                    and bool(row.get("swim")) == bool(outfit.get("swim"))]
+            if not pool:
+                return None
+            picker = random.Random("amo-repair:%s:%s" % (outfit.get("id", ""), slot))
+            out[slot] = picker.choice(pool).get("id") or ""
+            changed = True
+        return out if changed else outfit
+
+    def _adjust_coat(self, data, result):
+        """按当前温度加/减外套：热了脱、冷了加（只动外套，不重锁整套）。"""
+        try:
+            temp = float((getattr(self.plugin.state, "weather", {}) or {}).get("temp") or 0)
+        except Exception:
+            temp = 0.0
+        if not temp:
+            return result
+        result = dict(result)
+        coat = str(result.get("coat") or "")
+        if coat and temp >= 26:
+            result["coat"] = ""
+            text = str(result.get("text") or "")
+            result["text"] = text.replace(coat + "，", "").replace("，" + coat, "").replace(coat, "")
+            return result
+        if not coat and temp <= 10:
+            pool = [row for row in data.get("items", [])
+                    if row.get("category") == "coat"
+                    and str(row.get("clean_status") or "clean") == "clean"
+                    and not row.get("sleep") and not row.get("swim") and not row.get("hotel")]
+            if pool:
+                picker = random.Random("amo-coat:%s" % result.get("day", ""))
+                chosen = picker.choice(pool)
+                result["coat"] = str(chosen.get("name") or "")
+                text = str(result.get("text") or "")
+                result["text"] = (result["coat"] + ("，" + text if text else "")) if result["coat"] else text
+        return result
+
+    def _socks_fit(self, result, sock_name):
+        """出门时袜子是否合当前下装：长裤不配长袜；长裙不配长筒/过膝/渔网。"""
+        name = str(sock_name or "")
+        if not name:
+            return True
+        bottom = str(result.get("bottom") or "")
+        skirt = str(result.get("skirt") or "")
+        if skirt and is_dress(skirt):
+            return not (is_long_socks(name) and not is_tights(name))
+        if bottom and "短" not in bottom:
+            return not is_long_socks(name)
+        return True
+
     def _pick(self, data, day, exclude=""):
         outfits = self._candidates(data)
         if exclude:
@@ -173,9 +236,57 @@ class WardrobeDailyMixin:
             data.setdefault("outfits", []).extend(seed["outfits"])
             outfits = seed["outfits"]
         chooser = random.Random("amo-wardrobe:" + day)
-        return chooser.choice(outfits)
+        chosen = chooser.choice(outfits)
+        repaired = self._repair_outfit(data, chosen)
+        return repaired or chosen
 
     # ---------- 每日穿搭 ----------
+
+    def _auto_socks(self, data, day, outfit):
+        """白天没选袜子时按规则自动挑一双（用户 2026-11-19：没生成就按规则配一双）。
+
+        规则：长裤只能短袜/船袜；长裙只能连裤袜/丝袜/短袜；短裤短裙随便；
+        ≥28℃ 只能短袜；≤10℃ 优先连裤袜/厚袜；优先干净袜子。
+        """
+        try:
+            items = [item for item in data.get("items", [])
+                     if item.get("category") == "socks"]
+        except Exception:
+            return None
+        if not items:
+            return None
+        temp = self._weather_temp()
+        by_id = self._items_map(data)
+        bottom = by_id.get(outfit.get("bottom") or "") or {}
+        skirt = by_id.get(outfit.get("skirt") or "") or {}
+        bottom_name = str(bottom.get("name") or "")
+        skirt_name = str(skirt.get("name") or "")
+        candidates = []
+        for item in items:
+            name = str(item.get("name") or "")
+            if temp >= 28 and is_long_socks(name):
+                continue
+            if skirt_name and is_dress(skirt_name):
+                if is_long_socks(name) and not is_tights(name):
+                    continue
+            elif bottom_name and "短" not in bottom_name:
+                if is_long_socks(name):
+                    continue
+            candidates.append(item)
+        if not candidates:
+            candidates = [item for item in items if not is_long_socks(item.get("name"))] or items
+        if temp <= 10:
+            tights = [item for item in candidates if is_tights(item.get("name"))]
+            if tights:
+                candidates = tights
+        clean = [item for item in candidates
+                 if str(item.get("clean_status") or "clean") == "clean"]
+        if clean:
+            candidates = clean
+        chooser = random.Random("amo-socks:" + str(day))
+        return chooser.choice(candidates)
+
+
     def today(self, day="", data=None):
         day = str(day or today_str())
         with self._lock:
@@ -194,6 +305,24 @@ class WardrobeDailyMixin:
                 self._trim_daily(data)
                 self._save(data)
             result = self._describe(data, outfit)
+            socks_item = self._items_map(data).get(str(entry.get("socks") or "")) or {}
+            if not socks_item:
+                auto = self._auto_socks(data, day, outfit)
+                if auto is not None:
+                    socks_item = auto
+                    data.setdefault("daily", {}).setdefault(day, {})["socks"] = str(auto.get("id") or "")
+                    data["daily"][day]["socks_auto"] = True
+                    entry = data["daily"][day]
+                    self._save(data)
+            socks_name = str(socks_item.get("name") or "")
+            if socks_name:
+                result["socks"] = socks_name
+                result["socks_id"] = str(socks_item.get("id") or "")
+                result["text"] = ((result.get("text") + "，") if result.get("text") else "") + socks_name
+                if not entry.get("socks_worn"):
+                    socks_item["clean_status"] = "dirty"
+                    data.setdefault("daily", {}).setdefault(day, {})["socks_worn"] = True
+                    self._save(data)
             result["day"] = day
             self._today_cache = result
         return dict(result)
@@ -567,8 +696,38 @@ class WardrobeDailyMixin:
                 result = self.today(day, data=data)
         elif at_home is True:
             result = self.home_outfit(day, hour=hour, data=data)
+            try:
+                home_data = data if isinstance(data, dict) else self._load()
+                entry = (home_data.get("daily") or {}).get(day) or {}
+                sock = self._items_map(home_data).get(str(entry.get("socks") or "")) or {}
+                if sock and is_home_socks(sock.get("name")):
+                    result = dict(result)
+                    result["socks"] = str(sock.get("name") or "")
+                    result["socks_id"] = str(sock.get("id") or "")
+                    base_text = str(result.get("text") or "")
+                    result["text"] = (base_text + "，" if base_text else "") + result["socks"]
+            except Exception as _amo_exc:
+                _note_swallowed("wardrobe.Wardrobe.current.home_socks", _amo_exc)
         else:
             result = self.today(day, data=data)
+            outfit_data = data if isinstance(data, dict) else self._load()
+            try:
+                entry = (outfit_data.get("daily") or {}).get(day) or {}
+                outfit = self._outfit_by_id(outfit_data, entry.get("outfit"))
+                sock = str(result.get("socks") or "")
+                if outfit is not None and sock and not self._socks_fit(result, sock):
+                    fixed = self._auto_socks(outfit_data, day, outfit)
+                    if fixed is not None:
+                        new_name = str(fixed.get("name") or "")
+                        if new_name and new_name != sock:
+                            result = dict(result)
+                            text = str(result.get("text") or "")
+                            result["text"] = text.replace(sock, new_name)
+                            result["socks"] = new_name
+                            result["socks_id"] = str(fixed.get("id") or "")
+                result = self._adjust_coat(outfit_data, result)
+            except Exception as _amo_exc:
+                _note_swallowed("wardrobe.Wardrobe.current.adjust", _amo_exc)
         self._sync_sidecar(result)
         return dict(result)
 
@@ -761,7 +920,8 @@ class WardrobeDailyMixin:
         self.current(day)  # 同步 sidecar：白天换新一套、晚上保持睡衣
         return self.today(day)
 
-    def set_today(self, day="", coat="", top="", bottom="", skirt="", shoes=""):
+    def set_today(self, day="", coat="", top="", bottom="", skirt="", shoes="",
+                  socks=""):
         """面板手动选好一套后保存：今天锁这一套。
 
         外套最多一件、可以套在衬衫外面；长裙单穿；短裙配上衣，裤子可选。
@@ -791,7 +951,29 @@ class WardrobeDailyMixin:
             elif not top_item:
                 return {"ok": False, "msg": "先选一件上衣（衬衫）"}
             elif not bottom_item:
-                return {"ok": False, "msg": "先选一条裤子/裙子"}
+                probe = items.get(str(socks or ""))
+                if not (probe and is_tights(probe.get("name"))):
+                    return {"ok": False, "msg": "先选一条裤子/裙子（穿连裤袜/丝袜可以不穿裤子）"}
+            socks_item = items.get(str(socks or ""))
+            if socks_item and socks_item.get("category") != "socks":
+                socks_item = None
+            socks_name = str((socks_item or {}).get("name") or "")
+            if (skirt_item and is_dress(skirt_item.get("name")) and socks_name
+                    and is_long_socks(socks_name) and not is_tights(socks_name)):
+                return {"ok": False, "msg": "长裙可以配连裤袜/丝袜/短袜，不能配长筒袜/过膝袜/渔网袜"}
+            bottom_name = str((bottom_item or {}).get("name") or "")
+            short_bottom = "短" in bottom_name
+            if socks_name and is_tights(socks_name) and bottom_item and not short_bottom:
+                return {"ok": False, "msg": "连裤袜只能配短裤/短裙，不能配长裤"}
+            if (socks_name and not is_tights(socks_name) and is_long_socks(socks_name)
+                    and bottom_item and not short_bottom):
+                return {"ok": False, "msg": "长袜只能配短裤，长裤不穿长袜"}
+            try:
+                temp = float((getattr(self.plugin.state, "weather", {}) or {}).get("temp") or 0)
+            except Exception:
+                temp = 0.0
+            if socks_name and temp >= 28 and is_long_socks(socks_name):
+                return {"ok": False, "msg": "太热了，只能穿短袜/船袜"}
             shoes_item = items.get(str(shoes or ""))
             if not shoes_item or shoes_item.get("category") != "shoes":
                 shoes_item = None
@@ -827,6 +1009,7 @@ class WardrobeDailyMixin:
                 data.setdefault("outfits", []).append(outfit)
             data.setdefault("daily", {})[day] = {
                 "outfit": outfit["id"],
+                "socks": socks_item["id"] if socks_item else "",
                 "ts": _amo_clock.now_ts(),
             }
             self._trim_daily(data)

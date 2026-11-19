@@ -694,6 +694,12 @@ class FeatureApiMixin:
             sleep = slot == "night"
 
             res = self.wardrobe.add_item(cat, name, source="shopping", sleep=sleep)
+            try:
+                from .outfit_refs import spawn_ensure_ref
+            except ImportError:
+                from outfit_refs import spawn_ensure_ref
+            if res.get("ok"):
+                spawn_ensure_ref(self, res.get("item") or {"name": name, "category": cat})
 
             if res.get("ok") and res.get("item"):
 

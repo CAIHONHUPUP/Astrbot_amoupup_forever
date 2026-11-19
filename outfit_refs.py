@@ -40,6 +40,7 @@ CATEGORY_FOLDERS = {
     "bottom": "裤子",
     "skirt": "裙子",
     "shoes": "鞋子",
+    "socks": "袜子",
 }
 _SAFE_RE = re.compile(r'[\\/:*?"<>|\r\n]+')
 _batch_running = False
@@ -147,13 +148,24 @@ def refs_for_outfit(plugin, outfit, limit=5):
             refs.append(path)
             if len(refs) >= limit:
                 return refs
+    # 袜子：单独放在 outfit_refs/袜子/，有穿就带上它的平铺图（2026-11-19）
+    socks_name = str(outfit.get("socks") or "").strip()
+    if socks_name and len(refs) < limit:
+        path = find_ref(plugin, socks_name)
+        if path:
+            key = os.path.normcase(os.path.abspath(path))
+            if key not in seen:
+                refs.append(path)
     return refs
 
 
 def item_dir(plugin, item):
+    category = category_of(item)
+    if category == "socks":
+        return os.path.join(base_dir(plugin), CATEGORY_FOLDERS["socks"])
     scope = scope_of(item)
     folder = dict(SCOPE_FOLDERS)[scope]
-    return os.path.join(base_dir(plugin), folder, CATEGORY_FOLDERS[category_of(item)])
+    return os.path.join(base_dir(plugin), folder, CATEGORY_FOLDERS[category])
 
 
 def item_ref_path(plugin, item):
@@ -163,6 +175,9 @@ def item_ref_path(plugin, item):
 def find_ref(plugin, name):
     """在所有搭配/分类里找同名参考图。"""
     filename = safe_name(name) + ".png"
+    socks_path = os.path.join(base_dir(plugin), CATEGORY_FOLDERS["socks"], filename)
+    if os.path.isfile(socks_path) and os.path.getsize(socks_path) > 0:
+        return socks_path
     for _, scope_folder in SCOPE_FOLDERS:
         for category_folder in CATEGORY_FOLDERS.values():
             path = os.path.join(base_dir(plugin), scope_folder, category_folder, filename)
@@ -286,6 +301,36 @@ async def ensure_item_ref(plugin, item, session=None, force=False):
     except Exception as exc:
         logger.warning("[amo] 服装参考图保存失败（%s）: %s" % (name, exc))
         return ""
+
+
+def spawn_ensure_ref(plugin, item):
+    """入库后后台补参考图（礼物/购物路径用；失败只记日志）。"""
+    item = item if isinstance(item, dict) else {}
+    name = str(item.get("name") or "").strip()
+    if not name:
+        return False
+
+    async def _run():
+        try:
+            await ensure_ref(plugin, name, item=item)
+        except Exception as exc:
+            logger.debug("[amo] 服装参考图生成失败（%s）: %r", name, exc)
+
+    try:
+        import asyncio
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    spawn = getattr(plugin, "_spawn", None)
+    try:
+        if callable(spawn):
+            spawn(_run())
+        else:
+            loop.create_task(_run())
+        return True
+    except Exception as exc:
+        logger.debug("[amo] 服装参考图任务创建失败: %r", exc)
+        return False
 
 
 async def ensure_ref(plugin, name, session=None, force=False, item=None):

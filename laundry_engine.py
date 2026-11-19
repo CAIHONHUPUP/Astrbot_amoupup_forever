@@ -20,6 +20,34 @@ BEDDING_COST = (500, 1200)
 APPLIANCES = {"washer": 1500.0, "dryer": 1500.0}
 
 
+AUTO_WASH_HOUR = 21
+
+
+def maybe_auto_wash(plugin, now=None):
+    """每天 21 点后自动洗一批：手洗 1 件就开，机洗攒够 3 件（省钱且像真人）。
+
+    每天只触发一次；没脏衣/没到点直接返回，不扫库。
+    """
+    now = _now(now)
+    if now.hour < AUTO_WASH_HOUR:
+        return {"ok": False, "reason": "too_early"}
+    facts = LifeFacts(plugin)
+    day = now.strftime("%Y-%m-%d")
+    if facts._kv_get("laundry_auto_day") == day:
+        return {"ok": False, "reason": "done"}
+    wardrobe, data = facts._data()
+    if data is None:
+        return {"ok": False, "reason": "no_wardrobe"}
+    dirty = facts.dirty_items(data)
+    need = 1  # 有洗衣机就机洗、没洗衣机就手洗；脏衣全洗，不再等 3 件
+    if len(dirty) < need:
+        return {"ok": False, "reason": "not_enough", "dirty": len(dirty)}
+    result = facts.start_wash(now=now, force=True)
+    if result.get("ok"):
+        facts._kv_set("laundry_auto_day", day)
+    return result
+
+
 def _now(now=None):
     return now or _clock_now()
 
@@ -51,6 +79,18 @@ class LifeFacts:
             return wardrobe, wardrobe._load()
         except Exception:
             return wardrobe, None
+
+    def _kv_get(self, key, default=None):
+        try:
+            return self.plugin.db.kv_get(key, default)
+        except Exception:
+            return default
+
+    def _kv_set(self, key, value):
+        try:
+            self.plugin.db.kv_set(key, value)
+        except Exception as exc:
+            logger.debug("[amo] optional step failed: %r", exc)
 
     def _save(self, wardrobe, data):
         try:
@@ -117,6 +157,8 @@ class LifeFacts:
             "weather": weather,
             "has_washer": "washer" in (state.get("assets") or {}),
             "has_dryer": "dryer" in (state.get("assets") or {}),
+            "hand_wash": "washer" not in (state.get("assets") or {}),
+            "wash_mode": "machine" if "washer" in (state.get("assets") or {}) else "hand",
             "season": season,
             "organized": organized,
             "season_mismatch": mismatch,
@@ -157,18 +199,24 @@ class LifeFacts:
         if data is None:
             return {"ok": False, "reason": "no_wardrobe"}
         state = self._state(data)
+        has_washer = "washer" in (state.get("assets") or {})
         dirty = self.dirty_items(data)
         weekend = now.weekday() >= 5 and now.hour >= 19
         # 这里只给 LLM/调度层提供“可以洗”的状态，不替她决定；force 供 LLM 决策后调用
         if not force and len(dirty) < 3 and not weekend:
             return {"ok": False, "reason": "not_enough", "dirty_count": len(dirty)}
-        chosen = dirty[:8]
+        chosen = list(dirty)
+        # 2026-11-19：没洗衣机就手洗——30 分钟、不扣洗衣费；有洗衣机才是 1 小时 + 300 块
+        duration = 3600 if has_washer else 1800
+        mode = "machine" if has_washer else "hand"
         for item in chosen:
             self.set_status(item, "washing")
-            state["washing"][str(item.get("id"))] = now.timestamp() + 3600
+            item["wash_mode"] = mode
+            state["washing"][str(item.get("id"))] = now.timestamp() + duration
         self._save(wardrobe, data)
-        self._charge(300)
-        return {"ok": True, "count": len(chosen), "wash_until": now.timestamp() + 3600,
+        return {"ok": True, "count": len(chosen), "wash_until": now.timestamp() + duration,
+                "wash_mode": mode, "has_washer": has_washer,
+                "cost": 0,
                 "dirty_count": len(self.dirty_items(data))}
 
     def tick(self, now=None):
@@ -201,6 +249,15 @@ class LifeFacts:
                 else:
                     self.set_status(item, "clean")
                 item.pop("drying_until", None)
+                changed = True
+        # 没洗衣机：袜子每天顺手手洗（30 分钟），不占用整批洗衣
+        if not state.get("assets", {}).get("washer"):
+            socks = [item for item in self._items(data)
+                     if item.get("category") == "socks" and self.status(item) == "dirty"]
+            for item in socks:
+                self.set_status(item, "washing")
+                item["wash_mode"] = "hand"
+                state["washing"][str(item.get("id"))] = now.timestamp() + 1800
                 changed = True
         if changed:
             self._save(wardrobe, data)

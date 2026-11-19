@@ -312,7 +312,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
             weather = self.state.weather
         else:
             try:
-                weather = await self.state.refresh_weather(force=bool(save))
+                weather = await self.state.refresh_weather(force=bool(save), city_switch=bool(save))
             except Exception as exc:
                 logger.debug("[amo] 切换城市后刷新天气失败: %s" % exc)
         return {
@@ -869,6 +869,32 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
                 "msg": "知识库创建失败：请检查是否配置了 Embedding 供应商，并查看 AstrBot 日志",
             }
         return {"code": 0, "msg": "知识库已就绪：" + self._dialect_kb_name()}
+
+    async def api_shop_arrival_seen(self):
+        await self._ensure_ready()
+        try:
+            try:
+                from .ecommerce_engine import EcommerceEngine
+            except ImportError:
+                from ecommerce_engine import EcommerceEngine
+            EcommerceEngine(self).mark_arrival_seen()
+            return {"code": 0}
+        except Exception as exc:
+            logger.debug("[amo] 清除到货红点失败: %s" % exc)
+            return {"code": 1}
+
+    async def api_shop_orders(self):
+        await self._ensure_ready()
+        try:
+            try:
+                from .ecommerce_engine import EcommerceEngine
+            except ImportError:
+                from ecommerce_engine import EcommerceEngine
+            return {"code": 0, "data": EcommerceEngine(self).panel_data()}
+        except Exception as exc:
+            logger.debug("[amo] 网购订单面板失败: %s" % exc)
+            return {"code": 0, "data": {"groups": {"ordered": [], "transit": [],
+                                                       "delivered": [], "returned": []}}}
 
     async def api_gift(self):
         await self._ensure_ready()

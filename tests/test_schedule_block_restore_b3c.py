@@ -297,7 +297,7 @@ class RestoreRouteTests(unittest.TestCase):
                          ("api_schedule_block_restore", ("POST",)))
         self.assertIn("/schedule/block/restore", WRITE_ROUTES)
         self.assertEqual(len(ROUTE_SPECS), ROUTE_COUNT_EXPECTED)
-        self.assertEqual(len(ROUTE_SPECS), 103)
+        self.assertEqual(len(ROUTE_SPECS), 105)
         client = read_text("assets", "api-client.js")
         self.assertIn('"schedule/block/restore"', client)
         self.assertTrue(callable(getattr(ScheduleApiMixin, "api_schedule_block_restore", None)))

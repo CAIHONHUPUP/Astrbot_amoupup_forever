@@ -27,7 +27,7 @@ class FakeState:
         self.weather = {"temp": 20}
         self.refreshed = []
 
-    async def refresh_weather(self, force=False):
+    async def refresh_weather(self, force=False, city_switch=False):
         self.refreshed.append(force)
         return {"temp": 21}
 

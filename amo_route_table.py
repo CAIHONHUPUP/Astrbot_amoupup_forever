@@ -72,6 +72,8 @@ ROUTE_SPECS = (
     ("/schedule_regen", "api_schedule_regen", ("GET", "POST",)),
     ("/weather", "api_weather", ("GET",)),
     ("/weather/refresh", "api_weather_refresh", ("GET", "POST")),
+    ("/shop/orders", "api_shop_orders", ("GET",)),
+    ("/shop/arrival/seen", "api_shop_arrival_seen", ("POST",)),
     ("/gift", "api_gift", ("GET",)),
     ("/gift/list", "api_gift", ("GET",)),
     ("/gift/wish/approve", "api_gift_wish_approve", ("POST",)),
@@ -117,7 +119,7 @@ ROUTE_SPECS = (
 
 
 #: 路由总数（增删接口后只改这里；quality_gate 与 tests/test_route_table 都读它）
-ROUTE_COUNT_EXPECTED = 103
+ROUTE_COUNT_EXPECTED = 105
 
 
 def build_routes(api):

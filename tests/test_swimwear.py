@@ -92,7 +92,7 @@ class SwimSeedTests(unittest.TestCase):
         wardrobe, _ = make_wardrobe()
         data = wardrobe.snapshot()
         keys = [cat["key"] for cat in data["swim_categories"]]
-        self.assertEqual(keys, ["coat", "top", "bottom", "skirt", "shoes"])
+        self.assertEqual(keys, ["coat", "top", "bottom", "skirt", "shoes", "socks"])
         for cat in data["swim_categories"]:
             if cat["key"] in ("top", "bottom"):
                 self.assertTrue(cat["items"])

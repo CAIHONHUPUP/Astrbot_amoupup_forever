@@ -1768,7 +1768,7 @@ class ScheduleMixin(_MixinBase):
                 save()
         except Exception as exc:
             logger.warning("[amo] 城市跟随：保存天气城市失败: %s" % exc)
-        await self.state.refresh_weather(force=True)
+        await self.state.refresh_weather(force=True, city_switch=True)
 
     def _sync_weather_city_config(self):
         """配置里填了中文城市名时，自动换算并回填 LocationID（幂等）。"""

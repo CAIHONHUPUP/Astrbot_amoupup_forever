@@ -61,6 +61,8 @@ class WardrobeQueriesMixin:
     def add_item(self, category, name, source="manual", gift_id="", sleep=False, hotel=False,
                  swim=False):
         category = str(category or "").strip()
+        category = {"上衣": "top", "裤子": "bottom", "裙子": "skirt", "外套": "coat",
+                    "鞋子": "shoes", "袜子": "socks", "睡衣": "top"}.get(category, category)
         name = clean_name(name)
         hotel = bool(hotel)
         swim = bool(swim)
@@ -140,6 +142,8 @@ class WardrobeQueriesMixin:
         return {"ok": True, "deleted": deleted[0] if deleted else {}, "outfits": len(gone)}
 
     def _combos_for(self, data, item):
+        if str(item.get("category") or "") == "socks":
+            return 0
         """新加一件衣服时，和现有互补单品组几套（同色系/同材质、外套最多一件）。"""
         sleep = bool(item.get("sleep"))
         hotel = bool(item.get("hotel"))
@@ -201,6 +205,12 @@ class WardrobeQueriesMixin:
         result = self.add_item(category, name, source="gift", gift_id=gift_id)
         if result.get("ok"):
             result["category"] = category
+            try:
+                from .outfit_refs import spawn_ensure_ref
+            except ImportError:
+                from outfit_refs import spawn_ensure_ref
+            spawn_ensure_ref(self.plugin, result.get("item") or {"name": name,
+                                                               "category": category})
         return result
 
     # ---------- 面板 / 我能永远定格你 ----------

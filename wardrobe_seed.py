@@ -14,7 +14,8 @@ try:  # 包模式（AstrBot 加载插件）
     from .wardrobe_data import (
         COAT_SEED_VERSION, DAY_SEED_VERSION, DAY_TARGET_OUTFITS, DRESS_SEED_VERSION,
         HOME_BOTTOMS, HOME_SEED_VERSION, HOME_SHOES, HOME_TOPS, HOTEL_SEED, HOTEL_SEED_VERSION,
-        SEED_COATS, SEED_OUTFITS, SEED_SLEEP, SEED_SWIM_SETS, SLEEP_EXTRA_ITEMS,
+        SEED_COATS, SEED_OUTFITS, SEED_SLEEP, SEED_SOCKS, SEED_SWIM_SETS,
+        SLEEP_EXTRA_ITEMS, SOCKS_SEED_VERSION, _ensure_socks_items,
         SLEEP_SEED_VERSION, SLEEP_TARGET_OUTFITS, SWIM_SEED_VERSION, _amo_clock, _day_item_pools,
         _item_ref_path, _new_id, _note_swallowed, atomic_write_json, combo_compatible,
         is_day_outfit, is_dress, json, logger, os, random, threading,
@@ -24,7 +25,8 @@ except ImportError:  # 直接按文件加载时（测试/模拟器）
         from wardrobe_data import (
             COAT_SEED_VERSION, DAY_SEED_VERSION, DAY_TARGET_OUTFITS, DRESS_SEED_VERSION,
             HOME_BOTTOMS, HOME_SEED_VERSION, HOME_SHOES, HOME_TOPS, HOTEL_SEED, HOTEL_SEED_VERSION,
-            SEED_COATS, SEED_OUTFITS, SEED_SLEEP, SEED_SWIM_SETS, SLEEP_EXTRA_ITEMS,
+            SEED_COATS, SEED_OUTFITS, SEED_SLEEP, SEED_SOCKS, SEED_SWIM_SETS,
+        SLEEP_EXTRA_ITEMS, SOCKS_SEED_VERSION, _ensure_socks_items,
             SLEEP_SEED_VERSION, SLEEP_TARGET_OUTFITS, SWIM_SEED_VERSION, _amo_clock, _day_item_pools,
             _item_ref_path, _new_id, _note_swallowed, atomic_write_json, combo_compatible,
             is_day_outfit, is_dress, json, logger, os, random, threading,
@@ -126,6 +128,10 @@ class WardrobeSeedMixin:
                 self._ensure_coats(data)
                 data["coat_seed"] = COAT_SEED_VERSION
                 self._save(data)
+            if data.get("socks_seed") != SOCKS_SEED_VERSION:
+                _ensure_socks_items(data, _new_id)
+                data["socks_seed"] = SOCKS_SEED_VERSION
+                self._save(data)
             self._data = data
             return data
 
@@ -165,6 +171,8 @@ class WardrobeSeedMixin:
         data["items"] = list(items.values())
         self._ensure_coats(data)
         data["coat_seed"] = COAT_SEED_VERSION
+        _ensure_socks_items(data, _new_id)
+        data["socks_seed"] = SOCKS_SEED_VERSION
         self._ensure_day(data)
         data["day_seed"] = DAY_SEED_VERSION
         self._ensure_sleep(data)

@@ -64,7 +64,8 @@ SEASON_SUMMER = "夏季薄毯、电风扇"
 SEASON_WINTER = "冬季厚地毯、暖气片"
 IMAGE_COOLDOWN_SECONDS = 24 * 3600
 BEDROOM_WORDS = ("床", "衣柜", "梳妆台", "床头柜", "台灯", "睡", "卧室")
-BATHROOM_WORDS = ("洗手台", "洗手池", "镜子", "毛巾", "浴", "牙刷", "淋浴")
+BATHROOM_WORDS = ("洗手台", "洗手池", "镜子", "毛巾", "浴", "牙刷", "淋浴",
+                  "马桶", "厕所", "洗手间", "浴室")
 KITCHEN_WORDS = ("灶台", "橱柜", "冰箱", "锅", "微波炉", "厨房", "抽油烟机")
 #: 房间画像（P22，2026-11-17 扩到四间）：睡觉/躺床/换衣→卧室，浴室→浴室，厨房→厨房，
 #: 其余在家场景→客厅。写进 housing 配置，生图分房间读它；改默认值只影响新家，
@@ -82,6 +83,134 @@ ROOM_PROFILES = {
 }
 #: 2026-11-17 新增的两间；老 kv 里的 zone 归属要按它们归位
 NEW_ROOMS = ("bathroom", "kitchen")
+ROOM_KEYS = ("living", "bedroom", "bathroom", "kitchen")
+FURNITURE_CATEGORIES = (
+    "沙发", "床", "茶几", "电视柜", "电视", "衣柜", "书桌", "餐桌", "椅子", "书架",
+    "冰箱", "洗衣机", "地毯", "窗帘", "镜子", "洗手台", "浴缸", "马桶", "灶台",
+    "油烟机", "橱柜", "空调", "落地灯", "床头柜",
+)
+
+
+FURNITURE_COLORS = {
+    "sofa": "棕色", "bed": "米白色", "wardrobe": "灰色", "desk": "原木色",
+    "dining": "原木色", "chair": "灰色", "tv": "黑色", "coffee": "原木色",
+    "fridge": "银色", "stove": "黑色", "washer": "白色", "dryer": "白色",
+    "mirror": "银色", "tub": "白色", "toilet": "白色", "sink": "白色",
+    "curtain": "米白色", "rug": "米色", "lamp": "暖白色", "nightstand": "原木色",
+    "plant": "绿色", "painting": "彩色", "shelf": "原木色", "cabinet": "白色",
+    "hood": "银色", "ac": "白色",
+}
+FURNITURE_EXCLUDE = ("牙刷", "毛巾", "纸巾", "洗发", "沐浴", "护肤", "牙膏",
+                     "洗衣液", "洗面奶", "锅", "碗", "垃圾桶", "拖鞋", "衣架",
+                     "餐具", "杯子", "地毯", "窗帘", "挂画", "绿植", "抱枕", "靠垫",
+                     "盆", "水桶", "晾衣架", "床单", "被套", "枕套", "枕头", "被子",
+                     "毛毯")
+ROOM_FURNITURE_LIMIT = 6
+COLOR_WORDS = ("红", "橙", "黄", "绿", "青", "蓝", "紫", "粉", "黑", "白",
+               "灰", "棕", "米", "银", "金", "原木")
+
+
+def home_palette_color(home, slot):
+    style = str((home or {}).get("style") or "")
+    colors = str((home or {}).get("colors") or "")
+    text = style + colors
+    if any(word in text for word in ("原木", "日式", "muji", "MUJI")):
+        return "原木色"
+    if any(word in text for word in ("工业", "黑白", "现代")):
+        return "灰色"
+    if any(word in text for word in ("米", "暖", "奶油", "白")):
+        return "米白色"
+    if any(word in text for word in ("冷", "蓝", "灰")):
+        return "灰色"
+    return FURNITURE_COLORS.get(slot, "灰色")
+
+
+def furniture_color(home, name):
+    body = str(name or "")
+    full = {"红": "红色", "橙": "橙色", "黄": "黄色", "绿": "绿色", "青": "青色",
+            "蓝": "蓝色", "紫": "紫色", "粉": "粉色", "黑": "黑色", "白": "白色",
+            "灰": "灰色", "棕": "棕色", "米": "米色", "银": "银色", "金": "金色",
+            "原木": "原木色"}
+    for word in COLOR_WORDS:
+        if word in body:
+            return full.get(word, word)
+    return home_palette_color(home, furniture_slot(body))
+
+
+FURNITURE_GENERIC = {
+    "sofa": "沙发", "bed": "床", "wardrobe": "衣柜", "desk": "书桌",
+    "dining": "餐桌", "chair": "椅子", "tv": "电视", "coffee": "茶几",
+    "fridge": "冰箱", "stove": "灶台", "washer": "洗衣机", "dryer": "烘干机",
+    "mirror": "镜子", "tub": "浴缸", "toilet": "马桶", "sink": "洗手台",
+    "curtain": "窗帘", "rug": "地毯", "lamp": "台灯", "tv_cabinet": "电视柜",
+    "nightstand": "床头柜", "plant": "绿植", "painting": "挂画",
+    "shelf": "书架", "cabinet": "橱柜", "hood": "油烟机", "ac": "空调",
+    "cushion": "抱枕",
+}
+
+
+FURNITURE_STYLES = {
+    "sofa": "布艺", "bed": "实木", "wardrobe": "布艺", "desk": "木质", "dining": "木质",
+    "chair": "木质", "tv": "平板", "tv_cabinet": "简约", "coffee": "木质", "fridge": "双门",
+    "stove": "燃气",
+    "washer": "滚筒", "dryer": "滚筒", "mirror": "简约", "tub": "陶瓷",
+    "toilet": "陶瓷", "sink": "陶瓷", "curtain": "布艺", "rug": "短毛",
+    "lamp": "陶瓷", "nightstand": "木质", "plant": "盆栽", "painting": "装饰",
+    "shelf": "木质", "cabinet": "木质", "hood": "不锈钢", "ac": "壁挂",
+    "cushion": "布艺",
+}
+FURNITURE_STYLE_WORDS = ("布艺", "木质", "实木", "皮质", "真皮", "玻璃", "陶瓷",
+                         "金属", "不锈钢", "藤编", "塑料", "滚筒", "双门", "壁挂",
+                         "简约", "简易", "折叠", "平板", "装饰", "盆栽", "短毛")
+
+
+def furniture_style(name):
+    body = str(name or "")
+    for word in FURNITURE_STYLE_WORDS:
+        if word in body:
+            return word
+    return FURNITURE_STYLES.get(furniture_slot(body), "简约")
+
+
+def furniture_display(home, name):
+    meta = (home or {}).get("furniture_meta") or {}
+    color = str((meta.get(name) or {}).get("color") or furniture_color(home, name))
+    generic = FURNITURE_GENERIC.get(furniture_slot(name)) or str(name)
+    style = furniture_style(name)
+    if style and style not in generic:
+        return color + style + generic
+    return color + generic
+
+
+FURNITURE_SLOTS = (
+    ("沙发", "sofa"), ("电视柜", "tv_cabinet"), ("电视", "tv"), ("茶几", "coffee"),
+    ("台灯", "lamp"), ("床", "bed"),
+    ("衣柜", "wardrobe"), ("书桌", "desk"), ("电脑桌", "desk"), ("餐桌", "dining"),
+    ("餐椅", "chair"), ("椅子", "chair"), ("书柜", "shelf"), ("书架", "shelf"),
+    ("冰箱", "fridge"), ("灶台", "stove"), ("油烟机", "hood"), ("橱柜", "cabinet"),
+    ("洗手台", "sink"), ("浴缸", "tub"), ("马桶", "toilet"), ("镜子", "mirror"),
+    ("窗帘", "curtain"), ("地毯", "rug"), ("空调", "ac"), ("落地灯", "lamp"),
+    ("床头柜", "nightstand"), ("绿植", "plant"), ("挂画", "painting"),
+    ("抱枕", "cushion"), ("靠垫", "cushion"),
+)
+
+
+def furniture_slot(name):
+    """同功能位只留一件（买新沙发替换旧沙发）。"""
+    body = str(name or "")
+    for word, slot in FURNITURE_SLOTS:
+        if word in body:
+            return slot
+    return ""
+
+
+def furniture_category(name):
+    """「红色三人位沙发」→「沙发」：同类家具买新的要替换旧的。"""
+    body = str(name or "")
+    for word in FURNITURE_CATEGORIES:
+        if word in body:
+            return word
+    return ""
 #: 浴室/厨房没有专属家具清单时的通用陈设（不许硬套客厅/卧室家具）
 DEFAULT_ROOM_FURNITURE = {
     "bathroom": ["白色陶瓷洗手台", "方镜", "瓷砖墙面", "毛巾架和毛巾", "淋浴间玻璃隔断"],
@@ -98,6 +227,8 @@ def default_rooms_config():
 
 def room_of_item(name):
     body = str(name or "")
+    if "洗衣" in body or "烘干" in body:
+        return "bathroom"
     if any(word in body for word in BEDROOM_WORDS):
         return "bedroom"
     if any(word in body for word in BATHROOM_WORDS):
@@ -131,6 +262,80 @@ def season_line(now=None):
     return ""
 
 
+BUY_FURNITURE_TOOL = "buy_furniture"
+BUY_FURNITURE_ARGS = [
+    {"type": "string", "name": "name", "description": "家具名，例如 红色三人位沙发"},
+    {"type": "number", "name": "price", "description": "价格（元）"},
+    {"type": "string", "name": "platform", "description": "淘宝/京东/宜家"},
+]
+
+
+def register_buy_furniture(plugin, manager):
+    """幂等注册 buy_furniture：扣钱、入屋、只重画它所在房间。"""
+    if manager is None:
+        return False
+    try:
+        if manager.get_func(BUY_FURNITURE_TOOL) is not None:
+            manager.remove_func(BUY_FURNITURE_TOOL)
+        manager.add_func(BUY_FURNITURE_TOOL, BUY_FURNITURE_ARGS,
+                         "当她想买家具（沙发/电视/床/餐桌等）时调用；会校验余额、扣款并入屋，"
+                         "并重画对应房间参考图。", make_buy_furniture_tool(plugin))
+        return True
+    except Exception:
+        return False
+
+
+def make_buy_furniture_tool(plugin):
+    async def buy_furniture(event=None, name="", price=0.0, platform="淘宝"):
+        body = str(name or "").strip()
+        housing = getattr(plugin, "housing", None)
+        if not body or housing is None:
+            return {"ok": False, "reason": "empty"}
+        cents = int(float(price or 0) * 100)
+        wallet = getattr(plugin, "wallet", None)
+        try:
+            balance = float(wallet.balance()) if wallet is not None else 0.0
+        except Exception:
+            balance = 0.0
+        if cents > 0 and wallet is not None and balance < cents:
+            return {"ok": False, "reason": "short", "price": cents / 100.0,
+                    "balance": balance / 100.0}
+        try:
+            db = getattr(plugin, "db", None)
+            stamps = list(db.kv_get("furniture_purchases", []) or []) if db is not None else []
+        except Exception:
+            stamps = []
+        import time as _time
+        month_start = _time.mktime((_time.localtime().tm_year, _time.localtime().tm_mon,
+                                    1, 0, 0, 0, 0, 0, -1))
+        used = sum(1 for ts in stamps if float(ts or 0) >= month_start)
+        if used >= 1:
+            return {"ok": False, "reason": "monthly_limit", "kind": "furniture",
+                    "limit": 1, "used": used}
+        result = housing.add_furniture(body)
+        if not result.get("ok"):
+            return result
+        stamps.append(_amo_clock.now_ts())
+        try:
+            if db is not None:
+                db.kv_set("furniture_purchases", stamps[-24:])
+        except Exception as exc:
+            logger.debug("[amo] 家具购买计数写入失败: %r", exc)
+        if cents > 0 and wallet is not None:
+            for method in ("debit", "spend", "pay"):
+                fn = getattr(wallet, method, None)
+                if callable(fn):
+                    try:
+                        fn(cents)
+                    except Exception:
+                        logger.debug("[amo] optional step failed: %r", None)
+                    break
+        room = room_of_item(body)
+        return {"ok": True, "name": body, "room": room, "big": result.get("big"),
+                "redraw": result.get("redraw"), "platform": str(platform or "")}
+    return buy_furniture
+
+
 def build_room_image_prompt(room_type, style, colors, furniture_list, now=None):
     """按房间动态拼生图 Prompt；返回 (正向词, 负向词)。"""
     room_type = str(room_type or "客厅")
@@ -155,7 +360,15 @@ def build_room_image_prompt(room_type, style, colors, furniture_list, now=None):
             "房间里只能出现清单里的家具，不要添加清单外的家具、电器或杂物；"
             "家具要落地、有真实阴影、比例正确，空间不要拥挤。"
             "请将这些物品合理搭配进整体的装修风格中，保持画面的和谐与生活感。"
+            "装修风格和主色调是硬约束（新家第一次生成也按这个来），不要随机换风格、"
+            "不要给家具换颜色，家具颜色以清单为准。"
             % (style, colors, furniture_str))
+    soft_visual = {"living": "地毯、窗帘、挂画、抱枕",
+                   "bedroom": "窗帘、地毯",
+                   "bathroom": "毛巾、浴帘",
+                   "kitchen": "窗帘、桌布"}.get(room_key, "")
+    if soft_visual:
+        attr += "软装只影响画面、不算家具：可以有%s。" % soft_visual
     attr += "画面里不要出现：%s。" % must_not
     season = season_line(now)
     if season:
@@ -225,10 +438,13 @@ class Housing:
             "rooms": default_rooms_config(),
             "rent_cents": 150000,
             "status": "living",
-            "images": {"living": "", "bedroom": ""},
+            "images": {room: "" for room in ROOM_KEYS},
             "images_needed": True,
             "image_status": "pending",
             "last_image_ts": 0,
+            "rooms_needed": list(ROOM_KEYS),
+            "image_fail_count": 0,
+            "image_fail_until": 0,
         }
         return {"version": 1, "residence_id": home["id"], "homes": [home]}
 
@@ -262,10 +478,43 @@ class Housing:
                     rooms = {"living": [], "bedroom": []}
                     for item in home["furniture"]:
                         rooms[room_of_item(item)].append(item)
-            home["room_furniture"] = {
+            room_furniture = {
                 "living": [str(x) for x in (rooms.get("living") or [])],
                 "bedroom": [str(x) for x in (rooms.get("bedroom") or [])],
             }
+            for room_key, default_items in DEFAULT_ROOM_FURNITURE.items():
+                room_furniture[room_key] = [str(x) for x in (rooms.get(room_key) or default_items)]
+            washer_names = [item for item in home["furniture"]
+                            if "洗衣" in str(item) or "烘干" in str(item)]
+            if washer_names:
+                for room_key, items in list(room_furniture.items()):
+                    if room_key != "bathroom":
+                        room_furniture[room_key] = [item for item in items
+                                                    if item not in washer_names]
+                bath = room_furniture.setdefault("bathroom", [])
+                for item in washer_names:
+                    if item not in bath:
+                        bath.append(item)
+            soft_words = ("地毯", "窗帘", "挂画", "绿植", "抱枕", "靠垫")
+            home["furniture"] = [item for item in home.get("furniture", [])
+                                 if not any(word in str(item) for word in soft_words)]
+            for room_key, items in list(room_furniture.items()):
+                room_furniture[room_key] = [item for item in items
+                                            if not any(word in str(item) for word in soft_words)]
+            dedup = {}
+            for room_key, items in list(room_furniture.items()):
+                kept = []
+                seen_slots = set()
+                for item in items:
+                    slot = furniture_slot(item)
+                    if slot and slot in seen_slots:
+                        home["furniture"] = [x for x in home["furniture"] if x != item]
+                        continue
+                    if slot:
+                        seen_slots.add(slot)
+                    kept.append(item)
+                dedup[room_key] = kept
+            home["room_furniture"] = dedup
             rooms_cfg = home.get("rooms")
             rooms_cfg = dict(rooms_cfg) if isinstance(rooms_cfg, dict) else {}
             defaults = default_rooms_config()
@@ -284,10 +533,17 @@ class Housing:
             home.setdefault("rent_cents", 0)
             home.setdefault("status", "living" if home.get("id") == raw.get("residence_id") else "idle")
             images = home.get("images")
-            home["images"] = dict(images) if isinstance(images, dict) else {"living": "", "bedroom": ""}
-            home.setdefault("images_needed", not (home["images"].get("living") and home["images"].get("bedroom")))
-            home.setdefault("image_status", "ready" if (home["images"].get("living") and home["images"].get("bedroom")) else "pending")
+            images = dict(images) if isinstance(images, dict) else {}
+            for room_key in ROOM_KEYS:
+                images.setdefault(room_key, "")
+            home["images"] = images
+            needed = [room_key for room_key in (home.get("rooms_needed") or []) if room_key in ROOM_KEYS]
+            home["rooms_needed"] = needed
+            home["images_needed"] = bool(needed) or not all(images.get(k) for k in ROOM_KEYS)
+            home["image_status"] = "ready" if not home["images_needed"] else "pending"
             home.setdefault("last_image_ts", 0)
+            home.setdefault("image_fail_count", 0)
+            home.setdefault("image_fail_until", 0)
             homes.append(home)
         data = {"version": 1, "residence_id": str(raw.get("residence_id") or homes[0]["id"]), "homes": homes}
         self._kv_set("housing", data)
@@ -298,6 +554,10 @@ class Housing:
 
     # ---------- 查询 ----------
     def homes(self):
+        return [home for home in (self.data.get("homes") or [])
+                if not home.get("hidden")]
+
+    def all_homes(self):
         return list(self.data.get("homes") or [])
 
     def current(self):
@@ -345,10 +605,13 @@ class Housing:
             "rooms": default_rooms_config(),
             "rent_cents": int(rent_cents or 0),
             "status": "idle",
-            "images": {"living": "", "bedroom": ""},
+            "images": {room: "" for room in ROOM_KEYS},
             "images_needed": True,
             "image_status": "pending",
             "last_image_ts": 0,
+            "rooms_needed": list(ROOM_KEYS),
+            "image_fail_count": 0,
+            "image_fail_until": 0,
         }
         if furniture:
             for item in furniture:
@@ -363,11 +626,12 @@ class Housing:
         self._save()
         return home
 
-    def _cleanup_home_images(self, home):
-        """删掉旧家客厅/卧室的物理图片，并把路径置空，防止搬完家还引用旧图。"""
+    def _cleanup_home_images(self, home, rooms=None):
+        """删掉旧家对应房间的物理图片；换房四间全删，换家具只删那一间。"""
         deleted = []
+        rooms = tuple(rooms or ROOM_KEYS)
         images = dict((home or {}).get("images") or {})
-        for room in ("living", "bedroom"):
+        for room in rooms:
             path = str(images.get(room) or "").strip()
             if not path:
                 continue
@@ -378,8 +642,37 @@ class Housing:
             except Exception as exc:
                 logger.debug("[amo] 旧家场景图删除失败（%s）: %s" % (path, exc))
         if isinstance(home, dict):
-            home["images"] = {"living": "", "bedroom": ""}
+            images = dict(home.get("images") or {})
+            for room in rooms:
+                images[room] = ""
+            home["images"] = images
+            home["images_needed"] = not all(images.get(key) for key in ROOM_KEYS)
+        return deleted
+
+    def invalidate_images(self, home=None, reason="", rooms=None, delete=False):
+        """房子/家具/装修变了：删掉旧场景图并标记要重画（2026-11-19）。
+
+        只删这个家自己的图（images 里记录的路径 + image_dir/<id>-living|bedroom.png），
+        不会误删别的家的图。
+        """
+        home = home if isinstance(home, dict) else self.current()
+        rooms = tuple(rooms or ROOM_KEYS)
+        home_id = str((home or {}).get("id") or "")
+        deleted = []
+        if delete:
+            deleted = self._cleanup_home_images(home, rooms)
+        if isinstance(home, dict):
+            needed = set(home.get("rooms_needed") or [])
+            needed.update(rooms)
+            home["rooms_needed"] = [room for room in ROOM_KEYS if room in needed]
             home["images_needed"] = True
+            home["image_status"] = "pending"
+            home["last_image_ts"] = 0
+            home["image_fail_count"] = 0
+            home["image_fail_until"] = 0
+        self.last_image_invalidate = {"home": home_id, "reason": str(reason or ""),
+                                      "deleted": list(deleted)}
+        self._save()
         return deleted
 
     def move_in(self, ref):
@@ -396,13 +689,33 @@ class Housing:
                 # 退租搬进自己买的房：合同标记过期，不再产生房租
                 old["status"] = "expired"
                 old["contract_ended"] = True
+        if old.get("id") != home.get("id"):
+            home["furniture"] = list(old.get("furniture") or [])
+            home["room_furniture"] = {k: list(v) for k, v in
+                                       (old.get("room_furniture") or {}).items()}
+            home["furniture_meta"] = dict(old.get("furniture_meta") or {})
+            for name, meta in home["furniture_meta"].items():
+                if "color_source" not in (meta or {}):
+                    meta["color_source"] = ("name" if any(w in name for w in COLOR_WORDS)
+                                             else "default")
+                if str((meta or {}).get("color_source") or "") == "default":
+                    meta["color"] = home_palette_color(home, furniture_slot(name))
+            old["furniture"] = []
+            old["room_furniture"] = {k: [] for k in (old.get("room_furniture") or {})}
+            old["furniture_meta"] = {}
+            if old.get("kind") == "rent":
+                old["status"] = "expired"
+                old["contract_ended"] = True
+                old["hidden"] = True
+            self.invalidate_images(home, reason="move-in", rooms=ROOM_KEYS)
         self.data["residence_id"] = home["id"]
         for item in self.homes():
             if item.get("id") == home["id"]:
                 item["status"] = "living"
             elif item.get("status") == "living":
                 item["status"] = "idle"
-        home["images_needed"] = not (home["images"].get("living") and home["images"].get("bedroom"))
+        needed = list(home.get("rooms_needed") or [])
+        home["images_needed"] = bool(needed) or not all(home["images"].get(key) for key in ROOM_KEYS)
         home["image_status"] = "ready" if not home["images_needed"] else "pending"
         self.last_move = {"old": old, "deleted": deleted}
         self._save()
@@ -419,9 +732,7 @@ class Housing:
             home["style"] = str(style)
         if colors:
             home["colors"] = str(colors)
-        home["images_needed"] = True
-        home["image_status"] = "pending"
-        self._save()
+        self.invalidate_images(home, reason="style", rooms=ROOM_KEYS)
         return home
 
     def rent_out(self, ref, rent_cents=0):
@@ -460,25 +771,94 @@ class Housing:
         self._save()
         return True, "已卖掉「%s」，钱到账了。" % name
 
-    def add_furniture(self, name):
+    def add_furniture(self, name, source="", color=""):
         """添一件家具；大件触发一次场景图更新。"""
         body = str(name or "").strip()
         home = self.current()
         if not body:
             return {"ok": False, "reason": "empty", "home": home}
+        if any(word in body for word in FURNITURE_EXCLUDE):
+            return {"ok": False, "reason": "not_furniture", "msg": "这是日用品，不算家具"}
         if body in home.get("furniture", []):
             return {"ok": False, "reason": "exists", "home": home, "big": False, "redraw": False}
+        target_room = room_of_item(body)
+        slot = furniture_slot(body)
+        category = furniture_category(body)
+        if slot or category:
+            def same_kind(entry):
+                if slot:
+                    return furniture_slot(entry) == slot
+                return furniture_category(entry) == category
+            home["furniture"] = [item for item in home.get("furniture", [])
+                                  if not same_kind(item)]
+            rooms_cfg = home.setdefault("room_furniture", {})
+            for room_key, items in list(rooms_cfg.items()):
+                rooms_cfg[room_key] = [item for item in items if not same_kind(item)]
+        defaults = set(DEFAULT_ROOM_FURNITURE.get(target_room) or ())
+        room_items = [item for item in (home.get("room_furniture") or {}).get(target_room) or []
+                      if item not in defaults
+                      and not any(word in str(item) for word in FURNITURE_EXCLUDE)]
+        same_slot = furniture_slot(body)
+        replacing = any(furniture_slot(item) == same_slot for item in room_items) if same_slot else False
+        if len(room_items) >= ROOM_FURNITURE_LIMIT and not replacing:
+            return {"ok": False, "reason": "room_full",
+                    "msg": "%s放不下了（每间最多 %d 件）" % (target_room, ROOM_FURNITURE_LIMIT)}
         home["furniture"].append(body)
         rooms = home.setdefault("room_furniture", {"living": [], "bedroom": []})
-        rooms.setdefault(room_of_item(body), []).append(body)
+        rooms.setdefault(target_room, []).append(body)
+        meta = home.setdefault("furniture_meta", {})
+        has_name_color = any(word in body for word in COLOR_WORDS)
+        meta[body] = {"color": color or furniture_color(home, body),
+                      "color_source": "name" if (color or has_name_color) else "default",
+                      "source": str(source or ""),
+                      "at": _amo_clock.now_ts()}
         big = classify_furniture(body) == "big"
         redraw = False
-        if big:
-            home["images_needed"] = True
-            home["image_status"] = "pending"
-            redraw = self.can_redraw()
+        # 任何家具都重画它所在房间；旧图先留着，生成成功再替换
+        self.invalidate_images(home, reason="furniture:" + body,
+                               rooms=(target_room,))
+        redraw = self.can_redraw()
         self._save()
         return {"ok": True, "home": home, "big": big, "redraw": redraw}
+
+    def furniture_detail(self, home=None):
+        """只列这个住处真实拥有的家具（浴室/厨房的默认陈设不算家具）。"""
+        home = home if isinstance(home, dict) else self.current()
+        waiting = set(home.get("rooms_needed") or [])
+        grouped: dict[str, list[str]] = {room: [] for room in ROOM_KEYS}
+        for name in home.get("furniture") or []:
+            body = str(name or "")
+            if any(word in body for word in FURNITURE_EXCLUDE):
+                continue
+            grouped.setdefault(room_of_item(body), []).append(body)
+        out = []
+        for room, label in (("living", "客厅"), ("bedroom", "卧室"),
+                            ("bathroom", "浴室"), ("kitchen", "厨房")):
+            items = []
+            for name in grouped.get(room) or []:
+                meta = (home.get("furniture_meta") or {}).get(name, {})
+                items.append({"name": name,
+                              "display": furniture_display(home, name),
+                              "source": str(meta.get("source") or ""),
+                              "at": meta.get("at") or 0})
+            out.append({"room": room, "label": label, "items": items,
+                        "pending": room in waiting})
+        return out
+
+    def remove_furniture(self, name):
+        """退货/丢掉家具：从清单移除，所在房间标记重画（旧图删除）。"""
+        body = str(name or "").strip()
+        home = self.current()
+        if not body:
+            return None
+        room = room_of_item(body)
+        home["furniture"] = [item for item in home.get("furniture", []) if item != body]
+        rooms_cfg = home.setdefault("room_furniture", {})
+        for key, items in list(rooms_cfg.items()):
+            rooms_cfg[key] = [item for item in items if item != body]
+        (home.setdefault("furniture_meta", {})).pop(body, None)
+        self.invalidate_images(home, reason="remove-furniture:" + body, rooms=(room,))
+        return {"ok": True, "room": room}
 
     def on_bankruptcy(self):
         """破产/法拍：强制搬回最便宜的出租屋。"""
@@ -585,8 +965,11 @@ class Housing:
     def set_room_image(self, room, path):
         home = self.current()
         images = home.setdefault("images", {})
-        images[str(room or "living")] = str(path or "")
-        home["images_needed"] = not (images.get("living") and images.get("bedroom"))
+        room_key = str(room or "living")
+        images[room_key] = str(path or "")
+        needed = [item for item in (home.get("rooms_needed") or []) if item != room_key]
+        home["rooms_needed"] = needed
+        home["images_needed"] = bool(needed) or not all(images.get(key) for key in ROOM_KEYS)
         self._save()
         return home
 
@@ -595,22 +978,34 @@ class Housing:
         import time as _time
         now = float(now if now is not None else _amo_clock.now_ts())
         try:
-            last = float(self.current().get("last_image_ts") or 0)
+            home = self.current()
+            last = float(home.get("last_image_ts") or 0)
+            fail_until = float(home.get("image_fail_until") or 0)
         except Exception:
             last = 0
+            fail_until = 0
+        if fail_until and now < fail_until:
+            return False
         return last <= 0 or (now - last) >= IMAGE_COOLDOWN_SECONDS
 
     def mark_image_ready(self, now=None):
         import time as _time
         home = self.current()
+        home["rooms_needed"] = []
+        home["image_fail_count"] = 0
+        home["image_fail_until"] = 0
         home["last_image_ts"] = float(now if now is not None else _amo_clock.now_ts())
         home["image_status"] = "ready"
         home["images_needed"] = False
         self._save()
         return home
 
-    def mark_image_failed(self):
+    def mark_image_failed(self, now=None):
         home = self.current()
+        count = int(home.get("image_fail_count") or 0) + 1
+        home["image_fail_count"] = count
+        delay = min(1800 * (2 ** min(count - 1, 4)), 6 * 3600)
+        home["image_fail_until"] = float(now if now is not None else _amo_clock.now_ts()) + delay
         home["image_status"] = "pending"
         home["images_needed"] = True
         self._save()
@@ -619,7 +1014,17 @@ class Housing:
     def room_prompt(self, room_type="客厅", now=None):
         home = self.current()
         key = room_key_of(room_type)
-        items = (home.get("room_furniture") or {}).get(key) or DEFAULT_ROOM_FURNITURE.get(key) or []
+        owned = list((home.get("room_furniture") or {}).get(key) or [])
+        owned = [item for item in owned
+                 if item not in (DEFAULT_ROOM_FURNITURE.get(key) or ())
+                 and not any(word in str(item) for word in FURNITURE_EXCLUDE)]
+        if not owned:
+            owned = list(DEFAULT_ROOM_FURNITURE.get(key) or [])
+        else:
+            owned_slots = {furniture_slot(item) for item in owned}
+            owned.extend(item for item in (DEFAULT_ROOM_FURNITURE.get(key) or ())
+                         if furniture_slot(item) not in owned_slots)
+        items = [furniture_display(home, item) for item in owned]
         return build_room_image_prompt(room_type, home.get("style"), home.get("colors"), items, now)
 
     def room_scene_line(self, room="living"):

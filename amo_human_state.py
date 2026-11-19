@@ -206,6 +206,8 @@ WEATHER_REFRESH_WINDOWS = (
     ("evening", (19 * 60 + 40, 20 * 60)),
 )
 WEATHER_REFRESH_MAX = 3
+#: 失败缓存/退避：2 小时（2026-11-19 用户要求，接口坏了就别反复撞）
+WEATHER_FAIL_TTL = 2 * 3600
 
 class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStateMixin, DateStateMixin):
     def __init__(self, plugin):
@@ -908,7 +910,7 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             logger.warning("[amo] 和风天气接口失败: %s %r" % (type(exc).__name__, exc))
             return None
 
-    def _cache_daily_empty(self, city, days, ttl=1800):
+    def _cache_daily_empty(self, city, days, ttl=WEATHER_FAIL_TTL):
         """预报失败也写一份空缓存：401/断网时别每次问天气都重新打接口。"""
         try:
             from .amo_state_store import for_plugin as _state_store_for
@@ -1016,7 +1018,7 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         name = (self.p.cfg_str("weather_city_name", "") or "").strip()
         return (name or raw or city_or_empty(self.p)).strip()
 
-    async def refresh_weather(self, force=False):
+    async def refresh_weather(self, force=False, city_switch=False):
         try:
             self.p._reload_config_if_changed()
         except Exception as _amo_exc:
@@ -1041,9 +1043,12 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         if force and current.get("ts") and now_ts() - to_float(current["ts"], 0) < 3:
             return current
         slot_key, slot_state = await self._weather_slot_due()
-        used = len(slot_state.get("done") or {})
-        need_network = bool(force) or bool(slot_key)
-        if not need_network or used >= WEATHER_REFRESH_MAX:
+        done_map = slot_state.get("done") or {}
+        city_used = bool(done_map.get("city_switch"))
+        used = len([key for key in done_map if key != "city_switch"])
+        city_ok = bool(city_switch) and not city_used
+        need_network = bool(force) or bool(slot_key) or city_ok
+        if not need_network or (used >= WEATHER_REFRESH_MAX and not city_ok):
             # 没到点 / 今天 3 次额度已用完：只读缓存，没缓存就给模拟数据
             if current:
                 return current
@@ -1056,7 +1061,7 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         old_tag = current.get("tag")
         # 拉取失败先退避 5 分钟：401/断网时别每个 tick 都去撞接口（401 也计费）
         fail_ts = to_float(getattr(self, "_weather_fail_ts", 0), 0)
-        if not force and fail_ts and now_ts() - fail_ts < 300:
+        if not force and fail_ts and now_ts() - fail_ts < WEATHER_FAIL_TTL:
             return current or self._simulate_weather()
         data = None
         if key and city:
@@ -1071,7 +1076,7 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             self._weather_fail_ts = 0
         slot_state = dict(slot_state)
         done = dict(slot_state.get("done") or {})
-        done[slot_key or ("manual:%d" % used)] = now_ts()
+        done["city_switch" if (city_switch and not city_used) else (slot_key or ("manual:%d" % used))] = now_ts()
         slot_state["done"] = done
         slot_state["date"] = today_str()
         self.db.kv_set("weather_slot_state", slot_state)

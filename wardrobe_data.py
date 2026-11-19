@@ -77,6 +77,7 @@ CATEGORY_LABELS = (
     ("bottom", "裤子"),
     ("skirt", "裙子"),
     ("shoes", "鞋子"),
+    ("socks", "袜子"),
 )
 CATEGORY_KEYS = tuple(key for key, _ in CATEGORY_LABELS)
 CATEGORY_NAMES = dict(CATEGORY_LABELS)
@@ -198,6 +199,47 @@ SWIM_STRONG_WORDS = ("游泳", "泳池", "游泳馆", "泳馆", "水上乐园", 
 SWIM_NEGATIVE_WORDS = ("散步", "拍照", "看海", "路过", "买泳装")
 SWIM_SPOTS = ("游泳馆", "泳池", "海边", "沙滩", "水上乐园", "水世界")
 SHOE_WORDS = ("鞋", "靴", "拖鞋", "凉拖", "玛丽珍")
+#: 袜子单独一类：只有出门穿，在家/晚上不穿（2026-11-19 用户要求）
+SOCKS_WORDS = ("丝袜", "连裤袜", "长筒袜", "短袜", "棉袜", "船袜", "打底袜",
+               "渔网袜", "过膝袜", "堆堆袜", "袜子")
+SOCKS_SEED_VERSION = 1
+SEED_SOCKS = (
+    "黑色连裤袜", "肉色连裤袜", "黑色丝袜", "肉色丝袜", "黑色长筒袜",
+    "白色长筒袜", "灰色过膝袜", "黑色渔网袜", "棉质短袜", "船袜",
+)
+def _ensure_socks_items(data, new_id):
+    """补齐 10 款袜子（只加缺的，不复活用户删掉的同名以外单品）。"""
+    items = data.setdefault("items", [])
+    have = {(item.get("category"), str(item.get("name") or "")) for item in items}
+    for name in SEED_SOCKS:
+        if ("socks", name) in have:
+            continue
+        items.append({"id": new_id("i-"), "category": "socks", "name": name,
+                      "source": "seed", "gift_id": "",
+                      "created_at": _amo_clock.now_ts()})
+    return items
+
+def is_long_socks(name):
+    """长袜/连裤袜：穿长裙时不能配，只能配短袜；长袜只能配短裤。"""
+    text = str(name or "")
+    return any(word in text for word in ("连裤袜", "打底袜", "丝袜", "长筒袜",
+                                         "过膝袜", "渔网袜", "堆堆袜"))
+
+def is_home_socks(name):
+    """棉袜/船袜这类可以在家穿的袜子（长袜/连裤袜只出门穿）。"""
+    text = str(name or "")
+    if not text or "袜" not in text or is_long_socks(text):
+        return False
+    return any(word in text for word in ("棉", "船", "短袜"))
+
+def is_short_socks(name):
+    text = str(name or "")
+    return bool(text) and ("袜" in text) and not is_long_socks(text)
+
+def is_tights(name):
+    """连裤袜/丝袜/打底袜：穿了可以不再穿裤子。"""
+    text = str(name or "")
+    return any(word in text for word in ("连裤袜", "打底袜", "丝袜"))
 BOTTOM_WORDS = ("裤", "裙")
 TOP_WORDS = (
     "衬衫", "上衣", "T恤", "t恤", "卫衣", "毛衣", "针织衫", "开衫", "外套", "大衣",
@@ -322,6 +364,8 @@ def classify_item(name):
     text = str(name or "").strip()
     if not text:
         return ""
+    if any(word in text for word in SOCKS_WORDS):
+        return "socks"
     if any(word in text for word in SHOE_WORDS):
         return "shoes"
     if any(word in text for word in COAT_WORDS):

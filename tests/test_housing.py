@@ -103,12 +103,12 @@ class FurnitureTests(unittest.TestCase):
         self.p = FakePlugin()
         self.h = Housing(self.p)
 
-    def test_small_item_does_not_need_new_image(self):
+    def test_small_item_also_needs_new_image(self):
         self.h.current()["images_needed"] = False
-        out = self.h.add_furniture("抱枕")
+        out = self.h.add_furniture("台灯")
         self.assertTrue(out["ok"])
         self.assertFalse(out["big"])
-        self.assertFalse(self.h.current()["images_needed"])
+        self.assertTrue(self.h.current()["images_needed"], "小家具也会出现在画面里")
 
     def test_big_item_triggers_new_image(self):
         self.h.current()["images_needed"] = False
@@ -137,7 +137,7 @@ class BankruptcyTests(unittest.TestCase):
         home = h.on_bankruptcy()
         self.assertIsNotNone(home)
         self.assertEqual(h.current()["kind"], "rent")
-        self.assertEqual(h.current()["rent_cents"], 150000)
+        self.assertEqual(h.current()["rent_cents"], 100000)
 
     def test_bankruptcy_creates_rent_if_none(self):
         p = FakePlugin()
@@ -170,7 +170,8 @@ class MoveCleanupTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertFalse(os.path.exists(self.living))
         self.assertFalse(os.path.exists(self.bedroom))
-        self.assertEqual(self.old["images"], {"living": "", "bedroom": ""})
+        self.assertEqual(self.old["images"],
+                         {"living": "", "bedroom": "", "bathroom": "", "kitchen": ""})
         self.assertTrue(self.old["images_needed"])
 
     def test_rent_to_own_ends_contract(self):
@@ -254,9 +255,10 @@ class ImageTests(unittest.TestCase):
     def test_set_room_images_clears_needed(self):
         p = FakePlugin()
         h = Housing(p)
-        h.set_room_image("living", "living.png")
-        self.assertTrue(h.current()["images_needed"])
-        h.set_room_image("bedroom", "bedroom.png")
+        for room in ("living", "bedroom", "bathroom"):
+            h.set_room_image(room, room + ".png")
+            self.assertTrue(h.current()["images_needed"], room)
+        h.set_room_image("kitchen", "kitchen.png")
         self.assertFalse(h.current()["images_needed"])
         self.assertEqual(h.room_image("living"), "living.png")
 

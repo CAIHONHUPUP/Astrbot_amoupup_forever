@@ -178,6 +178,7 @@ class WardrobeApiMixin(_MixinBase):
                 bottom=data.get("bottom", ""),
                 skirt=data.get("skirt", ""),
                 shoes=data.get("shoes", ""),
+                socks=data.get("socks", ""),
             )
         except Exception as exc:
             logger.debug("[amo] 保存今日穿搭失败: %s" % exc)

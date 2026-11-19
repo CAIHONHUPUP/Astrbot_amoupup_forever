@@ -1009,11 +1009,29 @@ class GiftEngine:
             data["gifts"].append(gift)
             self._save()
         wardrobe = getattr(self.plugin, "wardrobe", None)
-        if wardrobe is not None:
+        if True:
             try:
-                added = wardrobe.add_from_gift(item, gift.get("id", ""))
+                housing = getattr(self.plugin, "housing", None)
+                try:
+                    from .housing import furniture_slot
+                except ImportError:
+                    from housing import furniture_slot
+                housing = getattr(self.plugin, "housing", None)
+                try:
+                    from .housing import furniture_slot
+                except ImportError:
+                    from housing import furniture_slot
+                added = None
+                if housing is not None and furniture_slot(str(item)):
+                    result = housing.add_furniture(str(item), source="他送的")
+                    if result.get("ok"):
+                        added = {"ok": True, "category": "furniture"}
+                if added is None and wardrobe is not None:
+                    added = wardrobe.add_from_gift(item, gift.get("id", ""))
+                if added is None:
+                    added = {"ok": True, "category": "household"}
                 if added and added.get("ok"):
-                    logger.info("[amo] 礼物进衣柜：%s（%s）" % (item, added.get("category", "")))
+                    logger.info("[amo] 礼物入库：%s（%s）" % (item, added.get("category", "")))
             except Exception as _amo_exc:
                 _note_swallowed("gift_engine.GiftEngine.add_gift", _amo_exc)
         if wish_id:

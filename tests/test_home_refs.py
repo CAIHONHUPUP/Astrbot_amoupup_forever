@@ -69,12 +69,12 @@ class HomeRefTests(unittest.TestCase):
         self.assertIn("单人床", prompt)
         self.assertIn("空无一人", prompt)
 
-    def test_generates_both_rooms_and_saves(self):
+    def test_generates_four_rooms_and_saves(self):
         out = asyncio.run(home_refs.ensure_room_images(self.plugin))
-        self.assertEqual(set(out), {"living", "bedroom"})
+        self.assertEqual(set(out), {"living", "bedroom", "bathroom", "kitchen"})
         for path in out.values():
             self.assertTrue(os.path.isfile(path))
-        self.assertEqual(len(self.omni.calls), 2)
+        self.assertEqual(len(self.omni.calls), 4)
         self.assertTrue(self.plugin.housing.room_image("living"))
         self.assertFalse(self.plugin.housing.current()["images_needed"])
 
@@ -88,7 +88,7 @@ class HomeRefTests(unittest.TestCase):
         asyncio.run(home_refs.ensure_room_images(self.plugin))
         self.omni.calls.clear()
         asyncio.run(home_refs.ensure_room_images(self.plugin, force=True))
-        self.assertEqual(len(self.omni.calls), 2)
+        self.assertEqual(len(self.omni.calls), 4)
 
     def test_failure_keeps_text_fallback(self):
         self.omni.fail = True

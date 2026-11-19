@@ -20,7 +20,8 @@ except ImportError:  # 直接按文件加载时
         from amo_image_common import find_omni  # type: ignore[no-redef]
         from outfit_refs import _as_png, _decode_item, _download  # type: ignore[no-redef]
 
-ROOMS = (("living", "客厅"), ("bedroom", "卧室"))
+ROOMS = (("living", "客厅"), ("bedroom", "卧室"),
+         ("bathroom", "浴室"), ("kitchen", "厨房"))
 
 
 def build_room_prompt(home, room_label="客厅", now=None):
@@ -30,7 +31,15 @@ def build_room_prompt(home, room_label="客厅", now=None):
         from .housing import build_room_image_prompt, room_of_item
     except ImportError:
         from housing import build_room_image_prompt, room_of_item
-    key = "bedroom" if "卧" in str(room_label) else "living"
+    label = str(room_label or "")
+    if "浴" in label or "厕" in label:
+        key = "bathroom"
+    elif "厨" in label:
+        key = "kitchen"
+    elif "卧" in label:
+        key = "bedroom"
+    else:
+        key = "living"
     items = (home.get("room_furniture") or {}).get(key)
     if not items:
         items = [item for item in (home.get("furniture") or [])
@@ -66,7 +75,9 @@ async def ensure_room_images(plugin, housing=None, force=False, session=None):
     failed = 0
     for room, label in ROOMS:
         path = room_path(housing, room)
-        if os.path.isfile(path) and os.path.getsize(path) > 0 and not force:
+        needed = str(room) in set((housing.current() or {}).get("rooms_needed") or [])
+        if (os.path.isfile(path) and os.path.getsize(path) > 0
+                and not force and not needed):
             housing.set_room_image(room, path)
             out[room] = path
             continue

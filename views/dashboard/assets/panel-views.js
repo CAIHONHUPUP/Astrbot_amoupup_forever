@@ -702,6 +702,7 @@ window.amoScheduleSourceLabel = amoScheduleSourceLabel;
       if (name === "schedule") loadSchedule();
       if (name === "profiles") loadProfiles();
       if (name === "gift") loadGift();
+      if (name === "shop") loadShop();
       if (name === "wardrobe") { loadWardrobe(); loadPoses(); }
       if (name === "photo") loadPhoto();
       if (name === "diary") loadDiary();
@@ -717,6 +718,8 @@ window.amoScheduleSourceLabel = amoScheduleSourceLabel;
     if (usageRefreshButton) usageRefreshButton.addEventListener("click", () => loadUsage(true));
     const giftRefreshButton = document.getElementById("giftRefresh");
     if (giftRefreshButton) giftRefreshButton.addEventListener("click", () => loadGift());
+    const shopRefreshButton = document.getElementById("shopRefresh");
+    if (shopRefreshButton) shopRefreshButton.addEventListener("click", () => loadShop());
     const wardrobeRefreshButton = document.getElementById("wardrobeRefresh");
     if (wardrobeRefreshButton) wardrobeRefreshButton.addEventListener("click", () => loadWardrobe());
     async function pollWardrobeRefs() {

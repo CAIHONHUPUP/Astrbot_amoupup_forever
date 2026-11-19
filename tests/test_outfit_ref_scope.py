@@ -38,6 +38,26 @@ class FakePlugin:
 SLEEP_ITEM = {"id": "i-1", "category": "bottom", "name": "白色棉质睡裤", "sleep": True}
 
 
+class SocksRefTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="amo-socks-ref-")
+        self.plugin = FakePlugin(self.tmp)
+        self.socks_path = os.path.join(outfit_refs.base_dir(self.plugin), "袜子", "棉质短袜.png")
+        os.makedirs(os.path.dirname(self.socks_path), exist_ok=True)
+        with open(self.socks_path, "wb") as fh:
+            fh.write(b"png")
+
+    def test_socks_ref_is_included(self):
+        outfit = {"skirt": "", "shoes": "", "socks": "棉质短袜", "sleep": False}
+        refs = outfit_refs.refs_for_outfit(self.plugin, outfit, limit=5)
+        self.assertIn(self.socks_path, refs)
+
+    def test_long_socks_skipped_ok(self):
+        outfit = {"socks": "黑色长筒袜"}
+        refs = outfit_refs.refs_for_outfit(self.plugin, outfit, limit=5)
+        self.assertEqual(refs, [])
+
+
 class EnsureRefScopeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="amo-refscope-")

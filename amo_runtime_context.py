@@ -698,8 +698,13 @@ class RuntimeContextMixin(RuntimeMixinBase):
                             from .laundry_engine import LifeFacts
                             _life = LifeFacts(self)
                             _life.tick()
+                            _life_facts = _life.snapshot()
                             parts.append("【生活事实】" + _json.dumps(
-                                _life.snapshot(), ensure_ascii=False))
+                                _life_facts, ensure_ascii=False))
+                            if _life_facts.get("hand_wash"):
+                                parts.append(
+                                    "【洗衣】家里没有洗衣机：衣服都是手洗的（30 分钟洗完再晾 6–12 小时），"
+                                    "袜子每天顺手洗；不要说用洗衣机洗。")
                             try:
                                 from .ecommerce_engine import EcommerceEngine
                                 _shop = EcommerceEngine(self)
@@ -1060,6 +1065,18 @@ class RuntimeContextMixin(RuntimeMixinBase):
             _shop = self.db.kv_get("shopping_prompt", {}) or {}
             if isinstance(_shop, dict) and _shop.get("line") and float(_shop.get("until") or 0) > now_ts():
                 parts.append("【购物】" + str(_shop.get("line")))
+            try:
+                _arrival = self.db.kv_get("shop_arrival", None)
+                if isinstance(_arrival, dict) and _arrival.get("items"):
+                    pending = [item for item in _arrival["items"] if not item.get("notified")]
+                    if pending:
+                        lines = "、".join(str(item.get("line") or "") for item in pending)
+                        parts.append("【快递】快递到了：" + lines + "（可以顺口说一句）")
+                        for item in pending:
+                            item["notified"] = True
+                        self.db.kv_set("shop_arrival", _arrival)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.shop_arrival", _amo_exc)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.shop", _amo_exc)
         try:

@@ -47,6 +47,10 @@ class LifecycleMixin:
             ok2 = register_ecommerce_tools(self, manager)
             logger.info("[amo] LLM tools online_order/add_to_cart/user_gift: %s",
                         "registered" if ok2 else "skipped")
+            from .housing import register_buy_furniture
+            okf = register_buy_furniture(self, manager)
+            logger.info("[amo] LLM tool buy_furniture: %s",
+                        "registered" if okf else "skipped")
             from .draw_engine import register_send_photo
             ok3 = register_send_photo(self, manager)
             logger.info("[amo] LLM tool send_photo: %s", "registered" if ok3 else "skipped")

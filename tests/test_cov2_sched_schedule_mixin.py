@@ -143,7 +143,7 @@ class FakeState:
     def prompt_text(self, snap=None):
         return "状态提示"
 
-    async def refresh_weather(self, force=False):
+    async def refresh_weather(self, force=False, city_switch=False):
         self.refresh_calls.append(force)
         return {"text": "晴", "temp": 20}
 
