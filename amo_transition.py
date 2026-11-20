@@ -1195,6 +1195,9 @@ def _push_after(rows, order, from_pos, floor_min):
             continue
         row = rows[index]
         if isinstance(row, dict):
+            # 2026-11-21：顺延留痕，下一次提交可以把原区间合并回来
+            row["origin_start"] = row.get("start")
+            row["truncated_by"] = "transit"
             row["start"] = _minute_text(new_start)
             row["end"] = _minute_text(new_end)
         logger.info("[amo] 通勤块占位：日程块 %s 顺延到 %s", _minute_text(start),

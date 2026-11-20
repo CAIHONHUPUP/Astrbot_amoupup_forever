@@ -19,13 +19,21 @@ def block(start, end, activity, category="life", **extra):
 
 
 class DropShortBlocksTests(unittest.TestCase):
-    def test_short_is_dropped(self):
+    def test_marked_fragment_is_dropped(self):
+        # 2026-11-21：只有截断残骸才丢
         kept, dropped = sched.drop_short_blocks([
-            block("20:39", "20:40", "和闺蜜吃饭", "social"),
+            block("20:39", "20:40", "和闺蜜吃饭", "social", truncated_by="date_finish"),
             block("20:00", "21:00", "在家", "rest"),
         ])
         self.assertEqual(1, len(dropped))
         self.assertEqual("在家", kept[0]["activity"])
+
+    def test_real_short_event_kept(self):
+        kept, dropped = sched.drop_short_blocks([
+            block("20:00", "20:04", "到了楼下小馆", "meal"),
+        ])
+        self.assertEqual([], dropped)
+        self.assertEqual(1, len(kept))
 
     def test_normal_kept(self):
         kept, dropped = sched.drop_short_blocks([block("18:00", "18:20", "路上", "commute")])

@@ -200,21 +200,45 @@ def _block_identity(row):
             str(row.get("activity") or ""))
 
 
+def _same_activity(a, b):
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    return (str(a.get("activity") or "") == str(b.get("activity") or "")
+            and str(a.get("place") or "") == str(b.get("place") or ""))
+
+
 def drop_short_blocks(items, min_minutes=MIN_BLOCK_MINUTES):
-    """丢掉 < min_minutes 的碎片块，返回 (保留, 丢掉)。"""
+    """丢掉「截断残骸」，保留真实短事件（2026-11-21 用户口径）。
+
+    只有满足一条才丢：
+    - 带 truncated_by（now/transit/date_finish 等截断标记）；
+    - 与相邻块同活动同地点（整点切碎/回滚残片）。
+    「到了楼下」这种 4 分钟的真实短事件必须保留。
+    """
+    rows = [dict(row) if isinstance(row, dict) else row for row in (items or [])]
+    indexed = [(index, row) for index, row in enumerate(rows) if isinstance(row, dict)]
+    short_flags = {}
+    for index, row in indexed:
+        begin, finish = _hm(row.get("start")), _hm(row.get("end"))
+        short_flags[index] = (begin is not None and finish is not None
+                              and finish > begin and finish - begin < int(min_minutes))
     kept, dropped = [], []
-    for row in items or []:
-        if not isinstance(row, dict):
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or not short_flags.get(index):
             kept.append(row)
             continue
-        begin, finish = _hm(row.get("start")), _hm(row.get("end"))
-        if begin is None or finish is None or finish <= begin:
-            kept.append(row)   # 空/倒置时段交给后面的防御逻辑
-            continue
-        if finish - begin < int(min_minutes):
+        if row.get("truncated_by"):
             dropped.append(row)
             continue
-        kept.append(row)
+        neighbours = []
+        if index > 0:
+            neighbours.append(rows[index - 1])
+        if index + 1 < len(rows):
+            neighbours.append(rows[index + 1])
+        if any(_same_activity(row, other) for other in neighbours):
+            dropped.append(row)
+            continue
+        kept.append(row)   # 真实短事件
     return kept, dropped
 
 
@@ -286,6 +310,86 @@ def restore_appointments(old_items, new_items, source=""):
     return merged, restored
 
 
+#: 需要"下楼/走路/坐车"才能过去的区域组合
+_TRAVEL_ZONES = ("home", "office", "restaurant", "mall", "scenic", "hospital", "street")
+
+
+def place_continuity_problems(items):
+    """相邻块地点跳变、中间却没有路上块 → 瞬移（2026-11-21）。
+
+    「楼下小馆」这种同楼内的走动不算：地点前缀相同或含"楼下"时放行。
+    """
+    rows = [dict(row) for row in (items or []) if isinstance(row, dict)]
+    rows.sort(key=lambda row: str(row.get("start") or ""))
+
+    def _zone(row):
+        zone = str(row.get("zone") or "")
+        if zone:
+            return zone
+        place = str(row.get("place") or "")
+        return "home" if any(w in place for w in ("家", "卧室", "客厅", "沙发")) else ""
+
+    def _area(place):
+        """地点归属的大区域：按「·」取前缀，同一栋楼/同一个商圈算一处。"""
+        text = str(place or "").strip()
+        return text.split("·")[0] if "·" in text else text
+
+    def _same_area(a_place, b_place):
+        a, b = str(a_place or ""), str(b_place or "")
+        if not a or not b:
+            return False
+        if a == b or a in b or b in a:
+            return True
+        return bool(_area(a)) and _area(a) == _area(b)
+
+    problems = []
+    for prev, row in zip(rows, rows[1:]):
+        if str(prev.get("end") or "") != str(row.get("start") or ""):
+            continue
+        a_zone, b_zone = _zone(prev), _zone(row)
+        if not a_zone or not b_zone or a_zone == b_zone:
+            continue
+        if a_zone in ("road", "transit") or b_zone in ("road", "transit"):
+            continue
+        if a_zone.startswith("home") and b_zone.startswith("home"):
+            continue
+        a_place, b_place = str(prev.get("place") or ""), str(row.get("place") or "")
+        if "楼下" in b_place or "楼下" in a_place:
+            continue
+        if _same_area(a_place, b_place):
+            continue   # 写字楼 ↔ 写字楼附近、商场 ↔ 商场·餐厅：同一区域，不用通勤块
+        if a_zone not in _TRAVEL_ZONES and not a_zone.startswith("home"):
+            continue
+        if b_zone not in _TRAVEL_ZONES and not b_zone.startswith("home"):
+            continue
+        problems.append("%s %s→%s（%s→%s）" % (str(prev.get("end") or ""),
+                                              a_place or a_zone, b_place or b_zone,
+                                              prev.get("activity"), row.get("activity")))
+    return problems
+
+
+#: 重生成去抖：同一�� 30 秒内被多个功能触发时只落库一次（2026-11-21）
+SCHEDULE_REGEN_DEBOUNCE_SECONDS = 30
+
+
+def regen_debounced(db, day, force=False, gap=SCHEDULE_REGEN_DEBOUNCE_SECONDS):
+    """重生成是否应当被去抖掉；放行时顺手记时间戳。"""
+    if force or int(gap) <= 0:
+        return False
+    key = "schedule_ensure_ts:" + str(day)
+    try:
+        last = float(db.kv_get(key, 0) or 0)
+    except Exception:
+        last = 0.0
+    if last and now_ts() - last < int(gap):
+        return True
+    try:
+        db.kv_set(key, now_ts())
+    except Exception as _amo_exc:
+        _note_swallowed("amo_state_schedule.regen_debounce", _amo_exc)
+    return False
+
+
 def freeze_past(old_items, new_items, now_text, enabled=True):
     """今天已结束的时段只读：保留旧块，丢掉新块对过去的改写。"""
     if not enabled:
@@ -303,7 +407,9 @@ def freeze_past(old_items, new_items, now_text, enabled=True):
         if end is not None and end <= cut:
             continue
         if start is not None and start < cut < (end or 24 * 60):
-            row = dict(row, start=now_text)
+            # 2026-11-21：截断必须留痕，否则碎片和真实短事件分不开
+            row = dict(row, start=now_text, truncated_by="now",
+                       origin_start=row.get("start"))
         out.append(row)
     return sorted(out, key=lambda row: str((row or {}).get("start") or ""))
 
@@ -617,7 +723,9 @@ class ScheduleStateMixin(_MixinBase):
                             len(_self_trimmed))
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.commit.self_overlap", _amo_exc)
-        # 第十轮 B1：跨地点切换补一段独立通勤块，别再 5 分钟瞬移回家
+        # 第十轮 B1：跨地点切换补一段独立通勤块，别再 5 分钟瞬移回家。
+        # 2026-11-21：保持白名单——放宽到所有来源会把 finance 的 10 分钟覆盖块
+        # 顺延走（test_finance_overlay 立刻红），地点连续性交给守卫+修复脚本。
         if day_text == today_str() and str(source or "") in self._TRANSIT_SOURCES:
             try:
                 try:
@@ -1111,8 +1219,8 @@ class ScheduleStateMixin(_MixinBase):
         _restored, _short = [], []
         try:
             new_items = protect_locked(old_items, new_items, source)
-            # 只拦「自主生成」的写入改写历史；显式来源（chat/manual/command/test/snapshot）
-            # 仍可改，补历史块/补日记都靠它们。
+            # 只有 transit 会走到这里（2026-11-21 核对）：跨过 now 的交通块把起点挪到
+            # 现在并打 truncated_by 标记；其它来源不截断，避免"约定"被改写。
             new_items = freeze_past(old_items, new_items, now_text,
                                     enabled=(str(source or "") == "transit" and day == today))
             # 2026-11-20：整段重算会悄悄吞掉别人刚排的预约块；这里加回来（用户/整理类来源不受限）
@@ -1129,6 +1237,13 @@ class ScheduleStateMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.guard.pre", _amo_exc)
         new_items = self._normalize_schedule_items(new_items, source, day)
+        try:
+            _jumps = place_continuity_problems(new_items)
+            if _jumps:
+                logger.warning("[amo] 日程地点不连续 %d 处（source=%s day=%s）：%s",
+                               len(_jumps), source or "-", day, "；".join(_jumps[:3]))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.continuity", _amo_exc)
         try:
             _sick_fn = getattr(self, "on_sick_leave", None)
             _sick = bool(_sick_fn(day)) if callable(_sick_fn) and day else False
@@ -2344,6 +2459,12 @@ class ScheduleStateMixin(_MixinBase):
             self.schedule_ctx[today] = context
             self.db.kv_set("schedule_ctx", self.schedule_ctx)
         self.db.kv_set("schedule_version", SCHEDULE_VERSION)
+        # 2026-11-21：ensure / ensure_regen / 面板 reconcile / 快照会互相触发；
+        # 同一天 30 秒内只允许落库一次，避免多个功能各生成一版、来回覆盖。
+        if regen_debounced(self.db, today, force=force):
+            logger.info("[amo] 日程重生成去抖：%d 秒内刚重建过，跳过本次落库",
+                        SCHEDULE_REGEN_DEBOUNCE_SECONDS)
+            return False
         self.commit_schedule_change(
             today, items, old_items=previous,
             source="ensure_regen" if force else "ensure",
