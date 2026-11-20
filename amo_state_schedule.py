@@ -123,7 +123,9 @@ def _vehicle_text(item):
 # 纯函数：锁定 / 过去只读 / 写入后体检。由 _commit_schedule_change_locked 调用，
 # tests/test_schedule_guard.py 也直接测。2026-11-18 收口：15 个写入方没有锁、没有边界检查。
 _OFFICE_WORDS = ("公司", "写字楼", "办公室", "工位")
-_LOCK_SOURCES = ("manual", "command", "date")
+#: 这些来源写的块会被打锁，jit/分段重算不许覆盖（2026-11-20：加入 social，
+#: 守护排的饭局/约会原本不受保护，会被整点重算冲掉）。
+_LOCK_SOURCES = ("manual", "command", "date", "social")
 _WORK_START_HOUR = 9
 _WORK_END_HOUR = 18
 

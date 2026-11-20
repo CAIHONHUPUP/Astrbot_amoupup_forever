@@ -267,6 +267,42 @@ class FeatureApiMixin:
 
 
 
+        async def request_push(self, text, reason=""):
+            """外部模块（守护）申请一条主动消息：静默时段和最小间隔由陪伴统一把关。
+
+            2026-11-20：_owner_umos 修好后，守护原来哑掉的推送会突然变多；
+            这里给它一个统一闸口，避免夜间轰炸和连续刷屏。
+            """
+            text = str(text or "").strip()
+            if not text:
+                return False
+            try:
+                try:
+                    from .amo_shared_time import quiet_now
+                except ImportError:
+                    from amo_shared_time import quiet_now
+                quiet = bool(quiet_now(self.cfg_str("quiet_hours", "23:30-07:30")))
+            except Exception:
+                quiet = False
+            if quiet and str(reason or "") != "urgent":
+                logger.info("[amo] 静默时段，拦下外部主动消息（%s）", reason or "-")
+                return False
+            try:
+                last = float(self.db.kv_get("external_push_ts", 0) or 0)
+            except Exception:
+                last = 0.0
+            now = now_ts()
+            if last and now - last < 600:
+                logger.info("[amo] 距上一条外部主动消息不足 10 分钟，跳过（%s）", reason or "-")
+                return False
+            sent = await self.push_to_owner(text)
+            if sent:
+                try:
+                    self.db.kv_set("external_push_ts", now)
+                except Exception as exc:
+                    logger.debug("[amo] 记录 external_push_ts 失败: %r", exc)
+            return bool(sent)
+
         async def push_to_owner(self, text):
 
             """主动消息：给管理员/老公发一条（逛街试穿、回家炫耀等）。"""

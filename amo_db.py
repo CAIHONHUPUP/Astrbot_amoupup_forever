@@ -514,6 +514,11 @@ class AmoDB:
                 self.conn.execute(
                     "ALTER TABLE schedule_diary ADD COLUMN invalidated_at REAL DEFAULT 0"
                 )
+            # 2026-11-20：区分谁写的这一小时。守护的财务/社交日记不再覆盖块日记。
+            if "source" not in diary_cols:
+                self.conn.execute(
+                    "ALTER TABLE schedule_diary ADD COLUMN source TEXT DEFAULT ''"
+                )
             self.conn.commit()
         except Exception as _amo_exc:
             _note_swallowed("amo_db.AmoDB.init.diary_columns", _amo_exc)
@@ -1129,7 +1134,7 @@ class AmoDB:
         """返回小日记的完整记录（不存在返回 None）。"""
         with self.lock:
             row = self.conn.execute(
-                "SELECT day, hour, text, updated, version, status, invalidated_at "
+                "SELECT day, hour, text, updated, version, status, invalidated_at, source "
                 "FROM schedule_diary WHERE day=? AND hour=?",
                 (str(day), str(hour)),
             ).fetchone()
@@ -1143,6 +1148,7 @@ class AmoDB:
             "version": int(row["version"] or 0),
             "status": str(row["status"] or "valid"),
             "invalidated_at": float(row["invalidated_at"] or 0),
+            "source": str(row["source"] or ""),
         }
 
     def get_diary(self, day, hour):
@@ -1153,10 +1159,11 @@ class AmoDB:
             ).fetchone()
         return str(row["text"] or "") if row else ""
 
-    def save_diary(self, day, hour, text, version=None, status="valid"):
+    def save_diary(self, day, hour, text, version=None, status="valid", source="block"):
         """写入小日记；version 默认取当天当前日程版本。
 
         旧调用 save_diary(day, hour, text) 仍然兼容。
+        source：block=陪伴的块日记（默认）；finance=守护的流水/社交日记。
         """
         try:
             from .amo_diary_guard import sanitize_diary
@@ -1167,12 +1174,13 @@ class AmoDB:
             version = self.schedule_version(day)
         with self.lock:
             self.conn.execute(
-                "INSERT INTO schedule_diary(day, hour, text, updated, version, status, invalidated_at) "
-                "VALUES(?,?,?,?,?,?,0) "
+                "INSERT INTO schedule_diary(day, hour, text, updated, version, status, invalidated_at, source) "
+                "VALUES(?,?,?,?,?,?,0,?) "
                 "ON CONFLICT(day, hour) DO UPDATE SET "
                 "text=excluded.text, updated=excluded.updated, version=excluded.version, "
-                "status=excluded.status, invalidated_at=0",
-                (str(day), str(hour), str(text or ""), now_ts(), int(version), str(status or "valid")),
+                "status=excluded.status, invalidated_at=0, source=excluded.source",
+                (str(day), str(hour), str(text or ""), now_ts(), int(version),
+                 str(status or "valid"), str(source or "block")),
             )
             self.conn.commit()
 
