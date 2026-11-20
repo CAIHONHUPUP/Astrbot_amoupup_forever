@@ -161,6 +161,14 @@ class FeatureApiMixin:
             hunger: Any
             state: Any
             wardrobe: Any
+        def relation_of(self, name=""):
+            """名单人物的关系标签（唯一真源 amo_names.RELATION_LABEL）。"""
+            try:
+                from . import amo_names
+            except ImportError:
+                import amo_names
+            return amo_names.relation_of(name)
+
         def note_expense_summary(self, line):
             self.db.kv_set("expense_summary", {"line": str(line or ""), "until": now_ts() + 2 * 86400})
 

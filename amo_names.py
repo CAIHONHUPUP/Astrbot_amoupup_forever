@@ -21,18 +21,45 @@ SELF_ALIASES = frozenset({"老公", "亲爱的", "宝贝", "对象", "男朋友"
 ROSTER_LINE = ("你认识的人只有：[%s]。严禁凭空捏造任何其他名字，"
                "不要提任何名单外的朋友、同事、亲戚、路人。" % "、".join(ROSTER))
 
-#: 名单人物的固定关系/性别：别再让模型随手把「同事」换成任意名字，
-#: 也别把男性写成暧昧对象（2026-11-20）。
-ROLES = {
+#: 名单人物的固定关系标签（2026-11-20 用户口径，唯一真源）。
+#: 只放"怎么称呼"，不放行为约束——约束见 BEHAVIOR_RULES。
+RELATION_LABEL = {
     "柳如烟": "闺蜜",
-    "白凝冰": "同事",
-    "季博达": "男同事（只限工作往来，不单独约会、不暧昧）",
-    "方圆": "同事",
-    "沈幼微": "朋友",
-    "妈妈": "家人",
-    "爸爸": "家人",
+    "白凝冰": "死党",
+    "季博达": "领导",
+    "方圆": "普通同事",
+    "沈幼微": "表姐",
+    "妈妈": "妈妈",
+    "爸爸": "爸爸",
 }
-ROLE_LINE = "人物关系：" + "；".join("%s=%s" % (name, role) for name, role in ROLES.items()) + "。"
+
+#: 男性 NPC：不得单独约会/暧昧称呼/肢体亲密/恋爱暗示；
+#: 单独喝酒、单独加班到深夜、单独送她回家也算越界。≥3 人聚餐/团建不算。
+MALE_NPCS = ("季博达", "方圆")
+MALE_NPC_RULES = (
+    "季博达、方圆是男性：只能谈工作/普通社交，"
+    "绝不单独约会、不单独喝酒、不单独加班到深夜、不让他单独送你回家，"
+    "不许暧昧称呼、不许肢体亲密、不许任何恋爱暗示；"
+    "三人以上的聚餐或公司团建不算。"
+)
+
+#: 兼容旧名：ROLES 仍是"人名→关系"的读法，但值来自 RELATION_LABEL
+ROLES = dict(RELATION_LABEL)
+ROLE_LINE = ("人物关系：" + "；".join("%s=%s" % (name, role)
+                                          for name, role in ROLES.items()) + "。"
+              + MALE_NPC_RULES)
+
+
+def relation_of(name=""):
+    """某人的关系标签；不在名单里返回空串。
+
+    2026-11-20：这是关系称谓的唯一真源，守护只读这里，不再自己维护一份。
+    """
+    return str(RELATION_LABEL.get(str(name or "").strip()) or "")
+
+
+def is_male_npc(name=""):
+    return str(name or "").strip() in MALE_NPCS
 
 
 def strip_unbacked_names(text, context, fallback="同事"):
