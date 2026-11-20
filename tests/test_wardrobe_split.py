@@ -7,6 +7,8 @@
 2. 方法源码逐字节等价：每个方法 / 模块级函数的 sha256 与拆分前的快照一致；
    （2026-11-17：为 mypy 清零删掉两条 unused type: ignore 注释，_combos_for 与
    _refill_sleep_combos 的哈希按「只删注释」后的源码更新；代码逻辑未变。）
+   （2026-11-20：_at_home 先认 zone、current/tick 不再把「判断不了」当在家，
+   修「20 点后在楼下小馆穿睡衣」；哈希按新源码更新，属行为修复不是搬家。）
 3. 行为逐字节等价：纯函数的输入输出与拆分前的快照（tests/golden_split.json）一致；
 4. 依赖单向：子模块不 import 门面；新文件都在 1500 行以内、没有裸 except: pass。
 """

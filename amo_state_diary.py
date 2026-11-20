@@ -875,7 +875,23 @@ class DiaryStateMixin(_MixinBase):
         try:
             wardrobe = getattr(self.p, "wardrobe", None)
             if wardrobe is not None:
-                worn = wardrobe.current(day) or {}
+                # 2026-11-20：以前不传 hour/activity，按「现在」取穿搭——19:09 的火锅
+                # 日记在 20:00 之后生成，就写成「穿着白睡衣就下来了」。改成按块的
+                # 时间与地点取，历史块永远是它那一刻穿的那套。
+                try:
+                    block_hour = int(str(start or "")[:2])
+                except (TypeError, ValueError):
+                    block_hour = None
+                block_act = None
+                for entry in items or []:
+                    if str((entry or {}).get("start") or "") == str(start or ""):
+                        block_act = {
+                            "place": str(entry.get("place") or ""),
+                            "zone": str(entry.get("zone") or ""),
+                            "activity": str(entry.get("activity") or ""),
+                        }
+                        break
+                worn = wardrobe.current(day, hour=block_hour, activity=block_act) or {}
                 context["outfit"] = str(worn.get("text") or "")
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState.expand_hour", _amo_exc)

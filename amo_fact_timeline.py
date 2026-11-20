@@ -654,8 +654,14 @@ def read_health(plugin):
 
 
 def read_outfit(plugin, day):
+    """今天的白天穿搭（不含睡衣）；没锁过就返回空，不在夜里凭空生成。"""
     try:
+        getter = getattr(plugin.wardrobe, "daytime_text", None)
+        if callable(getter):
+            return str(getter(day.isoformat()) or "").strip()
         worn = plugin.wardrobe.current(day.isoformat()) or {}
+        if worn.get("sleep"):
+            return ""
         return str(worn.get("text") or "").strip()
     except Exception as exc:
         logger.debug("[amo] 穿搭读取失败: %r", exc)

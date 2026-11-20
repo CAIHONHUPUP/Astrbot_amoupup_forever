@@ -690,7 +690,9 @@ class WardrobeDailyMixin:
         night = hour >= SLEEP_HOUR_FROM or hour < SLEEP_HOUR_TO
         if home_early and at_home is True:
             night = True
-        if night and (at_hotel or at_home is not False):
+        # at_home 为 None（判断不了）时按“不在家”处理：宁可给白天穿搭，
+        # 也不能把睡衣写进外景（2026-11-20 小日记「穿着白睡衣就下来了」）。
+        if night and (at_hotel or at_home is True):
             result = self.night(day, hour=hour, hotel=at_hotel, data=data)
             if result.get("pending"):
                 result = self.today(day, data=data)
@@ -764,7 +766,7 @@ class WardrobeDailyMixin:
             return
         at_hotel = self._at_hotel()
         at_home = self._at_home()
-        if at_hotel or at_home is not False:
+        if at_hotel or at_home is True:
             try:
                 self.night(day, hour=hour, hotel=at_hotel)
             except Exception as _amo_exc:
@@ -779,6 +781,14 @@ class WardrobeDailyMixin:
                 _note_swallowed("wardrobe.Wardrobe._at_home", _amo_exc)
                 return None
         place = str(activity.get("place") or "")
+        zone = str(activity.get("zone") or "")
+        # 2026-11-20：先认 zone。「楼下小馆」这种自造地点不在词表里，
+        # 以前返回 None，再被 current() 当成在家，于是 20 点后穿睡衣出门。
+        if zone:
+            if zone == "home" or zone.startswith("home_"):
+                return True
+            if zone != "unknown":
+                return False
         if not place:
             return None
         if any(word in place for word in HOME_PLACE_WORDS):
@@ -790,6 +800,19 @@ class WardrobeDailyMixin:
     def at_home(self):
         """给聊天换装判断用：True 在家 / False 在外面 / None 不知道。"""
         return self._at_home()
+
+    def daytime_text(self, day=""):
+        """当天白天那套的文字：只读已锁定的记录，不触发生成、不含睡衣。
+
+        事实池/穿搭事实用它，避免 20:00 之后「今天穿什么」被睡衣顶替。
+        """
+        day = str(day or today_str())
+        data = self._load()
+        entry = (data.get("daily") or {}).get(day) or {}
+        outfit = self._outfit_by_id(data, entry.get("outfit"))
+        if outfit is None:
+            return ""
+        return str(self._describe(data, outfit).get("text") or "")
 
     def home_outfit(self, day="", hour=None, data=None):
         """在家、还没到睡点的居家便服：从居家单品里按天挑一套（不进白天搭配）。"""
