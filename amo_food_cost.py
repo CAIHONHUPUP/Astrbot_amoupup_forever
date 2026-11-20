@@ -459,11 +459,21 @@ def meal_slot(now=None):
 #: services/daily_engine.CLAIM_WINDOWS（tests/test_meal_claim_contract.py 会比对）。
 CLAIM_WINDOWS = MEAL_WINDOWS
 
-#: 算「一顿饭」的活动词。奶茶/咖啡/果茶不算，避免下午茶占掉午餐位。
-CLAIM_WORDS = MEAL_WORDS + ("吃", "饭", "餐", "火锅", "烤肉", "聚餐", "夜宵", "宵夜")
+#: 算「一顿饭」的活动词。不收单字「吃」：16:30 的「吃点东西/吃冰淇淋」不能占掉晚饭。
+#: 必须与 watch 侧 services/date_rules.CLAIM_WORDS 逐字一致（契约测试比对）。
+CLAIM_WORDS = ("饭", "餐", "面条", "牛肉面", "米饭", "快餐", "包子", "豆浆", "白粥",
+               "粥", "外卖", "家常菜", "泡面", "饺子", "汉堡", "披萨", "烧烤", "肠粉",
+               "米粉", "火锅", "烤肉", "聚餐", "夜宵", "宵夜", "麻辣烫", "小龙虾", "寿司")
 
 
-def _looks_like_meal(text):
+def _looks_like_meal(text, category=""):
+    """日程里的这一块算不算一顿饭。
+
+    category=meal 的块本身就是一顿（「在家随便弄点吃的」也算），
+    social/date 只有命中餐饮词才算，避免逛街/电影/咖啡占掉饭点。
+    """
+    if str(category or "") == "meal":
+        return True
     body = str(text or "")
     return any(word in body for word in CLAIM_WORDS)
 
@@ -488,7 +498,7 @@ def meal_claim(plugin, day, slot):
         if not _overlaps(begin, finish, low, high):
             continue
         text = str(row.get("activity") or "")
-        if _looks_like_meal(text):
+        if _looks_like_meal(text, row.get("category")):
             return text
     return ""
 

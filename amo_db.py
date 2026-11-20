@@ -1164,6 +1164,8 @@ class AmoDB:
 
         旧调用 save_diary(day, hour, text) 仍然兼容。
         source：block=陪伴的块日记（默认）；finance=守护的流水/社交日记。
+        注意：**外部插件写这张表必须显式传 source**，否则会被当成块日记，
+        从而挡住真正的块日记（2026-11-20）。
         """
         try:
             from .amo_diary_guard import sanitize_diary

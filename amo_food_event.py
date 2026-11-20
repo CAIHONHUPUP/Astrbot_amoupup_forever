@@ -189,11 +189,19 @@ def _place_block(plugin, day, hour, now, food, amount, pushed):
 
 
 async def _push(plugin, text):
+    """宵夜主动消息：走统一闸口（静默/间隔），老版本回退直发。"""
+    text = str(text or "")
+    gate = getattr(plugin, "request_push", None)
+    if callable(gate):
+        try:
+            return bool(await gate(text, "late_snack"))
+        except Exception as exc:
+            logger.debug("[amo] 宵夜闸口失败，回退直发: %r", exc)
     push = getattr(plugin, "push_to_owner", None)
     if not callable(push):
         return False
     try:
-        return bool(await push(str(text or "")))
+        return bool(await push(text))
     except Exception as exc:
         logger.debug("[amo] 主动消息发送失败: %r", exc)
         return False

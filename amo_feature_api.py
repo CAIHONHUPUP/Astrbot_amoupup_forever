@@ -278,29 +278,32 @@ class FeatureApiMixin:
                 return False
             try:
                 try:
-                    from .amo_shared_time import quiet_now
+                    from .amo_shared import quiet_now
                 except ImportError:
-                    from amo_shared_time import quiet_now
+                    from amo_shared import quiet_now
                 quiet = bool(quiet_now(self.cfg_str("quiet_hours", "23:30-07:30")))
             except Exception:
                 quiet = False
-            if quiet and str(reason or "") != "urgent":
-                logger.info("[amo] 静默时段，拦下外部主动消息（%s）", reason or "-")
+            tag = str(reason or "default")[:24]
+            # 宵夜（22-24 允许她说一句「我饿了」）与真正紧急的事故不受静默时段限制
+            if quiet and tag not in ("urgent", "late_snack"):
+                logger.info("[amo] 静默时段，拦下外部主动消息（%s）", tag)
                 return False
+            key = "external_push_ts:" + tag
             try:
-                last = float(self.db.kv_get("external_push_ts", 0) or 0)
+                last = float(self.db.kv_get(key, 0) or 0)
             except Exception:
                 last = 0.0
             now = now_ts()
             if last and now - last < 600:
-                logger.info("[amo] 距上一条外部主动消息不足 10 分钟，跳过（%s）", reason or "-")
+                logger.info("[amo] 距同类上一条主动消息不足 10 分钟，跳过（%s）", tag)
                 return False
             sent = await self.push_to_owner(text)
             if sent:
                 try:
-                    self.db.kv_set("external_push_ts", now)
+                    self.db.kv_set(key, now)
                 except Exception as exc:
-                    logger.debug("[amo] 记录 external_push_ts 失败: %r", exc)
+                    logger.debug("[amo] 记录 %s 失败: %r", key, exc)
             return bool(sent)
 
         async def push_to_owner(self, text):

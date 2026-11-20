@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """小日记 mixin：整点小日记生成/缓存/失效重算、当前活动汇总。从 amo_human_state.py 按域拆出。"""
+import hashlib
 import time
 from typing import Any, TYPE_CHECKING
 
@@ -332,6 +333,23 @@ class DiaryStateMixin(_MixinBase):
             if not text:
                 payload["empty_message"] = "这一小时变动太多，日记已经锁定啦，先保留这一版。"
             return payload
+        # 2026-11-20：日程版本变了会把日记标 stale，但这一小时内容没变时不该再调一次模型
+        if not force and record and str(record.get("status") or "") == "stale" \
+                and str(record.get("text") or "").strip():
+            sig = self._diary_sig(item)
+            if sig and self._diary_sig_get(day, start) == sig:
+                try:
+                    self.db.save_diary(day, start, str(record.get("text") or ""),
+                                       version=version, status="valid", source="block")
+                except TypeError:
+                    self.db.save_diary(day, start, str(record.get("text") or ""),
+                                       version=version, status="valid")
+                logger.info("[DIARY_DEBUG] hour=%s reused=same_content version=%s",
+                            start, version)
+                return {"diary": str(record.get("text") or ""),
+                        "mood": item.get("mood") or "平静",
+                        "place": item.get("place") or "", "activity": activity,
+                        "cached": True, "reused": True, "version": version}
         cached = self._diary_cached_reply(day, start, item, version, force, facts, record)
         if cached:
             return cached
@@ -778,6 +796,37 @@ class DiaryStateMixin(_MixinBase):
             _note_swallowed("amo_human_state._diary_hour_chat", _amo_exc)
             return []
 
+    @staticmethod
+    def _diary_sig(item):
+        """这一小时的内容签名：活动/地点/细节/同席人。内容没变就不重生成。"""
+        item = item or {}
+        parts = [str(item.get("activity") or ""), str(item.get("place") or ""),
+                 str(item.get("detail") or ""),
+                 "/".join(str(x) for x in (item.get("people") or item.get("companions") or []))]
+        raw = "|".join(parts)
+        if not raw.strip("|"):
+            return ""
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def _diary_sig_get(self, day, hour):
+        try:
+            data = self.db.kv_get("diary_sig", {}) or {}
+        except Exception:
+            data = {}
+        return str((data or {}).get("%s|%s" % (day, hour)) or "")
+
+    def _diary_sig_set(self, day, hour, sig):
+        if not sig:
+            return
+        try:
+            data = dict(self.db.kv_get("diary_sig", {}) or {})
+            data["%s|%s" % (day, hour)] = str(sig)
+            if len(data) > 500:
+                data = dict(list(data.items())[-300:])
+            self.db.kv_set("diary_sig", data)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.diary_sig", _amo_exc)
+
     def _diary_rewrites(self, day, hour):
         try:
             data = self.db.kv_get("diary_rewrites", {}) or {}
@@ -986,10 +1035,12 @@ class DiaryStateMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_state_diary.person_ref", _amo_exc)
         try:
-            self.db.save_diary(day, start, result["diary"], version=version, status="valid")
+            self.db.save_diary(day, start, result["diary"], version=version, status="valid",
+                               source="block")
         except TypeError:
             # 兼容旧测试里的简化 DB
             self.db.save_diary(day, start, result["diary"])
+        self._diary_sig_set(day, start, self._diary_sig(item))
         # 小日记内容变了（手动补块/历史修正）：标 stale，等下一个 08:00 窗口再重写大日记。
         if force or stale_text or record is None:
             daily_mark = getattr(self.p, "_mark_daily_diary_stale", None)

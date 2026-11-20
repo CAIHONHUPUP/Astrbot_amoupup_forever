@@ -672,7 +672,8 @@ class WardrobeDailyMixin:
             self._sync_sidecar(result)
             return dict(result)
         # 0–8 点：还穿着昨晚的睡衣，但不生成/锁定“今晚”的睡衣。
-        if hour < SLEEP_HOUR_TO:
+        # 例外：块时间/地点明确在外面（07:00 楼下早餐店、酒店早餐）时不能套睡衣。
+        if hour < SLEEP_HOUR_TO and (at_home is not False or at_hotel):
             try:
                 previous = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
             except Exception:

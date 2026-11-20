@@ -69,6 +69,15 @@ class MealClaimTests(unittest.TestCase):
         self.assertEqual("", food.meal_claim(plugin, "2026-11-20", "lunch"))
         self.assertEqual("", food.meal_claim(plugin, "2026-11-20", "dinner"))
 
+    def test_afternoon_snack_does_not_claim_dinner(self):
+        # 16:30 「吃点东西」不算晚饭（单字「吃」已从词表移除）
+        plugin = _Plugin([row("16:30", "16:50", "social", "和同事吃点东西")])
+        self.assertEqual("", food.meal_claim(plugin, "2026-11-20", "dinner"))
+
+    def test_meal_category_claims_without_food_words(self):
+        plugin = _Plugin([row("18:30", "19:00", "meal", "扒了两口")])
+        self.assertTrue(food.meal_spent(plugin, DINNER))
+
     def test_other_day_does_not_leak(self):
         plugin = _Plugin([row("19:09", "20:00", "social", "柳如烟下班吃火锅")])
         self.assertEqual("", food.meal_claim(plugin, "2026-11-21", "dinner"))

@@ -121,6 +121,8 @@ class FacadeApiTests(unittest.TestCase):
 
 class ByteEquivalenceTests(unittest.TestCase):
     def test_method_sources_byte_identical(self):
+        # 2026-11-20：_diary_prompt 的同席人提示词改成中性规则（示例人名会被模型照抄），
+        # 哈希按新源码更新；属行为修复，不是搬家。
         changed = [(name, _source_hash(getattr(schedule_engine.ScheduleEngine, name)), want)
                    for name, want in METHOD_HASHES.items()
                    if _source_hash(getattr(schedule_engine.ScheduleEngine, name)) != want]
