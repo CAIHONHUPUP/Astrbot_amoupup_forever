@@ -544,18 +544,31 @@ class DataSyncMixin(_MixinBase):
         # 到这里才算这次启动真的同步完了：以后不再探测、不再重复推
         self._data_synced = True
         self._data_missing_logged = False
+    @staticmethod
+    def _person_uid_from_umo(umo):
+        """umo 的尾巴只有在私聊时才是某个人；群聊的尾巴是群号，不是人。"""
+        text = str(umo or "")
+        if not text or ":GroupMessage:" in text:
+            return ""
+        return text.split(":")[-1].strip()
+
     def finance_memory_uid(self):
-        """金融事件的记忆挂到谁身上：优先管理员 uid，其次最近会话的 uid。"""
+        """金融事件的记忆挂到谁身上：优先管理员 uid，其次最近一次私聊的 uid。
+
+        群聊 umo（aiocqhttp:GroupMessage:<群号>）的尾巴是群号；旧版直接取尾巴，
+        金融记忆就记到了群号上（uid=1055679275 这种孤儿）。群聊时改用固定内部
+        身份 owner，绝不猜成群里某个用户，免得把他的账挂到别人名下。
+        """
         try:
             for item in sorted(getattr(self, "admin_uids", set()) or []):
                 if str(item).strip():
                     return str(item).strip()
         except Exception as _amo_exc:
             _note_swallowed("amo_memory_data.finance_memory_uid", _amo_exc)
-        umo = str(getattr(self, "_last_umo", "") or "")
-        if umo:
-            return umo.split(":")[-1]
-        # 从没聊过天（刚重启）时也要能记金融账：退回固定 owner
+        uid = self._person_uid_from_umo(getattr(self, "_last_umo", ""))
+        if uid:
+            return uid
+        # 刚重启 / 最近只聊过群：不猜人，记到 owner；finance_recall 会用 owner 兜底
         return "owner"
 
     async def finance_remember(self, content, kind="finance", tier=2, idem_key=""):
@@ -576,13 +589,19 @@ class DataSyncMixin(_MixinBase):
         """金融记忆检索（返回 list[dict]）；失败返回空列表。
 
         tags 追加在末尾：老的位置调用不受影响；需要按事件回查时再传。
+        旧版把群号当 uid 记下的账（已迁移成 owner）用 owner 再兜一次，
+        免得换回私聊后查不到。
         """
         uid = self.finance_memory_uid()
         if not uid:
             return []
         try:
-            return await self._data_memory_recall(uid, str(query or ""), limit=int(limit),
+            rows = await self._data_memory_recall(uid, str(query or ""), limit=int(limit),
                                                   tags=tags)
+            if not rows and uid != "owner":
+                rows = await self._data_memory_recall("owner", str(query or ""),
+                                                      limit=int(limit), tags=tags)
+            return rows or []
         except Exception as exc:
             logger.debug("[amo] 金融记忆检索失败: %s" % exc)
             return []

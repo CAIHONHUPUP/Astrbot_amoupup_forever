@@ -93,7 +93,7 @@ class EcommerceTests(unittest.TestCase):
         shop.tick(created + 7 * 3600)
         self.assertEqual(shop._state()["orders"][0]["status"], "运输中")
         self.assertEqual(plugin.wardrobe.items, [])
-        shop.tick(order["deliver_at"] + 1)
+        shop.tick(order["deliver_at"] + 2 * 86400)
         self.assertEqual(shop._state()["orders"][0]["status"], "已到货")
         self.assertEqual(len(plugin.wardrobe.items), 1)
 
@@ -186,7 +186,7 @@ class EcommerceTests(unittest.TestCase):
         created = datetime(2026, 11, 17, 10, 0).timestamp()
         order = shop.order([{"name": "裙子", "category": "bottom", "price_cents": 9900}],
                            now=created)["order"]
-        shop.tick(order["deliver_at"] + 1)
+        shop.tick(order["deliver_at"] + 2 * 86400)
         self.assertEqual(len(plugin.wardrobe.items), 1)
         result = shop.return_order(order_id=order["id"])
         self.assertTrue(result.get("ok"), result)

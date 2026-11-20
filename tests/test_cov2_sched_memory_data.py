@@ -606,6 +606,32 @@ class FinanceAndMiscTests(BaseCase):
         host._last_umo = ""
         self.assertEqual(host.finance_memory_uid(), "owner")
 
+    def test_finance_uid_never_uses_group_id(self):
+        host = Host()
+        host.admin_uids = set()
+        host._last_umo = "aiocqhttp:GroupMessage:1055679275"
+        self.assertEqual(host.finance_memory_uid(), "owner",
+                         "群聊尾巴是群号，不能当成人")
+        host._last_umo = "lark:GroupMessage:oc_group"
+        self.assertEqual(host.finance_memory_uid(), "owner")
+        host._last_umo = "lark:FriendMessage:ou_owner"
+        self.assertEqual(host.finance_memory_uid(), "ou_owner")
+
+    def test_finance_recall_falls_back_to_owner(self):
+        class OwnerMem(Mem):
+            async def recall(self, *args, **kwargs):
+                self.calls.append(("recall", args, kwargs))
+                uid = args[1] if len(args) > 1 else ""
+                return [{"content": "owner 账"}] if uid == "owner" else []
+
+        mem = OwnerMem()
+        host = Host(mem=mem)
+        host._last_umo = "lark:FriendMessage:ou_owner"
+        rows = self.run_async(host.finance_recall("工资"))
+        self.assertEqual(rows[0]["content"], "owner 账")
+        uids = [call[1][1] for call in mem.calls if call[0] == "recall"]
+        self.assertEqual(uids, ["ou_owner", "owner"])
+
     def test_finance_remember_and_recall(self):
         mem = Mem()
         host = Host(mem=mem)

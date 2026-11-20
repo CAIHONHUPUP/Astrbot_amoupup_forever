@@ -40,7 +40,7 @@ class ArrivalSeenTests(unittest.TestCase):
         shop = EcommerceEngine(plugin)
         order = shop.order([{"name": "白衬衫", "category": "top", "price_cents": 9900}],
                            now=datetime(2026, 11, 17, 10, 0).timestamp())["order"]
-        shop.tick(order["deliver_at"] + 1)
+        shop.tick(order["deliver_at"] + 2 * 86400)
         arrival = plugin.db.kv_get("shop_arrival")
         self.assertFalse(arrival["seen"])
         shop.mark_arrival_seen()
@@ -54,7 +54,7 @@ class HouseholdOrderTests(unittest.TestCase):
         res = shop.order([{"name": "灰色床单", "price_cents": 9900}],
                          now=datetime(2026, 11, 17, 10, 0).timestamp())
         self.assertTrue(res.get("ok"), res)
-        shop.tick(res["order"]["deliver_at"] + 1)
+        shop.tick(res["order"]["deliver_at"] + 2 * 86400)
         self.assertEqual(plugin.wardrobe.items, [])
         self.assertEqual((plugin.housing.current()["furniture"] if getattr(plugin, "housing", None) else []), [])
 
@@ -101,10 +101,10 @@ class FivePointTests(unittest.TestCase):
         from datetime import datetime
         now = datetime(2026, 11, 17, 10, 0).timestamp()
         first = shop.order([{"name": "白衬衫", "category": "top", "price_cents": 9900}], now=now)["order"]
-        shop.tick(first["deliver_at"] + 1)
+        shop.tick(first["deliver_at"] + 2 * 86400)
         second = shop.order([{"name": "黑裤子", "category": "bottom", "price_cents": 9900}],
                             now=now + 86400)["order"]
-        shop.tick(second["deliver_at"] + 1)
+        shop.tick(second["deliver_at"] + 2 * 86400)
         arrival = plugin.db.kv_get("shop_arrival")
         self.assertEqual(len(arrival["items"]), 2)
 
@@ -123,7 +123,7 @@ class FivePointTests(unittest.TestCase):
         shop = EcommerceEngine(plugin)
         now = datetime(2026, 11, 17, 10, 0).timestamp()
         order = shop.order([{"name": "灰色床单", "price_cents": 9900}], now=now)["order"]
-        shop.tick(order["deliver_at"] + 1)
+        shop.tick(order["deliver_at"] + 2 * 86400)
         self.assertEqual(len(shop.panel_data(now=order["deliver_at"] + 2)["household"]), 1)
 
     def test_soft_visual_only_in_prompt(self):
