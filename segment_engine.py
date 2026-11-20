@@ -360,7 +360,42 @@ class SegmentEngine:
             if self._logical_len(segments[-1]) <= self.short_tail_threshold:
                 tail = segments.pop()
                 segments[-1] += tail
-        return segments
+        return self._merge_action_segments(segments)
+
+    def _merge_action_segments(self, segments: List[str]) -> List[str]:
+        """括号动作不能单独成段：并到相邻的文字段；全段都是动作时补一句人话。"""
+        try:
+            try:
+                from .amo_message import action_only_fallback as _fallback
+                from .amo_message import is_action_only as _is_action
+            except ImportError:
+                from amo_message import action_only_fallback as _fallback
+                from amo_message import is_action_only as _is_action
+            out: List[str] = []
+            pending = ""
+            for raw in segments or []:
+                seg = str(raw or "").strip()
+                if not seg:
+                    continue
+                if _is_action(seg):
+                    if out and not _is_action(out[-1]):
+                        out[-1] = (out[-1].rstrip() + "\n" + seg).strip()
+                    else:
+                        pending = (pending + "\n" + seg).strip()
+                    continue
+                if pending:
+                    seg = (pending + "\n" + seg).strip()
+                    pending = ""
+                out.append(seg)
+            if pending:
+                if out:
+                    out[-1] = (out[-1].rstrip() + "\n" + pending).strip()
+                else:
+                    out = [_fallback(pending)]
+            return out or list(segments or [])
+        except Exception as _amo_exc:
+            _note_swallowed("segment_engine._merge_action_segments", _amo_exc)
+            return list(segments or [])
 
     def _split_by_force_symbols(self, text: str) -> List[str]:
         """按强制分隔符预分段，连续重复的同一符号视为一个整体。"""

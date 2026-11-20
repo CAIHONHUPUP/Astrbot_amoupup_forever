@@ -722,6 +722,14 @@ class DiaryStateMixin(_MixinBase):
             result["stale"] = True
             return result
         try:
+            try:
+                from . import amo_person_ref as _pr
+            except ImportError:
+                import amo_person_ref as _pr
+            result["diary"] = _pr.normalize_for(self.p, result.get("diary") or "")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_diary.person_ref", _amo_exc)
+        try:
             self.db.save_block_diary(day, bid, result["diary"], start=start, end=end,
                                      place=place, version=version, status="valid")
         except TypeError:
@@ -762,7 +770,9 @@ class DiaryStateMixin(_MixinBase):
                     continue
                 if any(word in text for word in ("转账", "红包", "已收款", "收款码")):
                     continue
-                lines.append(("我：" if str(role) == "bot" else "他：") + text[:200])
+                # 2026-11-20：用户统一标「老公：」，不再喂裸「他：」，
+                # 否则小日记会把素材标签直接抄成没有先行词的「他」。
+                lines.append(("我：" if str(role) == "bot" else "老公：") + text[:200])
             return lines
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state._diary_hour_chat", _amo_exc)
@@ -951,6 +961,14 @@ class DiaryStateMixin(_MixinBase):
             result["diary"] = stale_text
             result["stale"] = True
             return result
+        try:
+            try:
+                from . import amo_person_ref as _pr
+            except ImportError:
+                import amo_person_ref as _pr
+            result["diary"] = _pr.normalize_for(self.p, result.get("diary") or "")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_diary.person_ref", _amo_exc)
         try:
             self.db.save_diary(day, start, result["diary"], version=version, status="valid")
         except TypeError:

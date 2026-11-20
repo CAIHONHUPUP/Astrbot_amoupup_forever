@@ -1366,13 +1366,26 @@ class ScheduleMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_schedule.ScheduleMixin._generate_daily_diary", _amo_exc)
             persona = ""
+        _residence_rule = ""
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            _residence_rule = _hh.wording("schedule_boundary", plugin=self)
+        except Exception:
+            _residence_rule = ""
+        _residence_rule = _residence_rule or (
+            "物理边界：你们同城不同住、各有住处；平时他不在你身边，只能手机聊天；"
+            "只有约会的那段时间可以写他坐在对面，约会前后和结束之后都只能写一个人/手机，各回各家。"
+        )
         system = (
             (persona or "你是一个生活在中国城市的普通女孩，说话自然口语化。") +
             "\n\n你现在要保持这个人格，用自己的口吻写日记：第一人称、像真人写给自己的，"
             "不是助手汇报，也不要提 AI、模型、插件、日程表这些词。"
-            "文中的“我”指你自己（bot），用户是“他”；不要把“我”写成用户。"
-            "物理边界：你们同城不同住、各有住处；平时他不在你身边，只能手机聊天；"
-            "只有约会的那段时间可以写他坐在对面，约会前后和结束之后都只能写一个人/手机，各回各家。"
+            "文中的“我”指你自己（bot），用户是“老公”；"
+            "第一次提到他必须写“老公”，不许一上来就写没有指代的“他”；不要把“我”写成用户。"
+            + _residence_rule +
             "\n\n硬性结尾约束：日记必须是纯粹的内心独白（第一人称），"
             "严禁在结尾输出任何方括号、圆括号括起来的系统状态说明或代码逻辑！"
         )
@@ -1393,7 +1406,17 @@ class ScheduleMixin(_MixinBase):
             prompt = _diary_build_prompt(day, chat_lines, hourly_lines)
         # 约会当天：系统规则换成「面对面」，并把状态记下来给落库那一步用
         dating = bool(((pool or {}).get("meta") or {}).get("date_together"))
-        system = fact_rules(dating) + "\n\n" + system
+        _together_home = False
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            _scene_evening = _hh.scene_at(self, day, "21:00", "22:00", "家")
+            _together_home = _scene_evening.presence == "home"
+        except Exception:
+            _together_home = False
+        system = fact_rules(dating, home=_together_home) + "\n\n" + system
         try:
             self.db.kv_set("diary_together:" + day.isoformat(), dating)
         except Exception as _amo_exc:

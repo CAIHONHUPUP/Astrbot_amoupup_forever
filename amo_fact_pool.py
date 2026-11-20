@@ -111,6 +111,7 @@ def render_prompt(pool):
     facts = list((pool or {}).get("facts") or [])
     meta = (pool or {}).get("meta") or {}
     together = bool(meta.get("date_together"))
+    partner_home = bool(meta.get("partner_home")) and not together
     # 防线一：事实行必须带时间标签（补写昨天的日记时是 [昨日]，不是 [今日]）
     day_label = ""
     try:
@@ -141,6 +142,15 @@ def render_prompt(pool):
             "【严禁虚构】素材里没有的动作不要加；但“他就在我对面”“我们一起吃、一起走”"
             "是约会时段的事实，可以照写。",
         ]
+    elif partner_home:
+        lines += [
+            "【物理事实·同居】你们住在一起；在家时他就在屋里（客厅/厨房/卧室），"
+            "可以写日常互动：他看电视、他做饭、他递东西、你靠在他肩上。",
+            "【他不在家】他上班/出差时不在；素材里没说他出门，就默认他在家。",
+            "【心理事实】可以尽情写心情、害羞、开心，这些不算虚构。",
+            "【严禁虚构】素材里没有的具体事件不要加（比如他突然买花回来）；"
+            "日常相处的小动作可以自然扩写。",
+        ]
     else:
         lines += [
             "【物理事实】只允许写素材里的地点/日程；你一个人在家就是在出租屋/卧室，不许写成他就在身边。",
@@ -164,7 +174,7 @@ def render_prompt(pool):
         "【时间】只写今天 00:00 到现在的事，不许把昨天的事或明天的计划当成今天写；"
         "历史日记只读，不要改写昨天。",
     ]
-    if not meta.get("has_chat"):
+    if not meta.get("has_chat") and not partner_home:
         lines.append("【今天没怎么聊天】老公今天很忙，你们一天没怎么说话。可以写“有点想他”，"
                      "但严禁脑补“他是不是不爱我了”“他是不是去找别人了”，各自忙碌很正常。")
         # 2026-11-17 实锤：模型把“间接引语”里的示例句当成素材，写进了一条当天
@@ -186,12 +196,12 @@ def _fix_subject(value):
     return _REVERSE.sub(lambda m: "他提醒我" + m.group(1), value)
 
 
-def _strip_interaction(text, facts_text, has_chat):
+def _strip_interaction(text, facts_text, has_chat, partner_home=False):
     """确定性兜底：素材里没有聊天时，删/改“他今天提醒我”这类句。
 
     单独包一层是为了测试能反向验证：把这里换回原样，虚构句就会留在日记里。
     """
-    return strip_fabricated_interaction(text, facts_text, has_chat)
+    return strip_fabricated_interaction(text, facts_text, has_chat, partner_home=partner_home)
 
 
 def validate_text(text, pool):
@@ -205,11 +215,12 @@ def validate_text(text, pool):
     facts_text = " ".join(str(f.get("detail") or "") for f in facts)
     value = _fix_subject(value)
     # 断言「今天他提醒我/在微信上跟我说」这类具体互动，但素材里根本没有聊天 → 删句。
-    value = _strip_interaction(value, facts_text, meta.get("has_chat"))
+    value = _strip_interaction(value, facts_text, meta.get("has_chat"),
+                               partner_home=bool(meta.get("partner_home")))
     if "电话" not in facts_text and "通话" not in facts_text:
         value = value.replace("听见他声音", "想起他的声音")
         value = value.replace("通电话", "在微信上聊了几句")
-    if not meta.get("has_offline_meet"):
+    if not meta.get("has_offline_meet") and not meta.get("partner_home"):
         for phrase, repl in (("他来看我", "好想他来看我"), ("他抱着我", "好想被他抱着"),
                              ("他在我身边", "好想他在我身边")):
             value = value.replace(phrase, repl)

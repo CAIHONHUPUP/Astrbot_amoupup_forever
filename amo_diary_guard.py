@@ -42,8 +42,13 @@ _RULES_ALONE = """【严禁虚构】：素材包里没写的人和互动，一�
 【约会结束·各回各家】：约会一结束他就回他自己的住处，你一个人回出租屋，剩下的时间只能手机/视频联系；严禁写两个人回同一个家、同一个屋檐下过日子、他抱着我、他就守在你身边。
 【线上/线下】：老公今天只可能在飞书/微信上跟你聊天，现实里他在忙、没有出现在你身边；写聊天只能写「在微信/飞书上跟老公聊了几句」，绝不能写「刚跟老公通完电话」「他打电话来关心我」。
 """
+_RULES_HOME = """【同居·在家共处】：你们住在一起。在家时他就在屋里（客厅/厨房/卧室），可以写日常互动：他看电视、他做饭、他递东西、你靠在他肩上、他抱着我。
+【他不在家】：他上班/出差时不在家，这时候才写一个人、手机联系；素材里没说他出门，就默认他在家。
+【严禁虚构】：素材里没有的具体事件不要加（比如他突然买花回来）；日常相处的小动作可以自然扩写。
+"""
 _RULES_TAIL = """【思念的合法写法】示例：「一个人在出租屋里，看着黑漆漆的房间，突然好想他。要是他能在身边抱抱我就好了……算了，不打扰他了，我自己喝点热水吧。」
 【称呼】：只能叫「老公」「亲爱的」或「他」；不许出现「阿明」这类自创名字。
+【指代】：一段里第一次提到他，写「老公」，不要一上来就写裸「他」。
 """
 
 
@@ -56,9 +61,17 @@ NO_MONEY_RULE = ("\n【钱和考勤不进日记】账本/工资/扣款的具体�
                  "必须提钱时只写「这个月工资要少一点」这种模糊感受，不写数字。")
 
 
-def fact_rules(together=False):
-    """日记的系统硬规则；约会当天换成「面对面」版本，别把老公写成网友。"""
-    body = _RULES_TOGETHER if together else _RULES_ALONE
+def fact_rules(together=False, scene=None, home=False):
+    """日记的系统硬规则。
+
+    - 约会当天：面对面版本，别把老公写成网友；
+    - 同居/半同居且这一块他在家：在家共处版本；
+    - 其他：独处版本（7.5.9 原行为）。
+    """
+    if home or (scene is not None and str(getattr(scene, "presence", "") or "") == "home"):
+        body = _RULES_HOME
+    else:
+        body = _RULES_TOGETHER if together else _RULES_ALONE
     return _RULES_HEAD + body + _RULES_TAIL + NO_VOICE_RULE + NO_MONEY_RULE
 
 
@@ -303,6 +316,7 @@ def narrative_facts(view, plugin=None, now=None):
     facts = {"day": day_text, "now": moment, "events": events,
              "snack": False, "out": False, "sick": False, "hospital": False,
              "late_activity": False, "meal": False, "together": False,
+             "partner_home": False,
              "places": [], "meals": [], "current": None,
              "people": [], "companions": [], "items": [], "occasions": [],
              "occasion": "",
@@ -354,6 +368,20 @@ def narrative_facts(view, plugin=None, now=None):
     current = _view_current(view, moment)
     if current is not None:
         block = _block_of_event(blocks, current)
+        # 同居/半同居：这一块他是不是在家。真正的判定只在 amo_household.scene_at。
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            _scene = _hh.scene_at(
+                plugin, day_text, current.get("start"), current.get("end"),
+                current.get("place") or "", zone=str(block.get("zone") or ""),
+                activity=str(current.get("activity") or ""),
+            )
+            facts["partner_home"] = bool(_scene.partner and _scene.presence == "home")
+        except Exception as exc:  # cleanup: 居住状态读不到就按「不在家」处理
+            logger.debug("[narrative] 居住场景读取失败: %r", exc)
         facts["current"] = {
             "activity": str(current.get("activity") or ""),
             "place": str(current.get("place") or ""),
@@ -487,8 +515,8 @@ def _diary_contradictions(text, facts):
     if (facts.get("sick") or facts.get("hospital")) and (
             _DIARY_WORK.search(body) or _DIARY_NEG_SICK.search(body)):
         out.append(_diary_hit("health", body, "健康/日程里有生病或医院事实"))
-    if not facts.get("together") and _presence_claim(body):
-        out.append(_diary_hit("companion", body, "当天没有面对面约会事实"))
+    if not (facts.get("together") or facts.get("partner_home")) and _presence_claim(body):
+        out.append(_diary_hit("companion", body, "当天没有面对面约会/同居在家事实"))
     return out
 
 
@@ -613,7 +641,14 @@ def has_chat_material(facts_text):
                                           "微信", "飞书"))
 
 
-def claims_today_interaction(sentence, facts_text="", has_chat=None):
+#: 同居在家时可以自然扩写的日常动作（即使这一小时没有聊天素材）。
+_HOME_DAILY = (
+    "看电视", "做饭", "煮", "递", "坐在", "坐", "靠着", "靠", "笑", "说", "聊",
+    "吃", "睡", "洗", "收拾", "晾", "抱", "亲", "摸头", "陪",
+)
+
+
+def claims_today_interaction(sentence, facts_text="", has_chat=None, partner_home=False):
     """这一句是否在声称“今天他做过具体互动”，而素材里没有对应聊天。
 
     纯判定，方便测试直接反向验证：去掉这个判定，清洗就失效。
@@ -629,6 +664,9 @@ def claims_today_interaction(sentence, facts_text="", has_chat=None):
         return False
     if any(word in text for word in _PAST_MARKERS):
         return False
+    if partner_home and any(word in text for word in _HOME_DAILY):
+        # 同居在家：日常动作可以自然扩写；亲密/新事件仍要素材支撑。
+        return False
     chat = True if has_chat else has_chat_material(facts_text)
     if not chat:
         return True
@@ -638,14 +676,14 @@ def claims_today_interaction(sentence, facts_text="", has_chat=None):
 
 
 def strip_fabricated_interaction(text, facts_text="", has_chat=None,
-                                 safe_line=_SAFE_INTERACTION_LINE):
+                                 safe_line=_SAFE_INTERACTION_LINE, partner_home=False):
     """按句删/改“素材里没有、却声称今天发生”的互动；其余句子（情绪/体感）原样保留。"""
     out: list[Any] = []
     stripped = 0
     for sentence in _sentences(text):
         if not sentence.strip():
             continue
-        if claims_today_interaction(sentence, facts_text, has_chat):
+        if claims_today_interaction(sentence, facts_text, has_chat, partner_home=partner_home):
             stripped += 1
             replacement = str(safe_line or "")
             if replacement and (not out or out[-1] != replacement):

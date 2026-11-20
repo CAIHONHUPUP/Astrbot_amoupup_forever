@@ -154,3 +154,24 @@ class PlatformTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActionOnlyTests(unittest.TestCase):
+    def test_detects_action_only(self):
+        from amo_message import is_action_only
+        self.assertTrue(is_action_only("（耳朵有点热，把手机往桌上扣了一下）"))
+        self.assertTrue(is_action_only("（笑）。"))
+        self.assertFalse(is_action_only("（笑）你少来。"))
+        self.assertFalse(is_action_only("你少来。"))
+
+    def test_fallback_adds_words(self):
+        from amo_message import action_only_fallback
+        out = action_only_fallback("（耳朵有点热）")
+        self.assertIn("（耳朵有点热）", out)
+        self.assertTrue(len(out.splitlines()) >= 2)
+
+    def test_urge_strip_never_leaves_action_only(self):
+        from amo_message import strip_repeated_urge
+        out = strip_repeated_urge("（摸摸头）快去睡吧，别熬了。", "我去睡了", "快睡吧")
+        self.assertFalse(out.strip().startswith("（"))
+        self.assertIn("嗯", out)

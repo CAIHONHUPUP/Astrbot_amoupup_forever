@@ -932,8 +932,8 @@
   "proactive_followup_minutes": {
     "type": "int",
     "description": "未回复追问间隔（分钟）",
-    "hint": "主动私聊后多久没回复就追问一次；默认 5 分钟",
-    "default": 5
+    "hint": "主动私聊后多久没回复就追问一次；默认 20 分钟，最低按 15 分钟执行（别在他吃饭/开会时催）",
+    "default": 20
   },
   "proactive_no_reply_minutes": {
     "type": "int",
@@ -1869,5 +1869,29 @@
     "description": "【旅游】出发后允许安静少发消息",
     "default": true,
     "hint": "在路上/玩的时候主动消息可以更少；关掉则照常按频率找她。"
+  },
+  "household_enabled": {
+    "type": "bool",
+    "description": "【居住】启用居住关系（同居/半同居）",
+    "default": true,
+    "hint": "关掉后强制回到同城分居，所有提示词与 7.5.9 一致；数据保留。"
+  },
+  "household_stage": {
+    "type": "string",
+    "description": "【居住】初始档位（apart=分居 / part_time=半同居 / together=同居）",
+    "default": "apart",
+    "hint": "只在 kv 里没有居住状态时生效；日常切换用 /同居、/搬回。"
+  },
+  "household_to_together_nights": {
+    "type": "int",
+    "description": "【居住】半同居累计过夜多少天后可升为正式同居",
+    "default": 30,
+    "hint": "每个有他在的半同居夜晚按天去重 +1；达标后 /同居 才会放行。"
+  },
+  "person_ref_enabled": {
+    "type": "bool",
+    "description": "【称呼】日记/日程首次出现的“他”自动补成“老公”",
+    "default": true,
+    "hint": "只改第一次、只改人称，不碰“其他/他们/他妈妈”；关掉后恢复裸“他”。"
   }
 }

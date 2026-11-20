@@ -998,6 +998,24 @@ class RuntimeContextMixin(RuntimeMixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.housing", _amo_exc)
         try:
+            _group = not bool(event.is_private_chat())
+        except Exception:
+            try:
+                _group = bool(event.get_group_id())
+            except Exception:
+                _group = False
+        if not _group:
+            try:
+                try:
+                    from . import amo_household as _hh
+                except ImportError:
+                    import amo_household as _hh
+                _presence = _hh.presence_line(self)
+                if _presence:
+                    parts.append(_presence)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.household", _amo_exc)
+        try:
             if getattr(self, "micro_events", None) is not None:
                 _micro = self.micro_events.injection()
                 if _micro:

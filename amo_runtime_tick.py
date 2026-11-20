@@ -479,7 +479,8 @@ class RuntimeTickMixin(RuntimeMixinBase):
                 logger.debug("[amo] 里程碑总结失败: %s" % exc)
                 summary = ""
             summary = re.sub(r"\s+", " ", str(summary or "")).strip()
-            if len(summary) < 8:
+            if summary.upper().startswith("[SKIP]") or len(summary) < 8:
+                log_event("debug", "milestone.skip", uid=uid, reason="nothing_important")
                 continue
             content = _ms_build_content(label, summary)
             # 里程碑是按人归纳的私聊产物，明确写进私聊域

@@ -95,10 +95,10 @@ class HourChatTests(Base):
                 ("user", "很长的\n内容" + "x" * 300),
             ]))
         lines = self.host._diary_hour_chat(dt.date(2026, 11, 18), "08:00", "09:00")
-        self.assertEqual(lines[0], "他：你好")
+        self.assertEqual(lines[0], "老公：你好")
         self.assertEqual(lines[1], "我：在呢")
         self.assertEqual(len(lines), 3)
-        self.assertTrue(lines[2].startswith("他：很长的 内容"))
+        self.assertTrue(lines[2].startswith("老公：很长的 内容"))
         self.assertLessEqual(len(lines[2]), 203)
 
     def test_reversed_range_and_errors(self):

@@ -91,6 +91,49 @@ def _proactive_plain(text):
     return re.sub(r"[^\u4e00-\u9fff]", "", str(text or ""))
 
 
+#: 同一件小事换个说法也算重复：按主题词兜底（比例相似度抓不住「柳如烟讲笑话」->「同事讲笑话」）。
+PROACTIVE_TOPIC_WORDS = (
+    "笑话", "咖啡", "奶茶", "午饭", "晚饭", "早餐", "天气", "下雨", "加班", "下班",
+    "电影", "综艺", "蛋糕", "冰淇淋", "睡衣", "晚霞", "地铁", "公交", "火锅",
+    "外卖", "快递", "感冒", "头痛", "猫", "狗", "桂花",
+)
+
+
+def proactive_same_topic(text, recent):
+    """新文案和最近主动消息共享一个主题词，就算重复；返回旧文案。"""
+    mine = _proactive_plain(text)
+    if len(mine) < 4:
+        return ""
+    for old in recent or []:
+        other = _proactive_plain(old)
+        if len(other) < 4:
+            continue
+        for word in PROACTIVE_TOPIC_WORDS:
+            if word in mine and word in other:
+                return str(old)
+    return ""
+
+
+_CHECKIN_WORDS = ("你在干嘛", "在干嘛呢", "吃饭没", "吃了没", "在忙吗", "忙不忙",
+                  "睡了没", "下班没", "到家没", "在不在")
+
+
+def strip_mixed_checkin(text):
+    """主动消息别「一句分享 + 一句查岗」：留分享，删掉不相干的查岗句。"""
+    body = str(text or "")
+    parts = [part for part in re.split(r"(?<=[。！？!?~～\n])", body) if part.strip()]
+    if len(parts) < 2:
+        return body
+    share = [part for part in parts if not any(word in part for word in _CHECKIN_WORDS)]
+    check = [part for part in parts if any(word in part for word in _CHECKIN_WORDS)]
+    if not share or not check:
+        return body
+    # 分享句要有实际内容（不是纯问句），才删查岗；否则原样保留。
+    if any(len(_proactive_plain(part)) >= 6 for part in share):
+        return "".join(share).strip()
+    return body
+
+
 def proactive_repeated(text, recent, threshold=PROACTIVE_THEME_THRESHOLD):
     """新文案和最近主动消息是不是同一主题；是就返回那条旧文案。"""
     mine = _proactive_plain(text)
@@ -472,6 +515,44 @@ class ProactiveMixin(_MixinBase):
             _note_swallowed("amo_proactive.ProactiveMixin._followup_text", _amo_exc)
         return text
 
+    async def _followup_text_live(self, umo, uid, kind, previous_text=""):
+        """追问去模板化：优先让模型按人设现写一句，失败再回落到模板池。"""
+        try:
+            llm = getattr(self, "llm", None)
+            if llm is None:
+                raise RuntimeError("no llm")
+            persona = await llm.persona(umo)
+            try:
+                activity = self.state.current_action_text()
+            except Exception:
+                activity = ""
+            system = ((persona or "你是大肥鱼。") + "\n\n"
+                      + "你现在要主动再找他一次。只输出你要发的那一句话，"
+                        "不要解释、不要旁白、不要括号动作。")
+            prompt = (
+                "他（老公）还没回你。你上一条主动说的是：“" + str(previous_text or "") + "”\n"
+                + ("你现在在：" + str(activity) + "\n" if activity else "")
+                + "用你自己的口吻再发一句，1 句，20 字内；可以撒娇、换个由头、问他忙完没、"
+                  "说你在等他。不要用「醒醒」「在等你」「你睡了没」「你是不是不想理我」"
+                  "这类假设他睡着/在等你的说法；不要重复上一句，也不要问已经问过的事。"
+                  "只输出这句话。"
+            )
+            text = str(await llm.chat(umo, system, prompt, limit=60) or "").strip()
+            text = text.strip('"“”').strip()
+            if not text or len(text) > 80 or any(
+                    word in text for word in ("醒醒", "在等你", "你睡了没", "是不是不想理我")):
+                raise ValueError("bad followup")
+            if previous_text and proactive_repeated(text, [previous_text], 0.45):
+                raise ValueError("duplicate followup")
+            try:
+                self.db.kv_set("proactive_followup_last_%s" % uid, text)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_proactive._followup_text_live.kv", _amo_exc)
+            return text
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._followup_text_live.fallback", _amo_exc)
+            return self._followup_text(uid, kind, previous_text)
+
     async def _check_proactive_pending(self):
         _dating = getattr(self, "_dating_active", None)
         if callable(_dating) and _dating():
@@ -500,14 +581,20 @@ class ProactiveMixin(_MixinBase):
                 continue
             followup_minutes = self.cfg_int("proactive_followup_minutes", 30)
             # 0 / 负数 = 关掉追问，只保留「心情变差」这一档
-            followup_after = 10 ** 9 if followup_minutes <= 0 else max(5, followup_minutes) * 60
+            # 2026-11-20：5 分钟追问太催（12:03 主动、12:13 就「醒醒」）；
+            # 下限 15 分钟，默认 20 分钟，给他吃饭/开会/通勤的时间。
+            followup_after = 10 ** 9 if followup_minutes <= 0 else max(15, followup_minutes) * 60
             # 0 / 负数 = 关掉「没回复就心情变差」；默认跟 schema 一致（30 分钟）
             mood_minutes = max(0, self.cfg_int("proactive_no_reply_minutes", 240))
             mood_after = mood_minutes * 60 if mood_minutes else 10 ** 9
             if not pending.get("followup") and age >= followup_after:
                 if not quiet_now(self.cfg_str("quiet_hours", "23:30-07:30")):
                     kind = str(pending.get("kind") or "greet")
-                    followup = self._followup_text(uid, kind, pending.get("text"))
+                    _live = getattr(self, "_followup_text_live", None)
+                    if callable(_live):
+                        followup = await _live(umo, uid, kind, pending.get("text"))
+                    else:  # 旧测试桩/旧宿主：退回模板池
+                        followup = self._followup_text(uid, kind, pending.get("text"))
                     if await self._send_to_umo(umo, followup):
                         pending["followup"] = True
                         pending["followup_at"] = now
@@ -1294,7 +1381,8 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     except Exception as _amo_exc:
         _note_swallowed("amo_proactive._proactive_one.theme_dedup", _amo_exc)
         recent_all = []
-    repeated = proactive_repeated(text, recent_all)
+    text = strip_mixed_checkin(text)
+    repeated = proactive_repeated(text, recent_all) or proactive_same_topic(text, recent_all)
     if repeated:
         logger.info("[amo] 主动消息：与最近一条主题重复，本轮不发（%s）", repeated[:40])
         return

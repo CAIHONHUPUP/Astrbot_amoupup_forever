@@ -28,8 +28,25 @@ class ScheduleDiaryMixin:
         """物理边界：他不在现场，绝不能把手机聊天改写成“当面”。保留原文。"""
         return str(text or "")
 
+    def _scene_for_diary(self, ctx, item, is_date=False):
+        """这一块的小日记场景；拿不到返回 None（回落旧行为）。"""
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            return _hh.scene_at(
+                getattr(self, "p", None), (ctx or {}).get("day") or "",
+                item.get("start"), item.get("end"), item.get("place") or "",
+                zone=item.get("zone") or "", activity=item.get("activity") or "",
+                together_hint=bool(is_date),
+            )
+        except Exception as _amo_exc:
+            _note_swallowed("schedule_engine._scene_for_diary", _amo_exc)
+            return None
+
     @staticmethod
-    def _interaction_material(lines):
+    def _interaction_material(lines, is_date=False):
         """把「他：/我：」聊天行整理成自然读的互动素材，空列表返回空串。"""
         try:
             rows = []
@@ -58,7 +75,7 @@ class ScheduleDiaryMixin:
                 else:
                     sentences.append('你说：“%s”。' % said)
                 index += 1
-            return "在约会期间，" + "".join(sentences[-6:])
+            return ("在约会期间，" if is_date else "这一小时，") + "".join(sentences[-6:])
         except Exception:
             return ""
 
@@ -175,9 +192,20 @@ class ScheduleDiaryMixin:
         _act = str(item.get("activity") or "")
         is_date = (str(item.get("category") or "") == "social"
                    and ("老公" in _act or "约会" in _act))
+        scene = self._scene_for_diary(ctx, item, is_date)
+        if scene is not None and scene.partner and not is_date:
+            try:
+                try:
+                    from . import amo_household as _hh_count
+                except ImportError:
+                    import amo_household as _hh_count
+                _hh_count.count_night(getattr(self, "p", None),
+                                      str((ctx or {}).get("day") or ""), scene)
+            except Exception as _amo_exc:
+                _note_swallowed("schedule_engine.count_night", _amo_exc)
         prompt = self._diary_prompt(ctx, item, prev_item, next_item, prev_diary,
-                                    together=is_date)
-        prompt = self._diary_interaction_suffix(prompt, ctx, is_date)
+                                    together=is_date, scene=scene)
+        prompt = self._diary_interaction_suffix(prompt, ctx, is_date, scene=scene)
         raw = ""
         try:
             raw = await asyncio.wait_for(llm.chat_raw(umo, system, prompt), timeout=60)
@@ -204,13 +232,14 @@ class ScheduleDiaryMixin:
         if len(diary) < 20:
             diary = self.fallback_diary(ctx, item, prev_item)
         facts = ctx.get("fact_pool") or []
+        partner_home = bool(scene is not None and scene.partner and scene.presence == "home")
         if facts:
-            diary = self._sanitize_hour_diary(diary, facts)
+            diary = self._sanitize_hour_diary(diary, facts, partner_home=partner_home)
             if not await self._audit_hour_diary(diary, facts, llm, umo):
                 strict = (prompt + "\n【审计失败】上一版写了事实列表之外的事，必须严格只写白名单里的事件。\n")
                 try:
                     raw = await asyncio.wait_for(llm.chat_raw(umo, system, strict), timeout=60)
-                    diary = self._sanitize_hour_diary(_parse(raw), facts)
+                    diary = self._sanitize_hour_diary(_parse(raw), facts, partner_home=partner_home)
                 except Exception as _amo_exc:
                     _note_swallowed("schedule_engine.ScheduleEngine.generate_diary.audit", _amo_exc)
         if prev_diary and self._diary_contradicts(prev_diary, diary):
@@ -232,6 +261,14 @@ class ScheduleDiaryMixin:
         diary, location_fallback = await self._guard_diary_location(
             diary, item, llm, umo, system, prompt, _parse, is_date, facts)
         diary = self._enforce_people(item, diary)
+        try:
+            try:
+                from . import amo_person_ref as _pr
+            except ImportError:
+                import amo_person_ref as _pr
+            diary = _pr.normalize_for(getattr(self, "p", None), diary)
+        except Exception as _amo_exc:
+            _note_swallowed("schedule_engine.generate_diary.person_ref", _amo_exc)
         return {
             "diary": diary,
             "mood": item.get("mood") or "平静",
@@ -275,13 +312,13 @@ class ScheduleDiaryMixin:
             enabled_flag=True, tag="small")
         return result["text"], bool(result["fallback"])
 
-    def diary_presence_rules(self, together=False):
-        return diary_presence_rules(together)
+    def diary_presence_rules(self, together=False, scene=None):
+        return diary_presence_rules(together, scene=scene)
 
-    def _diary_interaction_suffix(self, prompt, ctx, is_date):
-        """提示词尾段：互动素材 + 物理边界/约会约束（文本与旧实现逐字一致）。"""
+    def _diary_interaction_suffix(self, prompt, ctx, is_date, scene=None):
+        """提示词尾段：互动素材 + 物理边界/约会约束（apart 文本与旧实现逐字一致）。"""
         _chat_hour = [str(x) for x in (ctx.get("chat_lines_hour") or []) if str(x).strip()]
-        _material = self._interaction_material(_chat_hour)
+        _material = self._interaction_material(_chat_hour, is_date=bool(is_date))
         if _material:
             prompt += ("\n\n【互动素材】" + _material + "\n"
                        "请结合你们的真实聊天记录和物理场景，以第一人称写小日记。"
@@ -289,7 +326,12 @@ class ScheduleDiaryMixin:
         else:
             prompt += ("\n\n【互动素材】这一小时你们没怎么发消息，可能只是在默默吃饭/待着。"
                        "不要编造对话，只写物理场景和情绪（比如「虽然没怎么说话，但一起吃饭很安心」）。\n")
-        if not is_date:
+        if scene is not None and str(getattr(scene, "presence", "") or "") == "home":
+            prompt += ("\n\n【同居·在家·最高优先级】这一小时你们住在一起，他在家（"
+                       + str(getattr(scene, "partner_place", "") or "客厅")
+                       + "）。可以写日常互动；他上班/出差时不在，素材里没说他出门就默认他在家。"
+                       "不要写「他不在我身边」「我一个人住」这种和同居矛盾的话。\n")
+        elif not is_date:
             prompt += ("\n\n【物理边界·最高优先级】他此刻不在你身边、不在这个房间里。"
                        "必须至少写一次“一个人/手机屏幕/微信/语音”这类独处细节，让读者看出你是一个人；"
                        "严禁写他翻身、抱你、坐在旁边、屋里两个人。"
@@ -361,7 +403,8 @@ class ScheduleDiaryMixin:
         return ("\n【今天真实发生的事件（白名单）】\n" + "\n".join(lines)
                 + "\n你只能扩写上面的内容。上面没写的电话、见面、去公司、聊天，一律不能写。\n")
 
-    def _diary_prompt(self, ctx, item, prev_item, next_item, prev_diary="", together=False):
+    def _diary_prompt(self, ctx, item, prev_item, next_item, prev_diary="", together=False,
+                      scene=None):
         event = ctx.get("event") or {}
         scenic = ctx.get("scenic") or {}
         try:
@@ -404,9 +447,9 @@ class ScheduleDiaryMixin:
         except Exception:
             _npc_line = ""
         _base = (
-            _npc_line + fact_rules(together) + "\n"
+            _npc_line + fact_rules(together, scene=scene) + "\n"
             + _immersion_extra + "\n"
-            + diary_presence_rules(together)
+            + diary_presence_rules(together, scene=scene)
             + "角色设定：\n" + _brief_world(ctx.get("world") or {}) + "\n"
             "今天：%s，%s；天气：%s；所在地：%s。\n"
             "身体：%s；生理期：%s；昨日：%s。\n"
@@ -480,7 +523,7 @@ class ScheduleDiaryMixin:
         return _base
 
     @staticmethod
-    def _sanitize_hour_diary(text, facts):
+    def _sanitize_hour_diary(text, facts, partner_home=False):
         value = str(text or "")
         joined = " ".join(str(f.get("detail") or "") for f in facts if isinstance(f, dict))
         has_phone = any(w in joined for w in ("电话", "通话", "语音"))
@@ -499,7 +542,8 @@ class ScheduleDiaryMixin:
                 continue
             if not has_phone and any(w in s for w in ("打电话", "通电话", "听见他声音", "视频通话")):
                 continue
-            if not has_meet and any(w in s for w in ("他抱我", "他摸我头", "他来找我", "一起吃饭")):
+            if not has_meet and not partner_home and any(
+                    w in s for w in ("他抱我", "他摸我头", "他来找我", "一起吃饭")):
                 continue
             if not has_chat and any(w in s for w in ("微信", "飞书")) and any(
                     w in s for w in ("聊", "回", "消息", "说")):
@@ -514,7 +558,7 @@ class ScheduleDiaryMixin:
             from .amo_diary_guard import strip_fabricated_interaction
         except ImportError:
             from amo_diary_guard import strip_fabricated_interaction
-        return strip_fabricated_interaction(value, joined, has_chat)
+        return strip_fabricated_interaction(value, joined, has_chat, partner_home=partner_home)
 
     async def _audit_hour_diary(self, text, facts, llm, umo):
         if not facts or llm is None:

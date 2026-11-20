@@ -866,8 +866,12 @@ class ScheduleStateMixin(_MixinBase):
         "jit", "ensure", "ensure_regen", "social", "auto", "life", "wander", "generated",
     )
 
-    def _guard_activity_subjects(self, items, source):
-        """生成来源的日程：没约过会就把「和老公」改写成「和闺蜜」。"""
+    def _guard_activity_subjects(self, items, source, day=""):
+        """生成来源的日程：没约会、且居住关系不允许时，把「和老公」改写成「和闺蜜」。
+
+        2026-11-20：按**块自己的日期/时间**判断在场，不再用「现在」。
+        同居/半同居窗口内放行「和老公」；分居档行为与 7.5.9 一致。
+        """
         if str(source or "") not in self.ACTIVITY_GUARD_SOURCES:
             return items
         approved = self._date_approved()
@@ -877,7 +881,23 @@ class ScheduleStateMixin(_MixinBase):
                 out.append(item)
                 continue
             row = dict(item)
-            result = _validate_activity(row.get("activity"), approved=approved)
+            allow = bool(approved)
+            if not allow and day:
+                try:
+                    try:
+                        from . import amo_household as _hh
+                    except ImportError:
+                        import amo_household as _hh
+                    scene = _hh.scene_at(
+                        self.p, day,
+                        row.get("start"), row.get("end"),
+                        row.get("place") or "", zone=row.get("zone") or "",
+                        activity=row.get("activity") or "",
+                    )
+                    allow = bool(scene.partner)
+                except Exception:
+                    allow = False
+            result = _validate_activity(row.get("activity"), approved=allow)
             if not result.get("ok"):
                 logger.info(
                     "[amo] 日程主语校验：%r -> %r（%s，source=%s）",
@@ -885,6 +905,14 @@ class ScheduleStateMixin(_MixinBase):
                 )
                 row["activity"] = result.get("activity") or row.get("activity")
             out.append(row)
+        try:
+            try:
+                from . import amo_person_ref as _pr
+            except ImportError:
+                import amo_person_ref as _pr
+            out = _pr.normalize_schedule(out, enabled=_pr.enabled(self.p))
+        except Exception:  # cleanup: 指代归一失败不拦日程写入
+            pass
         return out
 
     def _commit_schedule_change_locked(self, day, new_items, old_items=None, source="",
@@ -1061,7 +1089,7 @@ class ScheduleStateMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.commit_schedule_change.place", _amo_exc)
         try:
-            new_items = self._guard_activity_subjects(new_items, source)
+            new_items = self._guard_activity_subjects(new_items, source, day)
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState._commit_schedule_change_locked", _amo_exc)
         try:
@@ -1344,9 +1372,20 @@ class ScheduleStateMixin(_MixinBase):
                 return "花销 ¥%s" % amount
         return text
 
-    def _default_slot(self, begin, finish):
-        """过去没有事件的空档用默认生活状态填满，不写库，也不算剧透。"""
+    def _default_slot(self, begin, finish, office=False):
+        """过去没有事件的空档用默认生活状态填满，不写库，也不算剧透。
+
+        2026-11-20：当天已经有「公司」块时，工作日 09:00-18:00 的空档必须
+        留在公司/公司附近，不能默认成「在家发呆」——否则面板会把上班日
+        写成「10:40 从公司变成家、下午不用上班」。
+        """
         home = self._jit_home()
+        if office and 9 * 60 <= begin < 18 * 60:
+            if 12 * 60 <= begin < 14 * 60:
+                return {"activity": "在公司附近吃午饭，歇一会儿",
+                        "place": "公司", "category": "rest", "zone": "office"}
+            return {"activity": "在工位上忙工作",
+                    "place": "公司", "category": "work", "zone": "office"}
         if finish <= 6 * 60:
             return {"activity": "深度睡眠", "place": home, "category": "sleep", "zone": "home"}
         if begin < 9 * 60:
@@ -1417,6 +1456,7 @@ class ScheduleStateMixin(_MixinBase):
             points.add(max(0, min(now_min, event["begin"])))
             points.add(max(0, min(now_min, event["finish"])))
         ordered = sorted(points)
+        office_day = any(str(item.get("zone") or "") == "office" for item in events)
         slots = []
         for start, end in zip(ordered, ordered[1:]):
             if end <= start:
@@ -1456,7 +1496,7 @@ class ScheduleStateMixin(_MixinBase):
             for part_start, part_end in zip(cuts, cuts[1:]):
                 if part_end <= part_start:
                     continue
-                default = self._default_slot(part_start, part_end)
+                default = self._default_slot(part_start, part_end, office=office_day)
                 slots.append({
                     "start_min": part_start,
                     "end_min": part_end,

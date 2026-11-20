@@ -31,7 +31,7 @@ except ImportError:  # 按文件直接加载（离线单测）
 #: 插件载入时刻，用来给 /status 的 obs_health.uptime_s 当起点
 _OBS_STARTED_AT = _obs_now_ts()
 
-PLUGIN_VERSION = "7.5.9"
+PLUGIN_VERSION = "7.6.0"
 
 try:  # 包模式优先（AstrBot 正常加载）
     from .amo_bootstrap import (
@@ -265,9 +265,11 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         "greet": [
             "？怎么不理我了？",
             "你是不是没看见我呀。",
-            "醒醒，在等你呢。",
             "我在这儿呢，你倒是看我一眼呀。",
             "喂喂，人呢？",
+            "你那边怎么没动静了呀。",
+            "是不是又忙起来了，忙完跟我说一声。",
+            "我还在等你回我一句呢。",
         ],
         "meal": [
             "饭吃了没？",

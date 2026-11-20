@@ -56,15 +56,15 @@ def make_plugin(values):
 
 
 class SchemaLoadTests(unittest.TestCase):
-    def test_real_schema_shape_is_263_keys(self):
+    def test_real_schema_shape_is_270_keys(self):
         schema = load_schema(ROOT)
-        self.assertEqual(266, len(schema), "schema 键数变化需要同步 ConfigModel 测试")
+        self.assertEqual(270, len(schema), "schema 键数变化需要同步 ConfigModel 测试")
         counts = {}
         for meta in schema.values():
             counts[str(meta.get("type"))] = counts.get(str(meta.get("type")), 0) + 1
-        self.assertEqual(88, counts.get("int"))
-        self.assertEqual(85, counts.get("bool"))
-        self.assertEqual(54, counts.get("string"))
+        self.assertEqual(89, counts.get("int"))
+        self.assertEqual(87, counts.get("bool"))
+        self.assertEqual(55, counts.get("string"))
         self.assertEqual(30, counts.get("float"))
 
     def test_missing_schema_returns_empty(self):

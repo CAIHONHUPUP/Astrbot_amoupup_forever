@@ -97,7 +97,9 @@ async def _proactive_context_block(self, umo, profile, system):
         _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
         memory_text = ""
     if memory_text:
-        system = system + "\n【关于他的记忆】\n" + memory_text
+        system = system + ("\n【关于他的记忆】\n" + memory_text
+                           + "\n（这些是过去的记忆，不是今天刚发生的新鲜事；"
+                             "里程碑/总结里的旧事不要当话题复述，尤其别重复已经讲过的笑话/事件。）")
     try:
         relation_network = self.p._relation_network_text(str(profile.get("uid") or ""))
     except Exception as _amo_exc:
@@ -125,7 +127,8 @@ async def _proactive_context_block(self, umo, profile, system):
 def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_hint=""):
     if kind == "decide":
         return ("没有人要求你发消息。事实：" + str(facts or "")
-                + " 想找他聊就主动发 1-2 句口语化的话；不想发、没话说、或者觉得会打扰他，"
+                + " 想找他聊就主动发 1-2 句口语化的话；两句必须是同一个话题、有承接，"
+                  "不要一句分享小事、一句查岗；不想发、没话说、或者觉得会打扰他，"
                 "如果事实里有【必须主动】就一定要发；分享的小事必须和此刻的状态、天气、地点一致，别穿帮；没有特别想分享、或觉得他在忙，你可以去追剧发呆，不想发就只输出 [SKIP]。")
     if kind == "unwell":
         health = snap.get("health") or {}
@@ -331,11 +334,23 @@ class LLMService:
 
     async def gen_worldview(self, umo, persona):
         system = "你是一个世界观设定师。只输出 JSON，不要输出其他文字。"
+        _rule = ""
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            _rule = _hh.wording("worldview", plugin=self.p)
+        except Exception:
+            _rule = ""
+        _rule = _rule or (
+            "她和老公同城不同住、各有住处（她住出租屋，他住他自己那边），"
+            "不能凭空出现在彼此身边；"
+            "QQ/飞书/微信是他们平时的联系方式，只有约会见面那天才有面对面的陪伴，约会结束各回各家。"
+        )
         prompt = (
             "根据下面的人格设定，为这个角色生成一个真实可信的现代生活世界观。\n"
-            "设定：她和老公同城不同住、各有住处（她住出租屋，他住他自己那边），"
-            "不能凭空出现在彼此身边；"
-            "QQ/飞书/微信是他们平时的联系方式，只有约会见面那天才有面对面的陪伴，约会结束各回各家。\n"
+            "设定：" + _rule + "\n"
             "人格设定：\n" + truncate(persona, 1500) + "\n\n"
             "输出 JSON 对象，字段：name(角色名), age(整数), city(城市), occupation(职业), "
             "workplace(工作或学习地点), personality(性格一句话), hobbies(字符串数组), "
@@ -374,13 +389,23 @@ class LLMService:
             "（刚才说吃过了，现在就不能说去买吃的）。\n"
             "此刻在做什么以上面「你此刻在…」为准：和最近聊天记录里说的不一样，就按此刻说，"
             "自然地改口（「会开完了」「我不在便利店了」），不要沿用旧说法，"
-            "也不要编出没发生过的会议/加班/行程。"
+            "也不要编出没发生过的会议/加班/行程。\n"
+            "身边小事里写的是谁就是谁：写的是同事就写同事，不要换成名单里的名字；"
+            "没写名字就用「同事/朋友」，不要自己加名字。"
         )
         try:
             from .amo_immersion_guard import prompt_block as _immersion_block
         except ImportError:
             from amo_immersion_guard import prompt_block as _immersion_block
         system = system + "\n" + _immersion_block()
+        try:
+            try:
+                from .amo_names import ROLE_LINE as _role_line
+            except ImportError:
+                from amo_names import ROLE_LINE as _role_line
+            system = system + "\n" + _role_line
+        except Exception:  # cleanup: 人物关系表读不到就不加
+            pass
         try:
             from .amo_date_context import prompt_block as _date_prompt_block
             _date_text = _date_prompt_block(self.p)
@@ -431,6 +456,16 @@ class LLMService:
         if not text or "[SKIP]" in text.upper():
             return ""
         text = _align_place(text, snap)
+        try:  # 素材里没出现的名单人名不算数（同事就是同事，不换成柳如烟/方圆）
+            try:
+                from .amo_names import strip_unbacked_names as _strip_names
+            except ImportError:
+                from amo_names import strip_unbacked_names as _strip_names
+            _ctx = " ".join([str(facts or ""), str(memory_text or "")]
+                            + [str(x) for x in (analysis.get("recent_bot_texts") or [])])
+            text = _strip_names(text, _ctx)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_llm_service.gen_proactive.names", _amo_exc)
         # 完成动作一致性：刚说「洗漱过了」就不能再说「才想起来洗漱」（2026-11-17）。
         try:
             try:

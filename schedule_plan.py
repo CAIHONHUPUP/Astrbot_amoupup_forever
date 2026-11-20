@@ -417,8 +417,18 @@ def json_extract(raw, fallback=None):
     return _plan_text.json_extract(raw, fallback, logger)
 
 
-def diary_presence_rules(together=False):
+def diary_presence_rules(together=False, scene=None):
     """小日记的第 7/8 条：约会这一小时不许把老公写成“微信上的网友”。"""
+    if scene is not None and str(getattr(scene, "presence", "") or "") == "home":
+        return (
+            "【物理场景事实·最高优先级】这一小时你们住在一起，他在家（"
+            + str(getattr(scene, "partner_place", "") or "客厅")
+            + "）。可以写日常互动：他看电视、他做饭、他递东西、你靠在他肩上。"
+            "他上班/出差时不在家；素材里没说他出门，就默认他在家。\n"
+            "7. 不要写「他不在我身边」「我一个人住」这种和同居矛盾的话；"
+            "也不要把他写成只在微信上聊天的网友。\n"
+            "8. 素材里没有的具体事件不要编（例如他突然买花回来）；日常相处的小动作可以自然扩写。\n"
+        )
     if together:
         return (
             "【物理场景事实·最高优先级】这一小时你们在一起：老公就在你对面，面对面坐在一起；"

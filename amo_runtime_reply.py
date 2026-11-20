@@ -435,6 +435,19 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             _mark_date_end(self, text)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.on_decorating_result.date_end_cue", _amo_exc)
+        try:  # 动作-only：只有括号动作、没有一句人话时，补一句（2026-11-20）
+            try:
+                from .amo_message import action_only_fallback as _action_fallback
+                from .amo_message import is_action_only as _action_only
+            except ImportError:
+                from amo_message import action_only_fallback as _action_fallback
+                from amo_message import is_action_only as _action_only
+            if _action_only(text):
+                fixed = _action_fallback(text, event.message_str or "")
+                logger.info("[amo] 动作-only 补一句: %s -> %s", text[:40], fixed[:40])
+                text = fixed
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.on_decorating_result.action_only", _amo_exc)
         text = self._trim_reply(text)
         return text
 

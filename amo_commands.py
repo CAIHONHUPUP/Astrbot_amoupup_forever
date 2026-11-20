@@ -1020,6 +1020,73 @@ class CommandMixin(_MixinBase):
             return
         yield event.plain_result("已修正 %s 的日记。" % day.isoformat())
 
+    @filter.command("居住")
+    async def cmd_household(self, event: AstrMessageEvent):
+        await self._ensure_ready()
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            data = _hh.load(self)
+            scene = _hh.scene_now(self)
+            lines = [
+                "居住：%s" % _hh.STAGE_LABELS.get(data["stage"], data["stage"]),
+                "这会儿：%s" % ("他在家" if scene.partner else "他不在"),
+                "半同居过夜：%d/%d 天" % (data.get("night_count") or 0,
+                                          _hh.to_together_nights(self)),
+            ]
+            if data.get("ready"):
+                lines.append("条件已达成：可以 /同居 确认")
+            yield event.plain_result("\n".join(lines))
+        except Exception as exc:
+            yield event.plain_result("读取居住状态失败：%s" % exc)
+
+    @filter.command("同居")
+    async def cmd_cohabit(self, event: AstrMessageEvent):
+        await self._ensure_ready()
+        if not self._is_admin(event):
+            yield event.plain_result("只有管理员才能改居住关系。")
+            return
+        raw = str(event.message_str or "").strip()
+        confirmed = ("确认" in raw) or ("confirm" in raw.lower())
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            if not confirmed:
+                yield event.plain_result(
+                    "会切到「正式同居」：在家时他就在屋里，日程/小日记/聊天口径一起变。\n"
+                    "要确认请再发：/同居 确认")
+                return
+            ok, msg = await _hh.transition_async(
+                self, _hh.STAGE_TOGETHER, force=True, reason="管理员 /同居", source="command")
+            yield event.plain_result(("已切换：" if ok else "没改成：") + msg)
+        except Exception as exc:
+            yield event.plain_result("切换失败：%s" % exc)
+
+    @filter.command("搬回")
+    async def cmd_move_back(self, event: AstrMessageEvent):
+        await self._ensure_ready()
+        if not self._is_admin(event):
+            yield event.plain_result("只有管理员才能改居住关系。")
+            return
+        raw = str(event.message_str or "").strip()
+        if "确认" not in raw and "confirm" not in raw.lower():
+            yield event.plain_result("会回到「同城分居」。要确认请再发：/搬回 确认")
+            return
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            ok, msg = await _hh.transition_async(
+                self, _hh.STAGE_APART, force=True, reason="管理员 /搬回", source="command")
+            yield event.plain_result(("已切换：" if ok else "没改成：") + msg)
+        except Exception as exc:
+            yield event.plain_result("切换失败：%s" % exc)
+
     @filter.command("c_status")
     async def cmd_status(self, event: AstrMessageEvent):
         await self._ensure_ready()

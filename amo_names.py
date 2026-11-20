@@ -21,6 +21,34 @@ SELF_ALIASES = frozenset({"老公", "亲爱的", "宝贝", "对象", "男朋友"
 ROSTER_LINE = ("你认识的人只有：[%s]。严禁凭空捏造任何其他名字，"
                "不要提任何名单外的朋友、同事、亲戚、路人。" % "、".join(ROSTER))
 
+#: 名单人物的固定关系/性别：别再让模型随手把「同事」换成任意名字，
+#: 也别把男性写成暧昧对象（2026-11-20）。
+ROLES = {
+    "柳如烟": "闺蜜",
+    "白凝冰": "同事",
+    "季博达": "男同事（只限工作往来，不单独约会、不暧昧）",
+    "方圆": "同事",
+    "沈幼微": "朋友",
+    "妈妈": "家人",
+    "爸爸": "家人",
+}
+ROLE_LINE = "人物关系：" + "；".join("%s=%s" % (name, role) for name, role in ROLES.items()) + "。"
+
+
+def strip_unbacked_names(text, context, fallback="同事"):
+    """名单里的名字如果在素材里根本没出现，就换成中性称呼。
+
+    2026-11-20：微事件原文是「同事讲了个冷笑话」，主动消息却写成
+    「柳如烟刚讲了个冷笑话」；下一轮又变成「方圆」。素材里没出现过的名字
+    一律不算数，避免编人名、也避免把某个人写成“神秘的他”。
+    """
+    body = str(text or "")
+    ctx = str(context or "")
+    for name in ROSTER:
+        if name in body and name not in ctx:
+            body = body.replace(name, fallback)
+    return body
+
 STOPWORDS = frozenset(""".split()
 家里 家人 公司 单位 学校 商场 超市 菜场 店里 饭店 餐厅 食堂 楼下 楼上 隔壁 小区 医院 银行 地铁 公交
 朋友 同事 领导 老板 经理 主管 总监 客户 甲方 乙方 保安 前台 保洁 服务员 厨子 同学 老师 医生 护士

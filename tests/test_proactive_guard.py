@@ -190,3 +190,19 @@ class NonDictRowsTests(unittest.TestCase):
         result = analyze_rows([None, "junk", 42], now=10.0)
         self.assertEqual(result["context_text"], "")
         self.assertEqual(result["unanswered_text"], "")
+
+
+def test_strip_mixed_checkin_removes_generic_checkin():
+    import amo_proactive as ap
+    text = "刚泡上咖啡，同事讲了个冷笑话，我笑到现在停不下来。你在干嘛呢，吃饭没。"
+    out = ap.strip_mixed_checkin(text)
+    assert "吃饭没" not in out
+    assert "冷笑话" in out
+
+
+def test_strip_unbacked_names_replaces_invented_name():
+    from amo_names import strip_unbacked_names
+    out = strip_unbacked_names("我跟你说，柳如烟刚讲了个冷笑话", "同事讲了个冷笑话")
+    assert "柳如烟" not in out
+    assert "同事" in out
+    assert "柳如烟" in strip_unbacked_names("柳如烟刚讲了个冷笑话", "柳如烟说……")

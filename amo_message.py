@@ -217,7 +217,38 @@ def strip_repeated_urge(reply, user_text, bot_text):
     out_parts = re.split(r"(?<=[。！？!?~～\n])", out) if out else []
     out = "".join(out_parts[:1]).strip() if out_parts else ""
     out = re.sub(r"[，,]+$", "。", out)
+    if is_action_only(out):
+        out = (out + "\n嗯，去吧。").strip()
     return out or "嗯，去吧。"
+
+_ACTION_SEGMENT = re.compile(r"^[（(][^（）()]*[）)]\s*[。！？!?~～]?$")
+
+
+def is_action_only(text):
+    """整条回复只有括号动作、没有一句真正说出口的话。"""
+    parts = [part.strip() for part in str(text or "").splitlines() if part.strip()]
+    return bool(parts) and all(_ACTION_SEGMENT.match(part) for part in parts)
+
+
+_ACTION_FALLBACK = {
+    "shy": ("……你少来。", "别盯着看啦。", "……干嘛呀。", "你这个人真是的。"),
+    "laugh": ("行了行了，别闹。", "哈哈，你呀。", "笑死我了。"),
+    "default": ("……嗯。", "你接着说。", "我在听呢。", "然后呢？"),
+}
+
+
+def action_only_fallback(text, user_text=""):
+    """动作-only 时补一句人话；保留原动作，不整段丢。"""
+    body = str(text or "").strip()
+    if any(word in body for word in ("耳朵", "脸红", "烫", "害羞", "扣", "低头")):
+        pool = _ACTION_FALLBACK["shy"]
+    elif "笑" in body:
+        pool = _ACTION_FALLBACK["laugh"]
+    else:
+        pool = _ACTION_FALLBACK["default"]
+    line = random.choice(pool)
+    return (body + "\n" + line).strip() if body else line
+
 
 _SHORT_CONTINUE = ("慢慢看", "慢慢吃", "慢慢来", "慢慢走", "慢慢说", "去吧", "睡吧",
                    "好", "嗯", "行", "知道了", "好的", "收到", "晚安")

@@ -21,7 +21,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 #: _conf_schema.json 的键数；新增/删除配置键时同步这里和 test_config_model.py
-SCHEMA_KEY_COUNT_EXPECTED = 266
+SCHEMA_KEY_COUNT_EXPECTED = 270
 
 
 def check_schema():
@@ -386,7 +386,10 @@ def check_tests():
     """tests/ 全量 + work/ 仿真库自测；两棵目录树各 discover 一次，不会重复收集。"""
     work_test = os.path.join(ROOT, "work", "test_sim_lib.py")
     assert os.path.isfile(work_test), "work 仿真测试缺失：%s" % work_test
-    cmd = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-q"]
+    # 2026-11-20：用 pytest 跑全量。unittest discover 不加载 tests/conftest.py，
+    # 时钟不会钉在 2026-11-18 15:00，trip/clock 一批用例会按真实日期假红；
+    # pytest 才是本仓库文档里的全量跑法（tests/conftest.py 的 autouse freeze 生效）。
+    cmd = [sys.executable, "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider"]
     subprocess.run(cmd, cwd=ROOT, check=True)
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", "work", "-p", WORK_TESTS_PATTERN, "-q"]
     subprocess.run(cmd, cwd=ROOT, check=True)

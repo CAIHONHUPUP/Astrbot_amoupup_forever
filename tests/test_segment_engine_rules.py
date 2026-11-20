@@ -190,3 +190,15 @@ class ConfigParseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActionSegmentTests(unittest.TestCase):
+    def test_action_segment_merges_into_text(self):
+        e = engine()
+        self.assertEqual(e._merge_action_segments(["（笑）", "你少来。"]), ["（笑）\n你少来。"])
+
+    def test_all_action_segments_get_words(self):
+        e = engine()
+        out = e._merge_action_segments(["（笑）"])
+        self.assertEqual(len(out), 1)
+        self.assertTrue(len(out[0].splitlines()) >= 2)

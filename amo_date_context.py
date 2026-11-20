@@ -151,9 +151,18 @@ def finish_date_now(plugin, now=None, reason="user_done"):
             home_setter("约会", now.timestamp())
         except Exception as exc:  # cleanup：兼容失败不影响会话已经收尾
             logger.debug("[amo] 约会回家投影失败: %r", exc)
-    _ds.request_end(plugin,
-                    "时间不早了，吃饱喝足了，该回去了；约会结束，他不在你身边，你一个人回家。",
-                    reason=reason, ttl=600, sent=True, now=now)
+    _end_line = "时间不早了，吃饱喝足了，该回去了；约会结束，他不在你身边，你一个人回家。"
+    try:
+        try:
+            from . import amo_household as _hh
+        except ImportError:
+            import amo_household as _hh
+        _override = _hh.wording("date_ending", plugin=plugin)
+        if _override:
+            _end_line = "时间不早了，吃饱喝足了，该回去了；" + _override
+    except Exception as exc:  # cleanup: 居住状态读不到就用 apat 原文
+        logger.debug("[amo] 约会收尾居住文案读取失败: %r", exc)
+    _ds.request_end(plugin, _end_line, reason=reason, ttl=600, sent=True, now=now)
     return reason
 
 
@@ -241,7 +250,18 @@ def prompt_block(plugin, now=None):
     if ending:
         return _prompts.render("date.ending", fact=str(ending.get("fact") or ""))
     if _home(plugin, now):
-        return _prompts.render("date.home")
+        text = _prompts.render("date.home")
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            _override = _hh.wording("date_ending", plugin=plugin)
+            if _override:
+                text = text + "\n【居住·最高优先级】" + _override
+        except Exception as exc:  # cleanup: 居住状态读不到就用原块
+            logger.debug("[amo] 约会结束居住文案读取失败: %r", exc)
+        return text
     return ""
 
 

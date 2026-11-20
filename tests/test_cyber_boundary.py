@@ -61,13 +61,25 @@ class _Ctx:
         self.db = _DB(data)
 
 
+#: 2026-11-20：同居文案改为 stage-gated（amo_household.scene_at 决定），
+#: 这两个文件里保留的是「同居档才会走到」的文案；L0 由下面的直接断言兜住。
+STAGE_GATED_FILES = ("amo_diary_guard.py", "amo_fact_pool.py")
+
+
 def test_prompt_sources_have_no_shared_home_wording():
-    """内置提示词/事实文案不许再把两人写成同住一个家（B 方案：同城不同住）。"""
+    """L0 内置提示词/事实文案不许把两人写成同住一个家（B 方案：同城不同住）。"""
     for name in PROMPT_FILES:
+        if name in STAGE_GATED_FILES:
+            continue
         with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
             source = fh.read()
         for phrase in SHARED_HOME_WORDS:
             assert phrase not in source, (name, phrase)
+    # 直接验证 L0 分支本身：同居文案只在 scene.presence == "home" 时出现。
+    l0 = fact_rules(False)
+    for phrase in SHARED_HOME_WORDS:
+        assert phrase not in l0, phrase
+    assert "住在一起" not in fact_rules(False, home=False)
 
 
 def test_after_date_prompt_says_apart():

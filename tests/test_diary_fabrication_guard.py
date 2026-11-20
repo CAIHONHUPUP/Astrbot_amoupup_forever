@@ -82,7 +82,7 @@ class DeterministicGuardTests(unittest.TestCase):
     def test_reverse_without_hard_guard_keeps_fabrication(self):
         # 反向验证：把确定性兜底换成原样返回，虚构句就会留在日记里 → 上面那条用例会红。
         with mock.patch.object(fp, "_strip_interaction",
-                               lambda text, facts_text, has_chat: text):
+                               lambda text, facts_text, has_chat, partner_home=False: text):
             out = fp.validate_text(FABRICATED, SICK_POOL)
         self.assertIn("提醒我多喝水", out)
 

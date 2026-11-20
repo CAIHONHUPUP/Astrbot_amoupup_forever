@@ -500,3 +500,12 @@ class ResolveTests(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class OfficeGapDefaultTests(Base):
+    def test_office_day_gap_stays_at_office(self):
+        self.assertEqual(self.host._default_slot(640, 660, office=True)["zone"], "office")
+        self.assertEqual(self.host._default_slot(760, 800, office=True)["zone"], "office")
+        # 没有 office 锚点时保持旧的 home 默认
+        self.assertEqual(self.host._default_slot(640, 660)["zone"], "home")

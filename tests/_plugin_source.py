@@ -34,7 +34,9 @@ MODULES = ("main.py", "amo_shared.py", "amo_observability.py", "amo_db.py",
            "domains/schedule/social_segments.py", "domains/schedule/day_types.py",
            "domains/schedule/subject.py", "domains/reply/repetition_guard.py",
            "domains/photo/room_ab.py", "domains/diary/engine.py",
-           "domains/reply/status_text.py", "schedule_banks.py")
+           "domains/reply/status_text.py", "schedule_banks.py",
+           # 2026-11-20 居住关系/人物指代
+           "amo_household.py", "amo_person_ref.py")
 
 
 def module_paths(root):

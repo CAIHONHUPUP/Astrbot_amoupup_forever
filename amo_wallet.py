@@ -54,6 +54,17 @@ class Wallet:
                     ts REAL NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_wallet_ledger_ts ON wallet_ledger(ts DESC);
+                CREATE TABLE IF NOT EXISTS wallet_holds (
+                    idem TEXT PRIMARY KEY,
+                    account TEXT NOT NULL DEFAULT 'cash',
+                    amount_cents INTEGER NOT NULL DEFAULT 0,
+                    reason TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL DEFAULT 0,
+                    expires_at REAL NOT NULL DEFAULT 0,
+                    released_at REAL NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_wallet_holds_active
+                    ON wallet_holds(account, released_at);
                 """
             )
             cols = {row[1] for row in conn.execute("PRAGMA table_info(wallet_ledger)")}
@@ -97,6 +108,74 @@ class Wallet:
     def total_assets(self) -> int:
         """总资产（分）。持仓市值由金融插件加，这里只给现金。"""
         return self.balance("cash")
+
+    # ---------------- 冻结（答应饭局到点才扣的那笔钱） ----------------
+    def _held_locked(self, account: str = "cash", now: float = 0.0) -> int:
+        current = float(now or _amo_clock.now_ts())
+        row = self.db.conn.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM wallet_holds "
+            "WHERE account=? AND released_at=0 AND (expires_at=0 OR expires_at>?)",
+            (str(account), current)).fetchone()
+        return int(row[0] or 0) if row else 0
+
+    def held(self, account: str = "cash") -> int:
+        """被冻结的金额（分）：余额里看得见，但别的扣款动不了。"""
+        self._ensure()
+        with self.db.lock:
+            return self._held_locked(account)
+
+    def available(self, account: str = "cash") -> int:
+        """可花余额 = 余额 - 冻结。"""
+        self._ensure()
+        with self.db.lock:
+            row = self.db.conn.execute(
+                "SELECT balance_cents FROM wallet_account WHERE account=?", (str(account),)
+            ).fetchone()
+            balance = int(row[0]) if row else 0
+            return balance - self._held_locked(account)
+
+    def hold(self, amount_cents, reason, idem, account: str = "cash",
+             expires_at: float = 0.0) -> bool:
+        """冻结一笔钱：余额不变，只是其他扣款不能动这部分。幂等（同一 idem 只冻一次）。"""
+        self._ensure()
+        amount = int(amount_cents)
+        key = str(idem or "").strip()
+        if amount <= 0 or not key:
+            return False
+        with self.db.lock:
+            conn = self.db.conn
+            row = conn.execute(
+                "SELECT released_at FROM wallet_holds WHERE idem=?", (key,)
+            ).fetchone()
+            if row:
+                # 已冻结 → 幂等成功；已经释放/用掉 → 不重开
+                return int(row[0] or 0) == 0
+            row = conn.execute(
+                "SELECT balance_cents FROM wallet_account WHERE account=?", (str(account),)
+            ).fetchone()
+            balance = int(row[0]) if row else 0
+            if balance - self._held_locked(account) < amount:
+                return False
+            conn.execute(
+                "INSERT INTO wallet_holds(idem, account, amount_cents, reason, created_at, "
+                "expires_at, released_at) VALUES(?,?,?,?,?,?,0)",
+                (key, str(account), amount, str(reason or ""),
+                 _amo_clock.now_ts(), float(expires_at or 0)))
+            conn.commit()
+            return True
+
+    def release(self, idem) -> bool:
+        """解冻（取消邀约/放弃时）；返回是否真解冻了。"""
+        key = str(idem or "").strip()
+        if not key:
+            return False
+        self._ensure()
+        with self.db.lock:
+            cur = self.db.conn.execute(
+                "UPDATE wallet_holds SET released_at=? WHERE idem=? AND released_at=0",
+                (_amo_clock.now_ts(), key))
+            self.db.conn.commit()
+            return int(cur.rowcount or 0) > 0
 
     def has_idem(self, idem: str) -> bool:
         """只读查询某笔流水的幂等键是否已入账（旅游扣款区分 duplicate/no_money）。"""
@@ -193,23 +272,45 @@ class Wallet:
     def debit(self, amount_cents: int, reason: str, idem: str, ref: str = "",
               account: str = "cash", category: str = "", sub_category: str = "",
               item_name: str = "", trigger_reason: str = "", actor: str = "", fund_source: str = "",
-              event_id: str = "") -> bool:
-        """扣款；余额不足或重复 idem 返回 False。event_id 可空（旧调用完全兼容）。"""
+              event_id: str = "", release_hold: str = "") -> bool:
+        """扣款；余额不足或重复 idem 返回 False。
+
+        release_hold：这笔钱本来就冻结过（答应饭局那笔），扣款时原子的「解冻 + 扣」，
+        余额看起来不变，但冻结额度要还回去。
+        """
         self._ensure()
         amount = int(amount_cents)
         if amount <= 0:
             return False
         with self.db.lock:
-            row = self.db.conn.execute(
+            conn = self.db.conn
+            row = conn.execute(
                 "SELECT balance_cents FROM wallet_account WHERE account=?", (str(account),)
             ).fetchone()
-            if int(row[0] if row else 0) < amount:
+            balance = int(row[0] if row else 0)
+            held = self._held_locked(account)
+            hold_amount = 0
+            if release_hold:
+                now = _amo_clock.now_ts()
+                held_row = conn.execute(
+                    "SELECT amount_cents FROM wallet_holds WHERE idem=? AND account=? "
+                    "AND released_at=0 AND (expires_at=0 OR expires_at>?)",
+                    (str(release_hold), str(account), now)).fetchone()
+                hold_amount = int(held_row[0]) if held_row else 0
+            if balance - (held - hold_amount) < amount:
                 return False
-            return self._insert(account, -amount, reason, idem, ref,
-                                category=category, sub_category=sub_category,
-                                item_name=item_name, trigger_reason=trigger_reason,
-                                actor=actor, fund_source=fund_source,
-                                event_id=event_id)
+            if release_hold and hold_amount:
+                conn.execute(
+                    "UPDATE wallet_holds SET released_at=? WHERE idem=? AND released_at=0",
+                    (_amo_clock.now_ts(), str(release_hold)))
+            ok = self._insert(account, -amount, reason, idem, ref,
+                              category=category, sub_category=sub_category,
+                              item_name=item_name, trigger_reason=trigger_reason,
+                              actor=actor, fund_source=fund_source,
+                              event_id=event_id)
+            if not ok and release_hold and hold_amount:
+                conn.rollback()   # 扣款被幂等挡掉时，冻结也别解
+            return ok
 
     # ---------------- 展示（只读） ----------------
     @staticmethod
@@ -236,5 +337,9 @@ class Wallet:
         return lines
 
     def snapshot(self) -> dict[str, Any]:
-        return {"balance_cents": self.balance("cash"), "ledger": self.ledger(5),
+        locked = self.held("cash")
+        return {"balance_cents": self.balance("cash"),
+                "held_cents": locked,
+                "available_cents": self.balance("cash") - locked,
+                "ledger": self.ledger(5),
                 "lines": self.ledger_lines(5)}

@@ -99,6 +99,7 @@
   ],
   "amo_commands.py": [
     "amo_diary_audit",
+    "amo_household",
     "amo_observability",
     "amo_scope",
     "amo_shared",
@@ -124,12 +125,14 @@
   ],
   "amo_date_context.py": [
     "amo_date_session",
+    "amo_household",
     "amo_prompt_registry",
     "amo_state_store",
     "clock"
   ],
   "amo_date_facts.py": [
     "amo_date_session",
+    "amo_household",
     "amo_numbers"
   ],
   "amo_date_session.py": [
@@ -157,6 +160,7 @@
   ],
   "amo_diary_guard.py": [
     "amo_fact_timeline",
+    "amo_household",
     "amo_immersion_guard",
     "amo_numbers",
     "amo_shared_config",
@@ -181,6 +185,7 @@
     "amo_date_facts",
     "amo_diary_guard",
     "amo_fact_pool",
+    "amo_household",
     "amo_location_rules",
     "amo_numbers",
     "amo_timeline",
@@ -214,6 +219,12 @@
     "amo_compat",
     "amo_observability",
     "amo_shared"
+  ],
+  "amo_household.py": [
+    "amo_current_action",
+    "amo_date_session",
+    "amo_shared",
+    "photo_rules"
   ],
   "amo_human_state.py": [
     "amo_city_index",
@@ -292,6 +303,7 @@
   "amo_llm.py": [
     "amo_date_context",
     "amo_fact_binder",
+    "amo_household",
     "amo_immersion_guard",
     "amo_message",
     "amo_observability",
@@ -308,7 +320,9 @@
   ],
   "amo_llm_service.py": [
     "amo_date_context",
+    "amo_household",
     "amo_immersion_guard",
+    "amo_names",
     "amo_observability",
     "amo_shared",
     "amo_state_snapshot",
@@ -364,6 +378,7 @@
     "domains"
   ],
   "amo_observability.py": [],
+  "amo_person_ref.py": [],
   "amo_place.py": [
     "domains"
   ],
@@ -440,6 +455,7 @@
     "amo_date_context",
     "amo_date_session",
     "amo_fact_binder",
+    "amo_household",
     "amo_observability",
     "amo_prompt_registry",
     "amo_runtime_ports",
@@ -460,6 +476,7 @@
   "amo_runtime_reply.py": [
     "amo_date_context",
     "amo_diary_guard",
+    "amo_message",
     "amo_observability",
     "amo_reply_pipeline",
     "amo_runtime_ports",
@@ -482,6 +499,7 @@
   "amo_schedule.py": [
     "amo_diary_guard",
     "amo_fact_pool",
+    "amo_household",
     "amo_human_state",
     "amo_location_rules",
     "amo_observability",
@@ -597,6 +615,7 @@
     "amo_fact_timeline",
     "amo_location_rules",
     "amo_observability",
+    "amo_person_ref",
     "amo_shared",
     "amo_state_common",
     "amo_timeline",
@@ -618,7 +637,9 @@
   "amo_state_schedule.py": [
     "amo_diary_guard",
     "amo_events",
+    "amo_household",
     "amo_observability",
+    "amo_person_ref",
     "amo_schedule_health",
     "amo_shared",
     "amo_state_common",
@@ -1015,8 +1036,10 @@
   ],
   "schedule_diary.py": [
     "amo_diary_guard",
+    "amo_household",
     "amo_immersion_guard",
     "amo_location_rules",
+    "amo_person_ref",
     "schedule_plan"
   ],
   "schedule_engine.py": [
@@ -1067,6 +1090,7 @@
     "domains"
   ],
   "segment_engine.py": [
+    "amo_message",
     "amo_observability"
   ],
   "services/__init__.py": [],

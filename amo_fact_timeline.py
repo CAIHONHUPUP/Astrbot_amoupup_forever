@@ -1688,6 +1688,7 @@ def build_meta(plugin, ctx, facts):
         "day": ctx["day_text"],
         "now": ctx["now"].isoformat(),
         "date_together": any(bool(item.get("together")) for item in ctx["date_facts"]),
+        "partner_home": False,
         "date_hour": ctx["hour_slot"],
         "location_scope": "day" if ctx["day_scope"] else "slot",
         "places": ctx["places"],
@@ -1702,6 +1703,20 @@ def build_meta(plugin, ctx, facts):
     if ctx["date_facts"]:
         meta["has_offline_meet"] = True
         meta["date_activity"] = str((ctx["date_facts"][0] or {}).get("detail") or "")
+    # 同居/半同居：这一块他是不是在家（唯一判定仍在 amo_household.scene_at）。
+    if not meta["date_together"] and ctx.get("window"):
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            _scene = _hh.scene_at(
+                plugin, ctx["day_text"], ctx["window"][0], ctx["window"][1],
+                ctx.get("place") or "", zone=ctx.get("zone") or "",
+            )
+            meta["partner_home"] = bool(_scene.partner and _scene.presence == "home")
+        except Exception:  # cleanup: 居住状态读不到就按不在家处理
+            meta["partner_home"] = False
     meta["date_windows"] = read_date_windows(plugin, ctx["day"])
     return meta
 

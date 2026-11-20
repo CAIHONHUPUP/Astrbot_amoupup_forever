@@ -348,8 +348,8 @@ def _recall_format(self, item, lines, memories):
             except Exception as _amo_exc:
                 _note_swallowed("amo_memory.HumanCorePlugin._recall", _amo_exc)
         # 用户记忆默认补「他：」；bot 自己的记忆用 [bot]，不能标成用户。
-        if subject == "user" and not prefix and not body.startswith(("他", "她", "用户")):
-            prefix = "他："
+        if subject == "user" and not prefix and not body.startswith(("老公", "他", "她", "用户")):
+            prefix = "老公："
         # 记忆带来源平台时标出来：别把飞书说过的话当成 QQ 刚说的
         src = str(item.get("platform") or "").strip()
         src_label = ""

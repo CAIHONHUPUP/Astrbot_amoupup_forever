@@ -599,7 +599,16 @@ class LlmMixin(_MixinBase):
         if note:
             # 延迟补话的说明放在系统侧，不能混进“对方刚刚说”里
             system_parts.append(_prompts.render("llm.note", note=note))
-        system_parts.append(ACTION_OWNERSHIP_RULES)
+        _boundary = ACTION_OWNERSHIP_RULES
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            _boundary = _hh.wording("boundary", plugin=self) or ACTION_OWNERSHIP_RULES
+        except Exception:
+            _boundary = ACTION_OWNERSHIP_RULES
+        system_parts.append(_boundary)
         system_parts.append(_prompts.URGE_DISCIPLINE_RULES)
         system = "\n\n".join(system_parts)
         return system
@@ -877,7 +886,17 @@ class LlmMixin(_MixinBase):
             try:
                 system_prompt = str(getattr(req, "system_prompt", "") or "")
                 if "【动作归属·最高优先级】" not in system_prompt:
-                    req.system_prompt = (system_prompt + ACTION_OWNERSHIP_RULES).lstrip()
+                    _boundary = ACTION_OWNERSHIP_RULES
+                    try:
+                        try:
+                            from . import amo_household as _hh
+                        except ImportError:
+                            import amo_household as _hh
+                        _boundary = (_hh.wording("boundary", plugin=self)
+                                     or ACTION_OWNERSHIP_RULES)
+                    except Exception:
+                        _boundary = ACTION_OWNERSHIP_RULES
+                    req.system_prompt = (system_prompt + _boundary).lstrip()
                 _commerce = (
                     "【网购平台认知】可以自然提到拼多多（买平替/小物件）、淘宝（买衣服/退货）、"
                     "美团（点外卖）、小红书（刷穿搭/吐槽）、闲鱼（卖闲置）；"

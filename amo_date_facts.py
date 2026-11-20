@@ -252,10 +252,21 @@ def date_presence_facts(plugin, day, hour_slot=None, slot=None):
         home_state = _kv(plugin, "date_home", {}) or {}
         at = _float(sess_home.get("at") or (home_state or {}).get("at") or 0)
         if at and _same_day(at, _day_text(day)):
+            _detail = "约会结束，你一个人回到出租屋；他不在屋里，接下来只能手机联系。"
+            try:
+                try:
+                    from . import amo_household as _hh
+                except ImportError:
+                    import amo_household as _hh
+                _override = _hh.wording("date_ending", plugin=plugin)
+                if _override:
+                    _detail = _override
+            except Exception:  # cleanup: 居住状态读不到就用原句
+                pass
             facts.append({
                 "time": _clock(at),
                 "type": "物理场景",
-                "detail": "约会结束，你一个人回到出租屋；他不在屋里，接下来只能手机联系。",
+                "detail": _detail,
                 "together": False,
             })
     return facts
