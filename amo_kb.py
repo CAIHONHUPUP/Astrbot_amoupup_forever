@@ -127,7 +127,12 @@ class KbMixin(_MixinBase):
             await _sync_scenic_kb(self, name, kb, created_now)
             return kb
         except Exception as exc:
-            logger.warning("[amo] 景区知识库创建失败: %s" % exc)
+            text = str(exc)
+            # 2026-11-20：这两类是“已经在跑”的正常状态，不该每次启动都刷 WARN
+            if "已存在" in text or "kb_db" in text:
+                logger.debug("[amo] 景区知识库跳过: %s", exc)
+            else:
+                logger.warning("[amo] 景区知识库创建失败: %s" % exc)
             return None
 
     async def _scenic_kb_context(self, query):
