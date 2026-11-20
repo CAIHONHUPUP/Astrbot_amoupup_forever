@@ -1,0 +1,4 @@
+{
+  "proactive_silence_seconds": 600,
+  "proactive_burst_guard_seconds": 90
+}

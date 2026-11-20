@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#eaf8ff" />
+  <title>我能永远陪伴你</title>
+  <link rel="stylesheet" href="assets/panel.css" />
+</head>
+<body>
+ <div class="wrap"><header><div style="display:flex;align-items:center"><div class="brand"><span class="dot"></span> 陪伴</div> <button class="neuron-btn" id="btnNeuron" title="关系图谱" aria-label="关系图谱">
+<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"> <circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="17" r="2.2"/><circle cx="19" cy="17" r="2.2"/>
+<circle cx="12" cy="12" r="2.2"/> <path d="M12 7.2v2.6M10.2 13.4 6.6 15.6M13.8 13.4l3.6 2.2"/> </svg> </button> </div><div style="display:flex;align-items:center;gap:8px">
+<button class="tab icon-tab" id="btnStatusIcon" data-tab="status" title="状态" aria-label="状态"> <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
+<path d="M2.5 12h4l2.2-5.5 3.1 11 2.3-5.5h5.4"/> </svg> </button> <div class="clock" id="clock">--</div></div></header><div class="tabnav">
+<button class="tabnav-arrow left" type="button" aria-label="向前">‹</button> <nav class="tabs"> <button class="tab active" data-tab="world"><span>世界</span></button>
+<button class="tab" data-tab="schedule"><span>日程</span></button> <button class="tab" data-tab="actions"><span>操作</span></button> <button class="tab" data-tab="profiles"><span>用户</span></button>
+<button class="tab" data-tab="gift"><span>礼物</span></button> <button class="tab" data-tab="shop"><span>网购</span></button> <button class="tab" data-tab="wardrobe"><span>穿搭</span></button> <button class="tab" data-tab="photo"><span>照片</span></button>
+<button class="tab" data-tab="settings" data-group="基础"><span>基础</span></button> <button class="tab" data-tab="settings" data-group="状态"><span>参数</span></button>
+<button class="tab" data-tab="settings" data-group="记忆"><span>记忆</span></button> <button class="tab" data-tab="settings" data-group="私聊"><span>私聊</span></button>
+<button class="tab" data-tab="settings" data-group="语音"><span>语音</span></button> <button class="tab" data-tab="settings" data-group="心流"><span>心流</span></button>
+<button class="tab" data-tab="settings" data-group="分段"><span>分段</span></button> <button class="tab" data-tab="diary"><span>日记</span></button> <button class="tab" data-tab="usage"><span>用量</span></button>
+</nav> <button class="tabnav-arrow right" type="button" aria-label="向后">›</button> </div><div id="tab-status" class="tab-panel" hidden><section class="card status-shell"><div class="hero-top"><div>
+<div class="label">当前心情</div><div class="dominant" id="dominant">读取中…</div><div class="mood-context" id="moodContext">—</div></div><div class="hero-score"><span id="moodScore">--</span><small>/100</small></div>
+</div><div class="mood-narration" id="moodNarration">读取中…</div><div class="mood-attribution" id="moodAttribution"></div><div class="mood-visual"> <canvas id="radar" width="300" height="300"></canvas>
+<canvas id="moodTrend" width="290" height="240"></canvas> </div><div class="bars" id="moodBars"></div><div class="status-grid"><div class="status-item clickable" id="periodCard" title="点击修改生理期设置">
+<div class="label">生理期</div><div class="value" id="period">—</div><div class="track status-track"><span class="fill" id="periodBar"></span></div><div class="phase-strip" id="periodPhases"></div>
+<div class="sub" id="periodSub"></div></div><div class="status-item clickable" id="healthCard" title="点击修改身体设置"><div class="label">身体</div><div class="value" id="health">—</div>
+<div class="track status-track"><span class="fill" id="healthBar"></span></div><div class="sub" id="healthSub"></div></div><div class="status-item"><div class="label">天气</div>
+<div class="value" id="weather">—</div><div class="track status-track"><span class="fill" id="weatherBar"></span></div><div class="sub" id="weatherSub"></div></div><div class="status-item">
+<div class="label">正在</div><div class="value" id="activity">—</div><div class="track status-track"><span class="fill" id="activityBar"></span></div><div class="sub" id="activitySub"></div></div><div class="status-item"><div class="label">旅游结算</div><div class="value" id="tripSettle">—</div><div class="sub" id="tripSettleSub"></div></div></div>
+</section></div><div id="tab-world" class="tab-panel"><section class="card"><div class="row between"><div><div class="label">世界文档</div><div class="sub">她的生活设定、城市、工作、性格与边界；长文默认收起，点标题展开。</div></div>
+<button id="worldExpandAll" class="world-expand" type="button">展开全部</button> </div><article id="worldDoc" class="world-doc">加载中…</article></section></div>
+<div id="tab-schedule" class="tab-panel" hidden><section class="card"><div class="row between"><div class="label">日程一览</div></div><div class="row between" style="gap:8px;align-items:center">
+<div class="sub" id="scheduleDay" style="flex:1"></div> <button class="ghost" id="btnTodoToggle" type="button" style="border-radius:12px;padding:6px 12px;min-width:0;width:auto;white-space:nowrap">点击查看明日待办</button>
+</div><div id="scheduleList" class="schedule-groups"><div class="sub">加载中…</div></div><div id="scheduleTodo" hidden style="margin-top:10px"></div></section></div>
+<div id="tab-profiles" class="tab-panel" hidden><section class="card" id="profileListCard"><div class="row"> <input id="profileSearch" class="input grow" placeholder="搜索 UID / 名字 / 称呼" />
+<button id="btnProfileSearch">搜索</button> <button id="btnNewProfile">新建档案</button> </div><div id="profileList" class="profile-list"><div class="sub">加载中…</div></div></section>
+<section class="card" id="profileEditor" hidden><div class="row between"><div class="label">用户画像</div> <button id="btnCloseEditor" class="ghost">关闭</button> </div><div class="form-grid"> <label>UID<input id="pUid" class="input" placeholder="用户 ID" /></label>
+<div id="pLinks" class="sub" style="grid-column:1/-1;margin-top:-6px"></div> <label>名字<input id="pName" class="input" placeholder="名字" /></label> <label>称呼<input id="pAlias" class="input" placeholder="例如：宝贝、老大" /></label>
+<label>生日<input id="pBirthday" class="input" placeholder="MM-DD" /></label> <label>关系 <select id="pRelation" class="input"> <option value="仇恨">仇恨</option> <option value="抵触">抵触</option>
+<option value="普通">普通</option> <option value="熟识">熟识</option> <option value="相恋">相恋（恋人）</option> </select> </label> <label>好感<input id="pAffection" class="input" type="number" min="0" max="100" /></label>
+</div> <label class="block">备注<textarea id="pNotes" class="input" rows="3" placeholder="关于这个人的备注"></textarea></label> <div class="stack-actions"> <button id="btnSaveProfile">保存画像</button>
+<button id="btnDeleteProfile" class="danger">删除画像</button> </div></section></div>
+<div id="tab-gift" class="tab-panel" hidden><section class="card"><div class="row between"><div><div class="label">礼物墙</div><div class="sub" id="giftSub">他送过的东西 · 她最近想要的</div></div>
+<button class="tab" id="giftRefresh" type="button">刷新</button> </div><div id="giftPendingWrap" hidden><div class="label" style="margin-top:12px">待确认（她随口说的，收下后才进心愿墙）</div><div id="giftPending" class="profile-list"></div></div><div class="label" style="margin-top:12px">她最近想要</div><div id="giftWishes" class="profile-list"><div class="sub">加载中…</div></div>
+<div class="label" style="margin-top:16px">收到的礼物</div><div id="giftList" class="profile-list"><div class="sub">加载中…</div></div></section></div><div id="tab-shop" class="tab-panel" hidden><section class="card"><div class="row between"><div><div class="label">网购</div><div class="sub" id="shopSub">每月最多 5 单、衣服 2 件、大件 1 件；总消费不超过活期存款 20%</div></div><button class="tab" id="shopRefresh" type="button">刷新</button></div><div class="shop-block"><button class="shop-head" type="button" data-shop-toggle="shopWished"><span>想买 <span class="shop-badge" data-shop-badge="wished"></span></span><span class="shop-arrow">▾</span></button><div id="shopWished" class="profile-list shop-body" hidden><div class="sub">暂无</div></div></div><div class="shop-block"><button class="shop-head" type="button" data-shop-toggle="shopOrdered"><span>已下单 <span class="shop-badge" data-shop-badge="ordered"></span></span><span class="shop-arrow">▾</span></button><div id="shopOrdered" class="profile-list shop-body" hidden><div class="sub">暂无</div></div></div><div class="shop-block"><button class="shop-head" type="button" data-shop-toggle="shopTransit"><span>运输中 <span class="shop-badge" data-shop-badge="transit"></span></span><span class="shop-arrow">▾</span></button><div id="shopTransit" class="profile-list shop-body" hidden><div class="sub">暂无</div></div></div><div class="shop-block"><button class="shop-head" type="button" data-shop-toggle="shopDelivered"><span>已到货 <span class="shop-badge" data-shop-badge="delivered"></span></span><span class="shop-arrow">▾</span></button><div id="shopDelivered" class="profile-list shop-body" hidden><div class="sub">暂无</div></div></div><div class="shop-block"><button class="shop-head" type="button" data-shop-toggle="shopHousehold"><span>日用品 <span class="shop-badge" data-shop-badge="household"></span></span><span class="shop-arrow">▾</span></button><div id="shopHousehold" class="profile-list shop-body" hidden><div class="sub">暂无</div></div></div><div class="shop-block"><button class="shop-head" type="button" data-shop-toggle="shopReturned"><span>已退货 <span class="shop-badge" data-shop-badge="returned"></span></span><span class="shop-arrow">▾</span></button><div id="shopReturned" class="profile-list shop-body" hidden><div class="sub">暂无</div></div></div></section></div><div id="tab-wardrobe" class="tab-panel" hidden>
+<section class="card"><div class="row between"><div><div class="label">穿搭</div><div class="sub" id="wardrobeSub">白天固定穿一套；20:00 后在家自动换睡衣，照片和自拍都跟着变</div></div><div class="row" style="gap:8px">
+<button class="tab" id="wardrobeRefsBtn" type="button">生成参考图</button> <button class="tab" id="wardrobeRefresh" type="button">刷新</button> </div></div>
+<div class="label" id="wardrobeTodayLabel" style="margin-top:12px">今日白天穿搭</div><div id="wardrobeToday" class="profile-list"><div class="sub">加载中…</div></div>
+<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"> <button id="wardrobeSave" type="button">保存今日穿搭</button> <button id="wardrobeReroll" type="button">换一套</button>
+<span class="sub" id="wardrobeTodayMeta"></span> </div></section><section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">晚上穿搭（睡衣）</div><div class="sub">20:00 后在家自动换上睡衣；20 件上衣 × 20 条睡裤 × 5 双拖鞋，自动配成 120 套；酒店睡衣只在住酒店时穿，整套都是酒店睡衣，不和家里睡衣混搭</div>
+</div></div><div id="wardrobeNight" class="profile-list"><div class="sub">加载中…</div></div><div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center">
+<span class="sub" id="wardrobeNightMeta"></span> </div></section><section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">泳装搭配（游泳 / 海边 / 水上乐园）</div>
+<div class="sub">只有去游泳馆、海边、水上乐园才会穿；只穿上衣（泳衣）和裤子（泳裤），没有鞋子</div></div></div><div id="wardrobeSwimBox" class="profile-list"><div class="sub">加载中…</div></div>
+<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"> <span class="sub" id="wardrobeSwimMeta"></span> </div></section><section class="card" style="margin-top:14px">
+<div class="row between"><div><div class="label">搭配编辑</div><div class="sub" id="wardrobeEditorHint">先选白天、晚上、酒店睡衣还是泳衣，再展开上衣 / 裤子 / 鞋子</div></div><div class="row" style="gap:8px;flex-wrap:wrap">
+<button class="wardrobe-add-btn" id="wardrobeModeDay" type="button">白天搭配</button> <button class="wardrobe-add-btn" id="wardrobeModeNight" type="button">晚上搭配</button>
+<button class="wardrobe-add-btn" id="wardrobeModeHotel" type="button">酒店睡衣</button> <button class="wardrobe-add-btn" id="wardrobeModeSwim" type="button">泳衣</button>
+<button class="ghost" id="wardrobeEditorClose" type="button" hidden>关闭</button> </div></div></section><section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">姿势库</div>
+<div class="sub" id="poseHint">自拍会从里面随机挑一个姿势；可以加自己的姿势，也能生成姿势参考图</div></div><div class="row" style="gap:8px;flex-wrap:wrap"> <button class="wardrobe-add-btn" id="poseOpen" type="button">姿势库</button>
+<button class="ghost" id="poseSave" type="button" hidden>保存</button> <button class="ghost" id="poseClose" type="button" hidden>关闭</button> </div></div></section><div id="poseEditor" hidden>
+<section class="card" style="margin-top:14px"><div class="sub" id="poseMeta">加载中…</div><div id="poseList" class="list"><div class="sub">加载中…</div></div>
+<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"> <input id="poseName" placeholder="姿势名，比如：托腮笑" style="max-width:170px" />
+<input id="poseNote" placeholder="动作描述（可选），比如：单手托腮看镜头" style="max-width:270px" /> <button class="wardrobe-add-btn" id="poseAdd" type="button">添加</button>
+<button class="wardrobe-add-btn" id="poseRefs" type="button">生成参考图</button> <span class="sub" id="poseRefsStatus"></span> </div></section></div><div id="wardrobeEditor" hidden>
+<section class="card" style="margin-top:14px" id="swimSetCard" hidden><div class="row between"><div><div class="label">整套泳装</div><div class="sub">泳装只能整套穿：点一套选中（上衣 + 同款泳裤），不能单件搭配</div></div></div>
+<div id="swimSetList" class="wardrobe-chips"><div class="sub">加载中…</div></div></section><section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">外套</div>
+<div class="sub">羽绒服、厚呢大衣、针织格子外套、羊羔毛外套；只允许一件，天特冷穿羽绒服</div></div> <button class="wardrobe-add-btn" type="button" data-wardrobe-add="coat">＋ 添加</button> </div>
+<div class="wardrobe-form" id="wardrobeForm-coat" hidden> <input class="input" id="wardrobeInput-coat" maxlength="40" placeholder="例如：卡其色厚呢大衣">
+<button class="wardrobe-add-btn" type="button" data-wardrobe-confirm="coat">确定添加</button> <button class="ghost" type="button" data-wardrobe-cancel="coat">取消</button> </div>
+<div id="wardrobeList-coat" class="wardrobe-chips"><div class="sub">加载中…</div></div></section><section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">上衣（外套）</div>
+<div class="sub">各种颜色款式的上衣和外套；点 × 删除，加一件就自动和现有的裤子鞋子配几套</div></div> <button class="wardrobe-add-btn" type="button" data-wardrobe-add="top">＋ 添加</button> </div>
+<div class="wardrobe-form" id="wardrobeForm-top" hidden> <input class="input" id="wardrobeInput-top" maxlength="40" placeholder="写颜色和款式，例如：白色雪纺衬衫">
+<button class="wardrobe-add-btn" type="button" data-wardrobe-confirm="top">确定添加</button> <button class="ghost" type="button" data-wardrobe-cancel="top">取消</button> </div>
+<div id="wardrobeList-top" class="wardrobe-chips"><div class="sub">加载中…</div></div></section><section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">裤子</div>
+<div class="sub">长裤、短裤、半裙、牛仔裤都放这里</div></div> <button class="wardrobe-add-btn" type="button" data-wardrobe-add="bottom">＋ 添加</button> </div><div class="wardrobe-form" id="wardrobeForm-bottom" hidden>
+<input class="input" id="wardrobeInput-bottom" maxlength="40" placeholder="写颜色和款式，例如：黑色包臀裙"> <button class="wardrobe-add-btn" type="button" data-wardrobe-confirm="bottom">确定添加</button>
+<button class="ghost" type="button" data-wardrobe-cancel="bottom">取消</button> </div><div id="wardrobeList-bottom" class="wardrobe-chips"><div class="sub">加载中…</div></div></section>
+<section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">裙子</div><div class="sub">连衣裙/长裙只穿一件，裤子那栏横线；短裙要配上衣，也可以再叠裤子/睡裤</div></div>
+<button class="wardrobe-add-btn" type="button" data-wardrobe-add="skirt">＋ 添加</button> </div><div class="wardrobe-form" id="wardrobeForm-skirt" hidden>
+<input class="input" id="wardrobeInput-skirt" maxlength="40" placeholder="例如：黑色丝质长裙"> <button class="wardrobe-add-btn" type="button" data-wardrobe-confirm="skirt">确定添加</button>
+<button class="ghost" type="button" data-wardrobe-cancel="skirt">取消</button> </div><div id="wardrobeList-skirt" class="wardrobe-chips"><div class="sub">加载中…</div></div></section>
+<section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">鞋子</div><div class="sub">运动鞋、帆布鞋、皮鞋、靴子都放这里</div></div>
+<button class="wardrobe-add-btn" type="button" data-wardrobe-add="shoes">＋ 添加</button> </div><div class="wardrobe-form" id="wardrobeForm-shoes" hidden>
+<input class="input" id="wardrobeInput-shoes" maxlength="40" placeholder="写颜色和款式，例如：淡蓝色运动鞋"> <button class="wardrobe-add-btn" type="button" data-wardrobe-confirm="shoes">确定添加</button>
+<button class="ghost" type="button" data-wardrobe-cancel="shoes">取消</button> </div><div id="wardrobeList-shoes" class="wardrobe-chips"><div class="sub">加载中…</div></div></section><section class="card" style="margin-top:14px"><div class="row between"><div><div class="label">袜子</div><div class="sub">丝袜、连裤袜、长筒袜、短袜；只有出门才穿，在家/晚上不穿；连裤袜可以不穿裤子，长袜只能配短裤，长裙只能配短袜</div></div><button class="wardrobe-add-btn" type="button" data-wardrobe-add="socks">＋ 添加</button> </div><div class="wardrobe-form" id="wardrobeForm-socks" hidden><input class="input" id="wardrobeInput-socks" maxlength="40" placeholder="写颜色和款式，例如：黑色连裤袜"> <button class="wardrobe-add-btn" type="button" data-wardrobe-confirm="socks">确定添加</button><button class="ghost" type="button" data-wardrobe-cancel="socks">取消</button> </div><div id="wardrobeList-socks" class="wardrobe-chips"><div class="sub">加载中…</div></div></section></div>
+<section class="card" style="margin-top:14px"><div class="sub" style="line-height:1.75;font-size:12px"> 每天从搭配模板里随机一套（按天气筛掉太厚或太薄的），当天所有照片、自拍都锁这一套；<br> 去游泳馆 / 海边 / 水上乐园时自动换泳装（只有上衣和泳裤，不穿鞋）；<br> 他送的衣服（衬衫、外套、裤子、鞋）会自动进到对应分类，并和现有的衣服配成新模板；<br> 衣服参考图保存文件夹：<code style="font-size:11px">D:\dafeiyu\astrbot\data\plugin_data\Astrbot_amoupup_forever\outfit_refs\</code><br> 白天搭配 / 晚上搭配 / 酒店睡衣 / 泳装 / 姿势库 5 个文件夹；衣服那四个里面再分上衣（外套）/ 裤子 / 裙子 / 鞋子， 衣服按衣服名字保存（如「米色雪纺衬衫.png」），姿势直接按姿势名字保存在「姿势库」里（如「托腮.png」），备份会一起带走 </div>
+</section></div><div id="tab-photo" class="tab-panel" hidden><nav class="photo-nav" id="photoNav" role="tablist" aria-label="照片功能">
+<button class="photo-nav-btn active" type="button" data-photo-pane="share">分享与拍摄</button> <button class="photo-nav-btn" type="button" data-photo-pane="generate">按提示词生成</button>
+<button class="photo-nav-btn" type="button" data-photo-pane="persona">角色三视图</button> <button class="photo-nav-btn" type="button" data-photo-pane="advanced">保存与说明</button> </nav>
+<section class="card photo-pane" data-photo-pane="share"><div class="row between"><div><div class="label">照片分享</div><div class="sub" id="photoSub">旅游、逛街、周末、日常按概率发街景或自拍；早上出门发穿搭自拍</div></div>
+<button class="tab" id="photoRefresh" type="button">刷新</button> </div><div id="photoSettings" class="settings-list"><div class="sub">加载中…</div></div>
+<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap;align-items:center"> <button id="photoSave" type="button">保存</button> <select id="photoTestKind" class="input"> <option value="outfit">穿搭自拍</option>
+<option value="travel">旅游</option> <option value="shopping">逛街</option> <option value="weekend">周末</option> <option value="daily" selected>日常</option> </select> <button id="photoTest" type="button">现在发一张</button>
+<span class="sub" id="photoStatus"></span> </div></section><section class="card photo-pane" data-photo-pane="generate" style="margin-top:14px" hidden><div class="label">按提示词生成</div><div class="sub">这里的提示词只描述“你想让她拍什么画面”，会叠加上照片前缀和今天的穿搭；不会改人设、日程或记忆。勾选「同时发到聊天」才会发出去。</div>
+<textarea id="photoPrompt" class="input" rows="2" placeholder="例如：在咖啡馆窗边自拍，穿着米色针织衫" style="width:100%;margin-top:8px;resize:vertical"></textarea>
+<div class="row" style="margin-top:8px;gap:8px;align-items:center"> <button id="photoGen" type="button">生成</button> <button id="photoPromptSave" type="button">保存</button>
+<button id="photoPromptClear" type="button">清空</button> <label class="sub" style="display:flex;align-items:center;gap:4px;margin:0"> <input type="checkbox" id="photoPromptSend"> 同时发到聊天 </label>
+<span class="sub" id="photoGenStatus"></span> </div><div id="photoGenPreview" style="margin-top:10px"></div></section>
+<section class="card photo-pane" data-photo-pane="persona" style="margin-top:14px" hidden><div class="label">角色三视图</div><div class="sub">每个视角独立：生成预览里勾选一张保存为模板；模板预览里勾选表示启用</div>
+<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap;align-items:center"> <button data-photo-view="front" type="button">正面</button> <button data-photo-view="side" type="button">侧面</button>
+<button data-photo-view="full" type="button">全身</button> <span class="sub" id="photoSheetStatus"></span>
+<span class="row" style="margin-left:auto;gap:8px;align-items:center">
+<input id="photoSheetRefFile" type="file" accept="image/*" hidden>
+<button id="photoSheetRefPick" type="button">上传参考图</button>
+<button id="photoSheetRefClear" type="button" class="ghost" hidden>清除</button>
+<img id="photoSheetRefThumb" alt="" style="max-height:44px;border-radius:6px;display:none">
+<span class="sub" id="photoSheetRefStatus">未设置参考图</span>
+</span> </div>
+<div id="photoViews" style="margin-top:10px"></div>
+<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap;align-items:center">
+<span class="sub">导入现成三视图：</span>
+<input id="photoPersonaImportFile" type="file" accept="image/*" hidden>
+<button class="ghost" type="button" data-persona-import="front">正面</button>
+<button class="ghost" type="button" data-persona-import="side">侧面</button>
+<button class="ghost" type="button" data-persona-import="full">全身</button>
+<span class="sub" id="photoPersonaImportStatus"></span>
+</div>
+<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap;align-items:center"> <input id="photoTemplateDir" class="input grow" placeholder="模板保存文件夹（留空 = 插件目录/templates）">
+<button id="photoTemplateSave" type="button">保存位置</button> <button id="photoTemplateOpen" type="button">打开文件夹</button> </div><div class="sub" id="photoTemplateRoot"></div>
+<div class="sub" style="margin-top:12px;line-height:1.7">⚠ 生图需要「我能永远定格你」（Astrbot_amoupup_photo，legacy fallback：astrbot_plugin_omnidraw）；在它里面配好 key 和主脑/副脑模型后，想陪会自动握手，三视图、穿搭参考图和提示词直接生效，不用两边重复配置。</div></section>
+<section class="card photo-pane" data-photo-pane="persona" style="margin-top:14px" hidden><div class="sub" style="line-height:1.7;font-size:14px;margin-top:0"> <strong style="color:#d94a86">注意</strong><br> · 每个视角独立保存一张模板；在「生成预览」里勾选候选图再点「保存勾选的模板」<br> · 模板预览右上角勾选 = 启用该视角；三个都勾选就三张一起作为参考图<br> · 删除按钮在每个视角的模板预览下面，只删该视角<br> · 默认在插件目录 <code>templates/</code>，会跟着插件一起备份，换电脑整包搬走即可<br> · 改到插件目录外就不会跟插件备份，记得自己留一份 </div>
+</section><section class="card photo-pane" data-photo-pane="advanced" style="margin-top:14px" hidden><div class="label">最终保存</div><div class="sub" style="line-height:1.7"> 滚到这儿不用再回头找按钮，点一次把这栏能存的一起存好：<br> · 照片分享的设置项（开关、概率滑条、触发方式）<br> · 「按提示词生成」里上次写的提示词<br> · 三视图的模板保存位置<br> 三视图的模板本身是勾选 / 点按钮即生效，不在这里保存。 </div>
+<div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center">
+<button id="photoSaveAll" type="button" style="min-width:150px;text-align:center;font-weight:600;background:var(--pink);border-color:var(--pink);color:#fff">保存全部</button>
+<span class="sub" id="photoSaveAllStatus"></span> </div></section></div><div id="tab-diary" class="tab-panel" hidden><section class="card" id="diaryLiveCard"><div class="row between" style="align-items:center"><div><div class="label">今天 · 还在写</div><div class="sub" id="diaryLiveSub">块结束一会儿后自动接一段；设置里可调 5-10 分钟防抖或关掉，第二天最终版写好后收束。</div></div><button id="diaryLiveRefresh" type="button">刷新</button></div><div id="diaryLiveText" class="diary-live"><div class="sub">读取中…</div></div></section><section class="card"><div class="row between" style="align-items:center">
+<div class="label">大肥鱼的日记</div><div class="diary-actions"> <button id="diaryWrite" type="button" title="只能补昨天及以前；昨天的日记第二天开机后自动写">写昨天</button> <button id="diaryImport" type="button">导入文件夹</button>
+<button id="diaryRefresh" type="button">刷新</button> <button id="diaryOpen" type="button">打开文件夹</button> <button id="diaryAudit" type="button" title="只读：查看当前选中日期（或今天）的日记质检报告">日记质检</button> </div></div><div class="sub" id="diaryStats">读取中…</div><div class="sub" id="diaryRoot"></div><pre id="diaryAuditText" class="diary-audit-text" hidden></pre>
+<div class="sub">昨天这一篇会在第二天开机后自动补写（几点都行，23:30 的宵夜也算昨天）；「写昨天」可手动重写昨天及以前。</div></section><section class="card"><div id="diaryTree" class="list"><div class="sub">读取中…</div></div></section><section class="card">
+<div class="row between"><div class="label" id="diaryTitle">选择一篇日记</div> <button class="tab" id="diaryClose" type="button" hidden>关闭</button> </div>
+<pre id="diaryText" style="white-space:pre-wrap;line-height:1.8;margin:0;font-family:inherit">从上面的年 / 月 / 日里点一天，就能读那天的日记。</pre></section><section class="card">
+<div class="sub" style="line-height:1.7;font-size:14px;margin-top:0"> <strong style="color:#d94a86">注意</strong><br> · 按 <code>年/月/日</code> 存放，文件「我的日记YYYY年MM月DD日.txt」<br> · <strong style="color:#d94a86">换电脑</strong>：整个「日记」文件夹放回 <code>diary_dir</code> （默认 <code>D:\dafeiyu\日记</code>）即可读，日期按文件夹解析<br> · <strong style="color:#d94a86">日记不参与插件备份</strong>，自己额外留一份<br> · 文件名改过也能按日期目录读，但建议保持原名<br> · 旧日记点 <strong style="color:#d94a86">「导入文件夹」</strong>，按日期合并，已存在不覆盖 </div>
+</section></div><div id="tab-usage" class="tab-panel" hidden><section class="card"><div class="row between"><div><div class="label">对话用量</div><div class="sub" id="usageRange">今日 · 最近 7 天 · 累计（只读 AstrBot 统计）</div>
+</div> <button class="tab" id="usageRefresh" type="button">刷新</button> </div><div class="status-grid"><div class="status-item"><div class="label">今日输入</div><div class="value" id="usageIn">—</div>
+<div class="sub" id="usageInSub">未命中 / 命中缓存</div></div><div class="status-item"><div class="label">今日输出</div><div class="value" id="usageOut">—</div><div class="sub" id="usageCalls">— 次调用</div></div>
+<div class="status-item"><div class="label">缓存命中率</div><div class="value" id="usageCache">—</div><div class="track status-track"><span class="fill" id="usageCacheBar"></span></div>
+<div class="sub" id="usageWeek">近 7 天 —</div></div><div class="status-item"><div class="label">今日花费</div><div class="value" id="usageCost">—</div><div class="sub" id="usageCostSub">按空闲/高峰单价估算</div>
+</div></div><div class="row between" style="margin-top:14px"><div><div class="label">DeepSeek 余额</div><div class="sub" id="balanceSub">—</div></div><div class="value" id="balanceValue">—</div></div>
+<div class="sub" id="usageModels" style="margin-top:10px"></div><div class="row between" style="margin-top:14px"><div><div class="label">模型用量 / 余额</div><div class="sub" id="providerSub">自动检测 AstrBot 已配置的模型</div>
+</div></div><div id="providerList" class="memory-list"></div></section></div><div id="tab-settings" class="tab-panel" hidden><section class="card"><div class="row">
+<input id="settingsSearch" class="input grow" placeholder="搜索配置项" /> <button id="btnReloadSettings">刷新</button> <button id="btnSaveSettings">保存全部</button> </div><div class="sub">保存后写入插件配置，并重建心流/分段引擎，立即生效。</div>
+<div id="settingsList" class="settings-list"><div class="sub">加载中…</div></div></section></div><div id="tab-actions" class="tab-panel" hidden><section class="card"><div class="label">刷新与重建</div>
+<div class="sub">刷新状态、天气、日程；重建世界、语种、景区。</div><div class="row" style="gap:8px;align-items:center;"> <span class="label">语种</span> <select id="worldDialect" class="input grow"> <option value="普通话">普通话（关闭方言）</option>
+<option value="贵州话">贵州话</option> <option value="东北话">东北话</option> <option value="四川话">四川话</option> <option value="广东话">广东话</option> <option value="台湾腔">台湾腔</option> <option value="天津话">天津话</option>
+<option value="河南话">河南话</option> <option value="上海话">上海话</option> </select> </div><div class="warning-red">如需更换语种，请不要在人格提示词中提及具体语种，否则会和这里的选择冲突。</div><div class="sub" id="dialectHint"></div>
+<div class="stack-actions"> <button id="btnRefresh">刷新状态</button> <button id="btnWeather">刷新天气</button> <button id="btnSchedule">重建日程</button> <button id="btnWorld">重建世界</button> <button id="btnKb">重建语种</button>
+<button id="btnScenicKb">重建景区</button> </div></section></div> <span id="counts" hidden></span> </div><div class="modal" id="neuronModal" hidden>
+<div class="modal-card" style="max-width:780px;width:min(94vw,780px)"><div class="row" style="display:flex;align-items:center;gap:8px">
+<strong id="neuronTitle" style="flex:1;cursor:pointer" title="双击管理关系">关系图谱</strong> <label class="hint" style="display:flex;align-items:center;gap:4px;margin:0;cursor:pointer;font-size:12px">
+<input type="checkbox" id="relAuto" checked style="width:auto;margin:0"> 自动旋转 </label> <span class="hint" id="neuronHint" style="font-size:12px">拖动旋转 · 双击标题管理</span>
+<button class="ghost" id="btnNeuronClose" style="padding:5px 9px;font-size:12px">关闭</button> </div><div id="neuronView">
+<canvas id="neuronCanvas" style="width:100%;height:min(440px,58vh);display:block;margin-top:8px"></canvas> <div class="hint" id="neuronLegend"></div></div><div id="neuronEdit" hidden>
+<div class="hint" style="margin-top:8px">管理员修改关系（同时写进记忆终端）</div><div class="row" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"> <select id="nRelA" style="flex:1;min-width:120px"></select>
+<select id="nRelB" style="flex:1;min-width:120px"></select> <select id="nRelType"> <option>家人</option><option>恋人</option><option selected>朋友</option> <option>同事</option><option>同学</option><option>熟人</option>
+<option>陌生人</option><option>仇人</option> </select> <button class="primary" id="btnNeuronAdd">添加</button> </div> <input id="nRelNote" placeholder="备注（可选）" style="margin-top:8px;width:100%">
+<div id="neuronList" class="list" style="margin-top:8px;max-height:200px;overflow:auto"></div> <button class="ghost" id="btnNeuronBack" style="margin-top:8px">返回图谱</button> </div></div></div>
+<div class="modal" id="moodModal" hidden><div class="modal-card"><div class="row between"><div><div class="label">调整心情</div><div class="sub">仅 AstrBot 管理员可修改</div></div> <button id="btnMoodClose">关闭</button>
+</div><div id="moodEditor" class="mood-editor"></div> <button id="btnMoodSave">保存心情</button> </div></div><div class="toast" id="toast"></div>
+  <script src="assets/api-client.js"></script>
+  <script src="assets/panel.js"></script>
+  <script src="assets/panel-views.js"></script>
+<footer style="padding:0 16px 28px;text-align:center;font-size:11px;color:var(--muted)">by 彩虹upup · 感谢《我会永远陪伴你》和《我想永远陪伴你》的作者</footer>
+</body>
+</html>
