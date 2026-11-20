@@ -360,6 +360,14 @@ class RuntimeReplyMixin(RuntimeMixinBase):
 
     async def _deco_text_cleanup(self, event, text):
         """最终清洗：去赶人话、去重复饭问、地点黑名单、日期守卫、裁长度。"""
+        try:  # 模型漏出来的 HTML 标签（句尾 `</div>`）一律清掉
+            try:
+                from .amo_shared_text import strip_html_noise as _strip_html
+            except ImportError:
+                from amo_shared_text import strip_html_noise as _strip_html
+            text = _strip_html(text)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.on_decorating_result.html", _amo_exc)
         if strip_brushoff is not None:
             try:
                 text, brush = strip_brushoff(text, event.message_str or "")

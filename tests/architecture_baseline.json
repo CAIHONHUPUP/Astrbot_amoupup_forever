@@ -481,6 +481,7 @@
     "amo_reply_pipeline",
     "amo_runtime_ports",
     "amo_shared",
+    "amo_shared_text",
     "amo_transit",
     "amo_voice"
   ],

@@ -279,6 +279,28 @@ def strip_chat_format(text: Any) -> str:
     return value.strip()
 
 
+_HTML_TAG = re.compile(
+    r"</?(?:div|p|span|br|b|i|u|s|strong|em|ul|ol|li|a|img|table|thead|tbody|"
+    r"tr|td|th|h[1-6]|section|article|blockquote|code|pre|font|center)\b[^>]*>",
+    re.I,
+)
+_HTML_ANY_CLOSE = re.compile(r"</[a-zA-Z][a-zA-Z0-9]{0,15}\s*>")
+_HTML_ENTITIES = (("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+                  ("&quot;", '"'), ("&#39;", "'"))
+
+
+def strip_html_noise(text: Any) -> str:
+    """去掉模型漏出来的 HTML 标签/实体（2026-11-20 用户反馈句尾 `</div>`）。"""
+    value = str(text or "")
+    for old, new in _HTML_ENTITIES:
+        value = value.replace(old, new)
+    value = _HTML_TAG.sub("", value)
+    value = _HTML_ANY_CLOSE.sub("", value)
+    # 只剩一个孤立的 `<div` / `</div`（被截断）也清掉
+    value = re.sub(r"</?[a-zA-Z][a-zA-Z0-9]{0,15}\s*$", "", value)
+    return value
+
+
 def clean_reply(text: Any, limit: int = 300) -> str:
     if not text:
         return ""
@@ -286,6 +308,7 @@ def clean_reply(text: Any, limit: int = 300) -> str:
     text = re.sub(r"<thought>.*?</thought>", "", text, flags=re.S | re.I)
     text = re.sub(r"<DSML>.*?</DSML>", "", text, flags=re.S | re.I)
     text = re.sub(r"</?(?:thought|DSML|analysis|tool_call)>", "", text, flags=re.I)
+    text = strip_html_noise(text)
     text = re.sub(r"```.*?```", "", text, flags=re.S)
     text = re.sub(r"^(?:Amo|amo|核心|我|助手|assistant|AI|机器人)\s*[:：]\s*", "", text)
     if len(text) >= 2 and text[0] in "\"'“‘" and text[-1] in "\"'”’":

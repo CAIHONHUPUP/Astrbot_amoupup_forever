@@ -9,5 +9,11 @@ class CleanReplyGuardTests(unittest.TestCase):
         self.assertEqual(clean_reply("<thought>想一下</thought>老公在吗"), "老公在吗")
         self.assertEqual(clean_reply("<DSML>x</DSML>在的"), "在的")
 
+    def test_html_tags_removed(self):
+        self.assertEqual(clean_reply("哼，还算你有点良心~ </div>"), "哼，还算你有点良心~")
+        self.assertEqual(clean_reply("好看<div class=\"x\">吧</div>"), "好看吧")
+        self.assertEqual(clean_reply("白丝跟腿环哦！</div>"), "白丝跟腿环哦！")
+        self.assertEqual(clean_reply("a&nbsp;b"), "a b")
+
 if __name__ == "__main__":
     unittest.main()
