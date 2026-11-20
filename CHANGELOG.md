@@ -1,3 +1,15 @@
+## 7.6.1（2026-11-20 一个饭点只吃一顿 / 穿搭按块时刻）
+
+- **一个饭点只吃一顿**：`meal_spent()` 先看日程里的 meal/social/date 餐饮块（`meal_claim()`），不再只看流水；守护侧买饭前查 `finance.schedule_windows`。18:00 不会再在 19:09 的火锅前又买一碗面。
+- **约会不再被陈述句误触发**：新增 `date_rules.looks_like_date_invite()`，要求「一起/咱们/陪你」类指向词或祈使疑问句；他说「你慢慢吃，我也去吃饭了」不会再凭空建一场 20:39 的约会（连带那句「好呀，那说定啦」）。
+- **一个饭点只约一场**：`make_date()` 新增 `_meal_clash()`；餐饮类社交邀约撞车改婉拒，不再静默挪到 7 天内某天。
+- **小日记穿搭按块时刻取**：`_at_home()` 先认 zone（楼下小馆不再被当成家）；`current()/tick()` 不再把「判断不了」当在家；新增 `daytime_text()` 给事实池——19:09 的火锅日记不会写成「穿着白睡衣就下来了」。
+- **同席人提示词不再具名**：示例里的「沈幼微」改成中性规则，泛称不许脑补成人名。
+- **面板文案**：「我想永远记住你」→「我能永远记住你」（2 处）。
+- **`_owner_umos` 补挂载**：`push_to_owner()` / `hunger_help()` 不再 AttributeError，守护侧的逛街/宵夜/约会事故主动消息恢复。
+- **天气 401 退避**不再被 force 绕过；景区知识库「已存在 / 无 kb_db」降为 debug。
+- 测试：新增 `test_meal_claim`、`test_meal_claim_contract`、`test_outfit_historical`、`test_conf_wording`、`test_feature_api_attach`。
+
 ## 7.6.0（2026-11-20 居住关系 / 人物指代 / 对话质量）
 
 - 新增 `amo_household.py`：apart / part_time / together 三档，`scene_at(day,start,end,place)` 按块时间判定他在不在；日程、小日记、大日记、聊天上下文、约会收尾、世界观共用同一套场景函数；新增 `/居住`、`/同居`、`/搬回`。
