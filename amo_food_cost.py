@@ -454,6 +454,45 @@ def meal_slot(now=None):
     return ""
 
 
+#: 判重用的宽窗口：与守护三餐的窄窗口（7:30-9 / 11-13 / 18-19:30）分工不同——
+#: 宽窗口决定「这一顿有没有着落」，窄窗口决定「几点吃」。改动请同步 watch 侧
+#: services/daily_engine.CLAIM_WINDOWS（tests/test_meal_claim_contract.py 会比对）。
+CLAIM_WINDOWS = MEAL_WINDOWS
+
+#: 算「一顿饭」的活动词。奶茶/咖啡/果茶不算，避免下午茶占掉午餐位。
+CLAIM_WORDS = MEAL_WORDS + ("吃", "饭", "餐", "火锅", "烤肉", "聚餐", "夜宵", "宵夜")
+
+
+def _looks_like_meal(text):
+    body = str(text or "")
+    return any(word in body for word in CLAIM_WORDS)
+
+
+def meal_claim(plugin, day, slot):
+    """这个饭点在日程里是不是已经有着落（饭局/约会/餐饮块）。
+
+    返回占住它的活动文字；空串表示空闲。2026-11-20：18:00 买面条时，19:09 的
+    火锅合同还没到点扣款，账本干干净净——只看流水必然漏。
+    """
+    window = CLAIM_WINDOWS.get(slot)
+    if not window:
+        return ""
+    low, high = int(window[0]), int(window[1])
+    rows = schedule_rows(getattr(plugin, "state", None), str(day or ""))
+    for row in rows:
+        if str(row.get("category") or "") not in ("meal", "social", "date"):
+            continue
+        begin, finish = _minute_of(row.get("start")), _minute_of(row.get("end"))
+        if begin is None or finish is None or finish <= begin:
+            continue
+        if not _overlaps(begin, finish, low, high):
+            continue
+        text = str(row.get("activity") or "")
+        if _looks_like_meal(text):
+            return text
+    return ""
+
+
 def meal_spent(plugin, now=None, ledger=None):
     """这个饭点是不是已经吃过了（任何来源的一顿都算）。
 
@@ -467,8 +506,11 @@ def meal_spent(plugin, now=None, ledger=None):
     slot = meal_slot(now)
     if not slot:
         return False
-    wallet = getattr(plugin, "wallet", None)
     day = now.strftime("%Y-%m-%d")
+    # 先看日程：已经排了饭局/约会/餐饮块，这一顿就算有着落（不看钱到没到点）
+    if meal_claim(plugin, day, slot):
+        return True
+    wallet = getattr(plugin, "wallet", None)
     start, end = MEAL_WINDOWS[slot]
     if ledger is not None:
         rows = list(ledger)
