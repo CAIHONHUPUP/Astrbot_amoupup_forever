@@ -172,6 +172,120 @@ def protect_locked(old_items, new_items, source):
     return sorted(kept, key=lambda row: str((row or {}).get("start") or ""))
 
 
+#: 日程块最短时长：低于它的碎片没有意义，落库前丢掉（2026-11-20）
+MIN_BLOCK_MINUTES = 5
+
+#: 这些来源是"整理/修复/用户明确编辑"，允许删掉任何块；其余来源不许悄悄吞掉预约
+AUTHORITATIVE_SOURCES = frozenset({
+    "manual", "manual_edit", "manual_edit_api", "command", "chat", "user", "api",
+    "cleanup_backfill", "audit", "audit_fill", "audit_inject", "audit_repair",
+    "audit_seed", "audit_smooth", "audit_transit", "backfill", "migrate",
+    "normalize", "ensure_normalize", "snapshot", "synthetic", "test", "writer",
+})
+
+#: 代表"和别人约好了"的类别：重算/追加写入不许把它们悄悄删掉
+APPOINTMENT_CATEGORIES = ("social", "date")
+
+#: 这些"填充类"块要给预约块让位（切掉重叠部分）；工作/通勤等硬安排不让
+GENERIC_CATEGORIES = ("rest", "life", "sleep")
+
+
+def _block_identity(row):
+    if not isinstance(row, dict):
+        return None
+    eid = str(row.get("event_id") or "")
+    if eid:
+        return ("id", eid)
+    return ("span", str(row.get("start") or ""), str(row.get("end") or ""),
+            str(row.get("activity") or ""))
+
+
+def drop_short_blocks(items, min_minutes=MIN_BLOCK_MINUTES):
+    """丢掉 < min_minutes 的碎片块，返回 (保留, 丢掉)。"""
+    kept, dropped = [], []
+    for row in items or []:
+        if not isinstance(row, dict):
+            kept.append(row)
+            continue
+        begin, finish = _hm(row.get("start")), _hm(row.get("end"))
+        if begin is None or finish is None or finish <= begin:
+            kept.append(row)   # 空/倒置时段交给后面的防御逻辑
+            continue
+        if finish - begin < int(min_minutes):
+            dropped.append(row)
+            continue
+        kept.append(row)
+    return kept, dropped
+
+
+def restore_appointments(old_items, new_items, source=""):
+    """重算/追加类写入丢掉的「预约块」原样加回来，返回 (items, 加回)。
+
+    2026-11-20：jit 整小时重算、ensure 重建、分段重排都会拿 new_items 整段替换；
+    别人刚排的饭局/约会如果没打锁，就被静默吞掉。这里做第二道保险：
+    只保护 category ∈ (social,date) 且没被新块占住时间的块；
+    用户/整理/修复类来源不受限。
+    """
+    if str(source or "") in AUTHORITATIVE_SOURCES:
+        return list(new_items or []), []
+
+    def _rows_overlap(a, b):
+        a1, a2 = _hm(a.get("start")), _hm(a.get("end"))
+        b1, b2 = _hm(b.get("start")), _hm(b.get("end"))
+        if a1 is None or a2 is None or b1 is None or b2 is None:
+            return False
+        return a1 < b2 and b1 < a2
+
+    def _carve(rows, hole):
+        """把 rows 里与 hole 重叠的部分切掉（通用块让位给预约块）。"""
+        h1, h2 = _hm(hole.get("start")), _hm(hole.get("end"))
+        out = []
+        for row in rows:
+            if not _rows_overlap(hole, row):
+                out.append(row)
+                continue
+            b1, b2 = _hm(row.get("start")), _hm(row.get("end"))
+            if b1 is None or b2 is None:
+                out.append(row)
+                continue
+            if b1 < h1:
+                left = dict(row)
+                left["end"] = "%02d:%02d" % (h1 // 60, h1 % 60)
+                out.append(left)
+            if b2 > h2:
+                right = dict(row)
+                right["start"] = "%02d:%02d" % (h2 // 60, h2 % 60)
+                out.append(right)
+        return out
+
+    current = [row for row in (new_items or []) if isinstance(row, dict)]
+    seen = {_block_identity(row) for row in current}
+    restored = []
+    for row in old_items or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("category") or "") not in APPOINTMENT_CATEGORIES:
+            continue
+        ident = _block_identity(row)
+        if ident in seen:
+            continue
+        clashes = [other for other in current if _rows_overlap(row, other)]
+        hard = [other for other in clashes
+                if str(other.get("category") or "") not in GENERIC_CATEGORIES]
+        if hard:
+            continue  # 时间被工作/通勤等硬安排占住，不硬塞
+        if clashes:
+            current = _carve(current, row)
+        restored.append(dict(row))
+        seen.add(ident)
+        current.append(dict(row))
+    if not restored:
+        return list(new_items or []), []
+    merged = [row for row in (new_items or [])] + restored
+    merged.sort(key=lambda row: str((row or {}).get("start") or ""))
+    return merged, restored
+
+
 def freeze_past(old_items, new_items, now_text, enabled=True):
     """今天已结束的时段只读：保留旧块，丢掉新块对过去的改写。"""
     if not enabled:
@@ -728,7 +842,7 @@ class ScheduleStateMixin(_MixinBase):
         return table if isinstance(table, dict) else None
 
     def _audit_schedule(self, day, source, reason, version, changed, old_items, new_items,
-                        rejected=None):
+                        rejected=None, extra=None):
         """日程变更审计：谁改的、改前改后、为什么，写 kv schedule_audit:<day>（最多 200 条）。
 
         rejected 非空 = 体检拒绝写入：changed_hours 固定为空，before/after 仍是本次尝试，
@@ -751,8 +865,69 @@ class ScheduleStateMixin(_MixinBase):
                  "before": brief(old_items), "after": brief(new_items)}
         if rejected:
             entry["rejected"] = [str(item) for item in rejected]
+        if extra:
+            entry.update({str(k): v for k, v in dict(extra).items()})
         rows.append(entry)
         self.db.kv_set(key, rows[-200:])
+
+    def patch_schedule(self, day, upserts=None, deletes=None, source="", reason=""):
+        """块级补丁：按 event_id（缺省用 start+activity）改/删，不再整段替换。
+
+        2026-11-20：58 个写者都在构造 new_items 整段覆盖，谁漏带谁的块就丢；
+        新代码请优先用这个接口，只动自己要动的那一两块。
+        """
+        day = str(day or "")
+        if not day:
+            return {"changed": False, "version": 0, "patched": 0, "deleted": 0}
+        stats = {"patched": 0, "deleted": 0}
+
+        def _mutate(current):
+            rows = [dict(row) for row in (current or []) if isinstance(row, dict)]
+            for target in deletes or []:
+                if not isinstance(target, dict):
+                    continue
+                ident = _block_identity(target)
+                before = len(rows)
+                if ident[0] == "id":
+                    rows = [row for row in rows
+                            if str(row.get("event_id") or "") != ident[1]]
+                else:
+                    key = (str(target.get("start") or ""), str(target.get("activity") or ""))
+                    rows = [row for row in rows
+                            if (str(row.get("start") or ""),
+                                str(row.get("activity") or "")) != key]
+                stats["deleted"] += before - len(rows)
+            for patch in upserts or []:
+                if not isinstance(patch, dict):
+                    continue
+                ident = _block_identity(patch)
+                hit = None
+                for row in rows:
+                    same_id = (ident[0] == "id"
+                               and str(row.get("event_id") or "") == ident[1])
+                    same_span = (ident[0] == "span"
+                                 and (str(row.get("start") or ""), str(row.get("end") or ""),
+                                      str(row.get("activity") or "")) == ident[1:])
+                    if same_id or same_span:
+                        hit = row
+                        break
+                if hit is not None:
+                    hit.update(patch)
+                else:
+                    rows.append(dict(patch))
+                stats["patched"] += 1
+            rows.sort(key=lambda row: str((row or {}).get("start") or ""))
+            return rows
+
+        try:
+            result = self.apply_schedule(day, _mutate, source=source or "patch",
+                                         reason=reason or "块级补丁")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.patch", _amo_exc)
+            return {"changed": False, "version": 0, **stats}
+        if isinstance(result, dict):
+            return {**result, **stats}
+        return {"changed": bool(result), "version": 0, **stats}
 
     def add_schedule_item(self, day, item, source="finance", reason=""):
         """在当天日程里追加一条（锁内读改写）；整天覆盖仍走 commit_schedule_change。"""
@@ -933,12 +1108,23 @@ class ScheduleStateMixin(_MixinBase):
             now_text, today = _time.strftime("%H:%M", _stamp), _time.strftime("%Y-%m-%d", _stamp)
         except Exception:
             now_text, today = "", ""
+        _restored, _short = [], []
         try:
             new_items = protect_locked(old_items, new_items, source)
             # 只拦「自主生成」的写入改写历史；显式来源（chat/manual/command/test/snapshot）
             # 仍可改，补历史块/补日记都靠它们。
             new_items = freeze_past(old_items, new_items, now_text,
                                     enabled=(str(source or "") == "transit" and day == today))
+            # 2026-11-20：整段重算会悄悄吞掉别人刚排的预约块；这里加回来（用户/整理类来源不受限）
+            new_items, _restored = restore_appointments(old_items, new_items, source)
+            # 碎片块（<5 分钟）没有信息量，落库前丢掉
+            new_items, _short = drop_short_blocks(new_items)
+            if _restored:
+                logger.info("[amo] 预约块保护：加回 %d 条被覆盖的社交/约会块（source=%s day=%s）",
+                            len(_restored), source or "-", day)
+            if _short:
+                logger.info("[amo] 丢弃 %d 条 <5 分钟碎片（source=%s day=%s）",
+                            len(_short), source or "-", day)
             new_items = mark_locked(new_items, source)
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.guard.pre", _amo_exc)
@@ -1057,7 +1243,9 @@ class ScheduleStateMixin(_MixinBase):
             bool((self.schedule_ctx.get(day) or {}).get("manual_override")),
         )
         try:
-            self._audit_schedule(day, source, reason, version, changed, old_items, new_items)
+            self._audit_schedule(day, source, reason, version, changed, old_items, new_items,
+                                 extra={"restored_appointments": len(_restored),
+                                        "dropped_short_blocks": len(_short)})
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.audit", _amo_exc)
         return {

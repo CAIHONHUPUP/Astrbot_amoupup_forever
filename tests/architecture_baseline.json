@@ -196,6 +196,7 @@
     "amo_current_action",
     "amo_date_session",
     "amo_food_event",
+    "amo_names",
     "amo_shared",
     "amo_state_store",
     "clock",
@@ -1114,6 +1115,7 @@
   "tools/make_manifest.py": [],
   "tools/mypy_check.py": [],
   "tools/mypy_strict.py": [],
+  "tools/pack_release.py": [],
   "tools/quality_gate.py": [
     "amo_route_table"
   ],
