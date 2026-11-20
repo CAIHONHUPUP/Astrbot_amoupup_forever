@@ -156,6 +156,7 @@ def _late_snack_delete(db, keys):
 class FeatureApiMixin:
         if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
             _send_to_umo: Any
+            cfg_str: Any
             db: Any
             hunger: Any
             state: Any
