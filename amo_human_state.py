@@ -1061,19 +1061,26 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         old_tag = current.get("tag")
         # 拉取失败先退避 5 分钟：401/断网时别每个 tick 都去撞接口（401 也计费）
         fail_ts = to_float(getattr(self, "_weather_fail_ts", 0), 0)
-        if not force and fail_ts and now_ts() - fail_ts < WEATHER_FAIL_TTL:
+        fail_sig = getattr(self, "_weather_fail_sig", None)
+        # 2026-11-20：失败退避原来只在 not force 时生效，而签名抖动/面板刷新都会带上
+        # force，结果 401 时一分钟能撞十几下。配置（key/city/host）没变就照样退避，
+        # 只有他真改了配置（签名不同）才立刻重试。
+        if fail_ts and now_ts() - fail_ts < WEATHER_FAIL_TTL and (fail_sig == desired_signature
+                                                                 or not force):
             return current or self._simulate_weather()
         data = None
         if key and city:
             data = await self._fetch_qweather(key, city)
         if not data:
             self._weather_fail_ts = now_ts()
+            self._weather_fail_sig = desired_signature
             data = self._simulate_weather()
             # 失败兜底也写「想取的城市」：城市名对不上会让缓存永远失效、每个 tick 重试
             if city:
                 data["city"] = city
         else:
             self._weather_fail_ts = 0
+            self._weather_fail_sig = None
         slot_state = dict(slot_state)
         done = dict(slot_state.get("done") or {})
         done["city_switch" if (city_switch and not city_used) else (slot_key or ("manual:%d" % used))] = now_ts()
