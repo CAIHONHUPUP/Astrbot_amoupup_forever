@@ -209,6 +209,10 @@ WEATHER_REFRESH_MAX = 3
 #: 失败缓存/退避：2 小时（2026-11-19 用户要求，接口坏了就别反复撞）
 WEATHER_FAIL_TTL = 2 * 3600
 
+#: 天气请求每日硬上限（2026-11-20）：3 个刷新槽 × 2 个端点 + 预警 + 手动查询的余量。
+#: 不管上层怎么 force、签名怎么抖，一天都不可能超过这个数字——4 万次那种事故直接绝迹。
+WEATHER_DAILY_MAX_CALLS = 12
+
 class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStateMixin, DateStateMixin):
     def __init__(self, plugin):
         self.p = plugin
@@ -820,7 +824,13 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         return payload
 
     async def _qweather_get(self, url, params):
-        """和风请求：用系统网络栈（线程里 urllib），避免 aiohttp 在部分环境超时。"""
+        """和风请求：用系统网络栈（线程里 urllib），避免 aiohttp 在部分环境超时。
+
+        所有天气 HTTP 都从这里出去，所以每日配额也在这里扣（2026-11-20）：
+        不管上层怎么 force、签名怎么抖，一天最多 WEATHER_DAILY_MAX_CALLS 次。
+        """
+        if not self._weather_budget_take():
+            return {}
         import urllib.parse
         import urllib.request
 
@@ -1007,6 +1017,24 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             if start <= minute <= end:
                 return slot, state
         return "", state
+
+    def _weather_budget_take(self):
+        """每日天气请求配额：所有 HTTP 入口共用，返回 False 表示今天不能再请求。"""
+        try:
+            day = today_str()
+            key = "weather_calls:" + day
+            used = int(self.p.db.kv_get(key, 0) or 0)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.weather_budget.read", _amo_exc)
+            return True
+        if used >= WEATHER_DAILY_MAX_CALLS:
+            logger.warning("[amo] 今日天气请求已达上限 %d 次，跳过本次请求", WEATHER_DAILY_MAX_CALLS)
+            return False
+        try:
+            self.p.db.kv_set(key, used + 1)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.weather_budget.write", _amo_exc)
+        return True
 
     def _weather_city(self):
         """天气用哪个城市：天气配置优先（ID/显示名），没有才退回日程城市。
