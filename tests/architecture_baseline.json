@@ -584,7 +584,9 @@
     "amo_trip"
   ],
   "amo_scope.py": [],
-  "amo_share_ledger.py": [],
+  "amo_share_ledger.py": [
+    "clock"
+  ],
   "amo_shared.py": [
     "amo_shared_config",
     "amo_shared_deps",

@@ -7,7 +7,10 @@
 """
 from __future__ import annotations
 
-import time
+try:
+    from . import clock as _amo_clock
+except ImportError:
+    import clock as _amo_clock
 
 _TTL = 2 * 3600
 _ANIMALS = ("猫", "狗", "兔", "鸟", "仓鼠")
@@ -39,7 +42,7 @@ def note(plugin, text, media=False, now=None):
     body = str(text or "").strip()
     if not body:
         return {}
-    entry = {"topic": _topic(body), "text": body[:60], "at": float(now or time.time()),
+    entry = {"topic": _topic(body), "text": body[:60], "at": float(now or _amo_clock.now_ts()),
              "media": bool(media), "pending": True}
     try:
         db.kv_set("share_ledger", entry)
@@ -58,7 +61,7 @@ def last(plugin, now=None):
         return {}
     if not isinstance(entry, dict):
         return {}
-    if float(entry.get("at") or 0) + _TTL < float(now or time.time()):
+    if float(entry.get("at") or 0) + _TTL < float(now or _amo_clock.now_ts()):
         return {}
     return entry
 
