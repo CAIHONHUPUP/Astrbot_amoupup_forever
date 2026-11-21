@@ -179,6 +179,17 @@ class RuntimeTickMixin(RuntimeMixinBase):
         if now_ts() - to_float(getattr(self, "_last_solo_return", 0), 0) > 120:
             self._last_solo_return = now_ts()
             self._spawn(self._maybe_solo_return())
+        # 网购订单推进：已下单 → 运输中 → 已到货（2026-11-21：以前只在聊天/面板时推进）
+        if now_ts() - to_float(getattr(self, "_last_ecom_tick", 0), 0) > 300:
+            self._last_ecom_tick = now_ts()
+            try:
+                try:
+                    from .ecommerce_engine import EcommerceEngine
+                except ImportError:
+                    from ecommerce_engine import EcommerceEngine
+                EcommerceEngine(self).tick()
+            except Exception as exc:
+                logger.debug("[amo] 网购订单推进失败: %s", exc)
         # 姿势参考图：新增种子/被删图后自动补，30 分钟最多试一次（重载也能触发）
         if (getattr(self, "pose", None) is not None
                 and now_ts() - to_float(getattr(self, "_last_pose_ref_fill", 0), 0) > 1800):
