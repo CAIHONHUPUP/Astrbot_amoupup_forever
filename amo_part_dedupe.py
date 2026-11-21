@@ -19,14 +19,27 @@ def _key(text):
     return body
 
 
+def _intent(text):
+    body = str(text or "")
+    if any(word in body for word in ("晚安", "梦里", "睡吧", "早点睡")):
+        return "goodnight"
+    return ""
+
+
 def dedupe(parts, threshold=0.6):
     kept: list[str] = []
+    seen_intents = set()
     for part in parts or []:
         key = _key(part)
         if not key:
+            continue
+        intent = _intent(part)
+        if intent and intent in seen_intents:
             continue
         if any(difflib.SequenceMatcher(None, key, _key(item)).ratio() >= threshold
                for item in kept):
             continue
         kept.append(part)
+        if intent:
+            seen_intents.add(intent)
     return kept

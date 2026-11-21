@@ -160,6 +160,7 @@ _TOGETHER_CLAIMS = (
     "他躺我旁边", "躺我旁边", "坐在我旁边", "他在我旁边", "在我旁边", "他在旁边",
     "刚亲我", "他亲我", "亲了我", "亲了我一下", "抱了我一下", "他刚亲了我",
     "他刚抱了我", "靠在我肩上", "坐我边上", "坐在我边上",
+    "手还搭在我腰上", "手搭在我腰上", "他手还搭在我腰上", "他就坐我边上",
 )
 
 _SENTENCE_RE = re.compile(r"([。！!？?；;\n]+)")
@@ -447,6 +448,14 @@ def _activity_rule(clause, ctx):
         reason = "日程此刻是%s（category=%s），不能说在上班" % (
             str(activity.get("activity") or category), category,
         )
+    elif category in ("play", "gym", "date", "shop", "life"):
+        doing = str(activity.get("activity") or "").strip()
+        doing = doing.lstrip("正在")
+        target = "在" + (doing or "忙")
+        claims = [(word, target) for word in (
+            *_WORK_CLAIMS, "在做饭", "做饭", "在逛街", "逛街", "在健身", "健身",
+            "在买菜", "买菜", "在看电影", "看电影")]
+        reason = "日程此刻是%s（category=%s），不能换成别的活动" % (doing or category, category)
     else:
         return _travel_rule(clause, ctx)
     for word, target in claims:

@@ -28,7 +28,7 @@ def _topic(text):
     for animal in _ANIMALS:
         if animal in body:
             return animal
-    if "视频" in body:
+    if any(word in body for word in ("视频", "刷到", "快看", "给你看")):
         return "视频"
     if "图片" in body or "照片" in body:
         return "图片"
@@ -81,7 +81,7 @@ def mark_reacted(plugin):
 
 def prompt_line(plugin, now=None):
     entry = last(plugin, now)
-    if not entry:
+    if not entry or not entry.get("pending"):
         return ""
     line = ("【你刚分享过】%s（%s）；他刚回应你。先接住他这句，再接着聊同一件事，"
             "不要让他去看你已经发过的东西，不要换对象；同一件事 2 小时内不要再说“刚刷到/快看”。"

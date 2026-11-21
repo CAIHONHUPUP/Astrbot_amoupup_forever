@@ -1214,7 +1214,9 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
         said.update(status_tokens(line))
     fixed, dropped = _drop_repeated_status(value, said)
     if dropped and not fixed.strip():
-        fixed = "还是老样子。"
+        # 有明确答案（时间/地点/吃饭/是否）时保留原回答；纯状态重复才用短句
+        _cue = re.compile(r"\d{1,2}[:：]\d{2}|在家|在公司|在路|到了|到家|不在|没有|吃饭|吃完饭|好的|是的")
+        fixed = value if _cue.search(value) else "还是老样子。"
     # 整句级复读：和最近 3-5 条 bot 消息相同/≥0.9 相似的句子直接删；整条重复换短句。
     refs = _repeat_guard.recent_reference(plugin, umo, DEDUP_WINDOW)
     fixed, repeated = _repeat_guard.dedup_or_fallback(fixed or value, umo, refs)

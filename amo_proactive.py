@@ -1253,6 +1253,15 @@ class ProactiveMixin(_MixinBase):
             _note_swallowed("amo_proactive._send_proactive_lines.tone_guard", _amo_exc)
         if not raw:
             return ""
+        _is_goodnight = str(kind) == "goodnight" or any(
+            word in raw for word in ("晚安", "梦里见", "早点睡"))
+        if _is_goodnight:
+            try:
+                _last_goodnight = to_float(self.db.kv_get("goodnight_sent_at", 0), 0)
+                if _last_goodnight and now_ts() - _last_goodnight < 6 * 3600:
+                    return ""
+            except Exception as _amo_exc:
+                _note_swallowed("amo_proactive.goodnight_lock", _amo_exc)
         try:
             try:
                 from .amo_share_ledger import note as _share_note
@@ -1285,6 +1294,11 @@ class ProactiveMixin(_MixinBase):
                     break
             else:
                 break
+        if sent and _is_goodnight:
+            try:
+                self.db.kv_set("goodnight_sent_at", now_ts())
+            except Exception as _amo_exc:
+                _note_swallowed("amo_proactive.goodnight_lock.set", _amo_exc)
         return sent
 
 
