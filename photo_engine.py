@@ -727,14 +727,20 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
     _USER_VIEW_FILES = {"front": "用户正面.png", "side": "用户侧面.png", "full": "用户全身.png"}
     _PERSONA_VIEW_FILES = {"front": "角色正面.png", "side": "角色侧面.png", "full": "角色全身.png"}
 
+    def _data_dir(self):
+        """本插件自己的 plugin_data 目录（不是共享的 plugin_data 根）。"""
+        path = str(getattr(getattr(self.plugin, "db", None), "path", "") or "")
+        if path:
+            return os.path.dirname(os.path.abspath(path))
+        return ""
+
     def persona_template_dir(self):
-        """角色三视图模板目录：plugin_data/outfit_refs/角色三视图。"""
+        """角色三视图模板目录：plugin_data/Astrbot_amoupup_forever/outfit_refs/角色三视图。"""
         try:
-            try:
-                from .amo_image_common import plugin_data_root
-            except ImportError:
-                from amo_image_common import plugin_data_root
-            root = os.path.join(plugin_data_root(self.plugin), "outfit_refs", "角色三视图")
+            base = self._data_dir()
+            if not base:
+                return self.template_dir()
+            root = os.path.join(base, "outfit_refs", "角色三视图")
             os.makedirs(root, exist_ok=True)
             return root
         except Exception as exc:
@@ -760,20 +766,15 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
                 logger.debug("[amo] 角色三视图迁移失败: %r", exc)
         if changed:
             self._save_template_map(mapping)
-            try:
-                self._sync_omni_refs()
-            except Exception as exc:
-                logger.debug("[amo] 角色三视图迁移后同步生图插件失败: %r", exc)
         return mapping
 
     def user_template_dir(self):
-        """用户三视图模板目录：plugin_data/outfit_refs/用户三视图。"""
+        """用户三视图模板目录：plugin_data/Astrbot_amoupup_forever/outfit_refs/用户三视图。"""
         try:
-            try:
-                from .amo_image_common import plugin_data_root
-            except ImportError:
-                from amo_image_common import plugin_data_root
-            root = os.path.join(plugin_data_root(self.plugin), "outfit_refs", "用户三视图")
+            base = self._data_dir()
+            if not base:
+                return self.template_dir()
+            root = os.path.join(base, "outfit_refs", "用户三视图")
             os.makedirs(root, exist_ok=True)
             return root
         except Exception as exc:

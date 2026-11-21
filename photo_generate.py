@@ -135,8 +135,8 @@ class PhotoGenerateMixin:
             # 同一份已经同步成功过：不要每 60 秒重写一次它的配置
             return False
         self._persona_synced_ok = False
+        self._persona_refs_signature = signature   # 先记签名，避免同步里递归回来
         ok = self._sync_omni_refs(omni=omni, refs=refs)
-        self._persona_refs_signature = signature
         self._persona_synced_ok = bool(ok)
         return bool(ok)
 
@@ -638,7 +638,8 @@ class PhotoGenerateMixin:
             refs = self.persona_refs()
         refs = [str(item) for item in (refs or []) if str(item).strip()]
         if omni is None:
-            omni = self._find_omni()
+            # 不要在同步里再走 _find_omni（它会调 _ensure_persona_refs 再回来，形成递归）
+            omni = find_omni(self.plugin, self, "photo_engine.PhotoEngine._sync_omni_refs")
         if omni is None:
             return False
         if not refs:
