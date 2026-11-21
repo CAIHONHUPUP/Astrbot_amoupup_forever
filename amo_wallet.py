@@ -8,6 +8,8 @@
 - 不做 UI：面板在金融插件那边，这里只提供方法。
 """
 from __future__ import annotations
+
+import copy
 from typing import TYPE_CHECKING
 
 try:  # Phase 11：统一时钟（不再裸调系统时钟）
@@ -32,6 +34,10 @@ class Wallet:
     def __init__(self, db):
         self.db = db
         self._ready = False
+        # 流水读取快照（2026-11-21）：同一次写入序列内重复读同一 limit 直接命中缓存。
+        # 进程内单实例，写入口只有 _insert，用内存计数器做版本即可，不依赖 kv。
+        self._write_seq = 0
+        self._ledger_cache: dict[int, tuple[int, list[dict[str, Any]]]] = {}
 
     # ---------------- 建表 / 自检 ----------------
     def ensure_schema(self) -> None:
@@ -191,12 +197,16 @@ class Wallet:
 
     def ledger(self, limit: int = 50) -> list[dict[str, Any]]:
         self._ensure()
+        limit = max(1, int(limit))
+        cached = self._ledger_cache.get(limit)
+        if cached is not None and cached[0] == self._write_seq:
+            return copy.deepcopy(cached[1])
         with self.db.lock:
             rows = self.db.conn.execute(
                 "SELECT idem, account, delta_cents, reason, ref, event_id, ts, category, sub_category, item_name, trigger_reason, actor, fund_source FROM wallet_ledger "
-                "ORDER BY ts DESC, rowid DESC LIMIT ?", (max(1, int(limit)),)
+                "ORDER BY ts DESC, rowid DESC LIMIT ?", (limit,)
             ).fetchall()
-        return [
+        result = [
             {"idem": r[0], "account": r[1], "delta_cents": int(r[2]),
              "reason": r[3], "ref": r[4], "event_id": r[5] or "",
              "ts": float(r[6]),
@@ -205,6 +215,8 @@ class Wallet:
              "actor": r[11] or "", "fund_source": r[12] or ""}
             for r in rows
         ]
+        self._ledger_cache = {limit: (self._write_seq, result)}
+        return copy.deepcopy(result)
 
     def rows_between(self, start_ts: float, end_ts: float) -> list[dict[str, Any]]:
         """只读：ts 区间内的流水（面板「本时段消费」用）；不改余额、不做写。"""
@@ -255,6 +267,7 @@ class Wallet:
                 (cash, cash),
             )
         conn.commit()
+        self._write_seq += 1
         return True
 
     def credit(self, amount_cents: int, reason: str, idem: str, ref: str = "",
