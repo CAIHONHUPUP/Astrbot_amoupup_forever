@@ -32,6 +32,17 @@ class StateConsistencyTests(unittest.TestCase):
         self.assertNotIn("笑什么", out)
         self.assertNotIn("你快看", out)
 
+    def test_repeat_share_is_continuation(self):
+        history = "哈哈我刚刷到一个视频，笑死我了 一只猫跟着节奏摇头，越摇越嗨给你看看"
+        text = ("老公你快看这个视频。这狗子傻得跟我有得一拼。"
+                "我等会儿弄点吃的自己煮的面，差点笑喷出来。")
+        out = rewrite(text, _plugin(place="家", zone="home"), user_text=history)
+        self.assertNotIn("你快看这个视频", out)
+        self.assertNotIn("弄点吃的", out)
+        self.assertIn("煮点面", out)
+        self.assertIn("猫", out)
+        self.assertNotIn("狗", out)
+
     def test_home_reply_strips_road_claim(self):
         out = rewrite("我还在路上呢，快到了。", _plugin(place="家", zone="home"))
         self.assertNotIn("路上", out)
