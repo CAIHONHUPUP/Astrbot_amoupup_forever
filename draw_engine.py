@@ -1186,7 +1186,18 @@ class DrawEngine:
             if _couple:
                 engine = getattr(self.plugin, "photo", None)
                 if engine is not None:
-                    pose = engine.couple_pose()
+                    pose = None
+                    try:
+                        try:
+                            from .pose_library import match_pose
+                        except ImportError:
+                            from pose_library import match_pose
+                        _lib = getattr(self.plugin, "pose", None)
+                        pose = match_pose(_lib, text, usage="couple")
+                    except Exception:
+                        pose = None
+                    if pose is None:
+                        pose = engine.couple_pose(scene)
                     prompt = engine.couple_prompt(scene, pose, text)
                     refs = engine.couple_refs(pose)
                     self._schedule(event, prompt, "tool", selfie=False, refs=refs, caption=caption)

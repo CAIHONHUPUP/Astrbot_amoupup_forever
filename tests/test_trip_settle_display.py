@@ -148,7 +148,7 @@ class StatusDisplayTests(unittest.TestCase):
     def test_no_new_route_for_settle(self):
         paths = [path for path, _handler, _methods in ROUTE_SPECS]
         self.assertEqual(len(paths), ROUTE_COUNT_EXPECTED)
-        self.assertEqual(len(paths), 113)
+        self.assertEqual(len(paths), 114)
         self.assertEqual([path for path in paths if "settle" in path], [])
 
     def test_settle_due_records_report_after_settling(self):

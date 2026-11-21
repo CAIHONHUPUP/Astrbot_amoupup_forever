@@ -118,17 +118,19 @@ def camera_mode(pose):
     text = str(data.get("name") or "") + str(data.get("note") or "")
     if any(word in text for word in _SELFIE_WORDS):
         return "selfie"
+    if any(word in text for word in ("第三人称", "虚空", "全身抓拍")):
+        return "void"
     return "void" if any(word in text for word in _VOID_WORDS) else "selfie"
 
 
-def match_pose(library, text):
-    """用户明确说了某个姿势名（或近似词）时，返回那个单人姿势。"""
+def match_pose(library, text, usage="selfie"):
+    """用户明确说了某个姿势名（或近似词）时，返回那个姿势（默认单人）。"""
     body = str(text or "")
     if not body or library is None:
         return None
     best, best_score = None, 0
     for pose in library.poses():
-        if usage_of(pose) not in ("selfie", "both"):
+        if usage_of(pose) not in (str(usage or "selfie"), "both"):
             continue
         name = str(pose.get("name") or "")
         if not name:

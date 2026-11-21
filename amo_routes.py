@@ -29,6 +29,7 @@ WRITE_ROUTES = frozenset({
     "/say",
     "/city/set",
     "/photo/test",
+    "/photo/couple",
     "/photo/prompt",
     "/photo/prompt_saved",
     "/photo/sheet",

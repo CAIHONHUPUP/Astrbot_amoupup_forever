@@ -1011,12 +1011,24 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
 
     # ---------- 合拍 ----------
 
-    def couple_pose(self):
+    _COUPLE_EXPLICIT = ("跨跪", "脸部", "脸上方", "腰上", "叠压", "交缠", "俯卧",
+                        "四肢", "缠腰", "抬起脚踝", "V字", "跪立", "蹲于", "背向", "上方")
+
+    def couple_pose(self, scene=""):
         try:
             library = getattr(self.plugin, "pose", None)
             if library is None:
                 return None
-            return library.random_pose("home", "", usage="couple")
+            pose = library.random_pose("home", str(scene or ""), usage="couple")
+            text = str((pose or {}).get("name") or "") + str((pose or {}).get("note") or "")
+            if any(word in text for word in self._COUPLE_EXPLICIT):
+                # 成人向的姿势不进日常合拍
+                safe = [p for p in library.poses() if str(p.get("usage")) == "couple"
+                        and not any(word in (str(p.get("name") or "") + str(p.get("note") or ""))
+                                    for word in self._COUPLE_EXPLICIT)]
+                if safe:
+                    return safe[0]
+            return pose
         except Exception:
             return None
 
@@ -1036,12 +1048,25 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         name = str((pose or {}).get("name") or "")
         note = str((pose or {}).get("note") or "")
         where = str(scene or "家里")
+        try:
+            try:
+                from .pose_library import camera_mode
+            except ImportError:
+                from pose_library import camera_mode
+            mode = camera_mode(pose)
+        except Exception:
+            mode = "void"
+        if mode == "void":
+            camera = ("第三人称虚空相机，全身构图，两个人从头到脚完整入镜，"
+                      "不出现手机、不出现拿手机的手")
+        else:
+            camera = ("手机前置自拍视角，近景半身，画面边缘可以有拿手机的手臂，"
+                      "两个人都在画面里")
         return ("两人合照：画面里两个真实人物——她（参考图前三张是她的三视图）和用户本人"
                 "（参考图中间几张是他的三视图），两个人在一起，场景：%s。"
-                "姿势：%s（%s）。第三人称虚空相机，全身构图，两个人从头到脚完整入镜，"
-                "不出现手机、不出现拿手机的手；自然光，日常穿搭，表情自然。"
+                "姿势：%s（%s）。%s；自然光，日常穿搭，表情自然。"
                 "参考图只借长相和姿势，不要照搬背景和衣服。"
-                % (where, name or "自然站在一起", note or "并排看镜头"))
+                % (where, name or "自然站在一起", note or "并排看镜头", camera))
 
     def persona_refs(self):
         mapping = self._template_map()

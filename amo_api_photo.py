@@ -363,6 +363,33 @@ class PhotoApiMixin(_MixinBase):
             logger.debug("[amo] 打开模板文件夹失败: %s" % exc)
         return {"code": 0, "data": {"root": root, "opened": opened}}
 
+    async def api_photo_couple(self):
+        """调试/测试：按指定 umo 立刻拍一张双人合照（默认卧室、随机双人姿势）。"""
+        await self._ensure_ready()
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        umo = str(data.get("umo") or "").strip()
+        text = str(data.get("text") or "我们在卧室拍一张合照")
+        place = str(data.get("place") or "卧室")
+        draw = getattr(self, "draw", None)
+        if draw is None:
+            return {"code": 1, "msg": "画图引擎未加载"}
+        if not umo:
+            return {"code": 1, "msg": "缺少 umo"}
+
+        class _Event:
+            message_str = text
+            unified_msg_origin = umo
+
+            def get_sender_id(self):
+                return ""
+
+        try:
+            message = draw.send_photo_now(_Event(), place, kind="web", force=True)
+        except Exception as exc:
+            return {"code": 1, "msg": "拍失败: %s" % exc}
+        return {"code": 0, "data": {"msg": str(message or "已开始生成")}}
+
     async def api_photo_test(self):
         """面板「现在发一张」：无视概率，按类别立刻分享一张照片。"""
         await self._ensure_ready()
