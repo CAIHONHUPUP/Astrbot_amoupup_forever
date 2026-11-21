@@ -29,8 +29,9 @@ class FootPoseOnlyTests(unittest.TestCase):
         self.assertEqual(3, len(items))
 
     def test_foot_pool_includes_imported_poses(self):
-        self.assertEqual(7, len(FOOT_POSE_NAMES))
-        imported = {"手抚脚踝", "握脚踝・单膝立起", "站立・踮脚双臂V字", "蹲姿・踮脚双手触地"}
+        self.assertEqual(24, len(FOOT_POSE_NAMES))
+        imported = {"手抚脚踝", "站立・踮脚双臂V字", "M字开腿（坐位・双手扶膝）",
+                    "踮脚蹲姿开腿・双手触地", "三角坐・双膝左倾"}
         self.assertTrue(imported.issubset(set(FOOT_POSE_NAMES)))
 
     def test_foot_poses_filters_non_foot(self):
