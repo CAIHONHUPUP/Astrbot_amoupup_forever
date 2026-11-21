@@ -18,6 +18,7 @@ class UnderstandingTests(unittest.TestCase):
         self.assertEqual("吐槽", card["act"])
         self.assertEqual("生气", card["emotion"])
         self.assertIn("剧", card["target"])
+        self.assertGreaterEqual(card["confidence"], 0.6)
 
     def test_question(self):
         self.assertEqual("提问", build("你晚上想吃什么？")["act"])

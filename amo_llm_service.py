@@ -347,6 +347,10 @@ class LLMService:
                         limit=self.p.cfg_int("max_reply_chars", 220))
                     if _retry and not _grounding_issues(user_text, _retry):
                         result = _retry
+                    elif _grounding_issues(user_text, result):
+                        from .amo_grounding_critic import safe_reply as _safe_reply
+                        logger.info("[amo] 接话失败两次，发安全句: %s", str(user_text)[:40])
+                        result = _safe_reply(user_text)
             except Exception as exc:
                 logger.debug("[amo] 接话 critic 失败: %r", exc)
         if len(result) > max(len(text) + 30, int(len(text) * 1.5)):

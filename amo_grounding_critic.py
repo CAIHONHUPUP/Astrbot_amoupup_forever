@@ -20,6 +20,18 @@ def _bigrams(text):
     return {body[i:i + 2] for i in range(max(0, len(body) - 1))}
 
 
+def safe_reply(user_text):
+    """两次都没接住时，按意图发安全句，不硬发错话。"""
+    user = str(user_text or "")
+    if _QUESTION.search(user):
+        return "你刚问的这个，我一下没答好，你再说一遍？"
+    if any(word in user for word in ("气", "烦", "难受", "累", "崩")):
+        return "换谁都得气，我在听着。"
+    if any(word in user for word in ("视频", "图片", "刷到", "看到", "分享")):
+        return "我看到了，等我缓一下再细看。"
+    return "我在听，你接着说。"
+
+
 def issues(user_text, reply):
     """返回问题列表；空列表表示接住了。"""
     user = str(user_text or "").strip()

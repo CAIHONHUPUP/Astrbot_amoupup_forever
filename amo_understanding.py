@@ -54,12 +54,15 @@ def _target(text):
 def build(text, recent=""):
     body = str(text or "").strip()
     act = _act(body)
+    target = _target(body)
     card = {
         "speaker": "他",
         "act": act,
         "emotion": _emotion(body),
-        "target": _target(body),
+        "target": target,
         "need": "共情" if act == "吐槽" else ("回答" if act == "提问" else "接住"),
+        # 规则置信度：越具体越高；低于 0.5 时后续可接小模型兜底
+        "confidence": 0.4 if act == "陈述" else (0.8 if target != "他说的这件事" else 0.6),
     }
     return card
 
