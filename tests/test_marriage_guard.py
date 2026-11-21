@@ -18,8 +18,10 @@ class MarriageGuardTests(unittest.TestCase):
         self.assertNotIn("相亲", out)
         self.assertNotIn("介绍对象", out)
 
-    def test_ex_called_husband(self):
-        self.assertIn("老公", rewrite("前男友又来找我了"))
+    def test_no_ex_boyfriend(self):
+        out = rewrite("前男友又来找我了")
+        self.assertNotIn("前男友", out)
+        self.assertIn("只有你", out)
 
     def test_male_colleague_romance_rewritten(self):
         self.assertEqual("工作上的事，下班再说。", rewrite("季博达约我看电影。"))
