@@ -20,7 +20,7 @@ def _key(text):
 
 
 def dedupe(parts, threshold=0.6):
-    kept = []
+    kept: list[str] = []
     for part in parts or []:
         key = _key(part)
         if not key:
