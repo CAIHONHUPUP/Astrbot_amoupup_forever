@@ -474,7 +474,7 @@ class RunTests(unittest.TestCase):
 
     def test_manual_disabled(self):
         engine, _ = engine_for({"draw_enable": False})
-        self.assertIn("没开", engine.manual(FakeEvent("一碗面"), "一碗面"))
+        self.assertIn("未开启", engine.manual(FakeEvent("一碗面"), "一碗面"))
 
 
 if __name__ == "__main__":

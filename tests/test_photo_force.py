@@ -57,9 +57,9 @@ class DirectCommandTests(unittest.TestCase):
     def test_force_photo_bypasses_hourly_limit(self):
         engine, plugin = _engine(cfg={"draw_max_per_hour": 0, "draw_max_per_day": 0})
         refused = engine.send_photo_now(FakeEvent("x"), "随手拍", kind="real")
-        self.assertIn("先不发图", refused)
+        self.assertIn("不发图", refused)
         forced = engine.send_photo_now(FakeEvent("x"), "拍一张自拍发他", kind="real", force=True)
-        self.assertIn("拍一张", forced)
+        self.assertIn("已安排", forced)
         self.assertEqual(len(plugin.tasks), 1)
 
 

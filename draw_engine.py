@@ -1177,9 +1177,9 @@ class DrawEngine:
     def send_photo_now(self, event, description, kind="web", force=False, caption=""):
         """大模型主动决定发图：web=网图/截图分享，real=她自己的实拍。"""
         if not self.enabled:
-            return "画图没开（draw_enable=false）"
+            return "画图功能未开启（draw_enable=false）"
         if not self.is_owner(event):
-            return "这个只给老公用哦"
+            return "权限不足：这个功能只对老公开放"
         text = str(description or "").strip() or "随手拍"
 
         try:
@@ -1189,18 +1189,18 @@ class DrawEngine:
         if swim_outside_request(text, _place):
             if "家" in _place:
                 # 在爸妈家/自己家：不能谎称「在外面」，只是这会儿不方便拍
-                return "在家呢，不过这会儿不太方便拍这个，等晚点再说。"
-            return "在外面呢，等我到家再拍给你看，先别催。"
+                return "拍不了：她现在在家，这会儿不方便拍这个"
+            return "拍不了：她现在在外面，等回家再拍"
         # 「自拍/合影/拍照」这类必须走她本人的实拍，不能被当成网图
         if any(word in text for word in ("自拍", "合影", "拍照", "照片", "拍一张")):
             kind = "real"
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         self._attempt_turn = _photo_turn_key(event)
         if umo and umo in self._inflight:
-            return "上一张还在画，等它出来"
+            return "上一张还在生成，还没出来"
         uid = str(self.plugin._canonical_uid(event) or "")
         if not force and self._check_limits(uid):
-            return "这会儿先不发图啦，聊会儿天"
+            return "这次不发图：触发了发图限制（今天/本轮已经发过）"
         if str(kind or "web").lower() == "real":
             activity = self._activity()
             scene = scene_for(activity) if callable(scene_for) else ""
@@ -1242,7 +1242,7 @@ class DrawEngine:
                     refs = engine.couple_refs(pose)
                     self._schedule(event, prompt, "tool", selfie=False, refs=refs, caption=caption)
                     self._last_tool_photo_at = time.monotonic()
-                    return "好呀，我们拍一张~"
+                    return "已安排：双人合拍，正在生成"
             try:
                 from .photo_view import wants_foot_closeup, foot_closeup_prompt
             except ImportError:
@@ -1304,7 +1304,7 @@ class DrawEngine:
                 self._last_tool_photo_at = time.monotonic()
             except Exception:  # cleanup: 时间戳失败不影响发图
                 pass
-            return "好呀，等我一下，我拍一张发你~"
+            return "已安排：她的实拍，正在生成"
         prompt = ("网上找的图片，聊天里分享的网图/截图，不是她本人拍的，"
                   "可以是店铺招牌、菜品图或梗图风格，画面里不出现她自己；" + text)
         self._schedule(event, prompt, "tool", selfie=False, caption=caption)
@@ -1312,7 +1312,7 @@ class DrawEngine:
             self._last_tool_photo_at = time.monotonic()
         except Exception:  # cleanup: 时间戳失败不影响发图
             pass
-        return "好呀，等我一下，我找张图发你~"
+        return "已安排：找一张图分享，正在生成"
 
     def enforce_photo_retry(self, event, his_words, reply):
         """他说「再试一次 / 拍一张」，她却回「不行 / 出不来」且本轮没真拍 → 真跑一次。
@@ -1349,7 +1349,7 @@ class DrawEngine:
             return body
         if str(result or "").startswith("好呀"):
             logger.info("[DRAW] 他说要重拍但她只想演，已真试一次（不保证出图）")
-            return "我试试，等我一下。"
+            return "已收到：正在生成"
         return body
 
     def enforce_photo_claim(self, event, text):
@@ -1371,20 +1371,20 @@ class DrawEngine:
         if not self.enabled:
             return body, False
         result = self.send_photo_now(event, "拍一张自拍发给他", kind="real", force=True)
-        return body, "拍一张" in result or "发你" in result
+        return body, any(word in result for word in ("拍一张", "发你", "已安排", "已收到"))
 
     def manual(self, event, text):
         """``/amo draw 描述``：跳过触发词，直接画（给测试用）。"""
         if not self.enabled:
-            return "画图没开（draw_enable=false）。"
+            return "画图功能未开启（draw_enable=false）。"
         if not self.is_owner(event):
-            return "这个只给老公用哦。"
+            return "权限不足：这个功能只对老公开放。"
         text = str(text or "").strip()
         if not text:
             return self.diagnostics()
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         if umo and umo in self._inflight:
-            return "上一张还在画，等它出来。"
+            return "上一张还在生成，还没出来。"
         selfie = looks_like_her(text)
         prefix = self._cfg_str("photo_prompt_prefix", "自然生活照，手机随手拍，")
         body = text if ("自拍" in text or not selfie) else "自拍，" + text
