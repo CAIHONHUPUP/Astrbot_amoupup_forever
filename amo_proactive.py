@@ -1189,6 +1189,14 @@ class ProactiveMixin(_MixinBase):
         # Phase 6：这道守卫走 amo_reply_pipeline 的 proactive_pre 阶段（仍在切句之前）。
         context = _reply_pipeline.context_for_proactive(self, target_umo, profile)
         raw = str((await _reply_pipeline.run(raw, context))["text"] or "").strip()
+        try:
+            try:
+                from .amo_purchase_guard import rewrite as _purchase_guard
+            except ImportError:
+                from amo_purchase_guard import rewrite as _purchase_guard
+            raw = _purchase_guard(raw, self)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive.purchase_guard", _amo_exc)
         # 「不矛盾」守卫：主动消息不走 decorate，切句前补一次（消费校验顺序不变）
         # 事实只读唯一视图（F1）：apply_fact_guard → amo_diary_guard.narrative_check
         try:

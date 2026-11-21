@@ -1150,6 +1150,9 @@ class DrawEngine:
         except Exception:
             _place = ""
         if swim_outside_request(text, _place):
+            if "家" in _place:
+                # 在爸妈家/自己家：不能谎称「在外面」，只是这会儿不方便拍
+                return "在家呢，不过这会儿不太方便拍这个，等晚点再说。"
             return "在外面呢，等我到家再拍给你看，先别催。"
         # 「自拍/合影/拍照」这类必须走她本人的实拍，不能被当成网图
         if any(word in text for word in ("自拍", "合影", "拍照", "照片", "拍一张")):

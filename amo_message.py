@@ -922,6 +922,14 @@ class MessageMixin(_MixinBase):
             except Exception:
                 _user_text = ""
             text = _anti_nag(text, _user_text)
+            try:
+                try:
+                    from .amo_purchase_guard import rewrite as _purchase_guard
+                except ImportError:
+                    from amo_purchase_guard import rewrite as _purchase_guard
+                text = _purchase_guard(text, self)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_message.purchase_guard", _amo_exc)
         except Exception as _amo_exc:
             _note_swallowed("amo_message.anti_nag", _amo_exc)
         if not text or not umo:
