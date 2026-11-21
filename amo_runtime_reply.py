@@ -347,6 +347,9 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         """还在路上时，不许说「到了/刚进门/鞋都换了」；顺手修「车上上」这种叠字。"""
         import re as _re
         body = str(text or "")
+        # 「17:00 差不多到家」「到家跟我说一声」不是“此刻已到家”
+        if _re.search(r"\d{1,2}[:：]\d{2}|差不多|预计|应该|到家(?:了)?(?:跟我|给我|和我说|说一声)", body):
+            return body
         try:
             act = self.state.current_activity() or {}
         except Exception:

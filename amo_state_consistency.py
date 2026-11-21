@@ -22,11 +22,12 @@ _OUT_PROP = re.compile(r"(?:商场|试衣|逛街|腿站酸|地铁|在路上|公�
 # 未来计划不是“此刻矛盾”：带时间/打算的句子不按当前场景改写
 _FUTURE = re.compile(r"\d{1,2}[:：]\d{2}|明天|后天|下周|下次")
 _SHARE_ROLE = re.compile(r"[^。！？\n]*(?:你快看|你看看这个|给你看看|快看这个|你发的[^。！？\n]{0,12}(?:再发|发我|翻上去))[^。！？\n]*[。！？]?")
+_SHARE_OPENER = re.compile(r"(?:老公)?(?:我)?(?:刚刷到(?:一个)?[^，。！？\n]{0,10}?视频|你快看这个视频|快看这个视频|给你看这个视频)")
 _LAUGH_ASK = re.compile(r"[^。！？\n]*(?:笑什么|笑啥)[^。！？\n]*[。！？]?")
 _FAKE_SHARE = re.compile(r"[^。！？\n]*(?:你快看这个视频|快看这个视频|给你看这个视频|我刚刷到(?:一个)?[^。！？\n]{0,10}?视频)[^。！？\n]*[。！？]?")
 _BAD_COOK = re.compile(r"[^。！？\n]*(?:弄点吃的[^。！？\n]*煮.{0,2}面|煮.{0,2}面[^。！？\n]*弄点吃的)[^。！？\n]*[。！？]?")
 _ANIMALS = (("猫", ("猫", "猫猫", "小猫", "布偶", "橘猫")), ("狗", ("狗", "狗狗", "狗子", "小狗", "柯基", "柴犬")),
-            ("兔", ("兔子", "小兔")), ("鸟", ("小鸟", "鸟")), ("仓鼠", ("仓鼠",)))
+            ("兔", ("兔子", "小兔", "兔")), ("鸟", ("小鸟", "鸟")), ("仓鼠", ("仓鼠",)))
 
 
 def _scene(plugin):
@@ -95,12 +96,14 @@ def rewrite(text, plugin, user_text=""):
                 continue
         out.append(sentence)
     body = "".join(out).strip()
+    # 角色反转（“你发的再发我一遍”）不依赖上下文关键词
+    body = _SHARE_ROLE.sub("", body).strip()
     # 同一件事不要重复“新分享”：她自己刚发过视频，就接着聊
     if any(word in user for word in ("视频", "图片", "刷到", "看到")):
         _ctx_animals = _animals(user)
         _topic = sorted(_ctx_animals)[0] if _ctx_animals else "视频"
-        if _FAKE_SHARE.search(body):
-            body = _FAKE_SHARE.sub("就是刚才那个%s，" % _topic, body).strip()
+        if _SHARE_OPENER.search(body):
+            body = _SHARE_OPENER.sub("就是刚才那个%s" % _topic, body).strip()
         body = _SHARE_ROLE.sub("", body).strip()
     # 把「弄点吃的…煮的面」这种硬拼句改顺
     if _BAD_COOK.search(body):
