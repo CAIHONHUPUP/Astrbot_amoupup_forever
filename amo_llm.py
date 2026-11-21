@@ -591,7 +591,7 @@ class LlmMixin(_MixinBase):
             "self_qq_nick": self_qq_nick, "self_display": self_display,
             "sender_nick": sender_nick, "plat": plat, "cash_cents": cash_cents,
             "silence_days": silence_days, "last_refusal": last_refusal, "coax": coax,
-            "understanding": _understanding.build(text, recent),
+            "understanding": await _understanding.build_smart(self, text, umo, recent),
         }
 
     async def _reply_system(self, ctx, event, text, snap, profile, group, memory_text, note):

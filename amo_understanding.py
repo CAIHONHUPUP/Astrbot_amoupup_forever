@@ -67,6 +67,34 @@ def build(text, recent=""):
     return card
 
 
+async def build_smart(plugin, text, umo="", recent=""):
+    """规则卡 + 可选小模型兜底；默认 rules，不额外调用。"""
+    card = build(text, recent)
+    try:
+        mode = str(plugin.cfg_str("understanding_mode", "rules") or "rules").lower()
+    except Exception:  # cleanup: 配置读不到按 rules 处理
+        mode = "rules"
+    if mode == "rules" or (mode == "auto" and float(card.get("confidence") or 0) >= 0.5):
+        return card
+    try:
+        raw = await plugin.llm.chat(
+            umo,
+            "你只输出 JSON，不要解释。",
+            "判断这句话：%s\n输出 {\"act\":\"吐槽/提问/分享/请求/陈述\","
+            "\"emotion\":\"生气/难受/累/开心/平静\",\"target\":\"对象\"}" % str(text)[:200],
+            limit=120)
+        import json
+        data = json.loads(str(raw))
+        if isinstance(data, dict):
+            for key in ("act", "emotion", "target"):
+                if data.get(key):
+                    card[key] = str(data[key])[:20]
+            card["confidence"] = 0.9
+    except Exception:  # cleanup: 模型兜底失败回退规则卡
+        pass
+    return card
+
+
 def prompt_block(card):
     if not isinstance(card, dict) or not card:
         return ""
