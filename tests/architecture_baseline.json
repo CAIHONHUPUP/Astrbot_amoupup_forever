@@ -403,6 +403,7 @@
     "domains"
   ],
   "amo_observability.py": [],
+  "amo_part_dedupe.py": [],
   "amo_person_ref.py": [],
   "amo_persona_pack.py": [],
   "amo_persona_store.py": [
@@ -419,6 +420,7 @@
     "amo_date_session",
     "amo_marriage_guard",
     "amo_observability",
+    "amo_part_dedupe",
     "amo_persona_store",
     "amo_proactive_gate",
     "amo_purchase_guard",

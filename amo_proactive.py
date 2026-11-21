@@ -1264,6 +1264,14 @@ class ProactiveMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive.share_note", _amo_exc)
         parts = [item.strip() for item in re.split(r"(?<=[。！？!?~])", raw) if item.strip()]
+        try:
+            try:
+                from .amo_part_dedupe import dedupe as _part_dedupe
+            except ImportError:
+                from amo_part_dedupe import dedupe as _part_dedupe
+            parts = _part_dedupe(parts)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive.part_dedupe", _amo_exc)
         if len(parts) > 3:
             parts = ["".join(parts[:-2])] + parts[-2:]
         sent = ""

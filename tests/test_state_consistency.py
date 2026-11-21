@@ -43,6 +43,13 @@ class StateConsistencyTests(unittest.TestCase):
         self.assertIn("猫", out)
         self.assertNotIn("狗", out)
 
+    def test_mall_reply_strips_home_props(self):
+        text = "（窝在沙发上，把手机举高一点看着）我这边刚洗完澡，趴着呢。"
+        out = rewrite(text, _plugin(place="商场", zone="outside"))
+        self.assertNotIn("沙发", out)
+        self.assertNotIn("洗澡", out)
+        self.assertNotIn("趴着", out)
+
     def test_home_reply_strips_road_claim(self):
         out = rewrite("我还在路上呢，快到了。", _plugin(place="家", zone="home"))
         self.assertNotIn("路上", out)

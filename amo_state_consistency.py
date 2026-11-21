@@ -17,6 +17,8 @@ _HOME_ACTION = re.compile(
     r"(?:煮.{0,3}面|吃.{0,2}(?:面|饭)|做(?:个|点|顿)?饭|洗碗|洗衣服|换.{0,3}(?:衣服|鞋)|脱.{0,4}外套|上.{0,2}床)")
 _ARRIVAL = re.compile(r"(?:刚到家|到家了|到家|刚进门|进家门|进屋|鞋都换了|换好鞋|穿上拖鞋)")
 _ROAD_CLAIM = re.compile(r"(?:还在路上|在路上|快到了|马上到|地铁上|公交上|在车上)")
+_HOME_PROP = re.compile(r"(?:沙发|床上|躺床|趴着|窝在|厨房|洗澡|睡衣|到家|进门|脱.{0,4}外套|换鞋)")
+_OUT_PROP = re.compile(r"(?:商场|试衣|逛街|腿站酸|地铁|在路上|公司)")
 _SHARE_ROLE = re.compile(r"[^。！？\n]*(?:你快看|你看看这个|给你看看|快看这个)[^。！？\n]*[。！？]?")
 _LAUGH_ASK = re.compile(r"[^。！？\n]*(?:笑什么|笑啥)[^。！？\n]*[。！？]?")
 _FAKE_SHARE = re.compile(r"[^。！？\n]*(?:你快看这个视频|快看这个视频|给你看这个视频|我刚刷到一个视频)[^。！？\n]*[。！？]?")
@@ -33,7 +35,7 @@ def _scene(plugin):
     place = str(act.get("place") or "")
     zone = str(act.get("zone") or "")
     on_road = zone in ("road", "outside") or any(
-        word in place for word in ("路上", "地铁", "公交", "车", "街", "外面"))
+        word in place for word in ("路上", "地铁", "公交", "车", "街", "外面", "商场", "店"))
     home = zone.startswith("home") or ("家" in place and "路上" not in place)
     return {"home": home, "road": on_road and not home}
 
@@ -66,11 +68,13 @@ def rewrite(text, plugin, user_text=""):
             if _ARRIVAL.search(sentence):
                 out.append("我还在路上呢，快到了")
                 continue
-            if _HOME_ACTION.search(sentence):
+            if _HOME_ACTION.search(sentence) or _HOME_PROP.search(sentence):
                 continue
         elif scene["home"]:
             if _ROAD_CLAIM.search(sentence) and not _ARRIVAL.search(sentence):
                 out.append("我在家呢")
+                continue
+            if _OUT_PROP.search(sentence) and not _HOME_PROP.search(sentence):
                 continue
         out.append(sentence)
     body = "".join(out).strip()
