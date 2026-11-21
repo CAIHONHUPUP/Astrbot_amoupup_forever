@@ -170,8 +170,8 @@ class AuditEndpointTests(unittest.TestCase):
         paths = {path: methods for path, _handler, methods in ROUTE_SPECS}
         self.assertIn("/schedule/audit", paths)
         self.assertEqual(tuple(paths["/schedule/audit"]), ("GET", "POST"))
-        self.assertEqual(ROUTE_COUNT_EXPECTED, 105)
-        self.assertEqual(len(ROUTE_SPECS), 105)
+        self.assertEqual(ROUTE_COUNT_EXPECTED, 113)
+        self.assertEqual(len(ROUTE_SPECS), 113)
 
     def test_audit_returns_at_most_200_and_replay_in_time_order(self):
         db = FakeDB()

@@ -31,9 +31,13 @@ def row(start, end, activity="在工位上忙工作", place="公司", zone="offi
 
 class LockTests(unittest.TestCase):
     def test_manual_and_command_rows_get_locked(self):
-        for source in ("manual", "command", "date"):
+        for source in ("manual", "command"):
             out = mark_locked([row("10:00", "11:00")], source)
             self.assertTrue(out[0].get("locked"), source)
+
+    def test_date_source_does_not_lock_whole_day(self):
+        out = mark_locked([row("10:00", "11:00")], "date")
+        self.assertNotIn("locked", out[0])
 
     def test_chat_source_is_not_locked(self):
         # chat 也是「日程改安排/吃饭拆分」的常规来源，锁了会把拆分/修补挡掉。

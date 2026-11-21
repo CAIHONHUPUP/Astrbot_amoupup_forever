@@ -198,7 +198,7 @@ class RestoreEntryTests(unittest.TestCase):
     def test_route_table_has_single_restore_entry(self):
         paths = [path for path, _handler, _methods in ROUTE_SPECS]
         self.assertEqual(len(paths), ROUTE_COUNT_EXPECTED)
-        self.assertEqual(len(paths), 105)
+        self.assertEqual(len(paths), 113)
         self.assertEqual([path for path in paths
                           if re.search(r"(undo|restore|rollback)", path, re.I)],
                          ["/schedule/block/restore"])

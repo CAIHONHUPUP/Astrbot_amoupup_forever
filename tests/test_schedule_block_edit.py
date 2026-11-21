@@ -111,7 +111,7 @@ class ScheduleEditRouteTests(unittest.TestCase):
         self.assertEqual(by_path["/schedule/block/restore"],
                          ("api_schedule_block_restore", ("POST",)))
         self.assertEqual(len(ROUTE_SPECS), ROUTE_COUNT_EXPECTED)
-        self.assertEqual(len(ROUTE_SPECS), 105)
+        self.assertEqual(len(ROUTE_SPECS), 113)
 
     def test_routes_are_registered_as_writes(self):
         self.assertIn("/schedule/block/update", WRITE_ROUTES)

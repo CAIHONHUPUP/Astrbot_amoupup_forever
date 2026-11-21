@@ -765,11 +765,34 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         return [mapping[view] for view in self.VIEWS
                 if mapping.get(view) and enabled.get(view, True)]
 
+    def _ensure_png_file(self, path):
+        """把 JPEG/WebP 统一转成真 PNG，避免生图插件「内容与声明类型不匹配」。"""
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+            try:
+                try:
+                    from .outfit_refs import _as_png
+                except ImportError:
+                    from outfit_refs import _as_png
+                png = _as_png(data)
+            except Exception:
+                png = b""
+            if png and png != data:
+                with open(path, "wb") as fh:
+                    fh.write(png)
+            return path
+        except Exception as exc:
+            logger.debug("[amo] 参考图转 PNG 失败: %r", exc)
+            return path
+
     def user_ref_path(self):
         try:
             root = self.template_dir()
             path = os.path.join(root, "amo_user_ref.png")
-            return path if os.path.isfile(path) else ""
+            if not os.path.isfile(path):
+                return ""
+            return self._ensure_png_file(path)
         except Exception:
             return ""
 
@@ -796,7 +819,7 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
                 shutil.copy2(raw, target)
             else:
                 return ""
-            return target
+            return self._ensure_png_file(target)
         except Exception as exc:
             logger.debug("[amo] 用户参考图保存失败: %s", exc)
             return ""
@@ -840,6 +863,7 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         try:
             with open(target, "wb") as fh:
                 fh.write(payload)
+            self._ensure_png_file(target)
         except Exception as exc:
             return "保存模板失败：%s" % exc
         mapping = self._user_map()

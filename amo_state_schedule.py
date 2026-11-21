@@ -126,7 +126,7 @@ _OFFICE_WORDS = ("公司", "写字楼", "办公室", "工位")
 #: 这些来源写的块会被打锁，jit/分段重算不许覆盖。
 #: 注意：这里只放"整天都该锁"的来源；社交块用 item 自带的 locked=True 单条上锁
 #: （2026-11-20：曾把 social 加进来，结果一次社交提交锁死整天，jit 再也更新不了）。
-_LOCK_SOURCES = ("manual", "command", "date")
+_LOCK_SOURCES = ("manual", "command")   # date 只锁单条约会块（item.locked），不锁整天
 _WORK_START_HOUR = 9
 _WORK_END_HOUR = 18
 
