@@ -268,6 +268,12 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         except Exception as _amo_exc:
             _note_swallowed("photo_engine.PhotoEngine.__init__.migrate", _amo_exc)
         try:
+            # 先把两个模板目录建出来，用户打开面板就能看到
+            self.persona_template_dir()
+            self.user_template_dir()
+        except Exception as _amo_exc:
+            _note_swallowed("photo_engine.PhotoEngine.__init__.template_dirs", _amo_exc)
+        try:
             asyncio.get_running_loop()
         except RuntimeError:
             return  # 没有事件循环（单测/同步加载）：首次生图时握手自愈兜底
