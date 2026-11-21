@@ -26,6 +26,15 @@ def test_arrival_on_road_is_rewritten():
     assert "车上上" not in fixed
 
 
+def test_road_reply_with_home_action_is_rewritten():
+    text = "（刚到家把外套脱了奶还在车上上，笑着回你）\n笑什么呢，也在刷视频。\n我还在路上呢，快到了。"
+    fixed = CLS._align_arrival(_fake(), text)
+    assert "到家" not in fixed
+    assert "外套" not in fixed
+    assert fixed.count("还在路上") == 1
+    assert "车上上" not in fixed
+
+
 def test_arrival_at_home_is_kept():
     text = "我已经到啦，鞋都换了。"
     assert CLS._align_arrival(_fake(place="家", zone="home"), text) == text

@@ -336,10 +336,18 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         zone = str(act.get("zone") or "")
         on_road = zone in ("road", "outside") or any(w in place for w in ("路上", "地铁", "公交", "车", "街", "外面"))
         home = zone.startswith("home") or any(w in place for w in ("家",))
-        _arrival = r"(到家了|刚进门|进家门|鞋都换了|换好鞋|换上拖鞋|回来啦|回来了|回去啦|进门了|到家咯)"
-        if on_road and _re.search(r"(到了|到啦|到家了|刚进门)", body):
-            body = _re.sub(r"[^。！？\n]*(?:到了|到啦|到家了|刚进门)[^。！？\n]*",
+        _arrival = (r"(刚到家|到家了|到家|刚进门|进家门|进屋|鞋都换了|换好鞋|换上拖鞋|"
+                    r"外套脱了|回来啦|回来了|回去啦|进门了|到家咯)")
+        if on_road and _re.search(
+                r"(到了|到啦|刚到家|到家了|到家|刚进门|进家门|进屋|鞋都换了|换好鞋|换上拖鞋|外套脱了)", body):
+            body = _re.sub(r"[^。！？\n]*(?:到了|到啦|刚到家|到家了|到家|刚进门|进家门|进屋|"
+                           r"鞋都换了|换好鞋|换上拖鞋|外套脱了)[^。！？\n]*",
                            "我还在路上呢，快到了", body)
+            # 多句都命中时只留一句，别复读
+            _phrase = "我还在路上呢，快到了"
+            if body.count(_phrase) > 1:
+                _head, _rest = body.split(_phrase, 1)
+                body = _head + _phrase + _rest.replace(_phrase, "")
         elif not home and _re.search(_arrival, body) and not _re.search(r"从[^。！？\n]{0,10}回来", body):
             # 不在家却说「我回来啦」：改成还在外面（线上实例：先回来啦、后在外面）
             body = _re.sub(r"[^。！？\n]*" + _arrival + r"[^。！？\n]*",
