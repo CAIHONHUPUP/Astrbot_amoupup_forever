@@ -68,6 +68,57 @@ def _has_block(blocks, ts, item=""):
     return False
 
 
+#: 一天最多四顿：早餐/午餐/晚餐/宵夜
+MEAL_SLOTS = ((5, 10, "breakfast"), (10, 15, "lunch"),
+              (16, 21, "dinner"), (21, 29, "late"))
+
+
+def _meal_slot(ts):
+    try:
+        when = _dt.datetime.fromtimestamp(float(ts))
+    except (TypeError, ValueError):
+        return ""
+    minute = when.hour * 60 + when.minute
+    if minute < 5 * 60:
+        minute += 24 * 60
+    for start, end, name in MEAL_SLOTS:
+        if start * 60 <= minute < end * 60:
+            return name
+    return ""
+
+
+def _meal_row(row):
+    sub = str(row.get("sub_category") or "")
+    if sub in ("早餐", "午餐", "晚餐", "夜宵", "宵夜", "餐饮", "外卖"):
+        return True
+    reason = str(row.get("reason") or "") + str(row.get("item_name") or "")
+    return any(word in reason for word in ("饭", "面", "粥", "外卖", "夜宵", "宵夜", "火锅", "烧烤"))
+
+
+def audit_meals(rows):
+    """一天最多四顿；同一餐别重复扣款（如和闺蜜吃晚饭又单独扣晚饭）标出来。"""
+    days = {}
+    duplicate = 0
+    for row in rows or []:
+        if not isinstance(row, dict) or not _meal_row(row):
+            continue
+        slot = _meal_slot(row.get("ts"))
+        if not slot:
+            continue
+        day = _dt.datetime.fromtimestamp(float(row.get("ts"))).strftime("%Y-%m-%d")
+        bucket = days.setdefault(day, {})
+        bucket.setdefault(slot, []).append(row)
+    too_many = 0
+    for day, slots in days.items():
+        if len(slots) > 4:
+            too_many += 1
+        for slot, items in slots.items():
+            if len(items) > 1:
+                duplicate += len(items) - 1
+    return {"days": {day: sorted(slots) for day, slots in days.items()},
+            "too_many": too_many, "duplicate_slot": duplicate}
+
+
 def audit_rows(rows, minutes=10, night_hours=NIGHT_HOURS, blocks=None):
     """rows: wallet_ledger 行；blocks: {day: [schedule rows]}（可选，用于查缺块）。
 
