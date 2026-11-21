@@ -194,39 +194,38 @@ class LLMService:
         cached = self._persona_cache.get(key)
         if cached and now_ts() - cached[0] < 300:
             return cached[1]
+        source = str(self.p.cfg_str("persona_source", "pack") or "pack").strip().lower()
         prompt = ""
-        manager = getattr(self.context, "persona_manager", None)
-        if manager is not None:
-            try:
-                persona = await manager.get_default_persona_v3(umo or None)
-                if isinstance(persona, dict):
-                    prompt = persona.get("prompt") or ""
-                else:
-                    prompt = getattr(persona, "prompt", "") or ""
-            except Exception as exc:
-                logger.debug("[amo] 读取 AstrBot 人格失败: %s" % exc)
-        if not prompt:
-            try:
-                cfg = self.context.get_config(umo or None)
-                personas = cfg.get("persona", []) if cfg else []
-                if isinstance(personas, list) and personas:
-                    prompt = personas[0].get("prompt", "") or ""
-            except Exception as _amo_exc:
-                _note_swallowed("amo_llm_service.LLMService.persona", _amo_exc)
-        if not prompt:
-            prompt = "你是一个生活在中国城市的普通女孩，有工作、有情绪、有自己的生活，说话自然口语化。"
+        if source in ("astrbot", "merge"):
+            manager = getattr(self.context, "persona_manager", None)
+            if manager is not None:
+                try:
+                    persona = await manager.get_default_persona_v3(umo or None)
+                    if isinstance(persona, dict):
+                        prompt = persona.get("prompt") or ""
+                    else:
+                        prompt = getattr(persona, "prompt", "") or ""
+                except Exception as exc:
+                    logger.debug("[amo] 读取 AstrBot 人格失败: %s" % exc)
+            if not prompt:
+                try:
+                    cfg = self.context.get_config(umo or None)
+                    personas = cfg.get("persona", []) if cfg else []
+                    if isinstance(personas, list) and personas:
+                        prompt = personas[0].get("prompt", "") or ""
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_llm_service.LLMService.persona", _amo_exc)
+            if source == "merge" and prompt:
+                prompt = "【AstrBot 人格补充；冲突时以本插件人设包为准】\n" + prompt
         extra = self.p.cfg_str("persona_extra", "")
         if extra:
-            prompt += "\n" + extra
+            prompt = (prompt + "\n" + extra).strip()
         try:
             name = await self.p._persona_name_for(umo)
             if name and name not in prompt[:240]:
                 prompt = "你的名字是" + name + "。\n" + prompt
         except Exception as _amo_exc:
             _note_swallowed("amo_llm_service.LLMService.persona", _amo_exc)
-        anchor = ("你的人设是一个普通的、有点小财迷、会在意物价、偶尔犯懒、但心里很有数的成年女人；"
-                  "不管发生什么，说话都像真人，不要像客服、不要像哲学家、不要像 AI。")
-        prompt = anchor + "\n" + prompt
         self._persona_cache[key] = (now_ts(), prompt)
         return prompt
 

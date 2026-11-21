@@ -108,13 +108,13 @@ class FakePlugin:
 
 class PersonaTests(unittest.TestCase):
     def test_from_persona_manager(self) -> None:
-        plugin = FakePlugin(FakeContext(persona=FakePersonaManager({"prompt": "我是大肥鱼"})))
+        plugin = FakePlugin(FakeContext(persona=FakePersonaManager({"prompt": "我是大肥鱼"})), persona_source="astrbot")
         service = LLMService(plugin)
         self.assertIn("我是大肥鱼", asyncio.run(service.persona()))
 
     def test_persona_cached(self) -> None:
         manager = FakePersonaManager({"prompt": "缓存人格"})
-        service = LLMService(FakePlugin(FakeContext(persona=manager)))
+        service = LLMService(FakePlugin(FakeContext(persona=manager), persona_source="astrbot"))
         first = asyncio.run(service.persona("umo-a"))
         second = asyncio.run(service.persona("umo-a"))
         self.assertEqual(first, second)
@@ -125,16 +125,21 @@ class PersonaTests(unittest.TestCase):
             persona=FakePersonaManager(boom=True),
             config={"persona": [{"prompt": "配置里的人设"}]},
         )
-        service = LLMService(FakePlugin(context))
+        service = LLMService(FakePlugin(context, persona_source="astrbot"))
         self.assertIn("配置里的人设", asyncio.run(service.persona()))
 
-    def test_no_persona_uses_default(self) -> None:
+    def test_no_persona_pack_source_is_empty(self) -> None:
         service = LLMService(FakePlugin(FakeContext(config={})))
-        self.assertIn(DEFAULT_PROMPT, asyncio.run(service.persona()))
+        self.assertEqual("", asyncio.run(service.persona()))
+
+    def test_pack_source_ignores_astrbot_persona(self) -> None:
+        plugin = FakePlugin(FakeContext(persona=FakePersonaManager({"prompt": "我是通用AI助手"})))
+        self.assertNotIn("通用AI助手", asyncio.run(LLMService(plugin).persona()))
+        self.assertEqual("", asyncio.run(LLMService(plugin).persona()))
 
     def test_extra_and_name_prefix(self) -> None:
         plugin = FakePlugin(FakeContext(persona=FakePersonaManager({"prompt": "我是谁"})),
-                            persona_extra="说话短一点")
+                            persona_extra="说话短一点", persona_source="astrbot")
 
         async def name_for(umo=""):
             return "阿珍"
@@ -227,7 +232,7 @@ class DecideTests(unittest.TestCase):
 
     def test_decision_service_error_falls_back_to_chat(self) -> None:
         context = FakeContext(decision=FakeDecision(boom=True), provider=FakeProvider("yes"))
-        service = LLMService(FakePlugin(context))
+        service = LLMService(FakePlugin(context, persona_source="astrbot"))
         self.assertTrue(asyncio.run(service.decide("u", "要回吗", {})))
 
     def test_no_answer_returns_none(self) -> None:

@@ -134,6 +134,17 @@
     "hint": "逗号分隔；留空则只认 AstrBot 全局 admins_id。不再内置默认管理员。",
     "default": ""
   },
+  "persona_source": {
+    "type": "string",
+    "description": "人设来源",
+    "options": [
+      "pack",
+      "merge",
+      "astrbot"
+    ],
+    "default": "pack",
+    "hint": "pack=只用本插件人设包（推荐）；merge=AstrBot 人格作补充；astrbot=沿用旧行为"
+  },
   "persona_extra": {
     "type": "text",
     "description": "人格补充设定",
