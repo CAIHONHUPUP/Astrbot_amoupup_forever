@@ -717,9 +717,37 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
 
     # ---------- 用户三视图（2026-11-21：合拍用） ----------
 
+    _USER_VIEW_FILES = {"front": "用户正面.png", "side": "用户侧面.png", "full": "用户全身.png"}
+
+    def user_template_dir(self):
+        """用户三视图模板目录：plugin_data/outfit_refs/用户三视图。"""
+        try:
+            try:
+                from .amo_image_common import plugin_data_root
+            except ImportError:
+                from amo_image_common import plugin_data_root
+            root = os.path.join(plugin_data_root(self.plugin), "outfit_refs", "用户三视图")
+            os.makedirs(root, exist_ok=True)
+            return root
+        except Exception as exc:
+            logger.debug("[amo] 用户三视图目录创建失败: %r", exc)
+            return self.template_dir()
+
     def _user_map(self):
         data = self._kv_json("photo_user_templates")
-        return {view: str(data.get(view) or "") for view in self.VIEWS if str(data.get(view) or "")}
+        mapping = {view: str(data.get(view) or "") for view in self.VIEWS if str(data.get(view) or "")}
+        if mapping:
+            return mapping
+        # 老数据/手动放入：按文件名认回来
+        try:
+            root = self.user_template_dir()
+            for view, name in self._USER_VIEW_FILES.items():
+                path = os.path.join(root, name)
+                if os.path.isfile(path):
+                    mapping[view] = path
+        except Exception as exc:
+            logger.debug("[amo] 用户三视图认回失败: %r", exc)
+        return mapping
 
     def _save_user_map(self, mapping):
         self._save_kv_json("photo_user_templates", mapping)
@@ -834,12 +862,10 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         return ""
 
     async def adopt_user(self, url, view="front"):
-        """把选中的用户三视图存成模板（amo_user_<view>.png）。"""
+        """把选中的用户三视图存成模板（outfit_refs/用户三视图/用户正面.png）。"""
         url = str(url or "").strip()
         if not url:
             return "缺少图片地址"
-        target_dir = self.template_dir()
-        os.makedirs(target_dir, exist_ok=True)
         try:
             if url.startswith("data:"):
                 import base64
@@ -859,7 +885,8 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         view = str(view or "front").strip().lower()
         if view not in self.VIEWS:
             view = "front"
-        target = os.path.join(target_dir, "amo_user_%s.png" % view)
+        target_dir = self.user_template_dir()
+        target = os.path.join(target_dir, self._USER_VIEW_FILES.get(view, "用户正面.png"))
         try:
             with open(target, "wb") as fh:
                 fh.write(payload)
