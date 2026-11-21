@@ -425,6 +425,7 @@
     "amo_reply_pipeline",
     "amo_rest",
     "amo_shared",
+    "amo_state_consistency",
     "amo_types",
     "amo_voice_guard",
     "group_scene",
@@ -464,6 +465,7 @@
     "amo_purchase_guard",
     "amo_repetition_guard",
     "amo_shared",
+    "amo_state_consistency",
     "amo_tone_pick",
     "amo_transit",
     "amo_transition",
@@ -652,6 +654,7 @@
     "amo_timeline",
     "photo_rules"
   ],
+  "amo_state_consistency.py": [],
   "amo_state_context.py": [
     "amo_diary_guard",
     "amo_state_snapshot"

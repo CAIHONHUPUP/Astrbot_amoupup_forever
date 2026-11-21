@@ -1225,6 +1225,14 @@ class ProactiveMixin(_MixinBase):
                 return ""
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive.voice_guard", _amo_exc)
+        try:
+            try:
+                from .amo_state_consistency import rewrite as _state_rewrite
+            except ImportError:
+                from amo_state_consistency import rewrite as _state_rewrite
+            raw = _state_rewrite(raw, self, "")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive.state_consistency", _amo_exc)
         # 「不矛盾」守卫：主动消息不走 decorate，切句前补一次（消费校验顺序不变）
         # 事实只读唯一视图（F1）：apply_fact_guard → amo_diary_guard.narrative_check
         try:

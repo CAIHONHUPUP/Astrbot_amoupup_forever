@@ -1093,7 +1093,7 @@ def _answer_food_first(text, plugin, user_text, now=None):
     return answer + "。" + body
 
 
-def apply_chat_safety(text, plugin, umo="", user_text=""):
+def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
     """聊天回复的「最后一道确定性守卫」（2026-11-21 审计：聊天不走 send 阶段）。
 
     只跑确定性改写，不调模型：极端/暴力词 → 身份 → 人名 → 消费 → 反催问。
@@ -1166,6 +1166,15 @@ def apply_chat_safety(text, plugin, umo="", user_text=""):
             value = _cleaned
     except Exception as exc:
         logger.debug("[amo] chat_safety.voice 失败: %s", exc)
+    try:
+        try:
+            from .amo_state_consistency import rewrite as _state_rewrite
+        except ImportError:
+            from amo_state_consistency import rewrite as _state_rewrite
+        _context = (str(user_text or "") + "\n" + str(history_text or "")).strip()
+        value = _state_rewrite(value, plugin, _context)
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.state 失败: %s", exc)
     return value.strip() or str(text or "")
 
 

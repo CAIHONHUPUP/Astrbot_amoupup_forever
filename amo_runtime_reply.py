@@ -162,9 +162,17 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     from .amo_reply_pipeline import apply_chat_safety
                 except ImportError:
                     from amo_reply_pipeline import apply_chat_safety
+                _history = ""
+                try:
+                    _rows = self._recent(event.unified_msg_origin, 4) or []
+                    _history = " ".join(
+                        str(row.get("content") or "") for row in _rows
+                        if isinstance(row, dict) and str(row.get("role")) == "user")
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_runtime_reply.chat_safety.history", _amo_exc)
                 text = apply_chat_safety(
                     text, self, event.unified_msg_origin,
-                    getattr(event, "message_str", ""))
+                    getattr(event, "message_str", ""), history_text=_history)
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime_reply.chat_safety", _amo_exc)
             result.chain = [Comp.Plain(text)]

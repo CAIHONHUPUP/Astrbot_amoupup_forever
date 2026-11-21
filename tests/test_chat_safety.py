@@ -40,6 +40,35 @@ class ChatSafetyTests(unittest.TestCase):
         out = apply_chat_safety("好呀。你那边忙完了没？", FakePlugin(), user_text="我这边没那么快")
         self.assertNotIn("忙完了没", out)
 
+    def test_history_share_anchor(self):
+        from types import SimpleNamespace
+        plugin = FakePlugin()
+        plugin.state = SimpleNamespace(
+            current_activity=lambda: {"place": "路上", "zone": "road"})
+        text = ("老公你快看这个视频。这狗子傻得跟我有得一拼。"
+                "（刚到家把外套脱了，笑着回你）笑什么呢你，也在刷视频。")
+        out = apply_chat_safety(
+            text, plugin, user_text="哈哈哈",
+            history_text="我刚刷到一个猫的视频，笑死我了")
+        self.assertNotIn("到家", out)
+        self.assertNotIn("狗", out)
+        self.assertNotIn("笑什么", out)
+        self.assertNotIn("你快看", out)
+
+    def test_road_reply_matches_state(self):
+        from types import SimpleNamespace
+        plugin = FakePlugin()
+        plugin.state = SimpleNamespace(
+            current_activity=lambda: {"place": "路上", "zone": "road"})
+        text = ("老公你快看这个视频。这狗子傻得跟我有得一拼。"
+                "（刚到家把外套脱了，笑着回你）笑什么呢你，也在刷视频。")
+        out = apply_chat_safety(text, plugin, user_text="我刚刷到一个猫的视频，笑死我了")
+        self.assertNotIn("到家", out)
+        self.assertNotIn("外套", out)
+        self.assertNotIn("狗", out)
+        self.assertNotIn("笑什么", out)
+        self.assertNotIn("你快看", out)
+
 
 if __name__ == "__main__":
     unittest.main()
