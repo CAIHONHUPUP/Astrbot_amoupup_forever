@@ -407,23 +407,23 @@ class FeatureApiMixin:
                     return False
             except Exception as exc:
                 logger.debug("[amo] push_to_owner 免打扰检查失败: %r", exc)
-            try:
-                _burst = getattr(self, "_proactive_burst", None)
-                if not isinstance(_burst, dict):
-                    _burst = {}
-                    self._proactive_burst = _burst
-                _key = "push"
-                _last = float(_burst.get(_key) or 0)
-                if _last and now_ts() - _last < 300:
-                    logger.info("[amo] 推送被 5 分钟节流拦下")
-                    return False
-                _burst[_key] = now_ts()
-            except Exception as exc:
-                logger.debug("[amo] push_to_owner 节流检查失败: %r", exc)
-
             for umo in self._owner_umos():
 
                 try:
+
+                    # 和陪伴自己的主动消息共用同一个 umo 时间戳（5 分钟窗口）
+                    try:
+                        _burst = getattr(self, "_proactive_burst", None)
+                        if not isinstance(_burst, dict):
+                            _burst = {}
+                            self._proactive_burst = _burst
+                        _last = float(_burst.get(str(umo)) or 0)
+                        if _last and now_ts() - _last < 300:
+                            logger.info("[amo] 推送被 5 分钟节流拦下")
+                            continue
+                        _burst[str(umo)] = now_ts()
+                    except Exception as exc:
+                        logger.debug("[amo] push_to_owner 节流检查失败: %r", exc)
 
                     await self._send_to_umo(umo, text)
 
