@@ -187,6 +187,35 @@ def stage_of(plugin) -> str:
     return load(plugin)["stage"]
 
 
+# ---------------------------------------------------------------- 出差/不在家
+
+
+def away_state(plugin) -> dict:
+    """他是不是出差/不在（同居/半同居下覆盖"在家"判定）。"""
+    try:
+        raw = plugin.db.kv_get("partner_away", {}) or {}
+    except Exception:  # cleanup: 读不到就是不在出差
+        raw = {}
+    if not isinstance(raw, dict):
+        return {"away": False, "reason": "", "since": 0.0}
+    return {"away": bool(raw.get("away")), "reason": str(raw.get("reason") or ""),
+            "since": float(raw.get("since") or 0.0)}
+
+
+def set_away(plugin, away: bool, reason: str = "") -> dict:
+    """手动标记他出差/回家：/居住 出差、/居住 回家。"""
+    try:
+        from .amo_shared import now_ts as _now_ts
+    except ImportError:
+        from amo_shared import now_ts as _now_ts
+    data = {"away": bool(away), "reason": str(reason or ""), "since": float(_now_ts())}
+    try:
+        plugin.db.kv_set("partner_away", data)
+    except Exception:  # cleanup: 写不进去就返回内存结果
+        pass
+    return data
+
+
 # ---------------------------------------------------------------- 时间/地点
 
 
@@ -287,6 +316,13 @@ def scene_at(plugin, day, start, end, place, *, zone="", activity="",
         reason = "分居档" if stage == STAGE_APART else "不在家"
         return Scene(stage, str(day), start_min, end_min, str(place or ""), zone_text,
                      PRESENCE_ALONE, False, partner_place, reason)
+
+    _away = away_state(plugin)
+    if _away["away"]:
+        # 出差/回自己那边：即使同居，家里也只有她一个人（2026-11-21）
+        return Scene(stage, str(day), start_min, end_min, str(place or ""), zone_text,
+                     PRESENCE_ALONE, False, partner_place,
+                     "他出差" if "出差" in _away["reason"] else "他不在家")
 
     weekday = _weekday(day)
 
@@ -515,6 +551,8 @@ def presence_line(plugin, now=None) -> str:
     if scene.stage == STAGE_PART_TIME:
         return ("【居住】你们半同居：周末（周五晚到周日下午）他在这边，"
                 "工作日各住各的。现在他%s。" % ("在屋里" if scene.partner else "不在，只能手机联系"))
+    if not scene.partner and scene.reason in ("他出差", "他不在家"):
+        return "【居住】你们住在一起，但他这会儿%s，只能手机联系。" % scene.reason
     if scene.partner:
         return "【居住】你们住在一起，他这会儿在家（%s）。" % scene.partner_place
     reason = "他上班/出差" if scene.reason == "同居·他上班" else "他不在家"

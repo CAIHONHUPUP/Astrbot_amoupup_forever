@@ -1412,8 +1412,21 @@ class ScheduleMixin(_MixinBase):
                 from . import amo_household as _hh
             except ImportError:
                 import amo_household as _hh
-            _scene_evening = _hh.scene_at(self, day, "21:00", "22:00", "家")
-            _together_home = _scene_evening.presence == "home"
+            # 2026-11-21：不再只看 21:00-22:00 一块；当天任何一块他在家，
+            # 这篇日记就按「在家共处」规则写（否则白天在家、晚上出门会整篇写错）。
+            _day_key = day.isoformat() if hasattr(day, "isoformat") else str(day)
+            _rows = list((self.schedule or {}).get(_day_key) or [])
+            if not _rows:
+                _rows = [{"start": "21:00", "end": "22:00", "place": "家", "zone": "home"}]
+            for _row in _rows:
+                if not isinstance(_row, dict):
+                    continue
+                _sc = _hh.scene_at(self, _day_key, _row.get("start"), _row.get("end"),
+                                   _row.get("place") or "", zone=_row.get("zone") or "",
+                                   activity=_row.get("activity") or "")
+                if _sc.presence == "home":
+                    _together_home = True
+                    break
         except Exception:
             _together_home = False
         system = fact_rules(dating, home=_together_home) + "\n\n" + system

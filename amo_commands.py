@@ -1028,11 +1028,21 @@ class CommandMixin(_MixinBase):
                 from . import amo_household as _hh
             except ImportError:
                 import amo_household as _hh
+            raw = str(event.message_str or "")
+            if "出差" in raw or "回家" in raw:
+                if not self._is_admin(event):
+                    yield event.plain_result("只有管理员才能标记他出差/回家。")
+                    return
+                away = "出差" in raw
+                _hh.set_away(self, away, reason="出差" if away else "")
+                yield event.plain_result("已标记：他%s。" % ("出差中，不在家" if away else "回家了"))
+                return
             data = _hh.load(self)
             scene = _hh.scene_now(self)
+            _away = _hh.away_state(self)
             lines = [
                 "居住：%s" % _hh.STAGE_LABELS.get(data["stage"], data["stage"]),
-                "这会儿：%s" % ("他在家" if scene.partner else "他不在"),
+                "这会儿：%s" % ("他出差/不在家" if _away["away"] else ("他在家" if scene.partner else "他不在")),
                 "半同居过夜：%d/%d 天" % (data.get("night_count") or 0,
                                           _hh.to_together_nights(self)),
             ]
