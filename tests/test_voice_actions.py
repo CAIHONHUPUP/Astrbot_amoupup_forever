@@ -47,6 +47,31 @@ class SplitActionsTests(unittest.TestCase):
         self.assertEqual("今天好累啊", spoken)
         self.assertEqual("", actions)
 
+    def test_unbracketed_narration_is_removed(self):
+        # 线上实例：语音把「侧身笑了一下，声音放软」也念了
+        spoken, actions = split_actions("侧身笑了一下，声音放软，我爱你。行了，满意了吧？")
+        self.assertEqual("我爱你。行了，满意了吧？", spoken)
+        self.assertIn("侧身笑了一下", actions)
+        self.assertIn("声音放软", actions)
+
+    def test_pronoun_sentence_is_kept(self):
+        spoken, _actions = split_actions("我笑了一下，你别闹。")
+        self.assertIn("我笑了一下", spoken)
+
+    def test_common_phrase_kept(self):
+        spoken, _actions = split_actions("笑死我了，你也太可爱了。")
+        self.assertIn("笑死我了", spoken)
+
+    def test_action_only_message_has_no_voice(self):
+        # 线上实例：「夹了一筷子菜，抬头笑了一下。」被整条念出来
+        self.assertEqual("", clean_voice_text("夹了一筷子菜，抬头笑了一下。"))
+
+    def test_action_only_detector(self):
+        from amo_voice import looks_like_action_only
+        self.assertTrue(looks_like_action_only("夹了一筷子菜，抬头笑了一下。"))
+        self.assertFalse(looks_like_action_only("好呀，我在呢。"))
+        self.assertFalse(looks_like_action_only("我爱你"))
+
     def test_action_only(self):
         spoken, actions = split_actions("（抱住你不说话）")
         self.assertEqual("", spoken)

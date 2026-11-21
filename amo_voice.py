@@ -41,6 +41,8 @@ def voice_requested(text) -> bool:
 
 def clean_voice_text(text, limit: int = 600) -> str:
     """TTS 前去掉 Markdown 标记，避免把星号/井号也念出来；过长时按句截断。"""
+    if looks_like_action_only(text):   # 整条都是动作：没有可念的台词
+        return ""
     value, _actions = split_actions(text)   # 动作/旁白不念出来
     value = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", value)
     value = re.sub(r"[*_#>~]+", "", value)
@@ -61,6 +63,53 @@ _ACTION_RE = re.compile(
 )
 
 
+#: 没有括号的动作旁白（"侧身笑了一下""声音放软"）——模型常这么写
+_ACTION_PREFIX = re.compile(
+    r"^(?:侧身|转身|低头|抬头|侧头|歪头|凑近|靠近|伸手|抬手|夹|端|递|拿|放|推|拉|"
+    r"抱|握|靠|摸|拍|揉|捏|扶|笑|轻笑|微笑|苦笑|轻叹|叹气|叹|皱眉|眨眼|抿嘴|咬唇|"
+    r"扶额|点头|摇头|声音|语气|轻轻|默默|忍不住|下意识|顿了顿|沉默|看着|望着|看你|"
+    r"站起|坐下|躺下|趴|蹲|走|转身)"
+)
+#: 整条消息都是这些动作、没有一句台词
+_ACTION_VERBS = (
+    "夹", "端", "递", "拿", "放", "推", "拉", "抱", "握", "靠", "摸", "拍", "揉", "捏",
+    "扶", "笑", "低头", "抬头", "侧身", "转身", "凑近", "靠近", "伸手", "抬手", "眨眼",
+    "抿嘴", "咬唇", "点头", "摇头", "皱眉", "叹气", "站起", "坐下", "躺下", "趴", "蹲",
+    "走", "停", "看着", "望着",
+)
+#: 有这些就是台词，不能判成纯动作
+_DIALOGUE = re.compile(r"[我你他她]|说说|问|答|喊|叫|道|吧|吗|呢|呀|啊|哦|嗯|爱|想")
+_PERSON = re.compile(r"[我你他她]")
+#: 按分句切，保留原标点；动作旁白通常是一个短分句（"侧身笑了一下，"）
+_CLAUSE = re.compile(r"([^，,。！？!?…~]+)([，,。！？!?…~]?)")
+
+
+def _strip_action_sentences(text):
+    """把没有引号、没有人物代词的旁白分句挑出来（保留为文字，不进语音）。"""
+    kept, extra = [], []
+    for body, sep in _CLAUSE.findall(str(text or "")):
+        piece = body.strip()
+        if piece and _ACTION_PREFIX.match(piece) and not _PERSON.search(piece):
+            extra.append(piece)
+            continue
+        kept.append(piece + sep)
+    return "".join(kept).strip(), extra
+
+
+def looks_like_action_only(text):
+    """整条消息都是动作旁白（没有一句台词）→ 不该发语音。"""
+    body = str(text or "").strip()
+    if not body or _DIALOGUE.search(body):
+        return False
+    clauses = [part.strip() for part in re.split(r"[，,。！？!?…~]+", body) if part.strip()]
+    if not clauses:
+        return False
+    for clause in clauses:
+        if not clause.startswith(_ACTION_VERBS):
+            return False
+    return True
+
+
 def split_actions(text):
     """把回复拆成 (台词, 动作)。动作保留原括号写法，台词去掉动作。
 
@@ -72,7 +121,8 @@ def split_actions(text):
     actions = [m.group(0) for m in _ACTION_RE.finditer(value)]
     spoken = _ACTION_RE.sub(" ", value)
     spoken = re.sub(r"[ \t]+", " ", spoken).strip()
-    return spoken, " ".join(actions)
+    spoken, extra = _strip_action_sentences(spoken)
+    return spoken, " ".join(actions + extra)
 
 
 def voice_parts(text, limit=600):

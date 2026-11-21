@@ -908,6 +908,22 @@ class MessageMixin(_MixinBase):
         # 后台信息泄漏。守卫函数本身没变，只是调用顺序登记在那边。
         context = _reply_pipeline.context_for_send(self, umo, group=bool(group))
         text = (await _reply_pipeline.run(text, context))["text"]
+        try:
+            try:
+                from .amo_anti_nag import rewrite as _anti_nag
+            except ImportError:
+                from amo_anti_nag import rewrite as _anti_nag
+            _user_text = ""
+            try:
+                for _row in reversed(list(self._recent(umo, 3) or [])):
+                    if str(_row.get("role") or "") == "user":
+                        _user_text = str(_row.get("content") or "")
+                        break
+            except Exception:
+                _user_text = ""
+            text = _anti_nag(text, _user_text)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message.anti_nag", _amo_exc)
         if not text or not umo:
             return False
         segments = self._segment(text)
