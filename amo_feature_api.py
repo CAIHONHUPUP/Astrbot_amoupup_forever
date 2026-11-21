@@ -885,10 +885,26 @@ class FeatureApiMixin:
 
 
 
-        def note_recent_topic(self, text, until_ts=0):
-            """记住刚聊过的事（购物/约会插曲），他追问时能接住。"""
-            self.db.kv_set("recent_topic", {"text": str(text or ""),
-                                            "until": float(until_ts or 0)})
+        def note_recent_topic(self, text, until_ts=0, key="", ttl_hours=36):
+            """当天记忆缓冲：只留短事实，按 key 合并、限量、过期清理，不写记忆库。"""
+            import time as _time
+            try:
+                from .amo_episodic import merge as _merge
+            except ImportError:
+                from amo_episodic import merge as _merge
+            now = _time.time()
+            body = str(text or "").strip()[:80]
+            if not body:
+                return
+            until = max(float(until_ts or 0), now + max(1, int(ttl_hours)) * 3600)
+            try:
+                raw = self.db.kv_get("episodic_memory", []) or []
+            except Exception:
+                raw = []
+            items = _merge(raw, body, until, key=key, now=now)
+            self.db.kv_set("episodic_memory", items)
+            # 兼容旧读取方
+            self.db.kv_set("recent_topic", {"text": body, "until": until})
 
         def note_shopping_pending(self, line, until_ts=0):
 

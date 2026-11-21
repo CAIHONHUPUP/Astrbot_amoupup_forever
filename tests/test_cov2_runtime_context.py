@@ -1098,12 +1098,35 @@ class DynamicContextTests(unittest.TestCase):
         self.assertIn("【共同活动】", out)
         self.assertEqual(p._last_uid, "ou_1")
 
+    def test_episodic_memory_merges_and_caps(self):
+        import time as _time
+        from amo_episodic import merge
+        now = _time.time()
+        items = []
+        for index in range(20):
+            items = merge(items, "逛街事实 %d" % index, now + 3600,
+                          key="shop:day%d" % index, now=now)
+        self.assertLessEqual(len(items), 12)
+        items = merge(items, "更新后的事实", now + 3600, key="shop:day19", now=now)
+        same = [item for item in items if item.get("key") == "shop:day19"]
+        self.assertEqual(1, len(same))
+        self.assertEqual("更新后的事实", same[0]["text"])
+
+    def test_episodic_memory_drops_expired(self):
+        import time as _time
+        from amo_episodic import merge, render
+        now = _time.time()
+        items = merge([{"key": "old", "text": "过期", "until": 1}],
+                      "新的", now + 3600, key="new", now=now)
+        self.assertNotIn("过期", render(items, now))
+        self.assertIn("新的", render(items, now))
+
     def test_recent_topic_is_injected(self):
         p = entry_plugin()
         p.db.kv_set("recent_topic", {"text": "试了开衫，价格 380 元，余额 120 元",
                                      "until": __import__("time").time() + 3600})
         out = asyncio.run(p._dynamic_context(Ev(text="差多少钱")))
-        self.assertIn("刚刚聊到", out)
+        self.assertIn("最近聊到", out)
         self.assertIn("380", out)
 
     def test_dynamic_context_group(self):
