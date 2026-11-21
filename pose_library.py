@@ -288,8 +288,8 @@ class PoseLibrary:
         text = str((pose or {}).get("note") or "") + str((pose or {}).get("name") or "")
         return any(word in text for word in self.BED_WORDS)
 
-    def random_pose(self, zone=None):
-        """按场景随机挑一个姿势；没有合适的返回 None（调用方用通用姿势文字兜底）。
+    def random_pose(self, zone=None, hint=""):
+        """按场景随机挑一个姿势；hint（此刻在做什么/请求）命中的优先。
 
         - 私密居家（home / home_bed / home_sofa）才允许 9 种床姿；
         - 浴室/厨房/户外/办公等只允许非床姿，全被剔除时返回 None；
@@ -302,6 +302,20 @@ class PoseLibrary:
         key = str(zone or "").strip()
         private = (not key) or key in self.PRIVATE_ZONES
         allowed = poses if private else [p for p in poses if not self.is_private_pose(p)]
+        # 双人姿势不能当自拍姿势用（导入的参考图库里混着 55 组双人缠绵）
+        allowed = [p for p in allowed if "双人" not in str(p.get("note") or "")]
+        _hint = str(hint or "").strip()
+        if _hint:
+            words = [w for w in re.split(r"[，,。！？\s、/]+", _hint) if len(w) >= 2]
+            words += [w for w in ("躺", "坐", "站", "蹲", "趴", "跪", "走", "靠", "侧身",
+                                  "回眸", "托腮", "抱", "伸", "抬") if w in _hint]
+            def _score(pose):
+                text = str(pose.get("name") or "") + str(pose.get("note") or "")
+                return sum(1 for word in words if word in text)
+            scored = [(_score(pose), pose) for pose in allowed]
+            best = max((score for score, _pose in scored), default=0)
+            if best > 0:
+                allowed = [pose for score, pose in scored if score == best]
         if not allowed:
             logger.info("[amo] 场景 %s 没有合适的姿势图（床姿不套用），本次用通用姿势", key or "未知")
             return None

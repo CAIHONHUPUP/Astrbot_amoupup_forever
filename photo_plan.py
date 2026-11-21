@@ -316,7 +316,10 @@ def pick_pose_for_plan(plan: PhotoPlan, library: Any = None) -> tuple[Any, str]:
         if callable(getter):
             pose = None
             try:
-                pose = getter(plan.base_zone or plan.scene_key)
+                try:
+                    pose = getter(plan.base_zone or plan.scene_key, str(plan.activity or ""))
+                except TypeError:
+                    pose = getter(plan.base_zone or plan.scene_key)
             except TypeError:
                 try:
                     pose = getter()

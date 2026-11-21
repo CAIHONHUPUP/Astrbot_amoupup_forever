@@ -123,6 +123,17 @@ class RuntimeTickMixin(RuntimeMixinBase):
             if batch_status().get("running"):
                 return
             pending = pending_poses(self.pose)
+            try:
+                try:
+                    from .pose_library import SEED_POSES
+                except ImportError:
+                    from pose_library import SEED_POSES
+                _seed_names = {name for name, _ in SEED_POSES}
+                # 只自动补内置姿势；导入的 288 组按需懒生成，避免一次刷 288 张图
+                pending = [pose for pose in pending
+                           if str(pose.get("name") or "") in _seed_names]
+            except Exception:
+                pending = []
             if not pending:
                 return
             logger.info("[amo] 姿势参考图缺 %d 张，后台补齐", len(pending))
