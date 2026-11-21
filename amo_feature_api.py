@@ -153,7 +153,14 @@ def _late_snack_delete(db, keys):
     return deleted
 
 
-class FeatureApiMixin:
+try:
+    from .amo_api_persona import PersonaApiMixin
+except ImportError:
+    if not TYPE_CHECKING:
+        from amo_api_persona import PersonaApiMixin
+
+
+class FeatureApiMixin(PersonaApiMixin):
         if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
             _send_to_umo: Any
             cfg_str: Any
@@ -379,10 +386,22 @@ class FeatureApiMixin:
 
             kept = [item for item in items if not _hit(item)]
             if len(kept) == len(items):
-                return {"ok": True, "changed": False}
+                # 未来日期的约会只在 todo 表：按 start/activity 关掉对应待办
+                closed = 0
+                try:
+                    for row in list(self.state.todos(day)):
+                        if start and str(row.get("start") or "")[:5] != start:
+                            continue
+                        if activity and activity not in str(row.get("activity") or ""):
+                            continue
+                        if self.db.close_todo(int(row.get("id") or 0)):
+                            closed += 1
+                except Exception as exc:
+                    logger.debug("[amo] 删除未来待办失败: %r", exc)
+                return {"ok": True, "changed": bool(closed), "todo_removed": closed}
             try:
                 result = self.state.commit_schedule_change(
-                    day, kept, source="date", reason="取消/替换约会")
+                    day, kept, source="date_remove", reason="取消/替换约会")
             except Exception as exc:
                 return {"ok": False, "reason": "commit_failed", "error": str(exc)[:80]}
             return {"ok": True, "changed": True, "result": result}

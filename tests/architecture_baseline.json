@@ -3,6 +3,7 @@
   "amo_anti_nag.py": [],
   "amo_api.py": [
     "amo_api_diary",
+    "amo_api_persona",
     "amo_api_photo",
     "amo_api_schedule",
     "amo_api_trip",
@@ -25,6 +26,10 @@
     "amo_shared",
     "amo_state_diary",
     "amo_types"
+  ],
+  "amo_api_persona.py": [
+    "amo_persona_pack",
+    "amo_persona_store"
   ],
   "amo_api_photo.py": [
     "amo_shared",
@@ -196,6 +201,7 @@
     "clock"
   ],
   "amo_feature_api.py": [
+    "amo_api_persona",
     "amo_closet_image",
     "amo_current_action",
     "amo_date_session",
@@ -400,7 +406,8 @@
   "amo_person_ref.py": [],
   "amo_persona_pack.py": [],
   "amo_persona_store.py": [
-    "amo_persona_pack"
+    "amo_persona_pack",
+    "clock"
   ],
   "amo_photo_intent.py": [],
   "amo_place.py": [

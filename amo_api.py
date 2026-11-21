@@ -16,6 +16,7 @@ try:
     from .amo_api_trip import TripApiMixin
     from .amo_api_wardrobe import WardrobeApiMixin
     from .amo_api_photo import PhotoApiMixin
+    from .amo_api_persona import PersonaApiMixin
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from amo_route_table import build_routes
@@ -24,6 +25,7 @@ except ImportError:  # 直接按文件加载时
         from amo_api_trip import TripApiMixin
         from amo_api_wardrobe import WardrobeApiMixin
         from amo_api_photo import PhotoApiMixin
+        from amo_api_persona import PersonaApiMixin
 
 from typing import Any
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -108,7 +110,7 @@ except ImportError:  # 直接按文件加载时
                 return []
 
 
-class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, PhotoApiMixin, _MixinBase):
+class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, PhotoApiMixin, PersonaApiMixin, _MixinBase):
     def _register_web_apis(self):
         prefixes = uniq([
             getattr(self, "name", None),

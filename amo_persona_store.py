@@ -12,8 +12,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import time
 from typing import Any
+
+try:
+    from . import clock as _amo_clock
+except ImportError:
+    import clock as _amo_clock
 
 try:
     from .amo_persona_pack import DEFAULT_PACK_PATH, default_pack, validate
@@ -103,6 +107,22 @@ def active_id(plugin) -> str:
     return DEFAULT_ID
 
 
+def import_pack(plugin, data) -> dict:
+    """导入人设包：id 冲突拒绝，不自动切换。"""
+    try:
+        validate(data)
+    except Exception as exc:
+        return {"ok": False, "reason": "invalid", "error": str(exc)[:120]}
+    pid = str(data.get("id") or "").strip()
+    if not pid or pid in profiles(plugin):
+        return {"ok": False, "reason": "exists", "profiles": profiles(plugin)}
+    folder = ensure_profile(plugin, pid)
+    if not folder:
+        return {"ok": False, "reason": "no_data_dir"}
+    _write_json(os.path.join(folder, "pack.json"), data)
+    return {"ok": True, "id": pid}
+
+
 def switch(plugin, profile_id) -> dict:
     pid = str(profile_id or "").strip()
     if pid not in profiles(plugin):
@@ -154,12 +174,12 @@ def snapshot(plugin, profile_id="", reason="") -> str:
     pid = str(profile_id or active_id(plugin))
     state = load_state(plugin, pid)
     snaps = list(state.get("snapshots") or [])
-    name = "%d-%d.json" % (int(time.time()), len(snaps))
+    name = "%d-%d.json" % (int(_amo_clock.now_ts()), len(snaps))
     folder = ensure_profile(plugin, pid)
     snap_dir = os.path.join(folder, "snapshots")
     os.makedirs(snap_dir, exist_ok=True)
     _write_json(os.path.join(snap_dir, name), state)
-    snaps.append({"file": name, "at": int(time.time()), "reason": str(reason or "")[:40]})
+    snaps.append({"file": name, "at": int(_amo_clock.now_ts()), "reason": str(reason or "")[:40]})
     state["snapshots"] = snaps[-MAX_SNAPSHOTS:]
     save_state(plugin, pid, state)
     return name
@@ -192,7 +212,7 @@ def add_candidate(plugin, text, scene="", mood="", profile_id="") -> dict:
         return {"ok": True, "duplicate": True}
     snapshot(plugin, pid, "before_candidate")
     rows.append({"text": body, "scene": str(scene or "general"),
-                 "mood": str(mood or ""), "at": int(time.time())})
+                 "mood": str(mood or ""), "at": int(_amo_clock.now_ts())})
     state["candidates"] = rows[-20:]
     save_state(plugin, pid, state)
     return {"ok": True, "candidates": len(state["candidates"])}

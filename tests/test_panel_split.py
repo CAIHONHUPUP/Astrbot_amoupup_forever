@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from panel_source import panel_source  # noqa: E402
 
 DASH = os.path.join(ROOT, "views", "dashboard")
-ASSETS = ("panel.css", "api-client.js", "panel.js", "panel-views.js")
+ASSETS = ("panel.css", "api-client.js", "panel.js", "panel-views.js", "panel-persona.js")
 
 
 def read_text(path):
@@ -44,6 +44,7 @@ class PanelSplitFilesTests(unittest.TestCase):
         self.assertEqual(refs, [
             "assets/panel.css", "assets/api-client.js",
             "assets/panel.js", "assets/panel-views.js", "assets/panel-user.js",
+            "assets/panel-persona.js",
         ])
 
     def test_no_root_or_parent_resource_paths(self):
@@ -153,7 +154,7 @@ class DiaryAuditEntryTests(unittest.TestCase):
         paths = {path: methods for path, _handler, methods in ROUTE_SPECS}
         self.assertEqual(paths["/diary/audit"], ("GET",))
         self.assertEqual(len(ROUTE_SPECS), ROUTE_COUNT_EXPECTED)
-        self.assertEqual(len(ROUTE_SPECS), 114)
+        self.assertEqual(len(ROUTE_SPECS), 120)
 
 
 if __name__ == "__main__":

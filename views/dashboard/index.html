@@ -17,7 +17,7 @@
 <path d="M2.5 12h4l2.2-5.5 3.1 11 2.3-5.5h5.4"/> </svg> </button> <div class="clock" id="clock">--</div></div></header><div class="tabnav">
 <button class="tabnav-arrow left" type="button" aria-label="向前">‹</button> <nav class="tabs"> <button class="tab active" data-tab="world"><span>世界</span></button>
 <button class="tab" data-tab="schedule"><span>日程</span></button> <button class="tab" data-tab="actions"><span>操作</span></button> <button class="tab" data-tab="profiles"><span>用户</span></button>
-<button class="tab" data-tab="gift"><span>礼物</span></button> <button class="tab" data-tab="shop"><span>网购</span></button> <button class="tab" data-tab="wardrobe"><span>穿搭</span></button> <button class="tab" data-tab="photo"><span>照片</span></button>
+<button class="tab" data-tab="gift"><span>礼物</span></button> <button class="tab" data-tab="shop"><span>网购</span></button> <button class="tab" data-tab="wardrobe"><span>穿搭</span></button> <button class="tab" data-tab="photo"><span>照片</span></button><button class="tab" data-tab="persona"><span>人设</span></button>
 <button class="tab" data-tab="settings" data-group="基础"><span>基础</span></button> <button class="tab" data-tab="settings" data-group="状态"><span>参数</span></button>
 <button class="tab" data-tab="settings" data-group="记忆"><span>记忆</span></button> <button class="tab" data-tab="settings" data-group="私聊"><span>私聊</span></button>
 <button class="tab" data-tab="settings" data-group="语音"><span>语音</span></button> <button class="tab" data-tab="settings" data-group="心流"><span>心流</span></button>
@@ -169,10 +169,12 @@
 <div id="neuronList" class="list" style="margin-top:8px;max-height:200px;overflow:auto"></div> <button class="ghost" id="btnNeuronBack" style="margin-top:8px">返回图谱</button> </div></div></div>
 <div class="modal" id="moodModal" hidden><div class="modal-card"><div class="row between"><div><div class="label">调整心情</div><div class="sub">仅 AstrBot 管理员可修改</div></div> <button id="btnMoodClose">关闭</button>
 </div><div id="moodEditor" class="mood-editor"></div> <button id="btnMoodSave">保存心情</button> </div></div><div class="toast" id="toast"></div>
+  <div id="tab-persona" class="tab-panel" hidden><section class="card"><div class="label">当前人设</div><div id="personaCurrent">读取中…</div><div id="personaProfiles" class="persona-profiles"></div><div class="label">候选语料</div><div id="personaCandidates"></div><div class="label">导入 / 导出</div><textarea id="personaJson" rows="6" spellcheck="false" placeholder="粘贴人设包 JSON 后点导入；点导出会把当前 pack+state 填进来"></textarea><div class="persona-actions"><button id="personaImport" type="button">导入人设包</button><button id="personaExport" type="button">导出当前</button><button id="personaFile" type="button">从文件导入</button><input id="personaFileInput" type="file" accept="application/json,.json" hidden /></div><div class="label">预览</div><div class="persona-actions"><input id="personaScene" placeholder="场景，如 sick / quarrel" /><input id="personaMood" placeholder="情绪，如 委屈" /><button id="personaPreview" type="button">生成预览</button></div><pre id="personaPreviewBox" class="persona-preview"></pre></section></div>
   <script src="assets/api-client.js"></script>
   <script src="assets/panel.js"></script>
   <script src="assets/panel-views.js"></script>
   <script src="assets/panel-user.js"></script>
+  <script src="assets/panel-persona.js"></script>
 <footer style="padding:0 16px 28px;text-align:center;font-size:11px;color:var(--muted)">by 彩虹upup · 感谢《我会永远陪伴你》和《我想永远陪伴你》的作者</footer>
 </body>
 </html>

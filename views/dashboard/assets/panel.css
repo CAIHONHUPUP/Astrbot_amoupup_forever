@@ -596,3 +596,11 @@
 .shop-head.open .shop-arrow { transform: rotate(180deg); }
 .shop-block .shop-body { margin-top: 8px; }
 .shop-body[hidden] { display: none !important; }
+
+/* 人设面板 */
+.persona-profiles { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.persona-profiles button { cursor:pointer; }
+.persona-candidate { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #eadfe5; }
+.persona-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.persona-actions input { min-width:160px; }
+.persona-preview { white-space:pre-wrap; max-height:260px; overflow:auto; background:#faf6f8; padding:8px; border-radius:8px; }
