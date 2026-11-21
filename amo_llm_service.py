@@ -124,7 +124,8 @@ async def _proactive_context_block(self, umo, profile, system):
         _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
     return system, memory_text
 
-def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_hint=""):
+def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_hint="",
+                    schedule=None):
     if kind == "decide":
         return ("没有人要求你发消息。事实：" + str(facts or "")
                 + " 想找他聊就主动发 1-2 句口语化的话；两句必须是同一个话题、有承接，"
@@ -155,6 +156,7 @@ def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_h
     except Exception as _amo_exc:
         _note_swallowed("amo_llm_service.LLMService.gen_proactive.build_task", _amo_exc)
         dialect_enabled = False
+    fact = schedule if isinstance(schedule, dict) else {}
     return _pg_compose_task(
         kind=kind,
         name=name,
@@ -166,6 +168,10 @@ def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_h
         duplicate_hint=duplicate_hint,
         dialect_style=self.p.cfg_str("dialect_style", ""),
         dialect_enabled=dialect_enabled,
+        # 日程提醒把事实原样交给 compose_task，模型不用猜时间/地点/事件。
+        schedule_time=str(fact.get("time") or fact.get("start") or ""),
+        schedule_place=str(fact.get("place") or ""),
+        schedule_event=str(fact.get("event") or fact.get("activity") or ""),
     )
 
 def _proactive_prompt(self, kind, task, facts, analysis, memory_text):
@@ -266,16 +272,22 @@ class LLMService:
         provider = await self.provider(umo)
         if provider is None:
             return ""
-        try:
-            response = await provider.text_chat(
-                prompt=prompt,
-                system_prompt=system,
-                contexts=contexts or [],
-            )
-        except Exception as exc:
-            logger.error("[amo] LLM 调用失败: %s" % exc)
-            return ""
-        return str(getattr(response, "completion_text", "") or "").strip()
+        for attempt in range(2):
+            try:
+                response = await provider.text_chat(
+                    prompt=prompt,
+                    system_prompt=system,
+                    contexts=contexts or [],
+                )
+            except Exception as exc:
+                logger.error("[amo] LLM 调用失败: %s" % exc)
+                return ""
+            text = str(getattr(response, "completion_text", "") or "").strip()
+            if text:
+                return text
+            if attempt == 0:
+                logger.info("[amo] 模型返回空，重试一次")
+        return ""
 
     async def chat(self, umo, system, prompt, contexts=None, limit=300):
         return clean_reply(await self.chat_raw(umo, system, prompt, contexts), limit)
@@ -442,7 +454,7 @@ class LLMService:
             "summary": str(data.get("summary") or ""),
         }
 
-    async def gen_proactive(self, umo, profile, snap, kind, facts=""):
+    async def gen_proactive(self, umo, profile, snap, kind, facts="", schedule=None):
         name = profile.get("alias") or profile.get("name") or "你"
         relation = profile.get("relation", "普通")
         system = (
@@ -514,7 +526,8 @@ class LLMService:
         window = max(0, self.p.cfg_int("proactive_unanswered_window_minutes", 30)) * 60
         limit = self.p.cfg_int("max_reply_chars", 220)
         system, memory_text = await _proactive_context_block(self, umo, profile, system)
-        task = _proactive_task(self, kind, name, snap, facts, analysis, window)
+        task = _proactive_task(self, kind, name, snap, facts, analysis, window,
+                              schedule=schedule)
         prompt = _proactive_prompt(self, kind, task, facts, analysis, memory_text)
         text = await self.chat(umo, system, prompt, limit=limit)
         text = str(text or "").strip()
@@ -554,7 +567,7 @@ class LLMService:
         if not hit:
             return text
         retry = await self.chat(
-            umo, system, _proactive_prompt(self, kind, _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_hint=hit[0]), facts, analysis, memory_text), limit=limit,
+            umo, system, _proactive_prompt(self, kind, _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_hint=hit[0], schedule=schedule), facts, analysis, memory_text), limit=limit,
         )
         retry = _align_place(retry, snap)
         if retry and not _pg_near_duplicate(retry, analysis["recent_bot_texts"], threshold):
