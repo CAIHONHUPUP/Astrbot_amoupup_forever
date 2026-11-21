@@ -191,6 +191,9 @@ class EcommerceEngine:
                                      "created": wish.get("created"),
                                      "deliver_at": 0, "transit_at": 0, "refund": 0})
         for order in reversed(data.get("orders") or []):
+            if order.get("user_triggered"):
+                # 他送的礼物不进网购列表（历史数据也过滤），礼物墙里能看到
+                continue
             status = str(order.get("status") or "")
             if float(order.get("created") or 0) < month_start:
                 continue
@@ -689,15 +692,21 @@ def make_cart_tool(plugin):
 
 def make_user_gift_tool(plugin):
     async def user_gift(event=None, item_name="", price=0.0):
+        """他送她礼物：进礼物墙，不创建网购订单（2026-11-21 修：礼物被记成 0 元订单）。"""
         import json as _json
-        engine = EcommerceEngine(plugin)
-        result = engine.order(
-            [{"name": str(item_name or "礼物"), "category": "top",
-              "price_cents": int(round(float(price or 0) * 100))}],
-            platform="淘宝", amount_cents=0, actor="用户",
-            fund_source="用户支付", user_triggered=True,
-            idem="gift:" + _event_idem(event))
-        return _json.dumps(result, ensure_ascii=False)
+        name = str(item_name or "礼物")
+        gift_engine = getattr(plugin, "gift", None)
+        if gift_engine is None:
+            return _json.dumps({"ok": False, "reason": "gift_engine_missing"}, ensure_ascii=False)
+        umo = str(getattr(event, "unified_msg_origin", "") or "")
+        uid = ""
+        try:
+            uid = str(plugin._canonical_uid(event) or "")
+        except Exception:
+            uid = ""
+        gift = gift_engine.add_gift(name, umo=umo, uid=uid, source="tool", strict=True)
+        return _json.dumps({"ok": bool(gift), "gift": gift, "item": name,
+                            "note": "已收进礼物墙"}, ensure_ascii=False)
     return user_gift
 
 
