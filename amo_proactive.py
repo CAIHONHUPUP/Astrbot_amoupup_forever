@@ -592,6 +592,10 @@ class ProactiveMixin(_MixinBase):
             if age > 6 * 3600:
                 self.db.kv_set(self._pending_key(uid), {})
                 continue
+            # 2026-11-21 夜间照顾（生病/难受/红线急）：他睡着了不是不理她。
+            # 不追问、不算被忽略、不扣情绪；等他早上回，或 6 小时后自然清掉。
+            if pending.get("night_care"):
+                continue
             followup_minutes = self.cfg_int("proactive_followup_minutes", 30)
             # 0 / 负数 = 关掉追问，只保留「心情变差」这一档
             # 2026-11-20：5 分钟追问太催（12:03 主动、12:13 就「醒醒」）；
@@ -1474,7 +1478,8 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         self.db.kv_set(slot_key, True)
         logger.info("[amo] 主动消息：主动免打扰时段，她把想说的话留到明天")
         return
-    if not forced and self._goodnight_sent(uid, gate.sleep_day(now, day)) and int(now.hour) < 7:
+    if (not forced and not gate.night_allowed(kind)
+            and self._goodnight_sent(uid, gate.sleep_day(now, day)) and int(now.hour) < 7):
         logger.info("[amo] 主动消息：已经说过晚安，早上再聊")
         return
     if not forced and gate.counts_cap(kind):
@@ -1575,6 +1580,13 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     self.db.bump_proactive(uid)
     self.db.log_proactive(uid, kind, text)
     self._set_proactive_pending(uid, kind, text, umo=sent_umo)
+    if (int(now.hour) >= 23 or int(now.hour) < 7) and (forced or kind in ("comfort", "unwell")):
+        try:
+            _pending = self.db.kv_get(self._pending_key(uid), {}) or {}
+            _pending["night_care"] = True
+            self.db.kv_set(self._pending_key(uid), _pending)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._proactive_one.night_care", _amo_exc)
     self._mark_voluntary(uid, day, now.hour, "forced" if forced else kind)
     if forced:
         self._mark_forced_hour(uid)
