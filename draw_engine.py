@@ -1001,6 +1001,15 @@ class DrawEngine:
             from photo_view import wants_foot_closeup as _wants_foot
         _foot = bool(_wants_foot(str(subject or "")))
         _framing = SELFIE_FRAMING_FOOT if _foot else SELFIE_FRAMING
+        if _pose and not _foot:
+            try:
+                try:
+                    from .pose_library import camera_line
+                except ImportError:
+                    from pose_library import camera_line
+                parts.append(camera_line(_pose))
+            except Exception as _amo_exc:
+                _note_swallowed("draw_engine.DrawEngine.decide.camera_line", _amo_exc)
         parts.extend([item for item in (state_line, SELFIE_WORLDVIEW, _framing, SELFIE_STYLE) if item])
         parts.extend([_weather_line(getattr(self.plugin, "state", None), activity),
                       _light_line(activity),
@@ -1137,6 +1146,21 @@ class DrawEngine:
             _note_swallowed("draw_engine.DrawEngine._foot_refs", exc)
             return []
 
+    def _can_couple_photo(self):
+        """合拍门禁：同居/半同居他在家，或正在约会见面，才可能两个人同框。"""
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            if not _hh.enabled(self.plugin):
+                return True
+            scene = _hh.scene_now(self.plugin)
+            return bool(getattr(scene, "partner", False))
+        except Exception as exc:
+            logger.debug("[amo] 合拍在场判定失败，按可拍处理: %r", exc)
+            return True
+
     def send_photo_now(self, event, description, kind="web", force=False, caption=""):
         """大模型主动决定发图：web=网图/截图分享，real=她自己的实拍。"""
         if not self.enabled:
@@ -1184,6 +1208,8 @@ class DrawEngine:
             except Exception:
                 _couple = False
             if _couple:
+                if not self._can_couple_photo():
+                    return "你又不在这儿，怎么合拍呀，等见着你再拍。"
                 engine = getattr(self.plugin, "photo", None)
                 if engine is not None:
                     pose = None

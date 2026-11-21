@@ -1050,18 +1050,12 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         where = str(scene or "家里")
         try:
             try:
-                from .pose_library import camera_mode
+                from .pose_library import camera_line
             except ImportError:
-                from pose_library import camera_mode
-            mode = camera_mode(pose)
+                from pose_library import camera_line
+            camera = camera_line(pose)
         except Exception:
-            mode = "void"
-        if mode == "void":
-            camera = ("第三人称虚空相机，全身构图，两个人从头到脚完整入镜，"
-                      "不出现手机、不出现拿手机的手")
-        else:
-            camera = ("手机前置自拍视角，近景半身，画面边缘可以有拿手机的手臂，"
-                      "两个人都在画面里")
+            camera = "第三人称虚空相机，全身构图，不出现手机"
         return ("两人合照：画面里两个真实人物——她（参考图前三张是她的三视图）和用户本人"
                 "（参考图中间几张是他的三视图），两个人在一起，场景：%s。"
                 "姿势：%s（%s）。%s；自然光，日常穿搭，表情自然。"

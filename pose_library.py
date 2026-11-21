@@ -123,6 +123,14 @@ def camera_mode(pose):
     return "void" if any(word in text for word in _VOID_WORDS) else "selfie"
 
 
+def camera_line(pose):
+    """按姿势返回相机视角描述：虚空相机 / 手机前置自拍。"""
+    if camera_mode(pose) == "void":
+        return ("第三人称虚空相机，全身构图，从头到脚完整入镜，"
+                "不出现手机、不出现拿手机的手")
+    return "手机前置自拍视角，近景半身，画面边缘可以有拿手机的手臂"
+
+
 def match_pose(library, text, usage="selfie"):
     """用户明确说了某个姿势名（或近似词）时，返回那个姿势（默认单人）。"""
     body = str(text or "")

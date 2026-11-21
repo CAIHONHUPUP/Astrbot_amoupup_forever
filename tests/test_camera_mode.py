@@ -28,5 +28,12 @@ class CameraModeTests(unittest.TestCase):
         self.assertEqual("selfie", camera_mode({"name": "单手撑床", "note": "一只手撑床，另一只手拿手机"}))
 
 
+class CameraLineTests(unittest.TestCase):
+    def test_camera_line_void_and_selfie(self):
+        from pose_library import camera_line
+        self.assertIn("虚空", camera_line({"name": "侧坐", "note": "第三人称全身"}))
+        self.assertIn("自拍", camera_line({"name": "对镜", "note": "手机自拍"}))
+
+
 if __name__ == "__main__":
     unittest.main()
