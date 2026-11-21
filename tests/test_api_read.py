@@ -184,8 +184,9 @@ class ApiReadTests(unittest.TestCase):
         self.assertIn("outfit_count", data)
 
     def test_poses_panel_shape(self):
+        from pose_library import SEED_POSES
         data = self._call("api_poses")["data"]
-        self.assertEqual(data.get("count"), 9)
+        self.assertEqual(data.get("count"), len(SEED_POSES))
         names = [pose["name"] for pose in data.get("poses") or []]
         self.assertIn("手放腿上坐正", names)
         self.assertIn("双脚交叉坐", names)

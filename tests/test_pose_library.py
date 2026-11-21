@@ -45,7 +45,7 @@ class SeedTests(unittest.TestCase):
         library = make_library()
         snapshot = library.snapshot()
         self.assertEqual(snapshot["count"], len(SEED_POSES))
-        self.assertEqual(snapshot["count"], 9)
+        self.assertEqual(snapshot["count"], len(SEED_POSES))
         names = [pose["name"] for pose in snapshot["poses"]]
         self.assertIn("手放腿上坐正", names)
         self.assertIn("单手撑床", names)

@@ -147,6 +147,19 @@ def _day_view_event(plugin):
         return {}
 
 
+#: 画面里出现脚/腿时追加的解剖守卫（2026-11-21：用户反馈拍脚趾时腿脚畸形）
+FEET_WORDS = ("脚", "脚趾", "脚背", "赤足", "光脚", "玉足", "腿", "足")
+FEET_GUARD = ("【脚部画面·最高优先级】如果画面出现脚：必须五根脚趾、比例正常、脚背自然；"
+              "镜头用斜侧角度、小腿到脚完整入镜，绝对不要贴着脚做俯拍特写；"
+              "避免：多余脚趾、融合的脚趾、畸形脚、多出来的腿、脚趾数量不对。")
+
+
+def feet_guard_line(*texts):
+    """提到脚/腿时返回画面守卫句，否则空串。"""
+    body = " ".join(str(text or "") for text in texts)
+    return FEET_GUARD if any(word in body for word in FEET_WORDS) else ""
+
+
 class PhotoPromptMixin:
     """提示词装配：穿搭、光线、空镜、自拍。"""
     if TYPE_CHECKING:  # 宿主成员（插件主类/其它 mixin 提供）：严格口径用声明而不是 ignore
@@ -349,13 +362,40 @@ class PhotoPromptMixin:
             _note_swallowed("photo_engine.PhotoEngine._pick_pose", _amo_exc)
             return None
 
+    def _spawn_pose_ref(self, pose):
+        """姿势没有参考图时后台补一张；同一个姿势只补一次（2026-11-21）。"""
+        try:
+            key = str(pose.get("id") or pose.get("name") or "")
+            if not key:
+                return
+            pending = getattr(self, "_pose_ref_pending", None)
+            if pending is None:
+                pending = set()
+                self._pose_ref_pending = pending
+            if key in pending:
+                return
+            spawn = getattr(self.plugin, "_spawn", None)
+            if not callable(spawn):
+                return
+            try:
+                from .pose_library import ensure_pose_ref
+            except ImportError:
+                from pose_library import ensure_pose_ref
+            pending.add(key)
+            spawn(ensure_pose_ref(self.plugin, pose))
+        except Exception as _amo_exc:
+            _note_swallowed("photo_prompt._spawn_pose_ref", _amo_exc)
+
     def _pose_ref(self, pose):
         """姿势参考图路径（面板里生成过才有；没有就空串，不在这里现生成）。"""
         library = getattr(getattr(self, "plugin", None), "pose", None)
         if library is None or not pose:
             return ""
         try:
-            return library.ref_for(pose)
+            path = library.ref_for(pose)
+            if not path:
+                self._spawn_pose_ref(pose)
+            return path
         except Exception as _amo_exc:
             _note_swallowed("photo_engine.PhotoEngine._pose_ref", _amo_exc)
             return ""
@@ -434,6 +474,9 @@ class PhotoPromptMixin:
         else:
             outfit_text = self.outfit_today()
         extras = [where_line, motion, camera_line, HEADWEAR_LOCK, TEMPLATE_OUTFIT_GUARD, light]
+        _feet = feet_guard_line(pose_text, act, where)
+        if _feet:
+            extras.append(_feet)
         if bed:
             extras.append("她正躺在/坐在床上或沙发上，盖着被子；画面里绝对不要出现鞋")
         elif safe:
