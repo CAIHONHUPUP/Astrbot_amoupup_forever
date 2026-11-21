@@ -36,7 +36,7 @@ def _forbidden_hit(text, word):
         return False
     if len(word) <= 2:
         body = text.strip()
-        return body == word or body.startswith(word + "，") or body.startswith(word + "。")
+        return body in (word, word + "。", word + "！", word + "!", word + "~")
     return word in text
 
 

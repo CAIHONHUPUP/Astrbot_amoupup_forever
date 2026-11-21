@@ -128,14 +128,16 @@ class PersonaTests(unittest.TestCase):
         service = LLMService(FakePlugin(context, persona_source="astrbot"))
         self.assertIn("配置里的人设", asyncio.run(service.persona()))
 
-    def test_no_persona_pack_source_is_empty(self) -> None:
+    def test_no_persona_pack_source_uses_neutral_anchor(self) -> None:
         service = LLMService(FakePlugin(FakeContext(config={})))
-        self.assertEqual("", asyncio.run(service.persona()))
+        text = asyncio.run(service.persona())
+        self.assertIn("成年女人", text)
 
     def test_pack_source_ignores_astrbot_persona(self) -> None:
         plugin = FakePlugin(FakeContext(persona=FakePersonaManager({"prompt": "我是通用AI助手"})))
-        self.assertNotIn("通用AI助手", asyncio.run(LLMService(plugin).persona()))
-        self.assertEqual("", asyncio.run(LLMService(plugin).persona()))
+        text = asyncio.run(LLMService(plugin).persona())
+        self.assertNotIn("通用AI助手", text)
+        self.assertIn("成年女人", text)
 
     def test_extra_and_name_prefix(self) -> None:
         plugin = FakePlugin(FakeContext(persona=FakePersonaManager({"prompt": "我是谁"})),

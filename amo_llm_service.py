@@ -217,6 +217,9 @@ class LLMService:
                     _note_swallowed("amo_llm_service.LLMService.persona", _amo_exc)
             if source == "merge" and prompt:
                 prompt = "【AstrBot 人格补充；冲突时以本插件人设包为准】\n" + prompt
+        if not prompt:
+            prompt = ("你是一个成年女人，有工作、有情绪、有自己的生活；"
+                      "说话像真人，不要像客服、不要像哲学家、不要像 AI。")
         extra = self.p.cfg_str("persona_extra", "")
         if extra:
             prompt = (prompt + "\n" + extra).strip()

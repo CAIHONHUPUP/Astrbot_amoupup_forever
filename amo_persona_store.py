@@ -197,6 +197,17 @@ def snapshot(plugin, profile_id="", reason="") -> str:
     return name
 
 
+_PACK_CACHE: dict = {}
+
+
+def _file_stamp(path):
+    try:
+        stat = os.stat(path)
+        return (int(stat.st_mtime_ns), int(stat.st_size))
+    except Exception:
+        return (0, 0)
+
+
 def effective_pack(plugin, profile_id="") -> dict:
     """基础包 + 已批准的进化语料（不改基础卡）。"""
     base = load_pack(plugin, profile_id)
@@ -210,7 +221,17 @@ def effective_pack(plugin, profile_id="") -> dict:
 
 
 def active_pack(plugin) -> dict:
-    return effective_pack(plugin, active_id(plugin))
+    pid = active_id(plugin)
+    folder = ensure_profile(plugin, pid)
+    key = (folder, pid)
+    stamp = (_file_stamp(os.path.join(folder, "pack.json")),
+             _file_stamp(os.path.join(folder, "state.json")))
+    cached = _PACK_CACHE.get(key)
+    if cached and cached[0] == stamp:
+        return cached[1]
+    data = effective_pack(plugin, pid)
+    _PACK_CACHE[key] = (stamp, data)
+    return data
 
 
 def add_candidate(plugin, text, scene="", mood="", profile_id="") -> dict:

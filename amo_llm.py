@@ -613,7 +613,7 @@ class LlmMixin(_MixinBase):
         system = "\n\n".join(system_parts)
         return system
 
-    def _persona_pack_blocks(self, snap):
+    def _persona_pack_blocks(self, ctx, snap):
         """人设包：内核/关系语气/语言规则/禁语/少量语料。"""
         try:
             try:
@@ -627,7 +627,13 @@ class LlmMixin(_MixinBase):
                 mood = str((snap or {}).get("dominant") or "")
             except Exception:
                 mood = ""
-            block = prompt_block(active_pack(self), mood=mood, register="partner_safe")
+            scene = ""
+            try:
+                scene = str(((snap or {}).get("activity") or {}).get("zone") or "")
+            except Exception:
+                scene = ""
+            block = prompt_block(active_pack(self), scene=scene, mood=mood,
+                                 register="partner_safe")
             return ["【人格包】\n" + block] if block else []
         except Exception as exc:
             logger.debug("[amo] 人设包注入失败: %s", exc)
@@ -666,7 +672,7 @@ class LlmMixin(_MixinBase):
             _prompts.render("llm.chat_format"),
             _prompts.render("llm.length"),
             _prompts.render("llm.persona"),
-            *self._persona_pack_blocks(snap),
+            *self._persona_pack_blocks(ctx, snap),
             refusal.prompt_block(snap, text, memory_text, cash_cents, group,
                                    _now().hour, silence_days, last_refusal, coax),
             short_reply.prompt_block(snap, text),

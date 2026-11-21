@@ -98,7 +98,6 @@ ROUTE_SPECS = (
     ("/persona/export", "api_persona_export", ("POST",)),
     ("/persona/preview", "api_persona_preview", ("POST",)),
     ("/photo/test", "api_photo_test", ("GET", "POST",)),
-    ("/photo/couple", "api_photo_couple", ("POST",)),
     ("/photo/prompt", "api_photo_prompt", ("GET", "POST",)),
     ("/photo/prompt_saved", "api_photo_prompt_saved", ("GET", "POST",)),
     ("/photo/sheet", "api_photo_sheet", ("GET", "POST")),
@@ -135,7 +134,7 @@ ROUTE_SPECS = (
 
 
 #: 路由总数（增删接口后只改这里；quality_gate 与 tests/test_route_table 都读它）
-ROUTE_COUNT_EXPECTED = 120
+ROUTE_COUNT_EXPECTED = 119
 
 
 def build_routes(api):

@@ -55,9 +55,9 @@ class PersonaAnchorTests(unittest.TestCase):
         self.assertIn("成年女人", text)
         self.assertNotIn("依赖老公", text)
 
-    def test_anchor_keeps_her_small_traits(self):
+    def test_anchor_keeps_realism(self):
         text = _assembled_persona()
-        self.assertIn("小财迷", text)
+        self.assertIn("不要像 AI", text)
         self.assertIn("不要像客服", text)
 
 
