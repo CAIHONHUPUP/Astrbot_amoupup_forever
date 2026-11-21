@@ -1481,6 +1481,14 @@ class ScheduleMixin(_MixinBase):
         text = re.sub(r"^我的日记[^\n]*\n+", "", text)
         text = self._clean_diary_text(text)
         text = sanitize_diary(text, together=dating)
+        try:
+            try:
+                from .amo_household import fix_apart_text
+            except ImportError:
+                from amo_household import fix_apart_text
+            text = fix_apart_text(self, text)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.diary_household", _amo_exc)
         if dating:
             text = rewrite_together_chat(text)
         if pool is not None:
@@ -1518,6 +1526,14 @@ class ScheduleMixin(_MixinBase):
         text = re.sub(r"^我的日记[^\n]*\n+", "", text)
         text = self._clean_diary_text(text)
         text = sanitize_diary(text, together=dating)
+        try:
+            try:
+                from .amo_household import fix_apart_text
+            except ImportError:
+                from amo_household import fix_apart_text
+            text = fix_apart_text(self, text)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.diary_household", _amo_exc)
         if dating:
             text = rewrite_together_chat(text)
         return text if len(text) >= 10 else ""

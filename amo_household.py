@@ -619,6 +619,32 @@ def apply_worldview(plugin, data) -> dict:
     return out
 
 
+#: 同居后日记里不许再出现的「分居感」说法（2026-11-21 线上：同城另一头/隔几条街）
+_APART_WORDS = (
+    ("在同城另一头", "就在家里"),
+    ("同城另一头", "家里"),
+    ("隔着几条街", "就在家里"),
+    ("隔几条街", "就在家里"),
+    ("异地恋", "在一起"),
+    ("异地", "在家"),
+    ("分居", "住一起"),
+    ("各住各的", "住一起"),
+)
+
+
+def fix_apart_text(plugin, text):
+    """同居/半同居时把日记里的「同城另一头/隔几条街/异地」改掉，避免和设定打架。"""
+    value = str(text or "")
+    try:
+        if stage_of(plugin) == STAGE_APART:
+            return value
+    except Exception:
+        return value
+    for bad, good in _APART_WORDS:
+        value = value.replace(bad, good)
+    return value
+
+
 def presence_line(plugin, now=None) -> str:
     """聊天上下文里的【居住】一行；apart 也返回（让模型有稳定口径）。"""
     scene = scene_now(plugin, now)

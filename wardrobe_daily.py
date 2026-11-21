@@ -58,7 +58,12 @@ class WardrobeDailyMixin:
         bottom = items.get(outfit.get("bottom")) or {}
         skirt = items.get(outfit.get("skirt")) or {}
         shoes = items.get(outfit.get("shoes")) or {}
-        names = [str(part.get("name") or "") for part in (coat, top, skirt, bottom, shoes)]
+        try:
+            from .wardrobe_queries import dedupe_name as _dedupe_name
+        except ImportError:
+            from wardrobe_queries import dedupe_name as _dedupe_name
+        names = [_dedupe_name(part.get("name") or "")
+                 for part in (coat, top, skirt, bottom, shoes)]
         names = [name for name in names if name]
         return {
             "outfit": outfit.get("id", ""),

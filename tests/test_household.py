@@ -197,5 +197,22 @@ class NightCountTests(unittest.TestCase):
         self.assertEqual(0, hh.load(self.plugin)["night_count"])
 
 
+class FixApartTextTests(unittest.TestCase):
+    def _plugin(self, stage):
+        plugin = FakePlugin(config={"household_enabled": True})
+        plugin.db.kv_set("household", {"stage": stage, "since": 0, "night_count": 0})
+        return plugin
+
+    def test_rewrites_apart_phrases_when_together(self):
+        text = "明明老公在同城另一头，要是隔几条街，一起吃饭多好"
+        out = hh.fix_apart_text(self._plugin(hh.STAGE_TOGETHER), text)
+        self.assertNotIn("同城另一头", out)
+        self.assertNotIn("隔几条街", out)
+
+    def test_keeps_text_when_apart(self):
+        text = "老公在同城另一头"
+        self.assertEqual(text, hh.fix_apart_text(self._plugin(hh.STAGE_APART), text))
+
+
 if __name__ == "__main__":
     unittest.main()

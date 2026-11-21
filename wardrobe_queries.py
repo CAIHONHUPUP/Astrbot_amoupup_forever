@@ -33,6 +33,16 @@ def _outfit_lock_depth():
     return max(0, int(_OUTFIT_LOCK_DEPTH.get() or 0))
 
 
+def dedupe_name(name):
+    """「米白色米白色针织开衫」→「米白色针织开衫」：入库/展示前折叠重复前缀。"""
+    import re as _re
+    text = str(name or "").strip()
+    match = _re.match(r"^(.{2,4})\1", text)
+    if not match:
+        return text
+    return text[len(match.group(1)):].strip() or text
+
+
 class WardrobeQueriesMixin:
     # 方法体逐字搬运自拆分前的 wardrobe.py。
 
@@ -63,7 +73,7 @@ class WardrobeQueriesMixin:
         category = str(category or "").strip()
         category = {"上衣": "top", "裤子": "bottom", "裙子": "skirt", "外套": "coat",
                     "鞋子": "shoes", "袜子": "socks", "睡衣": "top"}.get(category, category)
-        name = clean_name(name)
+        name = dedupe_name(clean_name(name))
         hotel = bool(hotel)
         swim = bool(swim)
         sleep = (bool(sleep) or hotel) and not swim
