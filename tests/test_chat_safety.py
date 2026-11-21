@@ -55,6 +55,21 @@ class ChatSafetyTests(unittest.TestCase):
         self.assertNotIn("笑什么", out)
         self.assertNotIn("你快看", out)
 
+    def test_self_share_anchor(self):
+        from types import SimpleNamespace
+        plugin = FakePlugin()
+        plugin.state = SimpleNamespace(
+            current_activity=lambda: {"place": "家", "zone": "home"})
+        text = ("老公你快看这个视频。这狗子傻得跟我有得一拼。"
+                "我等会儿弄点吃的自己煮的面，差点笑喷出来。")
+        out = apply_chat_safety(
+            text, plugin, user_text="哈哈哈",
+            history_text="哈哈我刚刷到一个视频，笑死我了 一只猫跟着节奏摇头，越摇越嗨给你看看")
+        self.assertNotIn("狗", out)
+        self.assertIn("猫", out)
+        self.assertNotIn("你快看", out)
+        self.assertNotIn("笑什么", out)
+
     def test_road_reply_matches_state(self):
         from types import SimpleNamespace
         plugin = FakePlugin()

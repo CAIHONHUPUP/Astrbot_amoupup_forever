@@ -164,10 +164,11 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     from amo_reply_pipeline import apply_chat_safety
                 _history = ""
                 try:
-                    _rows = self._recent(event.unified_msg_origin, 4) or []
+                    _rows = self._recent(event.unified_msg_origin, 6) or []
+                    # 她自己刚分享的视频/图片也要算上下文：猫不能下一句变狗
                     _history = " ".join(
                         str(row.get("content") or "") for row in _rows
-                        if isinstance(row, dict) and str(row.get("role")) == "user")
+                        if isinstance(row, dict))
                 except Exception as _amo_exc:
                     _note_swallowed("amo_runtime_reply.chat_safety.history", _amo_exc)
                 text = apply_chat_safety(
