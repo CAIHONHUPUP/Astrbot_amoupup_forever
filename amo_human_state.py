@@ -1172,7 +1172,7 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
             return self.worldview
         persona = await self.p.llm.persona(umo)
         # 2026-11-21：同居/半同居时把「住法」注入人格，否则生成的简介/日常还是「同城不同住」
-        _hh = None
+        _hh: Any = None
         _setting = ""
         try:
             try:
@@ -1191,8 +1191,8 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         if _hh is not None:
             try:
                 data = _hh.apply_worldview(self.p, data)
-            except Exception:
-                pass
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.worldview_household", _amo_exc)
         name = await self.p._persona_name_for(umo)
         if name:
             data["name"] = name
