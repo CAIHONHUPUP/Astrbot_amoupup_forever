@@ -10,10 +10,11 @@ import re
 _WHERE = re.compile(r"在哪|哪里|什么地方|哪个地方")
 _DOING = re.compile(r"在干嘛|干嘛呢|做什么|干啥|忙什么")
 _WHO = re.compile(r"跟谁|和谁|一个人吗|谁在一起")
-_WHEN = re.compile(r"几点回|什么时候回|多久回|到家了吗|什么时候到家")
+_WHEN = re.compile(r"几点回|什么时候回|多久回|几点到家|什么时候到家|你到家了吗|你什么时候回来")
 _EATEN = re.compile(r"吃了吗|吃了没|吃饭了吗|吃过了吗")
 
-_PLACES = ("家", "公司", "商场", "路上", "地铁", "医院", "餐厅", "学校", "机场")
+_PLACES = ("家", "公司", "商场", "路上", "地铁", "医院", "餐厅", "学校", "机场",
+           "抖音", "B站", "b站", "微博", "小红书", "网上", "店里")
 
 
 def _act(plugin):
@@ -28,6 +29,9 @@ def _category(text):
     for name, pattern in (("where", _WHERE), ("doing", _DOING), ("who", _WHO),
                           ("when", _WHEN), ("eaten", _EATEN)):
         if pattern.search(body):
+            # 「我妈问我们什么时候回去」是转述，不是他现在问
+            if name == "when" and "问" in body and not re.search(r"你|您", body):
+                continue
             return name
     return ""
 
@@ -67,7 +71,10 @@ def answer(text, plugin, reply):
     if category == "when":
         if zone.startswith("home") or "家" in place:
             return "我已经在家啦。"
-        return "还在路上，快到了。"
+        end = str(act.get("end") or "").strip()
+        if place:
+            return "我还在%s，%s回去。" % (place, (end + " ") if end else "晚点")
+        return "我晚点回去。"
     if category == "eaten":
         if str(act.get("category") or "") == "meal" or "吃" in doing:
             return "吃过了，你呢？"

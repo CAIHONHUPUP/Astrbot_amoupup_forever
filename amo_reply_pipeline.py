@@ -1161,6 +1161,14 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
     """
     value = str(text or "")
     if not value.strip():
+        try:
+            try:
+                from .amo_question_guard import answer as _empty_answer
+            except ImportError:
+                from amo_question_guard import answer as _empty_answer
+            value = _empty_answer(str(user_text or ""), plugin, "")
+        except Exception as exc:
+            logger.debug("[amo] chat_safety.empty 失败: %s", exc)
         return value
     try:
         try:
