@@ -20,17 +20,35 @@ def _sentences(text):
     return [part for part in re.split(r"(?<=[。！？!?\n])", str(text or "")) if part.strip()]
 
 
-def _has_record(plugin, hours=6):
-    """近 N 小时账本里有没有一笔消费（有就允许说买了）。"""
+def _item_phrase(text):
+    """从「买了/这件…」后面抠出单品名（2-12 字）。"""
+    match = re.search(r"(?:买了|买下|入手了|这件|这条|这个|那件|那条)([^，。！？\s]{2,12})", str(text or ""))
+    return match.group(1) if match else ""
+
+
+def _has_record(plugin, text="", hours=6):
+    """近 N 小时账本/衣柜里有没有这件东西（有才允许说买了）。"""
+    phrase = _item_phrase(text)
     try:
-        import time
+        try:
+            from .clock import now_ts as _now_ts
+        except ImportError:
+            from clock import now_ts as _now_ts
         conn = plugin.db.conn
-        row = conn.execute(
-            "select count(*) from wallet_ledger where ts>=? and delta_cents<0",
-            (time.time() - hours * 3600,)).fetchone()
-        return bool(row and int(row[0]) > 0)
+        rows = conn.execute(
+            "select item_name from wallet_ledger where ts>=? and delta_cents<0",
+            (_now_ts() - hours * 3600,)).fetchall()
     except Exception:
+        rows = []
+    if not rows:
         return False
+    if not phrase:
+        return True   # 没抠出单品名：有消费就放行，避免误伤「买了点东西」
+    for row in rows:
+        haystack = str((row[0] if row else "") or "")
+        if any(word in haystack for word in (phrase, phrase[:2])):
+            return True
+    return False
 
 
 def rewrite(text, plugin):
@@ -39,7 +57,7 @@ def rewrite(text, plugin):
     if not body or not _CLAIM.search(body):
         return body
     parts = _sentences(body)
-    if _has_record(plugin):
+    if _has_record(plugin, body):
         return _keep_one_claim(parts)
     out = []
     replaced = False
