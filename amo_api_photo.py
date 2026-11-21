@@ -110,6 +110,105 @@ class PhotoApiMixin(_MixinBase):
             text = ""
         return {"code": 0, "data": {"text": text}}
 
+
+    # ---------- 用户三视图（2026-11-21 合拍） ----------
+
+    async def api_photo_user_status(self):
+        await self._ensure_ready()
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        return {"code": 0, "data": engine.user_template_info()}
+
+    async def api_photo_user_sheet(self):
+        """生成用户的某个视角（front/side/full）。"""
+        await self._ensure_ready()
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        view = str(data.get("view") or "front").strip().lower()
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+
+        async def build():
+            item = await engine.user_sheet(view)
+            if not item:
+                raise RuntimeError("没出图，看日志")
+            engine.set_user_candidate(view, item)
+            return {"url": (item.get("url") or item.get("file_path") or ""),
+                    "preview": engine.preview_data_url(item), "view": view}
+
+        return {"code": 0, "data": {"job": self._photo_job_start("user_sheet", build())}}
+
+    async def api_photo_user_save(self):
+        """把某个视角的候选图存成用户模板。"""
+        await self._ensure_ready()
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        view = str(data.get("view") or "front").strip().lower()
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        cand = engine.user_candidate(view)
+        url = str(data.get("url") or cand.get("file") or cand.get("url") or "")
+        msg = await engine.adopt_user(url, view)
+        return {"code": 0 if str(msg).startswith("✅") else 1, "msg": msg,
+                "data": engine.user_template_info()}
+
+    async def api_photo_user_toggle(self):
+        await self._ensure_ready()
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        view = str(data.get("view") or "front").strip().lower()
+        msg = engine.set_user_enabled(view, bool(data.get("enabled")))
+        return {"code": 0, "msg": msg, "data": engine.user_template_info()}
+
+    async def api_photo_user_delete(self):
+        await self._ensure_ready()
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        msg = await engine.delete_user(str(data.get("view") or ""))
+        return {"code": 0, "msg": msg, "data": engine.user_template_info()}
+
+    async def api_photo_user_ref(self):
+        await self._ensure_ready()
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        return {"code": 0, "data": engine.user_template_info().get("ref") or {}}
+
+    async def api_photo_user_ref_save(self):
+        await self._ensure_ready()
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        if bool(data.get("clear")):
+            engine.clear_user_ref()
+            return {"code": 0, "msg": "用户参考图已清除", "data": {"has_ref": False, "preview": ""}}
+        path = engine.set_user_ref(str(data.get("data") or data.get("url") or ""))
+        return {"code": 0 if path else 1, "msg": "已保存" if path else "保存失败",
+                "data": engine.user_template_info().get("ref") or {}}
+
+    async def api_photo_user_import(self):
+        await self._ensure_ready()
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        engine = getattr(self, "photo", None)
+        if engine is None:
+            return {"code": 1, "msg": "照片引擎未加载"}
+        view = str(data.get("view") or "front").strip().lower()
+        msg = await engine.adopt_user(str(data.get("data") or data.get("url") or ""), view)
+        return {"code": 0 if str(msg).startswith("✅") else 1, "msg": msg,
+                "data": engine.user_template_info()}
+
     async def api_photo_sheet(self):
         """角色三视图：front / side / full。"""
         await self._ensure_ready()

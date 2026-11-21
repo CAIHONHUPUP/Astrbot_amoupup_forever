@@ -714,6 +714,212 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         info["preview"] = templates.get("front", {}).get("preview", "")
         return info
 
+
+    # ---------- 用户三视图（2026-11-21：合拍用） ----------
+
+    def _user_map(self):
+        data = self._kv_json("photo_user_templates")
+        return {view: str(data.get(view) or "") for view in self.VIEWS if str(data.get(view) or "")}
+
+    def _save_user_map(self, mapping):
+        self._save_kv_json("photo_user_templates", mapping)
+
+    def _user_enabled(self):
+        data = self._kv_json("photo_user_enabled")
+        return {view: bool(data.get(view, True)) for view in self.VIEWS}
+
+    def _save_user_enabled(self, mapping):
+        self._save_kv_json("photo_user_enabled", mapping)
+
+    def user_candidate(self, view):
+        data = self._kv_json("photo_user_candidates")
+        return data.get(str(view or "").strip().lower()) or {}
+
+    def set_user_candidate(self, view, item):
+        view = str(view or "").strip().lower()
+        if view not in self.VIEWS or not isinstance(item, dict):
+            return
+        data = self._kv_json("photo_user_candidates")
+        data[view] = {"url": str(item.get("url") or ""), "file": str(item.get("file_path") or ""),
+                      "preview": self.preview_data_url(item), "ts": _amo_clock.now_ts()}
+        self._save_kv_json("photo_user_candidates", data)
+
+    def user_template_info(self):
+        mapping = self._user_map()
+        enabled = self._user_enabled()
+        templates = {}
+        for view in self.VIEWS:
+            path = mapping.get(view, "")
+            templates[view] = {"path": path,
+                               "preview": self.preview_data_url({"file_path": path}) if path else "",
+                               "enabled": bool(enabled.get(view, True))}
+        ref_path = self.user_ref_path()
+        return {"templates": templates,
+                "candidates": self._kv_json("photo_user_candidates"),
+                "ref": {"has_ref": bool(ref_path),
+                        "preview": self.user_ref_preview() if ref_path else ""}}
+
+    def user_refs(self):
+        mapping = self._user_map()
+        enabled = self._user_enabled()
+        return [mapping[view] for view in self.VIEWS
+                if mapping.get(view) and enabled.get(view, True)]
+
+    def user_ref_path(self):
+        try:
+            root = self.template_dir()
+            path = os.path.join(root, "amo_user_ref.png")
+            return path if os.path.isfile(path) else ""
+        except Exception:
+            return ""
+
+    def user_ref_preview(self):
+        path = self.user_ref_path()
+        return self.preview_data_url({"file_path": path}) if path else ""
+
+    def set_user_ref(self, raw):
+        raw = str(raw or "").strip()
+        if not raw:
+            return ""
+        try:
+            root = self.template_dir()
+            os.makedirs(root, exist_ok=True)
+            target = os.path.join(root, "amo_user_ref.png")
+            if raw.startswith("data:"):
+                import base64
+                _head, _sep, body = raw.partition(",")
+                payload = base64.b64decode(body)
+                with open(target, "wb") as fh:
+                    fh.write(payload)
+            elif os.path.isfile(raw):
+                import shutil
+                shutil.copy2(raw, target)
+            else:
+                return ""
+            return target
+        except Exception as exc:
+            logger.debug("[amo] 用户参考图保存失败: %s", exc)
+            return ""
+
+    def clear_user_ref(self):
+        try:
+            path = os.path.join(self.template_dir(), "amo_user_ref.png")
+            if os.path.isfile(path):
+                os.remove(path)
+        except Exception as exc:
+            logger.debug("[amo] 用户参考图删除失败: %s", exc)
+        return ""
+
+    async def adopt_user(self, url, view="front"):
+        """把选中的用户三视图存成模板（amo_user_<view>.png）。"""
+        url = str(url or "").strip()
+        if not url:
+            return "缺少图片地址"
+        target_dir = self.template_dir()
+        os.makedirs(target_dir, exist_ok=True)
+        try:
+            if url.startswith("data:"):
+                import base64
+                _head, _sep, body = url.partition(",")
+                payload = base64.b64decode(body)
+            elif url.startswith("http"):
+                def _download():
+                    with urllib.request.urlopen(url, timeout=90) as response:
+                        return response.read()
+                payload = await asyncio.to_thread(_download)
+            elif os.path.isfile(url):
+                payload = open(url, "rb").read()
+            else:
+                return "只支持 http / 本地 / data URL"
+        except Exception as exc:
+            return "读取图片失败：%s" % exc
+        view = str(view or "front").strip().lower()
+        if view not in self.VIEWS:
+            view = "front"
+        target = os.path.join(target_dir, "amo_user_%s.png" % view)
+        try:
+            with open(target, "wb") as fh:
+                fh.write(payload)
+        except Exception as exc:
+            return "保存模板失败：%s" % exc
+        mapping = self._user_map()
+        mapping[view] = target
+        self._save_user_map(mapping)
+        enabled = self._user_enabled()
+        enabled[view] = True
+        self._save_user_enabled(enabled)
+        return "✅ 用户%s模板已保存" % self.VIEW_LABELS.get(view, view)
+
+    def set_user_enabled(self, view, enabled):
+        view = str(view or "").strip().lower()
+        if view not in self.VIEWS:
+            return "未知视角"
+        if view not in self._user_map():
+            return "这个视角还没有模板"
+        flags = self._user_enabled()
+        flags[view] = bool(enabled)
+        self._save_user_enabled(flags)
+        return "✅ 用户%s模板已%s" % (self.VIEW_LABELS.get(view, view), "启用" if enabled else "停用")
+
+    async def delete_user(self, view=""):
+        view = str(view or "").strip().lower()
+        mapping = self._user_map()
+        removed = []
+        if view in self.VIEWS:
+            targets = [mapping.pop(view, "")]
+        else:
+            targets = list(mapping.values())
+            mapping = {}
+        for path in targets:
+            try:
+                if path and os.path.isfile(path):
+                    os.remove(path)
+                    removed.append(path)
+            except Exception as exc:
+                logger.debug("[amo] 用户模板删除失败: %s", exc)
+        self._save_user_map(mapping)
+        enabled = self._user_enabled()
+        if view in self.VIEWS:
+            enabled[view] = False
+        else:
+            enabled = {item: False for item in self.VIEWS}
+        self._save_user_enabled(enabled)
+        return "✅ 已删除用户%s模板" % self.VIEW_LABELS.get(view, "全部") if removed else "当前没有可删除的用户模板"
+
+    # ---------- 合拍 ----------
+
+    def couple_pose(self):
+        try:
+            library = getattr(self.plugin, "pose", None)
+            if library is None:
+                return None
+            return library.random_pose("home", "", usage="couple")
+        except Exception:
+            return None
+
+    def couple_refs(self, pose=None):
+        refs = list(self.persona_refs()) + list(self.user_refs())
+        try:
+            library = getattr(self.plugin, "pose", None)
+            if pose is not None and library is not None:
+                path = library.ref_path(pose)
+                if path and os.path.isfile(path):
+                    refs.append(path)
+        except Exception as _amo_exc:
+            _note_swallowed("photo_engine.PhotoEngine.couple_refs", _amo_exc)
+        return refs
+
+    def couple_prompt(self, scene="", pose=None, text=""):
+        name = str((pose or {}).get("name") or "")
+        note = str((pose or {}).get("note") or "")
+        where = str(scene or "家里")
+        return ("两人合照：画面里两个真实人物——她（参考图前三张是她的三视图）和用户本人"
+                "（参考图中间几张是他的三视图），两个人在一起，场景：%s。"
+                "姿势：%s（%s）。第三人称虚空相机，全身构图，两个人从头到脚完整入镜，"
+                "不出现手机、不出现拿手机的手；自然光，日常穿搭，表情自然。"
+                "参考图只借长相和姿势，不要照搬背景和衣服。"
+                % (where, name or "自然站在一起", note or "并排看镜头"))
+
     def persona_refs(self):
         mapping = self._template_map()
         if not mapping:

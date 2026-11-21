@@ -90,7 +90,7 @@
 <section class="card" style="margin-top:14px"><div class="sub" style="line-height:1.75;font-size:12px"> 每天从搭配模板里随机一套（按天气筛掉太厚或太薄的），当天所有照片、自拍都锁这一套；<br> 去游泳馆 / 海边 / 水上乐园时自动换泳装（只有上衣和泳裤，不穿鞋）；<br> 他送的衣服（衬衫、外套、裤子、鞋）会自动进到对应分类，并和现有的衣服配成新模板；<br> 衣服参考图保存文件夹：<code style="font-size:11px">D:\dafeiyu\astrbot\data\plugin_data\Astrbot_amoupup_forever\outfit_refs\</code><br> 白天搭配 / 晚上搭配 / 酒店睡衣 / 泳装 / 姿势库 5 个文件夹；衣服那四个里面再分上衣（外套）/ 裤子 / 裙子 / 鞋子， 衣服按衣服名字保存（如「米色雪纺衬衫.png」），姿势直接按姿势名字保存在「姿势库」里（如「托腮.png」），备份会一起带走 </div>
 </section></div><div id="tab-photo" class="tab-panel" hidden><nav class="photo-nav" id="photoNav" role="tablist" aria-label="照片功能">
 <button class="photo-nav-btn active" type="button" data-photo-pane="share">分享与拍摄</button> <button class="photo-nav-btn" type="button" data-photo-pane="generate">按提示词生成</button>
-<button class="photo-nav-btn" type="button" data-photo-pane="persona">角色三视图</button> <button class="photo-nav-btn" type="button" data-photo-pane="advanced">保存与说明</button> </nav>
+<button class="photo-nav-btn" type="button" data-photo-pane="persona">角色三视图</button> <button class="photo-nav-btn" type="button" data-photo-pane="user">用户三视图</button> <button class="photo-nav-btn" type="button" data-photo-pane="advanced">保存与说明</button> </nav>
 <section class="card photo-pane" data-photo-pane="share"><div class="row between"><div><div class="label">照片分享</div><div class="sub" id="photoSub">旅游、逛街、周末、日常按概率发街景或自拍；早上出门发穿搭自拍</div></div>
 <button class="tab" id="photoRefresh" type="button">刷新</button> </div><div id="photoSettings" class="settings-list"><div class="sub">加载中…</div></div>
 <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap;align-items:center"> <button id="photoSave" type="button">保存</button> <select id="photoTestKind" class="input"> <option value="outfit">穿搭自拍</option>
@@ -123,7 +123,17 @@
 <button id="photoTemplateSave" type="button">保存位置</button> <button id="photoTemplateOpen" type="button">打开文件夹</button> </div><div class="sub" id="photoTemplateRoot"></div>
 <div class="sub" style="margin-top:12px;line-height:1.7">⚠ 生图需要「我能永远定格你」（Astrbot_amoupup_photo，legacy fallback：astrbot_plugin_omnidraw）；在它里面配好 key 和主脑/副脑模型后，想陪会自动握手，三视图、穿搭参考图和提示词直接生效，不用两边重复配置。</div></section>
 <section class="card photo-pane" data-photo-pane="persona" style="margin-top:14px" hidden><div class="sub" style="line-height:1.7;font-size:14px;margin-top:0"> <strong style="color:#d94a86">注意</strong><br> · 每个视角独立保存一张模板；在「生成预览」里勾选候选图再点「保存勾选的模板」<br> · 模板预览右上角勾选 = 启用该视角；三个都勾选就三张一起作为参考图<br> · 删除按钮在每个视角的模板预览下面，只删该视角<br> · 默认在插件目录 <code>templates/</code>，会跟着插件一起备份，换电脑整包搬走即可<br> · 改到插件目录外就不会跟插件备份，记得自己留一份 </div>
-</section><section class="card photo-pane" data-photo-pane="advanced" style="margin-top:14px" hidden><div class="label">最终保存</div><div class="sub" style="line-height:1.7"> 滚到这儿不用再回头找按钮，点一次把这栏能存的一起存好：<br> · 照片分享的设置项（开关、概率滑条、触发方式）<br> · 「按提示词生成」里上次写的提示词<br> · 三视图的模板保存位置<br> 三视图的模板本身是勾选 / 点按钮即生效，不在这里保存。 </div>
+</section><section class="card photo-pane" data-photo-pane="user" style="margin-top:14px" hidden><div class="label">用户三视图</div><div class="sub">合拍用：每个视角独立，可上传你的照片或直接生成；模板预览勾选 = 启用</div>
+<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap;align-items:center"> <span class="sub" id="userSheetStatus"></span>
+<span class="row" style="margin-left:auto;gap:8px;align-items:center">
+<input id="userRefFile" type="file" accept="image/*" hidden>
+<button id="userRefPick" type="button">上传参考图</button>
+<button id="userRefClear" type="button" class="ghost" hidden>清除</button>
+<img id="userRefThumb" alt="" style="max-height:44px;border-radius:6px;display:none">
+<span class="sub" id="userRefStatus">未设置参考图</span>
+</span></div>
+<div id="userViews" style="margin-top:10px"></div>
+<div class="sub" style="margin-top:12px;line-height:1.7">⚠ 合拍时会自动带上：她的三视图 + 你的三视图 + 双人姿势参考图；聊天里说「我们合照一张」即可触发。</div></section><section class="card photo-pane" data-photo-pane="advanced" style="margin-top:14px" hidden><div class="label">最终保存</div><div class="sub" style="line-height:1.7"> 滚到这儿不用再回头找按钮，点一次把这栏能存的一起存好：<br> · 照片分享的设置项（开关、概率滑条、触发方式）<br> · 「按提示词生成」里上次写的提示词<br> · 三视图的模板保存位置<br> 三视图的模板本身是勾选 / 点按钮即生效，不在这里保存。 </div>
 <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center">
 <button id="photoSaveAll" type="button" style="min-width:150px;text-align:center;font-weight:600;background:var(--pink);border-color:var(--pink);color:#fff">保存全部</button>
 <span class="sub" id="photoSaveAllStatus"></span> </div></section></div><div id="tab-diary" class="tab-panel" hidden><section class="card" id="diaryLiveCard"><div class="row between" style="align-items:center"><div><div class="label">今天 · 还在写</div><div class="sub" id="diaryLiveSub">块结束一会儿后自动接一段；设置里可调 5-10 分钟防抖或关掉，第二天最终版写好后收束。</div></div><button id="diaryLiveRefresh" type="button">刷新</button></div><div id="diaryLiveText" class="diary-live"><div class="sub">读取中…</div></div></section><section class="card"><div class="row between" style="align-items:center">
@@ -162,6 +172,7 @@
   <script src="assets/api-client.js"></script>
   <script src="assets/panel.js"></script>
   <script src="assets/panel-views.js"></script>
+  <script src="assets/panel-user.js"></script>
 <footer style="padding:0 16px 28px;text-align:center;font-size:11px;color:var(--muted)">by 彩虹upup · 感谢《我会永远陪伴你》和《我想永远陪伴你》的作者</footer>
 </body>
 </html>

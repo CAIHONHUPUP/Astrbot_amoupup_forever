@@ -43,7 +43,7 @@ class PanelSplitFilesTests(unittest.TestCase):
         refs = re.findall(r'(?:href|src)="([^"]+)"', self.index)
         self.assertEqual(refs, [
             "assets/panel.css", "assets/api-client.js",
-            "assets/panel.js", "assets/panel-views.js",
+            "assets/panel.js", "assets/panel-views.js", "assets/panel-user.js",
         ])
 
     def test_no_root_or_parent_resource_paths(self):
@@ -153,7 +153,7 @@ class DiaryAuditEntryTests(unittest.TestCase):
         paths = {path: methods for path, _handler, methods in ROUTE_SPECS}
         self.assertEqual(paths["/diary/audit"], ("GET",))
         self.assertEqual(len(ROUTE_SPECS), ROUTE_COUNT_EXPECTED)
-        self.assertEqual(len(ROUTE_SPECS), 105)
+        self.assertEqual(len(ROUTE_SPECS), 113)
 
 
 if __name__ == "__main__":

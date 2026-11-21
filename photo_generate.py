@@ -95,6 +95,8 @@ class PhotoGenerateMixin:
         persona_refs: Any
         plugin: Any
         template_dir: Any
+        user_ref_path: Any
+        user_refs: Any
 
     def _find_omni(self):
         """握手：找不到返回 None；找到就顺手把三视图自愈进生图插件（幂等）。"""
@@ -570,6 +572,20 @@ class PhotoGenerateMixin:
         refs = [sheet_ref] if sheet_ref else self.persona_refs()
         return await self.generate_custom(prompts.get(str(view), prompts["front"]), refs=refs)
 
+
+    async def user_sheet(self, view):
+        """用户三视图：正面 / 侧面 / 全身（合拍用）。有上传参考图就先按它生成。"""
+        prompts = {
+            "front": "用户设定图·正面：成年男性，用户本人，正面站姿半身，二次元动漫风格，纯白背景，"
+                     "五官清晰对称，短黑发，日常男装，正对镜头",
+            "side": "用户设定图·侧面：同一男性的侧面站姿半身，二次元动漫风格，纯白背景，"
+                    "侧脸清晰，短黑发，日常男装",
+            "full": "用户设定图·全身：同一男性的正面全身站姿，二次元动漫风格，纯白背景，"
+                    "从头到脚完整可见，短黑发，日常男装",
+        }
+        ref = self.user_ref_path()
+        refs = [ref] if ref else self.user_refs()
+        return await self.generate_custom(prompts.get(str(view), prompts["front"]), refs=refs)
 
     async def import_persona(self, view, raw):
         """B：导入现成的三视图，直接存成对应视角的模板并启用。"""

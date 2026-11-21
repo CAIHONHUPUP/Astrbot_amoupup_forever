@@ -98,6 +98,15 @@ ROUTE_SPECS = (
     ("/photo/sheet_ref", "api_photo_sheet_ref", ("GET", "POST")),
     ("/photo/sheet_ref/save", "api_photo_sheet_ref_save", ("POST",)),
     ("/photo/job", "api_photo_job", ("GET", "POST",)),
+    # 用户三视图（合拍用，2026-11-21）
+    ("/photo/user/status", "api_photo_user_status", ("GET", "POST")),
+    ("/photo/user/sheet", "api_photo_user_sheet", ("POST",)),
+    ("/photo/user/save", "api_photo_user_save", ("POST",)),
+    ("/photo/user/toggle", "api_photo_user_toggle", ("POST",)),
+    ("/photo/user/delete", "api_photo_user_delete", ("POST",)),
+    ("/photo/user/ref", "api_photo_user_ref", ("GET", "POST")),
+    ("/photo/user/ref/save", "api_photo_user_ref_save", ("POST",)),
+    ("/photo/user/import", "api_photo_user_import", ("POST",)),
     ("/photo/persona", "api_photo_persona", ("GET", "POST",)),
     ("/photo/persona/import", "api_photo_persona_import", ("POST",)),
     ("/photo/persona/delete", "api_photo_persona_delete", ("GET", "POST",)),
@@ -119,7 +128,7 @@ ROUTE_SPECS = (
 
 
 #: 路由总数（增删接口后只改这里；quality_gate 与 tests/test_route_table 都读它）
-ROUTE_COUNT_EXPECTED = 105
+ROUTE_COUNT_EXPECTED = 113
 
 
 def build_routes(api):

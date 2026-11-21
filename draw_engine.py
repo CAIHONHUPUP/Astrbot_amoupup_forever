@@ -1175,6 +1175,15 @@ class DrawEngine:
                 _note_swallowed("draw_engine.DrawEngine.send_photo_now.outfit", _amo_exc)
                 outfit = ""
             detail = text if (text and text != "随手拍") else ""
+            if any(word in text for word in ("合照", "合拍", "一起拍", "我们拍", "和我拍", "跟我拍")):
+                engine = getattr(self.plugin, "photo", None)
+                if engine is not None:
+                    pose = engine.couple_pose()
+                    prompt = engine.couple_prompt(scene, pose, text)
+                    refs = engine.couple_refs(pose)
+                    self._schedule(event, prompt, "tool", selfie=False, refs=refs, caption=caption)
+                    self._last_tool_photo_at = time.monotonic()
+                    return "好呀，我们拍一张~"
             try:
                 from .photo_view import wants_foot_closeup, foot_closeup_prompt
             except ImportError:
