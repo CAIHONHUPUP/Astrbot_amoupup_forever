@@ -82,6 +82,32 @@ class SceneTests(unittest.TestCase):
         hh.set_away(self.plugin, False)
         self.assertFalse(hh.away_state(self.plugin)["away"])
 
+    def test_away_with_days_sets_until(self):
+        data = hh.set_away(self.plugin, True, reason="出差", days=2)
+        self.assertGreater(data["until"], data["since"])
+        self.assertTrue(hh.away_state(self.plugin)["away"])
+
+    def test_away_expires(self):
+        hh.set_away(self.plugin, True, reason="出差", days=1)
+        state = self.plugin.db.kv_get("partner_away", {})
+        state["until"] = 1.0
+        self.plugin.db.kv_set("partner_away", state)
+        self.assertFalse(hh.away_state(self.plugin)["away"])
+
+    def test_holiday_means_not_at_work(self):
+        self.assertFalse(hh.partner_at_work(0, 10 * 60, 11 * 60, holiday=True))
+        self.assertTrue(hh.partner_at_work(0, 10 * 60, 11 * 60, holiday=False))
+
+    def test_2200_block_does_not_count_as_night(self):
+        self.plugin.db.kv_set("household", {"stage": hh.STAGE_PART_TIME, "night_count": 0})
+        scene = hh.scene_at(self.plugin, SAT, "22:00", "23:00", "家", zone="home")
+        hh.count_night(self.plugin, SAT, scene)
+        self.assertEqual(0, hh.load(self.plugin)["night_count"])
+
+    def test_boundary_says_he_is_user(self):
+        self.plugin.db.kv_set("household", {"stage": hh.STAGE_TOGETHER})
+        self.assertIn("用户本人", hh.wording("boundary", plugin=self.plugin))
+
 
 class WordingTests(unittest.TestCase):
     def setUp(self):

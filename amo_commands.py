@@ -1034,8 +1034,15 @@ class CommandMixin(_MixinBase):
                     yield event.plain_result("只有管理员才能标记他出差/回家。")
                     return
                 away = "出差" in raw
-                _hh.set_away(self, away, reason="出差" if away else "")
-                yield event.plain_result("已标记：他%s。" % ("出差中，不在家" if away else "回家了"))
+                days = 0
+                _matched = re.search(r"(\d+)\s*天", raw)
+                if _matched:
+                    days = int(_matched.group(1))
+                _hh.set_away(self, away, reason="出差" if away else "", days=days)
+                if away and days:
+                     yield event.plain_result("已标记：他出差 %d 天，到期自动回家。" % days)
+                else:
+                    yield event.plain_result("已标记：他%s。" % ("出差中，不在家" if away else "回家了"))
                 return
             data = _hh.load(self)
             scene = _hh.scene_now(self)

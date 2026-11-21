@@ -224,7 +224,9 @@
   "amo_household.py": [
     "amo_current_action",
     "amo_date_session",
+    "amo_person_ref",
     "amo_shared",
+    "amo_shared_time",
     "photo_rules"
   ],
   "amo_human_state.py": [
@@ -505,6 +507,7 @@
     "amo_human_state",
     "amo_location_rules",
     "amo_observability",
+    "amo_person_ref",
     "amo_scope",
     "amo_shared",
     "amo_state_common",

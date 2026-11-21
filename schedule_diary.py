@@ -446,8 +446,17 @@ class ScheduleDiaryMixin:
                              + "；这一小时要写和她一起，不能写一个人。" + "\n")
         except Exception:
             _npc_line = ""
+        _call_title = "老公"
+        try:
+            try:
+                from . import amo_person_ref as _pr
+            except ImportError:
+                import amo_person_ref as _pr
+            _call_title = _pr.title(getattr(self, "p", None))
+        except Exception:
+            _call_title = "老公"
         _base = (
-            _npc_line + fact_rules(together, scene=scene) + "\n"
+            _npc_line + fact_rules(together, scene=scene, title=_call_title) + "\n"
             + _immersion_extra + "\n"
             + diary_presence_rules(together, scene=scene)
             + "角色设定：\n" + _brief_world(ctx.get("world") or {}) + "\n"

@@ -1430,7 +1430,16 @@ class ScheduleMixin(_MixinBase):
                     break
         except Exception:
             _together_home = False
-        system = fact_rules(dating, home=_together_home) + "\n\n" + system
+        _call_title = "老公"
+        try:
+            try:
+                from . import amo_person_ref as _pr
+            except ImportError:
+                import amo_person_ref as _pr
+            _call_title = _pr.title(self)
+        except Exception:
+            _call_title = "老公"
+        system = fact_rules(dating, home=_together_home, title=_call_title) + "\n\n" + system
         try:
             self.db.kv_set("diary_together:" + day.isoformat(), dating)
         except Exception as _amo_exc:

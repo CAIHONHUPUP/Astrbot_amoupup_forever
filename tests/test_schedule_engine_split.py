@@ -125,6 +125,7 @@ class ByteEquivalenceTests(unittest.TestCase):
         # 哈希按新源码更新；属行为修复，不是搬家。
         # 2026-11-21：build_skeleton 增加 schedule_block_mode 开关（现在默认开），
         # yesterday_summary 的睡眠时长改成按时长累计（修块模式误判熬夜），哈希按新源码更新。
+        # 同日：_diary_prompt 增加「他」的称呼配置（person_ref_title），哈希按新源码更新。
         changed = [(name, _source_hash(getattr(schedule_engine.ScheduleEngine, name)), want)
                    for name, want in METHOD_HASHES.items()
                    if _source_hash(getattr(schedule_engine.ScheduleEngine, name)) != want]

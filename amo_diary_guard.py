@@ -63,7 +63,7 @@ NO_MONEY_RULE = ("\n【钱和考勤不进日记】账本/工资/扣款的具体�
                  "必须提钱时只写「这个月工资要少一点」这种模糊感受，不写数字。")
 
 
-def fact_rules(together=False, scene=None, home=False):
+def fact_rules(together=False, scene=None, home=False, title="老公"):
     """日记的系统硬规则。
 
     - 约会当天：面对面版本，别把老公写成网友；
@@ -74,7 +74,11 @@ def fact_rules(together=False, scene=None, home=False):
         body = _RULES_HOME
     else:
         body = _RULES_TOGETHER if together else _RULES_ALONE
-    return _RULES_HEAD + body + _RULES_TAIL + NO_VOICE_RULE + NO_MONEY_RULE
+    text = _RULES_HEAD + body + _RULES_TAIL + NO_VOICE_RULE + NO_MONEY_RULE
+    if title and title != "老公":
+        # 用户让她喊别的称呼：规则里的「老公」统一换掉（2026-11-21）
+        text = text.replace("老公", title)
+    return text
 
 
 #: 默认（没约会）规则，保持旧调用方不变

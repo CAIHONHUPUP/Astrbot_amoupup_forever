@@ -26,6 +26,9 @@ _PROTECT = re.compile(
 #: 裸「他」：排除受保护词的前后缀（保护词另有 span 兜底）。
 _BARE = re.compile(r"(?<![其们吉])他(?![们人乡日杀律])")
 
+#: 默认称呼（用户在配置里可以改成任何她喊你的称呼）
+DEFAULT_TITLE = "老公"
+
 #: 先行词：同一段里出现过这些，后面的「他」就有指代。
 _ANTECEDENT = re.compile(r"老公|男朋友|男友|对象|亲爱的|你老公")
 
@@ -57,8 +60,21 @@ def first_bare_him(text: str):
     return None
 
 
-def normalize(text, *, enabled=True) -> str:
-    """把一段文本里第一个没有先行词的「他」改成「老公」。"""
+def title(plugin=None) -> str:
+    """她对你（用户）的称呼：配置优先，默认「老公」。"""
+    raw = ""
+    try:
+        fn = getattr(plugin, "cfg_str", None)
+        if callable(fn):
+            raw = str(fn("person_ref_title", DEFAULT_TITLE) or "")
+    except Exception:  # cleanup: 读不到就用默认
+        raw = ""
+    raw = raw.strip()[:8]
+    return raw or DEFAULT_TITLE
+
+
+def normalize(text, *, enabled=True, title=DEFAULT_TITLE) -> str:
+    """把一段文本里第一个没有先行词的「他」改成 she 对你的称呼（默认老公）。"""
     body = str(text or "")
     if not enabled or "他" not in body:
         return body
@@ -67,11 +83,11 @@ def normalize(text, *, enabled=True) -> str:
         return body
     rest = body[match.end():]
     if rest.startswith("的"):
-        replacement = "老公"
+        replacement = title
     elif any(rest.startswith(word) for word in _KIN):
-        replacement = "老公的"
+        replacement = title + "的"
     else:
-        replacement = "老公"
+        replacement = title
     return body[:match.start()] + replacement + rest
 
 
@@ -90,11 +106,11 @@ def enabled(plugin) -> bool:
 
 
 def normalize_for(plugin, text) -> str:
-    """带插件开关的便捷入口。"""
-    return normalize(text, enabled=enabled(plugin))
+    """带插件开关与自定义称呼的便捷入口。"""
+    return normalize(text, enabled=enabled(plugin), title=title(plugin))
 
 
-def normalize_schedule(items, *, enabled=True):
+def normalize_schedule(items, *, enabled=True, title=DEFAULT_TITLE):
     """日程 activity 逐条归一；保留原 dict，不原地改。"""
     out = []
     for item in items or ():
@@ -103,7 +119,7 @@ def normalize_schedule(items, *, enabled=True):
             continue
         row = dict(item)
         activity = str(row.get("activity") or "")
-        fixed = normalize(activity, enabled=enabled)
+        fixed = normalize(activity, enabled=enabled, title=title)
         if fixed != activity:
             row["activity"] = fixed
         out.append(row)

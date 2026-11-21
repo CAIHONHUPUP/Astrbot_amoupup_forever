@@ -4,7 +4,7 @@
 单一真相：``scene_at(plugin, day, start, end, place)`` 返回一个 Scene，
 回答「这一块时间、这个地点，他能不能在场、为什么」。
 
-三档行为（展示层可以映射成 L0/L1/L2/L3，但行为只有三种）：
+三档行为（展示层早期叫 L0-L3，现在统一按三档命名）：
 
 - ``apart``     同城分居：默认档，行为与 7.5.9 完全一致。
 - ``part_time`` 半同居：周五 20:00 ~ 周日 22:00 他在这边；工作日各住各的。
@@ -191,24 +191,37 @@ def stage_of(plugin) -> str:
 
 
 def away_state(plugin) -> dict:
-    """他是不是出差/不在（同居/半同居下覆盖"在家"判定）。"""
+    """他是不是出差/不在（同居/半同居下覆盖"在家"判定）；支持到期自动回家。"""
     try:
         raw = plugin.db.kv_get("partner_away", {}) or {}
     except Exception:  # cleanup: 读不到就是不在出差
         raw = {}
     if not isinstance(raw, dict):
-        return {"away": False, "reason": "", "since": 0.0}
-    return {"away": bool(raw.get("away")), "reason": str(raw.get("reason") or ""),
-            "since": float(raw.get("since") or 0.0)}
+        return {"away": False, "reason": "", "since": 0.0, "until": 0.0}
+    away = bool(raw.get("away"))
+    until = float(raw.get("until") or 0.0)
+    if away and until:
+        try:
+            from .amo_shared import now_ts as _now_ts
+        except ImportError:
+            from amo_shared import now_ts as _now_ts
+        if float(_now_ts()) >= until:
+            away = False   # 到期自动回家
+    return {"away": away, "reason": str(raw.get("reason") or ""),
+            "since": float(raw.get("since") or 0.0), "until": until}
 
 
-def set_away(plugin, away: bool, reason: str = "") -> dict:
-    """手动标记他出差/回家：/居住 出差、/居住 回家。"""
+def set_away(plugin, away: bool, reason: str = "", days: int = 0) -> dict:
+    """手动标记他出差/回家：/居住 出差 [天数]、/居住 回家。"""
     try:
         from .amo_shared import now_ts as _now_ts
     except ImportError:
         from amo_shared import now_ts as _now_ts
-    data = {"away": bool(away), "reason": str(reason or ""), "since": float(_now_ts())}
+    now = float(_now_ts())
+    until = 0.0
+    if away and int(days or 0) > 0:
+        until = now + int(days) * 86400
+    data = {"away": bool(away), "reason": str(reason or ""), "since": now, "until": until}
     try:
         plugin.db.kv_set("partner_away", data)
     except Exception:  # cleanup: 写不进去就返回内存结果
@@ -276,9 +289,21 @@ def _partner_place(place, activity="") -> str:
     return "客厅"
 
 
-def partner_at_work(weekday: int, start: int, end: int) -> bool:
-    """同居时他是否在上班：工作日 09:00-18:30 的块。"""
-    if weekday > 4:
+def is_holiday(day) -> bool:
+    """法定节假日（含可编辑日历）；读不到就当普通工作日。"""
+    try:
+        try:
+            from .amo_shared_time import _holiday_name
+        except ImportError:
+            from amo_shared_time import _holiday_name
+        return bool(_holiday_name(str(day or "")[:10]))
+    except Exception:  # cleanup: 日历读不到按非假日
+        return False
+
+
+def partner_at_work(weekday: int, start: int, end: int, *, holiday: bool = False) -> bool:
+    """同居时他是否在上班：工作日 09:00-18:30 的块；法定假日不算上班。"""
+    if weekday > 4 or holiday:
         return False
     # 与上班时段有交集就算在上班；整块在上班时段内更典型。
     return start < PARTNER_WORK_END and end > PARTNER_WORK_START
@@ -334,7 +359,7 @@ def scene_at(plugin, day, start, end, place, *, zone="", activity="",
                      PRESENCE_ALONE, False, partner_place, "半同居·工作日")
 
     if stage == STAGE_TOGETHER:
-        if partner_at_work(weekday, start_min, end_min):
+        if partner_at_work(weekday, start_min, end_min, holiday=is_holiday(day)):
             return Scene(stage, str(day), start_min, end_min, str(place or ""), zone_text,
                          PRESENCE_ALONE, False, partner_place, "同居·他上班")
         return Scene(stage, str(day), start_min, end_min, str(place or ""), zone_text,
@@ -394,8 +419,8 @@ def count_night(plugin, day, scene: Scene) -> dict:
         return data
     if scene.presence != PRESENCE_HOME:
         return data
-    if not (scene.start >= 22 * 60 or scene.start < 8 * 60):
-        return data  # 只数过夜，不数白天
+    if not (scene.start >= 23 * 60 or scene.start < 8 * 60):
+        return data  # 只数过夜（23:00 后或凌晨），22 点的追剧块不算
     key = str(day or "")
     if not key or data.get("last_night_day") == key:
         return data
@@ -492,19 +517,31 @@ def wording(key: str, scene: Scene | None = None, plugin=None) -> str:
     if stage == STAGE_APART:
         return ""
 
+    _title = "老公"
+    if plugin is not None:
+        try:
+            try:
+                from . import amo_person_ref as _pr
+            except ImportError:
+                import amo_person_ref as _pr
+            _title = _pr.title(plugin)
+        except Exception:
+            _title = "老公"
+    _who = ("【他是谁·最高优先级】这里的「他」只能是你老公，也就是用户本人（称呼：%s）；"
+            "不许出现第二个男性，不许写「有个男人」「神秘的他」。" % _title)
     table = {
         "boundary": {
             STAGE_PART_TIME: (
                 "【动作归属·最高优先级】【半同居·物理边界】你们同城，她住出租屋，他周末会过来住"
                 "（周五晚上到周日下午）。周五 20:00 后、周六、周日 22:00 前，他在她屋里，"
                 "可以写「他在旁边翻身」「他抱着我」；工作日他回自己那边，只能手机联系。"
-                "只有约会或这个周末窗口，才允许写面对面。"
+                "只有约会或这个周末窗口，才允许写面对面。" + _who
             ),
             STAGE_TOGETHER: (
                 "【动作归属·最高优先级】【同居·物理边界】你们住在一起。在家时他就在屋里"
                 "（客厅/厨房/卧室）；他上班/出差时不在，只能手机联系。"
                 "在家可以写「他在客厅看电视」「他抱着我」；在外面仍按约会算，"
-                "只有约会时段他才在你旁边。"
+                "只有约会时段他才在你旁边。" + _who
             ),
         },
         "worldview": {
