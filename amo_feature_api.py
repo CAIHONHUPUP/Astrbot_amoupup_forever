@@ -358,6 +358,35 @@ class FeatureApiMixin:
                     logger.debug("[amo] 记录 %s 失败: %r", key, exc)
             return bool(sent)
 
+        def remove_schedule_block(self, day, start="", activity=""):
+            """删除某天某时段的一个块（约会取消/替换用）；走 commit 唯一入口。"""
+            day = str(day or "")
+            if not day:
+                return {"ok": False, "reason": "no_day"}
+            try:
+                items = list(self.state.schedule.get(day) or [])
+            except Exception:
+                items = []
+            start = str(start or "")[:5]
+            activity = str(activity or "")
+
+            def _hit(item):
+                if start and str(item.get("start") or "")[:5] != start:
+                    return False
+                if activity and activity not in str(item.get("activity") or ""):
+                    return False
+                return True
+
+            kept = [item for item in items if not _hit(item)]
+            if len(kept) == len(items):
+                return {"ok": True, "changed": False}
+            try:
+                result = self.state.commit_schedule_change(
+                    day, kept, source="date", reason="取消/替换约会")
+            except Exception as exc:
+                return {"ok": False, "reason": "commit_failed", "error": str(exc)[:80]}
+            return {"ok": True, "changed": True, "result": result}
+
         async def push_to_owner(self, text):
 
             """主动消息：给管理员/老公发一条（逛街试穿、回家炫耀、守护事件等）。"""
