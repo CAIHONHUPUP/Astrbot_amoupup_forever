@@ -1200,11 +1200,28 @@ class DrawEngine:
                 if _refs:
                     prompt += "\n（参考图：三视图是长相；服装平铺图只参考裙摆/裤子和颜色，鞋子按今天的鞋脱在脚边；脚上不穿鞋袜；正常手机距离，不是微距特写。）"
             else:
+                _pose_refs = None
+                try:
+                    try:
+                        from .pose_library import match_pose
+                    except ImportError:
+                        from pose_library import match_pose
+                    _library = getattr(self.plugin, "pose", None)
+                    _pose = match_pose(_library, text)
+                    if _pose:
+                        detail = (detail + "。姿势：%s（%s）" % (
+                            _pose.get("name") or "", _pose.get("note") or "")).strip("。")
+                        _path = _library.ref_path(_pose) if _library is not None else ""
+                        if _path and os.path.isfile(_path):
+                            _pose_refs = [_path]
+                except Exception as _amo_exc:
+                    _note_swallowed("draw_engine.send_photo_now.pose", _amo_exc)
                 prompt = build_selfie_prompt(scene, outfit, activity,
                                              getattr(self.plugin, "state", None),
                                              extra=detail) + "。" + REALISM_POSITIVE
             self._schedule(event, prompt, "tool", selfie=True,
-                           refs=_refs if wants_foot_closeup(text) else None, caption=caption)
+                           refs=_refs if wants_foot_closeup(text) else _pose_refs,
+                           caption=caption)
             try:
                 self._last_tool_photo_at = time.monotonic()
             except Exception:  # cleanup: 时间戳失败不影响发图

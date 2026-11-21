@@ -95,6 +95,26 @@ def foot_poses(poses):
     return [item for item in (poses or []) if is_foot_pose((item or {}).get("name"))]
 
 
+def match_pose(library, text):
+    """用户明确说了某个姿势名（或近似词）时，返回那个单人姿势。"""
+    body = str(text or "")
+    if not body or library is None:
+        return None
+    best, best_score = None, 0
+    for pose in library.poses():
+        if usage_of(pose) not in ("selfie", "both"):
+            continue
+        name = str(pose.get("name") or "")
+        if not name:
+            continue
+        if name in body:
+            return pose
+        score = sum(1 for index in range(len(name) - 1) if name[index:index + 2] in body)
+        if score > best_score:
+            best, best_score = pose, score
+    return best if best_score >= 2 else None
+
+
 def usage_of(pose):
     """这个姿势给谁用：selfie=单人自拍，couple=双人合拍，both=都行。"""
     data = pose or {}
