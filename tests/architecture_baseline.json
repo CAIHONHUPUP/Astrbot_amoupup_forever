@@ -1,5 +1,6 @@
 {
   "__init__.py": [],
+  "amo_anti_nag.py": [],
   "amo_api.py": [
     "amo_api_diary",
     "amo_api_photo",
@@ -367,6 +368,7 @@
     "amo_shared"
   ],
   "amo_message.py": [
+    "amo_anti_nag",
     "amo_fact_binder",
     "amo_names",
     "amo_observability",
@@ -390,6 +392,7 @@
   "amo_proactive.py": [
     "amo_date_session",
     "amo_observability",
+    "amo_proactive_gate",
     "amo_reply_pipeline",
     "amo_rest",
     "amo_shared",
@@ -398,6 +401,7 @@
     "infra",
     "observability"
   ],
+  "amo_proactive_gate.py": [],
   "amo_prompt_registry.py": [
     "amo_immersion_guard",
     "amo_transit"
