@@ -344,7 +344,7 @@ for _sa_name in dir(SharedActivityMixin):
 #: 对外 API 依赖的私有辅助：默认不挂下划线方法，但 push_to_owner / hunger_help
 #: 第一行就是 self._owner_umos()，不挂就是 AttributeError —— 守护侧的逛街炫耀、
 #: 宵夜「我饿了」、约会事故推送会全部静默失败（2026-11-20 定位）。
-FEATURE_PRIVATE_HELPERS = ("_owner_umos",)
+FEATURE_PRIVATE_HELPERS = ("_owner_umos", "_relation_overrides")
 
 for _feat_name in dir(FeatureApiMixin):
     if _feat_name.startswith("_") and _feat_name not in FEATURE_PRIVATE_HELPERS:

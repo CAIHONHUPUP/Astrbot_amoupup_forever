@@ -161,13 +161,56 @@ class FeatureApiMixin:
             hunger: Any
             state: Any
             wardrobe: Any
+        def _relation_overrides(self):
+            try:
+                data = self.db.kv_get("relation_overrides", {}) or {}
+            except Exception:
+                data = {}
+            return dict(data) if isinstance(data, dict) else {}
+
         def relation_of(self, name=""):
-            """名单人物的关系标签（唯一真源 amo_names.RELATION_LABEL）。"""
+            """名单人物的关系标签：用户覆盖 > amo_names.RELATION_LABEL。"""
             try:
                 from . import amo_names
             except ImportError:
                 import amo_names
-            return amo_names.relation_of(name)
+            key = str(name or "").strip()
+            override = self._relation_overrides().get(key) or {}
+            if isinstance(override, dict) and override.get("relation"):
+                return str(override.get("relation"))
+            return amo_names.relation_of(key)
+
+        def circle_of(self, name=""):
+            """名单人物的圈层：用户覆盖 > amo_names.RELATION_CIRCLE。"""
+            try:
+                from . import amo_names
+            except ImportError:
+                import amo_names
+            key = str(name or "").strip()
+            override = self._relation_overrides().get(key) or {}
+            if isinstance(override, dict) and override.get("circle"):
+                return str(override.get("circle"))
+            return amo_names.circle_of(key)
+
+        def set_relation(self, name, relation="", circle=""):
+            """用户改关系/圈层：写覆盖层（守护迁移/面板编辑共用）。"""
+            key = str(name or "").strip()
+            if not key:
+                return False
+            data = self._relation_overrides()
+            current = dict(data.get(key) or {})
+            if str(relation or "").strip():
+                current["relation"] = str(relation).strip()
+            if str(circle or "").strip():
+                current["circle"] = str(circle).strip()
+            if not current:
+                return False
+            data[key] = current
+            try:
+                self.db.kv_set("relation_overrides", data)
+            except Exception:
+                return False
+            return True
 
         def note_expense_summary(self, line):
             self.db.kv_set("expense_summary", {"line": str(line or ""), "until": now_ts() + 2 * 86400})

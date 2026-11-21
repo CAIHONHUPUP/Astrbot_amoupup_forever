@@ -33,6 +33,17 @@ RELATION_LABEL = {
     "爸爸": "爸爸",
 }
 
+#: 圈层（friend/work/family/edge）：与关系标签一起迁进陪伴，作为唯一真源
+RELATION_CIRCLE = {
+    "柳如烟": "friend",
+    "白凝冰": "friend",
+    "季博达": "work",
+    "方圆": "work",
+    "沈幼微": "edge",
+    "妈妈": "family",
+    "爸爸": "family",
+}
+
 #: 男性 NPC：不得单独约会/暧昧称呼/肢体亲密/恋爱暗示；
 #: 单独喝酒、单独加班到深夜、单独送她回家也算越界。≥3 人聚餐/团建不算。
 MALE_NPCS = ("季博达", "方圆")
@@ -56,6 +67,11 @@ def relation_of(name=""):
     2026-11-20：这是关系称谓的唯一真源，守护只读这里，不再自己维护一份。
     """
     return str(RELATION_LABEL.get(str(name or "").strip()) or "")
+
+
+def circle_of(name=""):
+    """某人的圈层；不在名单里返回空串。"""
+    return str(RELATION_CIRCLE.get(str(name or "").strip()) or "")
 
 
 def is_male_npc(name=""):
