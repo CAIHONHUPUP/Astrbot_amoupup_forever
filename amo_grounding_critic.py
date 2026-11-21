@@ -38,10 +38,8 @@ def issues(user_text, reply):
     body = str(reply or "").strip()
     if not user or not body:
         return []
-    if not (_QUESTION.search(user) or _REACTION.search(user)):
-        return []
-    if _REACTION.search(user) and ("笑" in body or any(
-            animal in body for animal in ("猫", "狗", "兔", "鸟", "仓鼠"))):
+    # 短反应（哈哈哈/好看）不做语义强判：误伤太高，交给分享守卫和角色守卫
+    if not _QUESTION.search(user):
         return []
     if _bigrams(user) & _bigrams(body):
         return []

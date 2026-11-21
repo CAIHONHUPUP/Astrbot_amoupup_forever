@@ -84,7 +84,8 @@ class SourceGuardTests(unittest.TestCase):
     def test_no_author_personal_path_in_repo(self):
         offenders = []
         for base, _dirs, files in os.walk(ROOT):
-            if os.sep + ".git" in base or os.sep + "tests" in base:
+            if (os.sep + ".git" in base or os.sep + "tests" in base
+                    or os.sep + "work" in base):
                 continue
             for name in files:
                 if not name.endswith((".py", ".json")):

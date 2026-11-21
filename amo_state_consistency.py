@@ -34,10 +34,13 @@ def _scene(plugin):
         act = {}
     place = str(act.get("place") or "")
     zone = str(act.get("zone") or "")
-    on_road = zone in ("road", "outside") or any(
-        word in place for word in ("路上", "地铁", "公交", "车", "街", "外面", "商场", "店"))
+    transit = zone == "road" or any(
+        word in place for word in ("路上", "地铁", "公交", "车上", "街", "外面"))
+    outside = zone in ("outside", "work", "mall") or any(
+        word in place for word in ("商场", "公司", "店", "医院", "餐厅"))
     home = zone.startswith("home") or ("家" in place and "路上" not in place)
-    return {"home": home, "road": on_road and not home}
+    return {"home": home, "road": transit and not home,
+            "outside": outside and not home and not transit}
 
 
 def _sentences(text):
@@ -60,13 +63,22 @@ def rewrite(text, plugin, user_text=""):
     scene = _scene(plugin)
     user = str(user_text or "")
     # 括号里的居家动作/到家，先整段拿掉（不在家时）
-    if scene["road"]:
+    if scene["road"] or scene["outside"]:
         body = re.sub(r"（[^）]*(?:刚到家|到家|进门|脱.{0,4}外套|换鞋|煮.{0,3}面|做饭|洗碗)[^）]*）", "", body)
     out = []
     for sentence in _sentences(body):
         if scene["road"]:
             if _ARRIVAL.search(sentence):
                 out.append("我还在路上呢，快到了")
+                continue
+            if _HOME_ACTION.search(sentence) or _HOME_PROP.search(sentence):
+                continue
+        elif scene["outside"]:
+            if _ARRIVAL.search(sentence):
+                out.append("我到了")
+                continue
+            if _ROAD_CLAIM.search(sentence):
+                out.append("我到了")
                 continue
             if _HOME_ACTION.search(sentence) or _HOME_PROP.search(sentence):
                 continue
