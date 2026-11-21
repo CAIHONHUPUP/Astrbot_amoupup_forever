@@ -317,12 +317,12 @@ class LLMService:
             return text
         try:
             try:
-                from .amo_persona_pack import default_pack
+                from .amo_persona_store import active_pack
                 from . import amo_voice_guard as _voice
             except ImportError:
-                from amo_persona_pack import default_pack
+                from amo_persona_store import active_pack
                 import amo_voice_guard as _voice
-            _pack = default_pack()
+            _pack = active_pack(self.p)
             _issues = _voice.issues(result, self.p, _pack, public=public)
             if _issues:
                 _fix = await self.chat(

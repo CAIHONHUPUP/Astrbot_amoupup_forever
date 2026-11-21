@@ -102,6 +102,7 @@
     "amo_diary_audit",
     "amo_household",
     "amo_observability",
+    "amo_persona_store",
     "amo_scope",
     "amo_shared",
     "amo_trip",
@@ -202,6 +203,7 @@
     "amo_food_event",
     "amo_names",
     "amo_persona_pack",
+    "amo_persona_store",
     "amo_shared",
     "amo_shared_time",
     "amo_state_store",
@@ -318,6 +320,7 @@
     "amo_message",
     "amo_observability",
     "amo_persona_pack",
+    "amo_persona_store",
     "amo_prompt_registry",
     "amo_reply_pipeline",
     "amo_shared",
@@ -335,7 +338,7 @@
     "amo_immersion_guard",
     "amo_names",
     "amo_observability",
-    "amo_persona_pack",
+    "amo_persona_store",
     "amo_shared",
     "amo_state_snapshot",
     "amo_voice_guard",
@@ -396,6 +399,9 @@
   "amo_observability.py": [],
   "amo_person_ref.py": [],
   "amo_persona_pack.py": [],
+  "amo_persona_store.py": [
+    "amo_persona_pack"
+  ],
   "amo_photo_intent.py": [],
   "amo_place.py": [
     "domains"

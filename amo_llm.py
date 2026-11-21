@@ -617,15 +617,17 @@ class LlmMixin(_MixinBase):
         """人设包：内核/关系语气/语言规则/禁语/少量语料。"""
         try:
             try:
-                from .amo_persona_pack import default_pack, prompt_block
+                from .amo_persona_store import active_pack
+                from .amo_persona_pack import prompt_block
             except ImportError:
-                from amo_persona_pack import default_pack, prompt_block
+                from amo_persona_store import active_pack
+                from amo_persona_pack import prompt_block
             mood = ""
             try:
                 mood = str((snap or {}).get("dominant") or "")
             except Exception:
                 mood = ""
-            block = prompt_block(default_pack(), mood=mood, register="partner_safe")
+            block = prompt_block(active_pack(self), mood=mood, register="partner_safe")
             return ["【人格包】\n" + block] if block else []
         except Exception as exc:
             logger.debug("[amo] 人设包注入失败: %s", exc)

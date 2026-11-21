@@ -887,11 +887,13 @@ class FeatureApiMixin:
 
         def persona_prompt_block(self, scene="", mood="", register="partner_safe"):
             try:
-                from .amo_persona_pack import default_pack, prompt_block
+                from .amo_persona_store import active_pack
+                from .amo_persona_pack import prompt_block
             except ImportError:
-                from amo_persona_pack import default_pack, prompt_block
+                from amo_persona_store import active_pack
+                from amo_persona_pack import prompt_block
             try:
-                return prompt_block(default_pack(), scene=str(scene or ""),
+                return prompt_block(active_pack(self), scene=str(scene or ""),
                                     mood=str(mood or ""), register=str(register or "partner_safe"))
             except Exception:
                 return ""

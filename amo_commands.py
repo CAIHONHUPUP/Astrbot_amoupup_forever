@@ -1083,6 +1083,54 @@ class CommandMixin(_MixinBase):
         except Exception as exc:
             yield event.plain_result("切换失败：%s" % exc)
 
+    @filter.command("人设")
+    async def cmd_persona(self, event: AstrMessageEvent):
+        await self._ensure_ready()
+        if not self._is_admin(event):
+            yield event.plain_result("只有管理员才能改人设。")
+            return
+        try:
+            try:
+                from . import amo_persona_store as _store
+            except ImportError:
+                import amo_persona_store as _store
+            raw = str(event.message_str or "").replace("/人设", "", 1).strip()
+            active = _store.active_id(self)
+            state = _store.load_state(self)
+            if not raw:
+                yield event.plain_result(
+                    "当前人设：%s\n可选：%s\n候选项：%d 条\n"
+                    "用法：/人设 切换 <id>；/人设 候选；/人设 通过 <序号>"
+                    % (active, "、".join(_store.profiles(self)),
+                       len(state.get("candidates") or [])))
+                return
+            if raw.startswith("切换"):
+                pid = raw.replace("切换", "", 1).strip()
+                out = _store.switch(self, pid)
+                yield event.plain_result(
+                    ("已切换到 %s" % out["active"]) if out.get("ok")
+                    else "没有这个人设：%s" % "、".join(out.get("profiles") or []))
+                return
+            if raw.startswith("候选"):
+                rows = state.get("candidates") or []
+                if not rows:
+                    yield event.plain_result("现在没有待批准的新语料。")
+                    return
+                lines = ["%d. %s（%s）" % (i, row.get("text"), row.get("scene"))
+                         for i, row in enumerate(rows[:10])]
+                yield event.plain_result("\n".join(lines))
+                return
+            if raw.startswith("通过"):
+                index = raw.replace("通过", "", 1).strip()
+                out = _store.approve_candidate(self, int(index or 0))
+                yield event.plain_result(
+                    ("已通过：%s" % out.get("text")) if out.get("ok")
+                    else "没有这条候选。")
+                return
+            yield event.plain_result("看不懂这个用法，发 /人设 看帮助。")
+        except Exception as exc:
+            yield event.plain_result("人设操作失败：%s" % exc)
+
     @filter.command("搬回")
     async def cmd_move_back(self, event: AstrMessageEvent):
         await self._ensure_ready()
