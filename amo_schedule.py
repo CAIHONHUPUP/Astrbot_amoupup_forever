@@ -1415,7 +1415,8 @@ class ScheduleMixin(_MixinBase):
             # 2026-11-21：不再只看 21:00-22:00 一块；当天任何一块他在家，
             # 这篇日记就按「在家共处」规则写（否则白天在家、晚上出门会整篇写错）。
             _day_key = day.isoformat() if hasattr(day, "isoformat") else str(day)
-            _rows = list((self.schedule or {}).get(_day_key) or [])
+            _rows = list((self.state.schedule or {}).get(_day_key)
+                         or self.db.get_schedule(_day_key) or [])
             if not _rows:
                 _rows = [{"start": "21:00", "end": "22:00", "place": "家", "zone": "home"}]
             for _row in _rows:
