@@ -190,7 +190,9 @@ class ProactiveKindTests(unittest.TestCase):
 
     def test_quiet_checks(self):
         plugin = self._plugin()
-        self.assertFalse(plugin._proactive_user_just_talked({"last_seen": 100}, 100 + 601))
+        # 2026-11-21：默认静默期 10 -> 30 分钟（刚聊完又来问候）
+        self.assertTrue(plugin._proactive_user_just_talked({"last_seen": 100}, 100 + 601))
+        self.assertFalse(plugin._proactive_user_just_talked({"last_seen": 100}, 100 + 1801))
         self.assertFalse(plugin._proactive_user_just_talked({"last_seen": 1}, 100000))
         self.assertTrue(plugin._proactive_forced_allowed({"last_proactive": 0}, 100000))
 

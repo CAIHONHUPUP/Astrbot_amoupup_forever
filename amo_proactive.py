@@ -940,7 +940,7 @@ class ProactiveMixin(_MixinBase):
 
     def _proactive_user_just_talked(self, profile, now):
         """对方刚说过话就别主动插话。0 表示关闭这项检查。"""
-        minutes = max(0, self.cfg_int("proactive_user_idle_minutes", 10))
+        minutes = max(0, self.cfg_int("proactive_user_idle_minutes", 30))
         if not minutes:
             return False
         last_user_at = to_float(profile.get("last_seen"), 0)

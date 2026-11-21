@@ -907,6 +907,17 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
             return {"code": 0, "data": {"enabled": False, "wishes": [], "gifts": []}}
 
 
+    async def api_gift_delete(self):
+        """礼物墙：删掉一件收到的礼物（前端每件的删除按钮）。"""
+        await self._ensure_ready()
+        gift = getattr(self, "gift", None)
+        if gift is None:
+            return {"code": 1, "msg": "礼物功能没开启"}
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        ok = gift.delete_gift(str(data.get("id") or ""))
+        return {"code": 0 if ok else 1, "msg": "已删除" if ok else "没找到这件礼物"}
+
     async def api_gift_wish_approve(self):
         """待确认心愿：确认后进入心愿墙（不是直接送）。"""
         await self._ensure_ready()

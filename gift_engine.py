@@ -162,6 +162,32 @@ def clean_item(raw: str) -> str:
     return item
 
 
+#: 明显是句子/动作碎片的「礼物」：收到这些说明抽取跑偏了（2026-11-21 污染）
+_GIFT_STOP = {
+    "回去", "过来", "上来", "下去", "起来", "一起", "然后", "就是", "可以", "好的",
+    "行吧", "嗯嗯", "哈哈", "好的呀", "算了", "没事", "知道", "觉得", "感觉",
+}
+_GIFT_VERB_TAIL = re.compile(r"(?:去|来|走|上|下|回|过|开|说|看|做|买|送|放|拿|穿|脱)$")
+#: 句子成分：出现这些就说明抽到的是半句话，不是物品名
+_GIFT_SENTENCE = re.compile(
+    r"(?:吗|呢|吧|啊|呀|？|\?|怎么|什么|哪|这个|那个|这件|那件|放在|觉得|感觉|知道|"
+    r"可以|然后|就是|还是|真的|特别|已经|有点|时候|一件|那件|完|穿上|脱下来)"
+)
+
+
+def gift_item_ok(item: str, strict: bool = False) -> bool:
+    """礼物名是否像一件具体东西；strict 用于「从她的话里反推」的兜底路径。"""
+    if not valid_item(item):
+        return False
+    if item in _GIFT_STOP or _GIFT_VERB_TAIL.search(item):
+        return False
+    if _GIFT_SENTENCE.search(item):
+        return False
+    if strict and not valid_wish_item(item):
+        return False
+    return True
+
+
 def valid_item(item: str) -> bool:
     if not item or len(item) > 16:
         return False
@@ -980,9 +1006,11 @@ class GiftEngine:
                     self._save()
                     return
 
-    def add_gift(self, item, raw="", umo="", uid="", wish_id="", source="chat", place=""):
+    def add_gift(self, item, raw="", umo="", uid="", wish_id="", source="chat", place="",
+                 strict=False):
         item = clean_item(item)
-        if not valid_item(item):
+        if not gift_item_ok(item, strict=strict):
+            logger.info("[amo] 礼物名不像具体物品，忽略：%r" % item)
             return {}
         kind = self.classify(item)
         if kind in ("vehicle", "home", "luxury") and not self.big_allowed:
@@ -1050,6 +1078,20 @@ class GiftEngine:
                 except Exception as _amo_exc:
                     _note_swallowed("gift_engine.GiftEngine.add_gift.home", _amo_exc)
         return dict(gift)
+
+    def delete_gift(self, gift_id):
+        """删掉一件收到的礼物（面板删除按钮）；返回是否删掉。"""
+        target = str(gift_id or "").strip()
+        if not target:
+            return False
+        with self._lock:
+            data = self._load()
+            before = len(data["gifts"])
+            data["gifts"] = [g for g in data["gifts"] if str(g.get("id") or "") != target]
+            if len(data["gifts"]) == before:
+                return False
+            self._save()
+        return True
 
     def recent_gifts(self, limit=8):
         with self._lock:
@@ -1300,9 +1342,11 @@ class GiftEngine:
             if wish:
                 item = str(wish.get("item") or "")
         wish_id = str(wish.get("id") or "")
+        from_fallback = False
         if not item:
             item, wish_id = await self._wish_from_recent_bot(umo)
-        if not item or not valid_item(item):
+            from_fallback = bool(item)
+        if not item or not gift_item_ok(item, strict=from_fallback):
             logger.info("[amo] 老公说了送礼，但没识别出东西: %s" % text[:60])
             return GIFT_ASK_HINT.format(raw=text[:120])
         kind = self.classify(item)
@@ -1323,6 +1367,7 @@ class GiftEngine:
             item=item, raw=text, umo=umo, uid=uid,
             wish_id=wish_id, source="chat",
             place=str(wish.get("place") or ""),
+            strict=from_fallback,
         )
         if not gift:
             return ""
@@ -1400,7 +1445,7 @@ class GiftEngine:
                     item = ""
             if not item:
                 item = extract_wish_regex(text)
-            if item and valid_item(item) and item not in gifted:
+            if item and valid_wish_item(item) and item not in gifted:
                 wish = self.add_wish(item, text, umo=umo, source="backfill")
                 return str(wish.get("item") or item), str(wish.get("id") or "")
         return "", ""

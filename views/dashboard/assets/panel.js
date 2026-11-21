@@ -1631,7 +1631,23 @@
           gifts.forEach((gift) => {
             const kind = { small: "小礼物", valuable: "贵重小件", vehicle: "车", home: "房", luxury: "贵重" }[gift.kind] || "礼物";
             const meta = [kind, giftTime(gift.ts), gift.where || ""].filter(Boolean).join(" · ");
-            giftsBox.appendChild(giftRow(gift.item || "", meta));
+            const row = giftRow(gift.item || "", meta);
+            const del = document.createElement("button");
+            del.className = "ghost";
+            del.type = "button";
+            del.textContent = "删除";
+            del.addEventListener("click", async () => {
+              if (!window.confirm("删除这件礼物？")) return;
+              try {
+                await call("gift/delete", { id: gift.id });
+                if (typeof toast === "function") toast("已删除");
+                await loadGift();
+              } catch (error) {
+                if (typeof toast === "function") toast((error && error.message) || "删除失败", true);
+              }
+            });
+            row.appendChild(del);
+            giftsBox.appendChild(row);
           });
         }
         const sub = document.getElementById("giftSub");

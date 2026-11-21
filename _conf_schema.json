@@ -990,8 +990,8 @@
   "proactive_user_idle_minutes": {
     "type": "int",
     "description": "对方刚说过话的静默期（分钟）",
-    "hint": "最近这么多分钟内有你的消息，就不发主动消息，避免你在聊天时插话。0 = 关闭。",
-    "default": 10
+    "hint": "最近这么多分钟内有你的消息，就不发主动消息，避免刚聊完又来问候。0 = 关闭。",
+    "default": 30
   },
 
   "proactive_unanswered_window_minutes": {
