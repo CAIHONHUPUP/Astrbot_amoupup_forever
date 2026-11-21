@@ -966,9 +966,19 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         removed = []
         if view in self.VIEWS:
             targets = [mapping.pop(view, "")]
+            # 映射可能是空的（按文件名认回来的），也要删规范文件名
+            target_dir = self.user_template_dir()
+            canonical = os.path.join(target_dir, self._USER_VIEW_FILES.get(view, ""))
+            if canonical and canonical not in targets:
+                targets.append(canonical)
         else:
             targets = list(mapping.values())
             mapping = {}
+            target_dir = self.user_template_dir()
+            for name in self._USER_VIEW_FILES.values():
+                path = os.path.join(target_dir, name)
+                if path not in targets:
+                    targets.append(path)
         for path in targets:
             try:
                 if path and os.path.isfile(path):
