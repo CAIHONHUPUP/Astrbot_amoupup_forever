@@ -335,8 +335,10 @@
     "amo_immersion_guard",
     "amo_names",
     "amo_observability",
+    "amo_persona_pack",
     "amo_shared",
     "amo_state_snapshot",
+    "amo_voice_guard",
     "done_action_guard",
     "place_guard"
   ],
@@ -766,6 +768,7 @@
     "clock"
   ],
   "amo_voice.py": [],
+  "amo_voice_guard.py": [],
   "amo_wallet.py": [
     "clock"
   ],

@@ -267,7 +267,7 @@ class LLMService:
     async def chat(self, umo, system, prompt, contexts=None, limit=300):
         return clean_reply(await self.chat_raw(umo, system, prompt, contexts), limit)
 
-    async def polish(self, umo, text, tone, state_text="", relation="", name="", persona="", style="", consult=False):
+    async def polish(self, umo, text, tone, state_text="", relation="", name="", persona="", style="", consult=False, public=False):
         text = (text or "").strip()
         if not text or not self.p.cfg_bool("enable_polish", True):
             return text
@@ -315,6 +315,28 @@ class LLMService:
                 result = "你才人机呢，你见过这么会聊天的机器人吗？"
         if len(result) > max(len(text) + 30, int(len(text) * 1.5)):
             return text
+        try:
+            try:
+                from .amo_persona_pack import default_pack
+                from . import amo_voice_guard as _voice
+            except ImportError:
+                from amo_persona_pack import default_pack
+                import amo_voice_guard as _voice
+            _pack = default_pack()
+            _issues = _voice.issues(result, self.p, _pack, public=public)
+            if _issues:
+                _fix = await self.chat(
+                    umo,
+                    "你就是这个角色本人，只输出一句她会说的话。",
+                    "上一版有这些问题：%s。\n上一版：%s\n请只改这些问题，保留事实和情绪，换一种开头，"
+                    "不要解释，不要提到这些问题。" % ("、".join(_issues), result),
+                    limit=self.p.cfg_int("max_reply_chars", 220))
+                if _fix and len(_fix) <= max(len(result) + 20, 260):
+                    if not _voice.issues(_fix, self.p, _pack, public=public):
+                        result = _fix
+            _voice.record(self.p, result)
+        except Exception as exc:
+            logger.debug("[amo] 语音守卫失败: %r", exc)
         return result
 
     async def decide(self, umo, question, state):

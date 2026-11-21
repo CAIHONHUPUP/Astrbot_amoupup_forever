@@ -794,7 +794,7 @@ class LlmMixin(_MixinBase):
         if reply:
             reply = await self.llm.polish(
                 umo, reply, tone, state_text=state_text, relation=relation, name=name,
-                persona=persona, style=style, consult=consult,
+                persona=persona, style=style, consult=consult, public=bool(group),
             )
             reply = self._trim_reply(reply)
             try:
