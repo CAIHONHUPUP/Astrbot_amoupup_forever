@@ -44,6 +44,11 @@ ICE_CALM_LOW = 20.0       # 且 平静 <= 20
 
 _EXTREME_RE = re.compile(r"(不想活|自杀|去死|活着没意思|结束生命|撑不下去了?)")
 EXTREME_REPLACEMENT = "委屈得只想躲进被子里哭一场"
+#: 口头威胁/暴力梗（2026-11-21 用户反馈「洗干净脖子等着吧」太凶）
+_VIOLENT_RE = re.compile(
+    r"(洗干净脖子|洗好脖子|打死你|弄死你|杀了你|掐死你|砍死你|揍死你|"
+    r"等着(?:吧)?[，,]?我(?:来)?(?:收拾|弄|揍)你)")
+VIOLENT_REPLACEMENT = "哼，你等着，看我怎么罚你。"
 
 
 def _num(mapping, key):
@@ -76,6 +81,7 @@ def sanitize_extreme(text):
     value = str(text or "")
     if not value:
         return value
+    value = _VIOLENT_RE.sub(VIOLENT_REPLACEMENT, value)
     return _EXTREME_RE.sub(EXTREME_REPLACEMENT, value)
 
 

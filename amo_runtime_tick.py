@@ -113,6 +113,23 @@ class RuntimeTickMixin(RuntimeMixinBase):
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime.HumanCorePlugin._tick." + _stage, _amo_exc)
 
+    async def _fill_pose_refs(self):
+        """缺参考图的姿势后台补齐；已经有任务在跑就跳过。"""
+        try:
+            try:
+                from .pose_library import batch_status, ensure_batch, pending_poses
+            except ImportError:
+                from pose_library import batch_status, ensure_batch, pending_poses
+            if batch_status().get("running"):
+                return
+            pending = pending_poses(self.pose)
+            if not pending:
+                return
+            logger.info("[amo] 姿势参考图缺 %d 张，后台补齐", len(pending))
+            await ensure_batch(self, pending)
+        except Exception as exc:
+            logger.debug("[amo] 姿势参考图补齐失败: %s" % exc)
+
     async def _tick_housekeeping(self):
         # 保活：照片任务、数据插件探测、心情/健康/天气维护；未就绪返回 False
         if not self._ready or self.state is None:
@@ -151,6 +168,11 @@ class RuntimeTickMixin(RuntimeMixinBase):
         if now_ts() - to_float(getattr(self, "_last_solo_return", 0), 0) > 120:
             self._last_solo_return = now_ts()
             self._spawn(self._maybe_solo_return())
+        # 姿势参考图：新增种子/被删图后自动补，30 分钟最多试一次（重载也能触发）
+        if (getattr(self, "pose", None) is not None
+                and now_ts() - to_float(getattr(self, "_last_pose_ref_fill", 0), 0) > 1800):
+            self._last_pose_ref_fill = now_ts()
+            self._spawn(self._fill_pose_refs())
         if now_ts() - to_float(getattr(self, "_last_date_wrap", 0), 0) > 60:
             self._last_date_wrap = now_ts()
             self._spawn(self._maybe_date_wrap())
