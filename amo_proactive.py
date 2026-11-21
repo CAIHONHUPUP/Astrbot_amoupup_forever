@@ -1253,6 +1253,16 @@ class ProactiveMixin(_MixinBase):
             _note_swallowed("amo_proactive._send_proactive_lines.tone_guard", _amo_exc)
         if not raw:
             return ""
+        try:
+            try:
+                from .amo_share_ledger import note as _share_note
+            except ImportError:
+                from amo_share_ledger import note as _share_note
+            if any(word in raw for word in ("我刷到", "给你看", "快看", "分享")) and any(
+                    word in raw for word in ("视频", "图片", "照片")):
+                _share_note(self, raw, media=True)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive.share_note", _amo_exc)
         parts = [item.strip() for item in re.split(r"(?<=[。！？!?~])", raw) if item.strip()]
         if len(parts) > 3:
             parts = ["".join(parts[:-2])] + parts[-2:]

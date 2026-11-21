@@ -1099,6 +1099,16 @@ class RuntimeContextMixin(RuntimeMixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.episodic_memory", _amo_exc)
         try:
+            try:
+                from .amo_share_ledger import prompt_line as _share_line
+            except ImportError:
+                from amo_share_ledger import prompt_line as _share_line
+            _share = _share_line(self)
+            if _share:
+                parts.append(_share)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.share_ledger", _amo_exc)
+        try:
             _lines = []
             _now_ts = now_ts()
             for _off, _label in ((1, "昨天"), (2, "前天"), (3, "大前天")):

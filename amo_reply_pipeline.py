@@ -1103,6 +1103,15 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
         return value
     try:
         try:
+            from .amo_share_ledger import mark_reacted as _mark_reacted
+        except ImportError:
+            from amo_share_ledger import mark_reacted as _mark_reacted
+        if user_text:
+            _mark_reacted(plugin)
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.share_reacted 失败: %s", exc)
+    try:
+        try:
             from .amo_immersion_guard import fix_identity, sanitize_extreme
         except ImportError:
             from amo_immersion_guard import fix_identity, sanitize_extreme

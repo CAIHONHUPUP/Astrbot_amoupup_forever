@@ -54,7 +54,7 @@ EXPECTED_METHODS = [
 CODE_MD5 = {
     "on_message": "acc047b7fd28796c805811abd9c7df05",
     "_dynamic_context": "cb95d4b83caf9c5efe0e919ceb10de19",
-    "on_decorating_result": "aca2f274e927283da2e7909840d14a57",
+    "on_decorating_result": "995fd5ab87cbe4f07a7d152015f08f37",
     "_tick": "ac96fb9f0472533cfc38feb32d6a078e",
     "_maybe_daily_digest": "4acb3ce8497d6574eaed72b676066486",
     "warm_up": "511847b73896b66a6b03cb204c5832da",
@@ -63,7 +63,7 @@ CODE_MD5 = {
 FINGERPRINTS = {
     "on_message": "6da8d75162f656678fc8120b2a2dbee0",
     "_dynamic_context": "80205d5e7e2942927e3d71ac2c17db71",
-    "on_decorating_result": "05f628a66ab90f94bb81b103981de42c",
+    "on_decorating_result": "018fc26a5fb61bfd4722cac145de50d0",
     "_tick": "ea8ccbb018f28d852b20e7ef4c6f1644",
     "_maybe_daily_digest": "ee8626b0b24ac01c304112f7456abe22",
     "warm_up": "2e1a8372ae7b979ccade341cacff8811",

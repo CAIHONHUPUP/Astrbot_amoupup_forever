@@ -176,6 +176,16 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     getattr(event, "message_str", ""), history_text=_history)
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime_reply.chat_safety", _amo_exc)
+            try:
+                try:
+                    from .amo_share_ledger import note as _share_note
+                except ImportError:
+                    from amo_share_ledger import note as _share_note
+                if any(word in text for word in ("我刷到", "给你看", "快看", "分享")) and any(
+                        word in text for word in ("视频", "图片", "照片")):
+                    _share_note(self, text, media=True)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime_reply.share_note", _amo_exc)
             result.chain = [Comp.Plain(text)]
             if await self._maybe_send_voice_reply(event, text, result):
                 return
