@@ -34,6 +34,15 @@ class PersonaPackTests(unittest.TestCase):
         second = pack.default_pack()
         self.assertIs(first, second)
 
+    def test_legacy_pack_gets_defaults(self):
+        legacy = {"id": "old", "name": "旧包", "card": {"core": "旧内核"},
+                  "corpus": []}
+        data = pack.migrate(legacy)
+        self.assertEqual(1, data["schema_version"])
+        self.assertIn("forbidden", data["card"])
+        self.assertIn("rules", data)
+        pack.validate(data)
+
     def test_bad_pack_rejected(self):
         with self.assertRaises(ValueError):
             pack.validate({"id": "x", "name": "x", "corpus": []})

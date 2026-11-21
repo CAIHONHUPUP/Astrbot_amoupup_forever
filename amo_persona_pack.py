@@ -12,6 +12,7 @@ import os
 from typing import Any
 
 PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "persona_packs")
+SCHEMA_VERSION = 1
 DEFAULT_PACK_ID = "gentle-playful"
 DEFAULT_PACK_PATH = os.path.join(PACK_DIR, DEFAULT_PACK_ID + ".json")
 MAX_CORPUS = 100
@@ -33,11 +34,32 @@ def default_pack() -> dict:
     return _DEFAULT_CACHE
 
 
+def migrate(data: dict) -> dict:
+    """旧包补字段：不覆盖用户已有值。"""
+    if not isinstance(data, dict):
+        return data
+    data.setdefault("schema_version", SCHEMA_VERSION)
+    card = data.setdefault("card", {})
+    card.setdefault("address", {"user": "老公", "self": "我"})
+    card.setdefault("registers", {})
+    card.setdefault("language", {"rules": []})
+    card.setdefault("forbidden", [])
+    data.setdefault("corpus", [])
+    rules = data.setdefault("rules", {})
+    rules.setdefault("refusal", "按理由分档")
+    rules.setdefault("public_no_sex_hint", True)
+    rules.setdefault("repeat_guard", 5)
+    rules.setdefault("max_corpus", MAX_CORPUS)
+    rules.setdefault("per_scene", PER_SCENE)
+    return data
+
+
 def load_pack(path: str) -> dict:
     with open(str(path), encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
         raise ValueError("人设包必须是 JSON 对象")
+    data = migrate(data)
     validate(data)
     return data
 
