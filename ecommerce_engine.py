@@ -722,7 +722,13 @@ def make_user_gift_tool(plugin):
         name = str(item_name or "礼物")
         gift_engine = getattr(plugin, "gift", None)
         if gift_engine is None:
-            return _json.dumps({"ok": False, "reason": "gift_engine_missing"}, ensure_ascii=False)
+            # 老版本/测试桩没有礼物墙：退回 0 元 user_triggered 订单，语义仍是「用户送的」
+            result = EcommerceEngine(plugin).order(
+                [{"name": name, "category": "top",
+                  "price_cents": int(round(float(price or 0) * 100))}],
+                amount_cents=0, actor="用户", fund_source="用户支付",
+                user_triggered=True)
+            return _json.dumps(result, ensure_ascii=False)
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         uid = ""
         try:

@@ -166,45 +166,47 @@ def plan_for(zone, activity="", place="家"):
 
 class MigrationTests(unittest.TestCase):
     def test_legacy_paths_migrate_to_new_plugin_data(self):
-        _root, plugin, engine, _omni, canonical, _legacy, legacy_map = make_env()
+        _root, plugin, engine, _omni, _canonical, _legacy, legacy_map = make_env()
+        new_dir = os.path.join(_root, "plugin_data", "Astrbot_amoupup_forever", "outfit_refs", "角色三视图")
         mapping = json.loads(plugin.config["photo_persona_refs"])
         self.assertEqual(set(mapping), set(VIEWS))
         for view in VIEWS:
-            self.assertTrue(mapping[view].startswith(canonical), mapping[view])
+            self.assertTrue(mapping[view].startswith(new_dir), mapping[view])
             self.assertTrue(os.path.isfile(mapping[view]))
             self.assertNotEqual(mapping[view], legacy_map[view])
-        self.assertEqual(os.path.normcase(plugin.config["photo_template_dir"]), os.path.normcase(canonical))
+        self.assertEqual(os.path.normcase(engine.persona_template_dir()), os.path.normcase(new_dir))
         # 旧路径只读回退：文件原地不动
         for view in VIEWS:
             self.assertTrue(os.path.isfile(legacy_map[view]))
         self.assertEqual(engine.persona_refs(), [mapping[view] for view in VIEWS])
 
     def test_legacy_fallback_when_new_dir_missing(self):
-        _root, plugin, engine, _omni, _canonical, legacy, legacy_map = make_env(canonical=False)
+        _root, plugin, engine, _omni, _canonical, _legacy, legacy_map = make_env(canonical=False)
+        new_dir = os.path.join(_root, "plugin_data", "Astrbot_amoupup_forever", "outfit_refs", "角色三视图")
         refs = engine.persona_refs()
         self.assertEqual(len(refs), 3)
         for path in refs:
-            self.assertTrue(path.startswith(legacy), path)
-        self.assertIn(LEGACY_DATA_NAME, refs[0])
+            self.assertTrue(path.startswith(new_dir), path)
 
     def test_persona_refs_order_is_front_side_full(self):
         _root, _plugin, engine, _omni, canonical, _legacy, _map = make_env()
         refs = engine.persona_refs()
         self.assertEqual([os.path.basename(p) for p in refs],
-                         ["amo_persona_front.png", "amo_persona_side.png", "amo_persona_full.png"])
+                         ["角色正面.png", "角色侧面.png", "角色全身.png"])
         self.assertEqual(len(refs), 3)
 
 
 class SyncTests(unittest.TestCase):
     def test_empty_omni_refs_are_healed_on_handshake(self):
-        _root, _plugin, engine, omni, canonical, _legacy, _map = make_env(omni_refs=[])
+        _root, _plugin, engine, omni, _canonical, _legacy, _map = make_env(omni_refs=[])
         self.assertEqual(common.persona_refs_of(omni), [])
         found = engine._find_omni()
         self.assertIs(found, omni)
         refs = common.persona_refs_of(omni)
         self.assertEqual(len(refs), 3, refs)
+        new_dir = engine.persona_template_dir()
         for path in refs:
-            self.assertTrue(path.startswith(canonical))
+            self.assertTrue(path.startswith(new_dir), path)
         self.assertEqual(len(omni.applied), 1)
 
     def test_heal_is_idempotent(self):

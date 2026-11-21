@@ -110,6 +110,7 @@
     "clock",
     "schedule_change"
   ],
+  "amo_companion_guard.py": [],
   "amo_compat.py": [],
   "amo_config.py": [
     "amo_compat",
@@ -199,6 +200,7 @@
     "amo_food_event",
     "amo_names",
     "amo_shared",
+    "amo_shared_time",
     "amo_state_store",
     "clock",
     "outfit_refs"
@@ -335,6 +337,7 @@
     "place_guard"
   ],
   "amo_location_rules.py": [],
+  "amo_marriage_guard.py": [],
   "amo_memory.py": [
     "amo_memory_bridge",
     "amo_memory_context",
@@ -386,12 +389,15 @@
   ],
   "amo_observability.py": [],
   "amo_person_ref.py": [],
+  "amo_photo_intent.py": [],
   "amo_place.py": [
     "domains"
   ],
   "amo_ports.py": [],
   "amo_proactive.py": [
+    "amo_companion_guard",
     "amo_date_session",
+    "amo_marriage_guard",
     "amo_observability",
     "amo_proactive_gate",
     "amo_purchase_guard",
@@ -424,11 +430,15 @@
     "amo_shared"
   ],
   "amo_reply_pipeline.py": [
+    "amo_anti_nag",
+    "amo_companion_guard",
     "amo_date_context",
     "amo_diary_guard",
     "amo_immersion_guard",
+    "amo_marriage_guard",
     "amo_names",
     "amo_observability",
+    "amo_purchase_guard",
     "amo_repetition_guard",
     "amo_shared",
     "amo_tone_pick",
@@ -506,6 +516,7 @@
     "amo_runtime_ports",
     "amo_shared",
     "amo_transition",
+    "ecommerce_engine",
     "home_refs",
     "laundry_engine",
     "observability",
@@ -828,6 +839,7 @@
   "draw_engine.py": [
     "amo_image_common",
     "amo_observability",
+    "amo_photo_intent",
     "amo_shared",
     "clock",
     "observability",
@@ -961,6 +973,7 @@
     "amo_shared",
     "clock",
     "domains",
+    "outfit_refs",
     "photo_data",
     "photo_generate",
     "photo_plan",
