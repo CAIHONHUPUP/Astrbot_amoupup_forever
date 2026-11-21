@@ -7,8 +7,10 @@
 from __future__ import annotations
 from typing import Any
 
-#: 合并时参与比较的字段：这些都一样才认为是同一件事被切成了两段
-COALESCE_FIELDS = ("activity", "place", "category", "zone", "detail", "source",
+#: 合并时参与比较的字段：这些都一样才认为是同一件事被切成了两段。
+#: 刻意不比较 detail/mood/effects——它们是同一件事的分段描述/情绪，
+#: 若拿来比较，20:00 和 21:00 的「追剧」会因为细节不同永远合不上（2026-11-21）。
+COALESCE_FIELDS = ("activity", "place", "category", "zone", "source",
                    "subject", "transit", "vehicle")
 
 
