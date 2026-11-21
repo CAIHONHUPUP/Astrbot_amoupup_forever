@@ -318,6 +318,25 @@ class LLMService:
                 result = retry
             else:
                 result = "你才人机呢，你见过这么会聊天的机器人吗？"
+        if user_text:
+            try:
+                try:
+                    from .amo_grounding_critic import issues as _grounding_issues
+                except ImportError:
+                    from amo_grounding_critic import issues as _grounding_issues
+                _miss = _grounding_issues(user_text, result)
+                if _miss:
+                    _retry = await self.chat(
+                        umo,
+                        "你就是这个角色本人，只输出一句她会说的话。",
+                        "你上一版没有接住他最后一句：%s。\n他最后说：%s\n上一版：%s\n"
+                        "请重写一句：先回答他/接住他，再补自己的，不要答非所问。"
+                        % ("、".join(_miss), str(user_text)[:160], result),
+                        limit=self.p.cfg_int("max_reply_chars", 220))
+                    if _retry and not _grounding_issues(user_text, _retry):
+                        result = _retry
+            except Exception as exc:
+                logger.debug("[amo] 接话 critic 失败: %r", exc)
         if len(result) > max(len(text) + 30, int(len(text) * 1.5)):
             return text
         try:

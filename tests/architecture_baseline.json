@@ -227,6 +227,7 @@
     "amo_food_cost",
     "clock"
   ],
+  "amo_grounding_critic.py": [],
   "amo_group_guard.py": [
     "clock"
   ],
@@ -340,6 +341,7 @@
   ],
   "amo_llm_service.py": [
     "amo_date_context",
+    "amo_grounding_critic",
     "amo_household",
     "amo_immersion_guard",
     "amo_names",

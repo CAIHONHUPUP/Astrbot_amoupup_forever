@@ -529,6 +529,16 @@ class CheckPendingTests(unittest.TestCase):
         self.assertEqual(p.db.kv["proactive_ignored_u1"], 1)
         self.assertEqual(p.state.nudges[0]["委屈"], 5)
 
+    def test_followup_only_once(self):
+        now = amo_proactive.now_ts()
+        pending = {"sent_at": now - 2000, "umo": "lark:private:u1", "kind": "greet",
+                   "text": "在吗", "followup": False, "mood": True}
+        p = self._plugin(pending, config={"proactive_no_reply_minutes": 0})
+        with mock.patch.object(amo_proactive, "quiet_now", lambda spec: False):
+            asyncio.run(p._check_proactive_pending())
+            asyncio.run(p._check_proactive_pending())
+        self.assertEqual(1, len(p.sent))
+
     def test_followup_quiet_skips(self):
         now = amo_proactive.now_ts()
         pending = {"sent_at": now - 2000, "umo": "lark:private:u1",
