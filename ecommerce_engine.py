@@ -71,7 +71,8 @@ def month_request_count(data, now):
     """本月网购请求数 = 已下单（含退货）+ 仍在「想买」的；合计最多 5。"""
     since = _month_start(now)
     orders = [o for o in (data.get("orders") or [])
-              if float(o.get("created") or 0) >= since]
+              if float(o.get("created") or 0) >= since
+              and not o.get("user_triggered")]
     wishes = [w for w in (data.get("wishes") or [])
               if float(w.get("created") or 0) >= since
               and str(w.get("status") or "") == "想买"]
@@ -99,6 +100,8 @@ def _monthly_purchase_count(data, kind, now):
     count = 0
     for order in data.get("orders") or []:
         if float(order.get("created") or 0) < since:
+            continue
+        if order.get("user_triggered") or str(order.get("status") or "") == "已退货":
             continue
         for item in order.get("items") or []:
             if _item_kind(item) == kind:
@@ -318,6 +321,16 @@ class EcommerceEngine:
         if len(items) != 1:
             return {"ok": False, "reason": "one_item",
                     "msg": "一次只能买一件（多件请分开下单）"}
+        # 价格缺失/为 0：按品类给默认价（否则会 0 元白拿，2026-11-21）
+        kind = _item_kind(items[0])
+        price = int(items[0].get("price_cents") or 0)
+        ranges = {"clothes": CLOTHES_PRICE_RANGE, "furniture": FURNITURE_PRICE_RANGE}
+        low, high = ranges.get(kind, (0, 0))
+        if price <= 0 and low:
+            price = (low + high) // 2
+            items[0]["price_cents"] = price
+        if amount_cents is not None and int(amount_cents) <= 0 and low:
+            amount_cents = price
         total = int(amount_cents if amount_cents is not None else sum(
             int(i.get("price_cents") or 0) for i in items))
         actor = "用户" if user_triggered else str(actor or "她")
@@ -346,10 +359,6 @@ class EcommerceEngine:
         if not (SHOP_OPEN_HOUR <= local.tm_hour < SHOP_CLOSE_HOUR):
             return {"ok": False, "reason": "quiet_hours",
                     "msg": "这个点不网购（9:00-22:00 才买）"}
-        kind = _item_kind(items[0])
-        price = int(items[0].get("price_cents") or 0)
-        ranges = {"clothes": CLOTHES_PRICE_RANGE, "furniture": FURNITURE_PRICE_RANGE}
-        low, high = ranges.get(kind, (0, 0))
         if price and low and not (low <= price <= high):
             return {"ok": False, "reason": "price_range",
                     "msg": "价格不合理（衣服 30-500 元、家具 300-5000 元）"}
@@ -374,9 +383,6 @@ class EcommerceEngine:
             if self._balance() < total:
                 return {"ok": False, "reason": "short", "total": total,
                         "balance": self._balance()}
-            if not self._debit(total, "、".join(i["name"] for i in items),
-                               "ecommerce:" + uuid.uuid4().hex, actor, fund):
-                return {"ok": False, "reason": "pay_failed"}
         order = {
             "id": "o-" + uuid.uuid4().hex[:8], "idem": str(idem or ""),
             "items": items,
@@ -400,6 +406,16 @@ class EcommerceEngine:
         if any(_item_kind(item) == "furniture" for item in items):
             data.setdefault("furniture_purchases", []).append(float(now))
         self._save(data)
+        if not user_triggered:
+            # 先落单再扣钱：扣款失败就回滚订单，避免「钱没了/订单也没了」
+            if not self._debit(total, "、".join(i["name"] for i in items),
+                               "ecommerce:" + uuid.uuid4().hex, actor, fund):
+                try:
+                    data["orders"].remove(order)
+                    self._save(data)
+                except Exception as exc:
+                    logger.debug("[amo] 下单回滚失败: %r", exc)
+                return {"ok": False, "reason": "pay_failed"}
         return {"ok": True, "order": order, "balance": self._balance()}
 
     def user_gift(self, text="", items=None, platform="淘宝", now=None):
@@ -437,11 +453,16 @@ class EcommerceEngine:
                     order["delay_days"] = 1
                     order["incident"] = "快递延误"
                     order["deliver_at"] = float(order.get("deliver_at") or 0) + 86400
+                    order["eta"] = order["deliver_at"]
                     deliver_at = float(order["deliver_at"])
             if status == "运输中" and now >= deliver_at:
+                if not order.get("received_at") and not self._receive(data, order):
+                    # 入库失败：保持运输中/待入库，下一轮重试，不能假装已到货把东西丢了
+                    order["logistics"] = "待入库"
+                    changed = True
+                    continue
                 order["status"] = "已到货"; order["logistics"] = "已到货"; changed = True
                 if not order.get("received_at"):
-                    self._receive(data, order)
                     broken = random.Random(str(order.get("id")) + ":break").random()
                     if broken < 0.03:
                         refund = int(int(order.get("amount_cents") or 0) * 0.2)
@@ -467,45 +488,32 @@ class EcommerceEngine:
             logger.debug("[amo] 到货标记失败: %r", exc)
 
     def _receive(self, data, order):
-        order["received_at"] = _amo_clock.now_ts()
+        """收货入库；返回是否成功。失败不写 received_at，tick 下一轮重试。"""
+        received_at = _amo_clock.now_ts()
         names = "、".join(str((it or {}).get("name") or "") for it in order.get("items") or [])
-        try:
-            arrival = self.plugin.db.kv_get(ARRIVAL_KV, {}) or {}
-            items = list(arrival.get("items") or [])
-            items.append({"line": names, "at": order["received_at"], "notified": False})
-            self.plugin.db.kv_set(ARRIVAL_KV, {"items": items[-10:], "seen": False})
-        except Exception as exc:
-            logger.debug("[amo] 到货提醒写入失败: %r", exc)
+        delivered = False
         for item in order.get("items") or []:
             kind = _item_kind(item)
-            if kind in ("furniture", "家具"):
-                # 买了家具：家的场景图要重画，旧的立刻删（2026-11-19）
-                housing = getattr(self.plugin, "housing", None)
-                if housing is not None:
-                    try:
-                        housing.add_furniture(str(item.get("name") or "家具"))
-                    except Exception as exc:
-                        logger.debug("[amo] 家具入屋失败: %r", exc)
-                continue
-            if kind in ("household", "other"):
-                data.setdefault("household", []).append(
-                    {"name": str(item.get("name") or ""), "at": order["received_at"]})
-                continue
-            if kind == "appliance" or kind in ("washer", "dryer"):
-                data.setdefault("assets", {})[kind] = {"order": order["id"], "name": item.get("name")}
-                housing = getattr(self.plugin, "housing", None)
-                if housing is not None:
-                    try:
-                        housing.add_furniture(str(item.get("name") or "洗衣机"),
-                                              source="网购")
-                    except Exception as exc:
-                        logger.debug("[amo] 家电进房屋失败: %r", exc)
-                try:
-                    self.plugin.db.kv_set("house_assets", data["assets"])
-                except Exception as exc:
-                    logger.debug("[amo] optional step failed: %r", exc)
-                continue
             try:
+                if kind in ("furniture", "家具"):
+                    housing = getattr(self.plugin, "housing", None)
+                    if housing is not None:
+                        housing.add_furniture(str(item.get("name") or "家具"))
+                        delivered = True
+                    continue
+                if kind in ("household", "other"):
+                    data.setdefault("household", []).append(
+                        {"name": str(item.get("name") or ""), "at": received_at})
+                    delivered = True
+                    continue
+                if kind == "appliance" or kind in ("washer", "dryer"):
+                    data.setdefault("assets", {})[kind] = {"order": order["id"], "name": item.get("name")}
+                    housing = getattr(self.plugin, "housing", None)
+                    if housing is not None:
+                        housing.add_furniture(str(item.get("name") or "洗衣机"), source="网购")
+                    self.plugin.db.kv_set("house_assets", data["assets"])
+                    delivered = True
+                    continue
                 wardrobe = getattr(self.plugin, "wardrobe", None)
                 if wardrobe is not None:
                     result = wardrobe.add_item(str(item.get("category") or "top"),
@@ -519,8 +527,20 @@ class EcommerceEngine:
                         except ImportError:
                             from outfit_refs import spawn_ensure_ref
                         spawn_ensure_ref(self.plugin, result.get("item") or {})
+                        delivered = True
             except Exception as exc:
-                logger.debug("[amo] optional step failed: %r", exc)
+                logger.debug("[amo] 收货入库失败: %r", exc)
+        if not delivered:
+            return False
+        order["received_at"] = received_at
+        try:
+            arrival = self.plugin.db.kv_get(ARRIVAL_KV, {}) or {}
+            items = list(arrival.get("items") or [])
+            items.append({"line": names, "at": received_at, "notified": False})
+            self.plugin.db.kv_set(ARRIVAL_KV, {"items": items[-10:], "seen": False})
+        except Exception as exc:
+            logger.debug("[amo] 到货提醒写入失败: %r", exc)
+        return True
 
     def _mark_clean(self, item_id):
         try:
@@ -554,8 +574,11 @@ class EcommerceEngine:
         if target is None:
             return {"ok": False, "reason": "not_found"}
         amount = int(target.get("amount_cents") or 0)
+        broken = int(target.get("broken_refund_cents") or 0)
+        refund = max(0, amount - broken)   # 破损已退过一部分，不能全额再退
         joined_names = "、".join(str((it or {}).get("name") or "") for it in target.get("items") or [])
-        for item in target.get("items") or []:
+        # 只有真收到过货才删衣柜/家具；还在路上就只退款，避免误删同名旧物
+        for item in (target.get("items") or []) if target.get("received_at") else []:
             kind = _item_kind_safe(item)
             if kind == "furniture":
                 housing = getattr(self.plugin, "housing", None)
@@ -581,18 +604,19 @@ class EcommerceEngine:
                             wardrobe.delete_item(wid)
                         except Exception as exc:
                             logger.debug("[amo] 退货衣服失败: %r", exc)
-        if amount > 0:
+        if refund > 0:
             try:
-                self.plugin.wallet.credit(int(amount), "退货" + joined_names + "退款%.2f元" % (amount / 100.0),
+                self.plugin.wallet.credit(int(refund), "退货" + joined_names + "退款%.2f元" % (refund / 100.0),
                                           "refund:" + str(target.get("id")))
             except Exception as exc:
                 logger.debug("[amo] 退货退款失败: %r", exc)
+                return {"ok": False, "reason": "refund_failed"}
         target["status"] = "已退货"
-        target["refund_cents"] = amount
+        target["refund_cents"] = refund
         target["refunded_at"] = float(now or _amo_clock.now_ts())
         self._save(data)
         return {"ok": True, "order_id": target.get("id"), "item": joined_names,
-                "refund_cents": amount}
+                "refund_cents": refund}
 
     def snapshot(self, now=None):
         data = self._state()
@@ -610,7 +634,7 @@ class EcommerceEngine:
                         "actor": o.get("actor"), "fund_source": o.get("fund_source"),
                         "incident": o.get("incident", ""),
                         "items": [i.get("name") for i in (o.get("items") or [])]}
-                       for o in data["orders"][-5:]],
+                       for o in [x for x in data["orders"] if not x.get("user_triggered")][-5:]],
             "ledger": [{"delta_cents": r.get("delta_cents"), "reason": r.get("reason"),
                         "actor": r.get("actor"), "fund_source": r.get("fund_source")}
                        for r in recent],
@@ -670,11 +694,12 @@ def make_online_order_tool(plugin):
     async def online_order(event=None, platform="淘宝", item_name="", price=0.0):
         import json as _json
         key = _event_idem(event)
+        price_cents = int(round(float(price or 0) * 100))
         result = EcommerceEngine(plugin).order(
             [{"name": str(item_name or "小物件"), "category": "top",
-              "price_cents": int(round(float(price or 0) * 100))}],
+              "price_cents": price_cents}],
             platform=str(platform or "淘宝"),
-            amount_cents=int(round(float(price or 0) * 100)),
+            amount_cents=price_cents or None,
             idem="online:" + key)
         return _json.dumps(result, ensure_ascii=False)
     return online_order
