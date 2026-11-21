@@ -916,7 +916,8 @@
     "clock",
     "draw_engine",
     "laundry_engine",
-    "observability"
+    "observability",
+    "pose_library"
   ],
   "memory_hooks.py": [
     "amo_compat",
