@@ -1378,7 +1378,9 @@ class ProactiveMixin(_MixinBase):
             logger.debug("[amo] 晚安生成失败: %s" % exc)
         text = str(text or "").strip()
         if not text:
-            text = "晚安，我先睡啦。"
+            # 去模板化：模型不可用就今晚先不说，也不塞固定晚安
+            logger.debug("[amo] 晚安生成失败，本轮跳过")
+            return False
         sent = await self._send_proactive_lines(profile, target_umo, text, kind="goodnight")
         if not sent:
             return False
