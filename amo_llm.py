@@ -23,6 +23,11 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         import amo_prompt_registry as _prompts
 
+try:
+    from . import amo_understanding as _understanding
+except ImportError:
+    import amo_understanding as _understanding
+
 try:  # 目标时区下的“现在”（clock 支持面板改时区；直接按文件加载时退回绝对导入）
     from .clock import now as _now
 except ImportError:  # 直接按文件加载时
@@ -586,6 +591,7 @@ class LlmMixin(_MixinBase):
             "self_qq_nick": self_qq_nick, "self_display": self_display,
             "sender_nick": sender_nick, "plat": plat, "cash_cents": cash_cents,
             "silence_days": silence_days, "last_refusal": last_refusal, "coax": coax,
+            "understanding": _understanding.build(text, recent),
         }
 
     async def _reply_system(self, ctx, event, text, snap, profile, group, memory_text, note):
@@ -640,6 +646,15 @@ class LlmMixin(_MixinBase):
             return []
 
     def _reply_base_parts(self, ctx, snap, text, group, memory_text):
+        _understanding_block = ""
+        try:
+            try:
+                from .amo_understanding import prompt_block as _understanding_prompt
+            except ImportError:
+                from amo_understanding import prompt_block as _understanding_prompt
+            _understanding_block = _understanding_prompt(ctx.get("understanding") or {})
+        except Exception:
+            _understanding_block = ""
         # 人格/身份/世界观/此刻状态/事实锁定 + 拒绝/短回复/对话护栏
         uid = ctx["uid"]; name = ctx["name"]; relation = ctx["relation"]
         persona = ctx["persona"]; world = ctx["world"]; asked_activity = ctx["asked_activity"]
@@ -667,6 +682,7 @@ class LlmMixin(_MixinBase):
             _prompts.render("llm.worldview", world=world),
             _prompts.render("llm.state", state_text=state_text),
             _prompts.render("llm.fact_lock"),
+            *([_understanding_block] if _understanding_block else []),
             _prompts.render("llm.tone", tone=tone, style=style),
             _prompts.render("llm.relation", name=name, relation=relation),
             _prompts.render("llm.chat_format"),

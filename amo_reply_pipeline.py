@@ -1182,6 +1182,14 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
             from amo_state_consistency import rewrite as _state_rewrite
         _context = (str(user_text or "") + "\n" + str(history_text or "")).strip()
         value = _state_rewrite(value, plugin, _context)
+        try:
+            try:
+                from .amo_role_guard import rewrite as _role_rewrite
+            except ImportError:
+                from amo_role_guard import rewrite as _role_rewrite
+            value = _role_rewrite(value, str(user_text or ""))
+        except Exception as exc:
+            logger.debug("[amo] chat_safety.role 失败: %s", exc)
     except Exception as exc:
         logger.debug("[amo] chat_safety.state 失败: %s", exc)
     return value.strip() or str(text or "")

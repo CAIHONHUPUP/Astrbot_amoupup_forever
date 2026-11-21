@@ -333,6 +333,7 @@
     "amo_shared",
     "amo_state_snapshot",
     "amo_types",
+    "amo_understanding",
     "clock",
     "date_state",
     "group_scene",
@@ -349,6 +350,7 @@
     "amo_persona_store",
     "amo_shared",
     "amo_state_snapshot",
+    "amo_understanding",
     "amo_voice_guard",
     "done_action_guard",
     "place_guard"
@@ -469,6 +471,7 @@
     "amo_persona_store",
     "amo_purchase_guard",
     "amo_repetition_guard",
+    "amo_role_guard",
     "amo_share_ledger",
     "amo_shared",
     "amo_state_consistency",
@@ -494,6 +497,7 @@
     "amo_shared",
     "amo_state_store"
   ],
+  "amo_role_guard.py": [],
   "amo_route_table.py": [],
   "amo_routes.py": [
     "amo_observability",
@@ -793,6 +797,7 @@
     "amo_voice"
   ],
   "amo_types.py": [],
+  "amo_understanding.py": [],
   "amo_usage.py": [
     "amo_observability",
     "amo_shared",

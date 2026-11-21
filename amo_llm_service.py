@@ -183,6 +183,17 @@ def _proactive_prompt(self, kind, task, facts, analysis, memory_text):
 
 
 
+def _understanding_hint(text):
+    try:
+        try:
+            from .amo_understanding import build, prompt_block
+        except ImportError:
+            from amo_understanding import build, prompt_block
+        return prompt_block(build(text))
+    except Exception:
+        return ""
+
+
 class LLMService:
     def __init__(self, plugin):
         self.p = plugin
@@ -284,7 +295,8 @@ class LLMService:
             "角色此刻不可矛盾的状态：\n" + (state_text or "（无）") + "\n"
             "对话对象：" + (name or "对方") + "；关系：" + (relation or "普通") + "\n"
             "他最后说：" + (str(user_text or "")[:160] or "（无）") + "\n"
-            "原句：" + text + "\n"
+            + (_understanding_hint(user_text) + "\n" if _understanding_hint(user_text) else "")
+            + "原句：" + text + "\n"
             "请把这句话改成真人在聊天：口语化、有一点情绪，长度接近原句，通常不要超过原句的 1.3 倍。\n"
             "改写要求：\n"
             "0. 必须先接住他最后一句：他在问就回答，他在回应你刚分享的内容就顺着接（好看/好笑/在哪/然后呢），"
