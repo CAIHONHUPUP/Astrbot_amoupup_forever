@@ -99,11 +99,12 @@ class Schedule7DayGoldenTests(unittest.TestCase):
                          golden7.dumps(golden7.payload(self.days)))
 
     def test_every_day_is_contiguous_blocks(self):
-        """2026-11-19 起时间轴是分钟级（工作日 26 块），只要求连续覆盖 24 小时。"""
+        """2026-11-21 起默认块模式：一天 14-20 块（相邻同内容整点块已合并），
+        只要求连续覆盖 24 小时、无相邻同内容块。"""
         for day, item in self.days.items():
             with self.subTest(day=day):
                 blocks = item["blocks"]
-                self.assertGreaterEqual(len(blocks), 24, day)
+                self.assertGreaterEqual(len(blocks), 8, day)
                 self.assertEqual(blocks[0][0], "00:00")
                 self.assertEqual(blocks[-1][1], "24:00")
                 for index, block in enumerate(blocks):
@@ -113,3 +114,6 @@ class Schedule7DayGoldenTests(unittest.TestCase):
                     if index:
                         self.assertEqual(blocks[index - 1][1], block[0],
                                          "%s 第 %d 块与上一块不相接" % (day, index))
+                        self.assertFalse(
+                            blocks[index - 1] == block,
+                            "%s 第 %d 块与上一块完全相同（整点碎片没合并）" % (day, index))

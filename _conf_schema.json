@@ -1363,9 +1363,9 @@
   },
   "schedule_block_mode": {
     "type": "bool",
-    "description": "日程按块生成（实验开关）",
-    "hint": "默认关：一天 24 行整点块。开启后相邻同内容的整点块会合并成一块（一块 = 一件事），面板/日记仍是同一套数据。出问题关回去即可。",
-    "default": false
+    "description": "日程按块生成",
+    "hint": "默认开：相邻同内容的整点块合并成一块（一块 = 一件事），时间轴仍 00:00-24:00 连续。关掉回退到一天 24 行整点块。",
+    "default": true
   },
   "diary_audit_enabled": {
     "type": "bool",

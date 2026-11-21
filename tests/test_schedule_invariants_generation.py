@@ -262,7 +262,8 @@ class SevenDayHardZeroTests(unittest.TestCase):
                 sw.build_day_skeleton(plugin, state, day, sw.day_kind_of(day))
                 sw.stabilize_day(plugin, state, day)
                 rows = sw.rows_of(plugin, state, day)
-                self.assertGreaterEqual(len(rows), 20, "%s 块数过少: %d" % (day, len(rows)))
+                # 2026-11-21 默认块模式：一天 14-20 块，下限放到 8
+                self.assertGreaterEqual(len(rows), 8, "%s 块数过少: %d" % (day, len(rows)))
                 self.assertEqual(sw.timeline(rows), [], "%s 时间轴有问题" % day)
                 hard, _warn = preview.review(rows, day, now=sim_lib.at(day, 0, 0))
                 self.assertEqual(hard, [], "%s 结构 HARD 非 0: %r" % (day, hard))

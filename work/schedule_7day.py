@@ -46,6 +46,8 @@ UPDATE_POLICY = (
     "规则改动，并在 CHANGELOG/PR 说明里写原因。禁止为了「让测试变绿」随手刷新。",
     "2026-11-19：通勤改成分钟级（早 08:00-08:4x、晚 18:00-18:3x，随后是到公司/到家的短段），"
     "时间轴不再强制整点，按 work/schedule_7day.py --write 重新生成。",
+    "2026-11-21：默认开启块模式（schedule_block_mode=true），相邻同内容整点块合并成一块；"
+    "已用 work/verify_block_golden 校验 174->116 块且 0 地点/事件漂移，故重生 golden。",
 )
 
 

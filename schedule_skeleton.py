@@ -410,17 +410,22 @@ class ScheduleSkeletonMixin:
             items = []
         if not isinstance(items, list):
             items = []
-        sleep_hours = 0
+        sleep_hours = 0.0
         late_night = False
         for item in items:
             if not isinstance(item, dict):
                 continue
             category = str(item.get("category") or "")
             activity = str(item.get("activity") or "")
-            if category == "sleep":
-                sleep_hours += 1
             start = parse_hhmm(item.get("start"), 0)
-            if 0 <= start < 4 * 60 and category not in ("sleep", ""):
+            end = parse_hhmm(item.get("end"), 0)
+            if category == "sleep":
+                # 按「时长」累计，不数块数：块模式下 00:00-07:00 是一块，
+                # 数块会把 7 小时睡成 1 小时、误判熬夜（2026-11-21 修复）。
+                span = end - start if end > start else (24 * 60 - start + end if end else 0)
+                sleep_hours += max(0, span) / 60.0
+            # 只要有任何清醒块和 00:00-04:00 重叠就算熬夜（与块粒度无关）
+            if category not in ("sleep", "") and end > 0 and start < 4 * 60:
                 late_night = True
             if any(word in activity for word in ("熬夜", "通宵", "失眠", "加班到")):
                 late_night = True

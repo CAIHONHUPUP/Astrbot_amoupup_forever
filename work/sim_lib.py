@@ -128,6 +128,7 @@ class FakePlugin:
             "schedule_workplace": "%s·写字楼" % city if city else "写字楼",
             "schedule_car": "小电驴", "diary_enabled": True,
             "location_rules_enabled": True, "travel_price_multiplier": 1.6,
+            "schedule_block_mode": True,
             "travel_return_cost": 800, "travel_enabled": True,
         }
         self.db = FakeDB()
