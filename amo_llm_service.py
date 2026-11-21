@@ -269,7 +269,7 @@ class LLMService:
     async def chat(self, umo, system, prompt, contexts=None, limit=300):
         return clean_reply(await self.chat_raw(umo, system, prompt, contexts), limit)
 
-    async def polish(self, umo, text, tone, state_text="", relation="", name="", persona="", style="", consult=False, public=False):
+    async def polish(self, umo, text, tone, state_text="", relation="", name="", persona="", style="", consult=False, public=False, user_text=""):
         text = (text or "").strip()
         if not text or not self.p.cfg_bool("enable_polish", True):
             return text
@@ -283,9 +283,12 @@ class LLMService:
             "风格：" + (style or "自然") + "\n"
             "角色此刻不可矛盾的状态：\n" + (state_text or "（无）") + "\n"
             "对话对象：" + (name or "对方") + "；关系：" + (relation or "普通") + "\n"
+            "他最后说：" + (str(user_text or "")[:160] or "（无）") + "\n"
             "原句：" + text + "\n"
             "请把这句话改成真人在聊天：口语化、有一点情绪，长度接近原句，通常不要超过原句的 1.3 倍。\n"
             "改写要求：\n"
+            "0. 必须先接住他最后一句：他在问就回答，他在回应你刚分享的内容就顺着接（好看/好笑/在哪/然后呢），"
+            "不许答非所问、不许自说自话；\n"
             "0. 保持角色人格：写出来就是人格设定里的那个人，不是客服/通用助手；\n"
             "0. 只改语气和口语表达，保留原句的信息；原句和状态矛盾时以状态为准；\n"
             "1. 你是真人，AI、人工智能、机器人、人机、程序、模型这些词都不会从你嘴里说出来；\n"
