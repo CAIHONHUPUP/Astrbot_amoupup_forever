@@ -14,16 +14,18 @@ import re
 
 _HOME_ACTION = re.compile(
     r"(?:我|自己|等会儿|等会|回去).{0,8}"
-    r"(?:煮.{0,3}面|吃.{0,2}(?:面|饭)|做(?:个|点|顿)?饭|洗碗|洗衣服|换.{0,3}(?:衣服|鞋)|脱.{0,4}外套|上.{0,2}床)")
+    r"(?:煮.{0,3}面|做(?:个|点|顿)?饭|洗碗|洗衣服|换.{0,3}(?:衣服|鞋)|脱.{0,4}外套|上.{0,2}床)")
 _ARRIVAL = re.compile(r"(?:刚到家|到家了|到家|刚进门|进家门|进屋|鞋都换了|换好鞋|穿上拖鞋)")
 _ROAD_CLAIM = re.compile(r"(?:还在路上|在路上|快到了|马上到|地铁上|公交上|在车上)")
 _HOME_PROP = re.compile(r"(?:沙发|床上|躺床|趴着|窝在|厨房|洗澡|睡衣|到家|进门|脱.{0,4}外套|换鞋)")
 _OUT_PROP = re.compile(r"(?:商场|试衣|逛街|腿站酸|地铁|在路上|公司)")
-_SHARE_ROLE = re.compile(r"[^。！？\n]*(?:你快看|你看看这个|给你看看|快看这个)[^。！？\n]*[。！？]?")
+# 未来计划不是“此刻矛盾”：带时间/打算的句子不按当前场景改写
+_FUTURE = re.compile(r"\d{1,2}[:：]\d{2}|明天|后天|下周|下次")
+_SHARE_ROLE = re.compile(r"[^。！？\n]*(?:你快看|你看看这个|给你看看|快看这个|你发的[^。！？\n]{0,12}(?:再发|发我|翻上去))[^。！？\n]*[。！？]?")
 _LAUGH_ASK = re.compile(r"[^。！？\n]*(?:笑什么|笑啥)[^。！？\n]*[。！？]?")
-_FAKE_SHARE = re.compile(r"[^。！？\n]*(?:你快看这个视频|快看这个视频|给你看这个视频|我刚刷到一个视频)[^。！？\n]*[。！？]?")
+_FAKE_SHARE = re.compile(r"[^。！？\n]*(?:你快看这个视频|快看这个视频|给你看这个视频|我刚刷到(?:一个)?[^。！？\n]{0,10}?视频)[^。！？\n]*[。！？]?")
 _BAD_COOK = re.compile(r"[^。！？\n]*(?:弄点吃的[^。！？\n]*煮.{0,2}面|煮.{0,2}面[^。！？\n]*弄点吃的)[^。！？\n]*[。！？]?")
-_ANIMALS = (("猫", ("猫", "猫猫", "小猫")), ("狗", ("狗", "狗狗", "狗子", "小狗")),
+_ANIMALS = (("猫", ("猫", "猫猫", "小猫", "布偶", "橘猫")), ("狗", ("狗", "狗狗", "狗子", "小狗", "柯基", "柴犬")),
             ("兔", ("兔子", "小兔")), ("鸟", ("小鸟", "鸟")), ("仓鼠", ("仓鼠",)))
 
 
@@ -67,6 +69,9 @@ def rewrite(text, plugin, user_text=""):
         body = re.sub(r"（[^）]*(?:刚到家|到家|进门|脱.{0,4}外套|换鞋|煮.{0,3}面|做饭|洗碗)[^）]*）", "", body)
     out = []
     for sentence in _sentences(body):
+        if _FUTURE.search(sentence):
+            out.append(sentence)
+            continue
         if scene["road"]:
             if _ARRIVAL.search(sentence):
                 out.append("我还在路上呢，快到了")
@@ -109,9 +114,13 @@ def rewrite(text, plugin, user_text=""):
             for word in words:
                 body = body.replace(word, keep)
     # 他刚说笑死/好笑：不许反问笑什么
-    if any(word in user for word in ("笑死", "好笑", "笑喷", "哈哈哈哈")) and _LAUGH_ASK.search(body):
+    if any(word in user for word in ("笑死", "好笑", "笑喷", "哈哈")) and _LAUGH_ASK.search(body):
         body = _LAUGH_ASK.sub("", body).strip()
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
     if body:
         return body
-    return "我还在路上呢，快到了。" if scene["road"] else "嗯。"
+    if scene["road"]:
+        return "我还在路上呢，快到了。"
+    if scene["outside"]:
+        return "我到了，等会儿说。"
+    return "我在家呢。"

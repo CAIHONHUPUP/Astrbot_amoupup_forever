@@ -39,7 +39,7 @@ def issues(user_text, reply):
     if not user or not body:
         return []
     # 短反应（哈哈哈/好看）不做语义强判：误伤太高，交给分享守卫和角色守卫
-    if not _QUESTION.search(user):
+    if not _QUESTION.search(user) or len(user) <= 5:
         return []
     if _bigrams(user) & _bigrams(body):
         return []

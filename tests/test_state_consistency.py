@@ -50,6 +50,12 @@ class StateConsistencyTests(unittest.TestCase):
         self.assertNotIn("洗澡", out)
         self.assertNotIn("趴着", out)
 
+    def test_future_plan_is_not_rewritten(self):
+        text = "18:45到家换鞋，先瘫一会儿"
+        self.assertEqual(text, rewrite(text, _plugin(place="路上", zone="road")))
+        text2 = "我08:00要去路上，挤地铁去公司"
+        self.assertEqual(text2, rewrite(text2, _plugin(place="家", zone="home")))
+
     def test_home_reply_strips_road_claim(self):
         out = rewrite("我还在路上呢，快到了。", _plugin(place="家", zone="home"))
         self.assertNotIn("路上", out)
