@@ -132,7 +132,8 @@ def _ground_schedule_text(text, fact):
         return ""
     if want_place:
         for place in _SCHEDULE_OTHER_PLACES:
-            if place in body and place not in want_place:
+            # 目的地写在事件里（如「路上/挤地铁去公司」）不算别的地点
+            if place in body and place not in want_place and place not in want_event:
                 return ""
     if want_event:
         for word in _EXTRA_EVENT_WORDS:

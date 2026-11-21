@@ -515,5 +515,64 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("公司", fixed)
 
 
+class ActivityCoverageTests(unittest.TestCase):
+    """办公室/餐厅/路上说「在做饭/在开会/刚开完会/还在改方案」也要改口。"""
+
+    ROAD = {"zone": "road", "place": "地铁", "activity": "挤地铁", "category": "commute"}
+    HOME_MEAL = {"zone": "home", "place": "家", "activity": "做晚饭", "category": "meal"}
+
+    def test_cooking_claim_at_office_is_rewritten(self):
+        fixed, violations = guard("在做饭呢。", ctx())
+        self.assertNotIn("做饭", fixed)
+        self.assertIn("上班", fixed)
+        self.assertEqual([item["rule"] for item in violations], ["activity"])
+
+    def test_cooking_claim_at_restaurant_meal_is_rewritten(self):
+        fixed, violations = guard("在做饭呢。", ctx(activity=MEAL))
+        self.assertNotIn("做饭", fixed)
+        self.assertIn("吃饭", fixed)
+        self.assertEqual([item["rule"] for item in violations], ["activity"])
+
+    def test_cooking_at_home_meal_is_allowed(self):
+        text = "在做饭呢。"
+        self.assertEqual(guard(text, ctx(activity=self.HOME_MEAL))[0], text)
+
+    def test_meeting_or_overtime_claim_on_commute_is_rewritten(self):
+        for text in ("在开会呢。", "在加班。", "刚开完会，脑子还是懵的。"):
+            fixed, violations = guard(text, ctx(activity=self.ROAD))
+            self.assertNotIn("开会", fixed, text)
+            self.assertNotIn("加班", fixed, text)
+            self.assertIn("路上", fixed, text)
+            self.assertEqual([item["rule"] for item in violations], ["activity"], text)
+
+    def test_work_edge_claim_while_sleeping_is_left_alone(self):
+        # 睡觉/休息时「刚开完会」可能是刚发生的事；硬改成「刚在睡觉」会改坏时间语义
+        for text in ("刚开完会，脑子还是懵的。", "还在改方案，烦死了。"):
+            self.assertEqual(guard(text, ctx(activity=SLEEP))[0], text, text)
+
+    def test_work_edge_claim_at_mall_uses_current_activity(self):
+        fixed, _violations = guard("还在改方案，烦死了。", ctx(activity=MALL))
+        self.assertNotIn("改方案", fixed)
+        self.assertIn("逛街", fixed)
+
+    def test_matching_work_edge_claims_at_office_are_allowed(self):
+        for text in ("刚开完会，脑子还是懵的。", "还在改方案。"):
+            self.assertEqual(guard(text, ctx())[0], text, text)
+
+
+class CompanionShoulderTests(unittest.TestCase):
+    """同伴的 edge 说法：「他靠在我肩上」也要和 together 状态对齐。"""
+
+    def test_shoulder_claim_without_date_is_rewritten(self):
+        fixed, violations = guard("他靠在我肩上呢。", ctx())
+        self.assertNotIn("肩上", fixed)
+        self.assertIn("手机上聊了几句", fixed)
+        self.assertEqual([item["rule"] for item in violations], ["companion"])
+
+    def test_shoulder_claim_with_date_is_allowed(self):
+        text = "他靠在我肩上呢。"
+        self.assertEqual(guard(text, ctx(date={"active": True, "together": True}))[0], text)
+
+
 if __name__ == "__main__":
     unittest.main()
