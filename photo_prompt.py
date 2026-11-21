@@ -494,8 +494,21 @@ class PhotoPromptMixin:
             motion = "自然地看镜头，日常自拍姿态"
         else:
             motion = pose_text or act or "随手拍"
-        camera_line = ("手机本体和摄像头不要入镜，不要出现手机背面或镜头对着画面；"
-                       "姿态自然放松，不要夸张摆拍")
+        _camera = "selfie"
+        try:
+            try:
+                from .pose_library import camera_mode
+            except ImportError:
+                from pose_library import camera_mode
+            _camera = camera_mode(pose or {"name": pose_text, "note": pose_text})
+        except Exception:
+            _camera = "selfie"
+        if _camera == "void":
+            camera_line = ("第三人称虚空相机：镜头悬浮在她侧前方/正前方，全身构图，从头顶到脚完整入镜；"
+                           "画面里不出现手机、不出现拿手机的手；像有人顺手抓拍，姿态自然")
+        else:
+            camera_line = ("手机本体和摄像头不要入镜，不要出现手机背面或镜头对着画面；"
+                           "姿态自然放松，不要夸张摆拍")
         where_line = "在%s，背景要能看出这个地方、不要换成别的场景" % (where or "不指定具体地点")
         zone = str(getattr(plan, "zone", "") or "")
         bed = zone in ("home_bed", "home_sofa") or any(

@@ -1211,6 +1211,16 @@ class DrawEngine:
                     if _pose:
                         detail = (detail + "。姿势：%s（%s）" % (
                             _pose.get("name") or "", _pose.get("note") or "")).strip("。")
+                        try:
+                            try:
+                                from .pose_library import camera_mode
+                            except ImportError:
+                                from pose_library import camera_mode
+                            if camera_mode(_pose) == "void":
+                                detail += ("。镜头：第三人称虚空相机，全身构图，不出现手机、"
+                                           "不出现拿手机的手，像有人顺手抓拍")
+                        except Exception as _amo_exc:
+                            _note_swallowed("draw_engine.send_photo_now.camera", _amo_exc)
                         _path = _library.ref_path(_pose) if _library is not None else ""
                         if _path and os.path.isfile(_path):
                             _pose_refs = [_path]

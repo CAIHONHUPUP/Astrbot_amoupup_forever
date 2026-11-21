@@ -106,6 +106,21 @@ def foot_poses(poses):
     return [item for item in (poses or []) if is_foot_pose((item or {}).get("name"))]
 
 
+#: 这些词说明动作需要双手/背面/躺卧/腾空，前置自拍做不出来 → 用虚空相机
+_VOID_WORDS = ("双手", "背对", "背坐", "趴", "俯卧", "仰卧", "躺", "倒立", "桥式",
+               "劈叉", "团身", "悬空", "后仰", "撑地", "触地", "前撑", "抱腿", "举腿")
+_SELFIE_WORDS = ("手机", "自拍")
+
+
+def camera_mode(pose):
+    """这个姿势用前置自拍还是虚空相机（第三人称全身抓拍）。"""
+    data = pose or {}
+    text = str(data.get("name") or "") + str(data.get("note") or "")
+    if any(word in text for word in _SELFIE_WORDS):
+        return "selfie"
+    return "void" if any(word in text for word in _VOID_WORDS) else "selfie"
+
+
 def match_pose(library, text):
     """用户明确说了某个姿势名（或近似词）时，返回那个单人姿势。"""
     body = str(text or "")
