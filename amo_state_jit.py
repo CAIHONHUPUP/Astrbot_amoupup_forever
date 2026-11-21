@@ -566,7 +566,7 @@ class JitStateMixin(_MixinBase):
             self.db.kv_set("sleep_open", {"day": day, "start": "%02d:00" % hour,
                                           "at": now_ts()})
         committed, plan = self._jit_commit(day, hour, item, plan, cost, paid)
-        self._jit_persist(day, hour, plan, flag)
+        self._jit_persist(day, hour, plan, flag, committed)
         return item
 
     def _jit_plan_for_hour(self, now, hour, day):
@@ -708,13 +708,16 @@ class JitStateMixin(_MixinBase):
                     "category": "rest", "cost_cents": 0, "diary": ""}
         return committed, plan
 
-    def _jit_persist(self, day, hour, plan, flag):
-        # 写 current_action / 当日标记 / 小日记并顺手写一条活动记忆
+    def _jit_persist(self, day, hour, plan, flag, committed=True):
+        # 没真正落库（让行/失败）就别写 flag/current_action，否则这一小时永远不会重试
+        # current_action 反映「她此刻在干嘛」：即使没落库，也要写退款后的兜底动作
         self.db.kv_set("current_action", {"action": plan.get("action"),
                                           "place": plan.get("place"),
                                           "at": now_ts(),
                                           "until": _hour_end_ts(hour),
                                           "hour": hour})
+        if not committed:
+            return
         self.db.kv_set(flag, True)
         diary = str(plan.get("diary") or "")
         if diary:
