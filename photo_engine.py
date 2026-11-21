@@ -23,6 +23,7 @@ except ImportError:  # 直接按文件加载时
         import clock as _amo_clock
 
 import asyncio
+import shutil
 import base64
 import hashlib
 import io
@@ -577,7 +578,7 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
                     changed = True
         if changed and result:
             self._save_template_map(result)
-        return result
+        return self._migrate_persona_templates(result)
 
     def _migrate_template_config(self):
         """启动迁移：三视图/模板目录指到新生图插件目录，旧路径只读兜底。
@@ -687,7 +688,7 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
             self._save_kv_json("photo_candidates", data)
 
     def template_info(self):
-        root = self.template_dir()
+        root = self.persona_template_dir()
         plugin_dir = os.path.abspath(str(getattr(self.plugin, "plugin_dir", "") or ""))
         inside = bool(plugin_dir) and os.path.abspath(root).startswith(plugin_dir)
         files = []
@@ -718,6 +719,46 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
     # ---------- 用户三视图（2026-11-21：合拍用） ----------
 
     _USER_VIEW_FILES = {"front": "用户正面.png", "side": "用户侧面.png", "full": "用户全身.png"}
+    _PERSONA_VIEW_FILES = {"front": "角色正面.png", "side": "角色侧面.png", "full": "角色全身.png"}
+
+    def persona_template_dir(self):
+        """角色三视图模板目录：plugin_data/outfit_refs/角色三视图。"""
+        try:
+            try:
+                from .amo_image_common import plugin_data_root
+            except ImportError:
+                from amo_image_common import plugin_data_root
+            root = os.path.join(plugin_data_root(self.plugin), "outfit_refs", "角色三视图")
+            os.makedirs(root, exist_ok=True)
+            return root
+        except Exception as exc:
+            logger.debug("[amo] 角色三视图目录创建失败: %r", exc)
+            return self.template_dir()
+
+    def _migrate_persona_templates(self, mapping):
+        """把旧的 amo_templates/amo_persona_*.png 迁到 outfit_refs/角色三视图/角色*.png。"""
+        changed = False
+        new_dir = self.persona_template_dir()
+        for view, path in list((mapping or {}).items()):
+            name = os.path.basename(str(path or ""))
+            if not name.startswith("amo_persona_"):
+                continue
+            target = os.path.join(new_dir, self._PERSONA_VIEW_FILES.get(view, "角色正面.png"))
+            try:
+                if str(path) != target and os.path.isfile(path):
+                    shutil.copy2(path, target)
+                if os.path.isfile(target):
+                    mapping[view] = target
+                    changed = True
+            except Exception as exc:
+                logger.debug("[amo] 角色三视图迁移失败: %r", exc)
+        if changed:
+            self._save_template_map(mapping)
+            try:
+                self._sync_omni_refs()
+            except Exception as exc:
+                logger.debug("[amo] 角色三视图迁移后同步生图插件失败: %r", exc)
+        return mapping
 
     def user_template_dir(self):
         """用户三视图模板目录：plugin_data/outfit_refs/用户三视图。"""

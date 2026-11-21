@@ -97,6 +97,9 @@ class PhotoGenerateMixin:
         template_dir: Any
         user_ref_path: Any
         user_refs: Any
+        persona_template_dir: Any
+        _PERSONA_VIEW_FILES: Any
+        _ensure_png_file: Any
 
     def _find_omni(self):
         """握手：找不到返回 None；找到就顺手把三视图自愈进生图插件（幂等）。"""
@@ -669,7 +672,6 @@ class PhotoGenerateMixin:
             try:
                 with await asyncio.to_thread(lambda: urllib.request.urlopen(url, timeout=90)) as response:
                     payload = response.read()
-                    content_type = str(response.headers.get("Content-Type") or "").lower()
             except Exception as exc:
                 return "下载模板失败：%s" % exc
         elif os.path.isfile(url):
@@ -677,19 +679,16 @@ class PhotoGenerateMixin:
                 payload = await asyncio.to_thread(lambda: open(url, "rb").read())
             except Exception as exc:
                 return "读取本地模板失败：%s" % exc
-            content_type = ""
         else:
             return "只支持 http 或本地图片"
-        if "png" in content_type or payload[:8] == b"\x89PNG\r\n\x1a\n":
-            ext = ".png"
-        elif "webp" in content_type or payload[:4] == b"RIFF":
-            ext = ".webp"
-        else:
-            ext = ".jpg"
         view = str(view or "front").strip().lower()
         if view not in self.VIEWS:
             view = "front"
-        target = os.path.join(target_dir, "amo_persona_%s%s" % (view, ext))
+        try:
+            target_dir = self.persona_template_dir()
+        except Exception:
+            target_dir = self.template_dir()
+        target = os.path.join(target_dir, self._PERSONA_VIEW_FILES.get(view, "角色正面.png"))
         temp = target + ".tmp"
         try:
             with open(temp, "wb") as handle:
@@ -702,6 +701,7 @@ class PhotoGenerateMixin:
                     except Exception as exc:
                         _note_swallowed("photo_engine.py.1813", exc)
             os.replace(temp, target)
+            self._ensure_png_file(target)
         except Exception as exc:
             try:
                 if os.path.exists(temp):
