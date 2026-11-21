@@ -163,6 +163,14 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             except Exception as exc:
                 logger.debug("[amo] 加载完成补同步失败: %s" % exc)
             try:
+                from .amo_tts_guard import wrap_tts_providers
+            except ImportError:
+                from amo_tts_guard import wrap_tts_providers
+            try:
+                wrap_tts_providers(self.context, logger)
+            except Exception as exc:
+                logger.debug("[amo] TTS 动作过滤接管失败: %s" % exc)
+            try:
                 from .laundry_engine import register_buy_appliance
                 manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)
                 if register_buy_appliance(self, manager):

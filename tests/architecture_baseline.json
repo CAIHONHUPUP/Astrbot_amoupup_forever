@@ -723,6 +723,9 @@
     "amo_city_index",
     "clock"
   ],
+  "amo_tts_guard.py": [
+    "amo_voice"
+  ],
   "amo_types.py": [],
   "amo_usage.py": [
     "amo_observability",
@@ -901,6 +904,7 @@
     "amo_runtime",
     "amo_schedule_tools",
     "amo_shared_activity",
+    "amo_tts_guard",
     "clock",
     "draw_engine",
     "laundry_engine",
