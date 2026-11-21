@@ -885,6 +885,17 @@ class FeatureApiMixin:
 
 
 
+        def persona_prompt_block(self, scene="", mood="", register="partner_safe"):
+            try:
+                from .amo_persona_pack import default_pack, prompt_block
+            except ImportError:
+                from amo_persona_pack import default_pack, prompt_block
+            try:
+                return prompt_block(default_pack(), scene=str(scene or ""),
+                                    mood=str(mood or ""), register=str(register or "partner_safe"))
+            except Exception:
+                return ""
+
         def note_recent_topic(self, text, until_ts=0, key="", ttl_hours=36):
             """当天记忆缓冲：只留短事实，按 key 合并、限量、过期清理，不写记忆库。"""
             try:

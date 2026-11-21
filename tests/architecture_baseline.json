@@ -201,6 +201,7 @@
     "amo_episodic",
     "amo_food_event",
     "amo_names",
+    "amo_persona_pack",
     "amo_shared",
     "amo_shared_time",
     "amo_state_store",
@@ -316,6 +317,7 @@
     "amo_immersion_guard",
     "amo_message",
     "amo_observability",
+    "amo_persona_pack",
     "amo_prompt_registry",
     "amo_reply_pipeline",
     "amo_shared",
@@ -391,6 +393,7 @@
   ],
   "amo_observability.py": [],
   "amo_person_ref.py": [],
+  "amo_persona_pack.py": [],
   "amo_photo_intent.py": [],
   "amo_place.py": [
     "domains"
