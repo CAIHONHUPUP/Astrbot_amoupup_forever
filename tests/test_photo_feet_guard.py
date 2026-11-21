@@ -21,6 +21,20 @@ from photo_prompt import FEET_GUARD, feet_guard_line  # noqa: E402
 from pose_library import SEED_POSES  # noqa: E402
 
 
+from photo_prompt import feet_hide_line  # noqa: E402
+
+
+class FeetHideLineTests(unittest.TestCase):
+    def test_sitting_pose_gets_hide_hint(self):
+        self.assertIn("不要给脚部特写", feet_hide_line("坐在床上，双腿并拢"))
+
+    def test_standing_pose_no_hint(self):
+        self.assertEqual("", feet_hide_line("站在商场门口，正对镜头"))
+
+    def test_bed_forces_hint(self):
+        self.assertIn("脚部", feet_hide_line("随手拍", bed=True))
+
+
 class FeetGuardTests(unittest.TestCase):
     def test_feet_mention_adds_guard(self):
         self.assertEqual(FEET_GUARD, feet_guard_line("拍一下脚趾"))

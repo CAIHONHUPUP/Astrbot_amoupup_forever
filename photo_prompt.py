@@ -149,9 +149,33 @@ def _day_view_event(plugin):
 
 #: 画面里出现脚/腿时追加的解剖守卫（2026-11-21：用户反馈拍脚趾时腿脚畸形）
 FEET_WORDS = ("脚", "脚趾", "脚背", "赤足", "光脚", "玉足", "腿", "足")
+#: 明确的“拍脚/拍腿”意图（不含泛化的「腿」，避免正常姿势被误判）
+_FOOT_INTENT = ("拍脚", "脚趾", "脚背", "脚心", "脚丫", "赤脚", "光脚", "露脚",
+                "看脚", "拍腿", "露腿", "翘脚")
 FEET_GUARD = ("【脚部画面·最高优先级】如果画面出现脚：必须五根脚趾、比例正常、脚背自然；"
               "镜头用斜侧角度、小腿到脚完整入镜，绝对不要贴着脚做俯拍特写；"
               "避免：多余脚趾、融合的脚趾、畸形脚、多出来的腿、脚趾数量不对。")
+
+
+def feet_hide_line(pose_text, bed=False):
+    """脚不是重点时：让脚自然收好，别主动给脚部特写（降低脚趾崩坏）。"""
+    text = str(pose_text or "")
+    if not (bed or any(word in text for word in ("腿", "坐", "跪", "蹲", "躺", "趴"))):
+        return ""
+    return "脚部自然收好或完整入镜，不要给脚部特写；脚趾不要变形、不要多趾。"
+
+
+def _pick_foot_pose(library):
+    """拍脚时只从拍脚姿势里挑一个；没有就返回 None 走原逻辑。"""
+    try:
+        try:
+            from .pose_library import foot_poses
+        except ImportError:
+            from pose_library import foot_poses
+        items = foot_poses(library.poses() if library is not None else [])
+    except Exception:
+        return None
+    return random.choice(items) if items else None
 
 
 def feet_guard_line(*texts):
@@ -435,6 +459,13 @@ class PhotoPromptMixin:
         act = str(activity.get("activity") or "")
         # 姿势：只能由场景规则决定（居家才允许用姿势库）
         library = getattr(getattr(self, "plugin", None), "pose", None)
+        # 拍脚/拍腿：只能用拍脚专用姿势，避免随机到床姿把脚裁掉或拍畸形
+        _feet_text = " ".join([act, str(kind or ""), where])
+        if any(word in _feet_text for word in _FOOT_INTENT) and library is not None:
+            _foot = _pick_foot_pose(library)
+            if _foot is not None:
+                pose = _foot
+                pose_text = pose_line(_foot)
         if not pose_text:
             if pose is not None:
                 pose_text = pose_line(pose)
@@ -477,6 +508,10 @@ class PhotoPromptMixin:
         _feet = feet_guard_line(pose_text, act, where)
         if _feet:
             extras.append(_feet)
+        else:
+            _hide = feet_hide_line(pose_text, bed=bed)
+            if _hide:
+                extras.append(_hide)
         if bed:
             extras.append("她正躺在/坐在床上或沙发上，盖着被子；画面里绝对不要出现鞋")
         elif safe:

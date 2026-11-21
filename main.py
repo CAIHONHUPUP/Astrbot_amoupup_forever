@@ -170,6 +170,16 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                 wrap_tts_providers(self.context, logger)
             except Exception as exc:
                 logger.debug("[amo] TTS 动作过滤接管失败: %s" % exc)
+            try:   # 姿势库新增了种子：后台把缺的参考图补齐（拍脚姿势第一次用到就能直接用）
+                from .pose_library import ensure_batch as _pose_batch
+                from .pose_library import pending_poses as _pending_poses
+                _library = getattr(self, "pose", None)
+                _pending = _pending_poses(_library) if _library is not None else []
+                if _pending:
+                    self._spawn(_pose_batch(self, _pending))
+                    logger.info("[amo] 姿势参考图缺 %d 张，后台补齐", len(_pending))
+            except Exception as exc:
+                logger.debug("[amo] 姿势参考图补齐失败: %s" % exc)
             try:
                 from .laundry_engine import register_buy_appliance
                 manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)

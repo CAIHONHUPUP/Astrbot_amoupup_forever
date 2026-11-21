@@ -89,6 +89,18 @@ SEED_POSES = (
                         "脚趾朝向镜头侧面，全身入镜，斜侧角度，不要俯拍脚部特写"),
 )
 
+#: 拍脚专用姿势：拍脚/拍腿时只允许从这里选（2026-11-21 用户要求）
+FOOT_POSE_NAMES = ("侧坐伸腿拍脚", "盘腿露脚心", "趴床翘脚", "沙发抬脚", "脚搭矮凳", "单脚抬起看镜头")
+
+
+def is_foot_pose(name):
+    return str(name or "") in FOOT_POSE_NAMES
+
+
+def foot_poses(poses):
+    return [item for item in (poses or []) if is_foot_pose((item or {}).get("name"))]
+
+
 #: 旧种子（2026-11-12 之前那批）；升级时从库里删掉，同时删掉它们的参考图
 OLD_SEED_NAMES = (
     "比耶", "托腮", "撩头发", "歪头笑", "抿嘴笑", "眯眼笑", "嘟嘴", "咬唇", "回眸",
@@ -179,6 +191,7 @@ class PoseLibrary:
             data.setdefault("version", self.VERSION)
             data.setdefault("poses", [])
             if int(data.get("seed_version") or 0) < self.SEED_VERSION:
+                # 只在版本升级时补种子：用户手动删过的种子姿势不能复活
                 data = self._merge_seed(data)
                 data["seed_version"] = self.SEED_VERSION
                 self._save(data)
