@@ -360,13 +360,37 @@ class FeatureApiMixin:
 
         async def push_to_owner(self, text):
 
-            """主动消息：给管理员/老公发一条（逛街试穿、回家炫耀等）。"""
+            """主动消息：给管理员/老公发一条（逛街试穿、回家炫耀、守护事件等）。"""
 
             text = str(text or "").strip()
 
             if not text:
 
                 return False
+
+            # 2026-11-21 协调层：守护/网购/试穿的推送也要遵守主动免打扰和 5 分钟节流，
+            # 不能绕过陪伴自己的概率/晚安/夜间规则。
+            try:
+                from .amo_shared_time import quiet_now
+                _spec = self.cfg_str("proactive_quiet_hours", "23:00-07:30")
+                if quiet_now(_spec):
+                    logger.info("[amo] 推送被主动免打扰拦下（%s）", _spec)
+                    return False
+            except Exception as exc:
+                logger.debug("[amo] push_to_owner 免打扰检查失败: %r", exc)
+            try:
+                _burst = getattr(self, "_proactive_burst", None)
+                if not isinstance(_burst, dict):
+                    _burst = {}
+                    self._proactive_burst = _burst
+                _key = "push"
+                _last = float(_burst.get(_key) or 0)
+                if _last and now_ts() - _last < 300:
+                    logger.info("[amo] 推送被 5 分钟节流拦下")
+                    return False
+                _burst[_key] = now_ts()
+            except Exception as exc:
+                logger.debug("[amo] push_to_owner 节流检查失败: %r", exc)
 
             for umo in self._owner_umos():
 

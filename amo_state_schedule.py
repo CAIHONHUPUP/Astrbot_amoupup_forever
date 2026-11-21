@@ -374,7 +374,7 @@ SCHEDULE_REGEN_DEBOUNCE_SECONDS = 30
 #: 用户/聊天/命令/工具/面板：这些是"人"的决定
 HUMAN_SOURCES = frozenset({
     "manual", "manual_edit", "manual_edit_api", "command", "chat", "llm_tool",
-    "user", "api", "panel", "panel_", "date", "social",
+    "user", "api", "panel", "panel_", "date", "social", "watch",
 })
 
 #: 自动生成：这些写入必须给"人"让路
