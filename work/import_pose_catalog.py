@@ -52,7 +52,8 @@ def main(argv=None):
         if "双人" in sysname:
             note = "（双人姿势，自拍不用）" + note
         items.append({"id": "p-" + hashlib.md5((sysname + name).encode("utf-8")).hexdigest()[:10],
-                      "name": name, "note": note, "created_at": time.time()})
+                      "name": name, "note": note, "created_at": time.time(),
+                      "usage": "couple" if "双人" in sysname else "selfie"})
     if not items:
         print("没有要导入的姿势")
         return 0

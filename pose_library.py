@@ -101,6 +101,15 @@ def foot_poses(poses):
     return [item for item in (poses or []) if is_foot_pose((item or {}).get("name"))]
 
 
+def usage_of(pose):
+    """这个姿势给谁用：selfie=单人自拍，couple=双人合拍，both=都行。"""
+    data = pose or {}
+    value = str(data.get("usage") or "").strip()
+    if value in ("selfie", "couple", "both"):
+        return value
+    return "couple" if "双人" in str(data.get("note") or "") else "selfie"
+
+
 #: 旧种子（2026-11-12 之前那批）；升级时从库里删掉，同时删掉它们的参考图
 OLD_SEED_NAMES = (
     "比耶", "托腮", "撩头发", "歪头笑", "抿嘴笑", "眯眼笑", "嘟嘴", "咬唇", "回眸",
@@ -288,7 +297,7 @@ class PoseLibrary:
         text = str((pose or {}).get("note") or "") + str((pose or {}).get("name") or "")
         return any(word in text for word in self.BED_WORDS)
 
-    def random_pose(self, zone=None, hint=""):
+    def random_pose(self, zone=None, hint="", usage="selfie"):
         """按场景随机挑一个姿势；hint（此刻在做什么/请求）命中的优先。
 
         - 私密居家（home / home_bed / home_sofa）才允许 9 种床姿；
@@ -302,8 +311,8 @@ class PoseLibrary:
         key = str(zone or "").strip()
         private = (not key) or key in self.PRIVATE_ZONES
         allowed = poses if private else [p for p in poses if not self.is_private_pose(p)]
-        # 双人姿势不能当自拍姿势用（导入的参考图库里混着 55 组双人缠绵）
-        allowed = [p for p in allowed if "双人" not in str(p.get("note") or "")]
+        # 双人姿势不能当自拍姿势用；合拍时才用 couple
+        allowed = [p for p in allowed if usage_of(p) in (str(usage or "selfie"), "both")]
         _hint = str(hint or "").strip()
         if _hint:
             words = [w for w in re.split(r"[，,。！？\s、/]+", _hint) if len(w) >= 2]

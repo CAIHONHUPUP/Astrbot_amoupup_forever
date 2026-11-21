@@ -9,7 +9,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from pose_library import PoseLibrary  # noqa: E402
+from pose_library import PoseLibrary, usage_of  # noqa: E402
 
 
 class FakePlugin:
@@ -31,6 +31,18 @@ class RandomPoseTests(unittest.TestCase):
         for _ in range(20):
             picked = lib.random_pose("home")
             self.assertEqual("站姿", picked["name"])
+
+    def test_usage_field(self):
+        self.assertEqual("selfie", usage_of({"name": "站姿"}))
+        self.assertEqual("couple", usage_of({"name": "双人缠绵", "note": "双人"}))
+        self.assertEqual("couple", usage_of({"name": "合拍", "usage": "couple"}))
+
+    def test_couple_usage_picks_couple_pose(self):
+        poses = [{"name": "站姿", "note": "站直", "usage": "selfie"},
+                 {"name": "双人靠肩", "note": "双人", "usage": "couple"}]
+        lib = self._library(poses)
+        self.assertEqual("双人靠肩", lib.random_pose("home", usage="couple")["name"])
+        self.assertEqual("站姿", lib.random_pose("home", usage="selfie")["name"])
 
     def test_hint_prefers_matching_pose(self):
         poses = [{"name": "站姿", "note": "站直看镜头"},
