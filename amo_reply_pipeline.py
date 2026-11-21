@@ -1133,6 +1133,18 @@ def apply_chat_safety(text, plugin, umo="", user_text=""):
         value = _anti_nag(value, user_text)
     except Exception as exc:
         logger.debug("[amo] chat_safety.anti_nag 失败: %s", exc)
+    try:
+        try:
+            from .amo_companion_guard import rewrite as _companion_guard
+        except ImportError:
+            from amo_companion_guard import rewrite as _companion_guard
+        try:
+            _activity = plugin.state.current_activity() or {}
+        except Exception:
+            _activity = {}
+        value = _companion_guard(value, _activity)
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.companion 失败: %s", exc)
     return value.strip() or str(text or "")
 
 
