@@ -1023,6 +1023,26 @@ def tone_guard_prompt_rule():
 PROACTIVE_STATUS_SECONDS = 30 * 60
 FOOD_QUESTION_RE = re.compile(
     r"(吃啥|吃什么|吃点什么|吃的什么|午饭|中午吃|晚饭|晚上吃|吃了没|吃了吗|吃饭了没)")
+#: 状态去重删空时，这些说明句子里有明确答案（时间/地点/吃饭/是否），保留原句
+_ANSWER_CUE_RE = re.compile(
+    r"\d{1,2}[:：]\d{2}|在家|在公司|在路|到了|到家|不在|没有|吃饭|吃完饭|好的|是的")
+#: 他问的答案类型 -> 回复里什么算答到了（整句复读删句时用来保留答案）
+_ANSWER_RULES = (
+    (FOOD_QUESTION_RE, re.compile(r"吃|饭|面|粥|外卖|饿|饱")),
+    (re.compile(r"在哪|哪里|哪呢|在家吗|到公司|到哪|出门了"),
+     re.compile(r"在家|在公司|在路|在商场|在餐厅|在办公室|在街上|在景区|在酒店|"
+                r"在医院|在健身房|在学校|这边|到了|到家|出门|外面|地铁|公交|车上|"
+                r"家|公司|商场|餐厅|医院")),
+    (re.compile(r"几点|什么时候|多久|回不回来"),
+     re.compile(r"\d|马上|快了|晚点|一会儿|下班|到家|回去")),
+    (re.compile(r"干嘛|做什么|忙什么|干什么|偷懒"),
+     re.compile(r"上班|加班|开会|睡|休息|吃|做饭|逛|追剧|看|写|改|收拾|玩|练|"
+                r"健身|刷|忙|瘫|窝|躺|做")),
+    (re.compile(r"跟谁|谁在一起|一个人|旁边有人|有人吗"),
+     re.compile(r"自己|一个人|没人|跟|和|我们|俩|同事|朋友|他|她|妈|爸")),
+)
+#: 本轮他问的话：(轮次, 原话)；分段/发送去重靠它判断整句复读有没有把答案删掉
+_TURN_USER_TEXT: Dict[str, Any] = {}
 #: 每个会话最近发出去的状态（跨轮去重依据；只在内存，重启后靠 _recent 兜底）
 #: 当前这一轮回复的批次号（分段去重只在同一轮内生效，避免误删跨轮正常消息）
 
@@ -1031,6 +1051,10 @@ def reset_repetition_memory(umo=""):
     """清掉整句去重/状态去重的进程内记忆（验收 harness 每个样本独立会话用）。"""
     reset_status_memory(umo)
     _repeat_guard.reset(umo)
+    if umo:
+        _TURN_USER_TEXT.pop(str(umo), None)
+    else:
+        _TURN_USER_TEXT.clear()
 
 
 
@@ -1066,6 +1090,43 @@ DEDUP_WINDOW = _repeat_guard.DEDUP_WINDOW
 
 
 
+
+
+def _answers_question(text, question):
+    """「他问的这类问题」，这段话里有没有给出对应答案。"""
+    body = str(text or "")
+    ask = str(question or "")
+    if not body.strip() or not ask.strip():
+        return False
+    for pattern, answer in _ANSWER_RULES:
+        if pattern.search(ask) and answer.search(body):
+            return True
+    return False
+
+
+def _keep_answer(original, fixed, question, dropped):
+    """整句复读删句后答案被删没了，就保留原句：答到问题优先于「不复读」。
+
+    只在他问的是可判定的答案（吃了没/在哪/几点回/干嘛/跟谁）时生效；
+    「想你」这类没有答案的复读仍然照旧删/换短句。
+    """
+    if not dropped:
+        return fixed
+    if _answers_question(fixed, question):
+        return fixed
+    if _answers_question(original, question):
+        return original
+    return fixed
+
+
+def _turn_question(umo):
+    """这一轮他问的话；跨轮/跨段的旧问题不再参与保留答案判断。"""
+    key = str(umo or "").strip()
+    entry = _TURN_USER_TEXT.get(key)
+    if not entry:
+        return ""
+    turn, question = entry
+    return str(question or "") if turn == _ACTIVE_TURN.get(key) else ""
 
 
 def _answer_food_first(text, plugin, user_text, now=None):
@@ -1192,6 +1253,14 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
             logger.debug("[amo] chat_safety.role 失败: %s", exc)
     except Exception as exc:
         logger.debug("[amo] chat_safety.state 失败: %s", exc)
+    try:
+        try:
+            from .amo_question_guard import answer as _question_answer
+        except ImportError:
+            from amo_question_guard import answer as _question_answer
+        value = _question_answer(str(user_text or ""), plugin, value)
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.question 失败: %s", exc)
     return value.strip() or str(text or "")
 
 
@@ -1205,7 +1274,8 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
     value = str(text or "")
     if not value.strip():
         return value
-    begin_status_turn(umo)
+    turn = begin_status_turn(umo)
+    _TURN_USER_TEXT[str(umo or "").strip()] = (turn, str(user_text or ""))
     value = _answer_food_first(value, plugin, user_text, now)
     if FOOD_QUESTION_RE.search(str(user_text or "")):
         value = _limit_status_sentences(value, 1)
@@ -1215,11 +1285,13 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
     fixed, dropped = _drop_repeated_status(value, said)
     if dropped and not fixed.strip():
         # 有明确答案（时间/地点/吃饭/是否）时保留原回答；纯状态重复才用短句
-        _cue = re.compile(r"\d{1,2}[:：]\d{2}|在家|在公司|在路|到了|到家|不在|没有|吃饭|吃完饭|好的|是的")
-        fixed = value if _cue.search(value) else "还是老样子。"
+        fixed = value if _ANSWER_CUE_RE.search(value) else "还是老样子。"
     # 整句级复读：和最近 3-5 条 bot 消息相同/≥0.9 相似的句子直接删；整条重复换短句。
+    # 但删句不能把对他的回答一起删掉（「刚吃完饭，好撑。你呢？」不能只剩「你呢？」）。
+    before_dedup = fixed or value
     refs = _repeat_guard.recent_reference(plugin, umo, DEDUP_WINDOW)
-    fixed, repeated = _repeat_guard.dedup_or_fallback(fixed or value, umo, refs)
+    fixed, repeated = _repeat_guard.dedup_or_fallback(before_dedup, umo, refs)
+    fixed = _keep_answer(before_dedup, fixed, user_text, repeated)
     for item in repeated:
         logger.debug("[dedup] 整句复读已去掉: %s", item[:40])
     # 完成动作一致性：刚说「洗漱过了」就别在回复里又说「才想起来洗漱」（2026-11-17）。
@@ -1245,7 +1317,9 @@ def apply_proactive_dedup(text, plugin, umo="", now=None):
     value = str(text or "")
     if not value.strip():
         return value
-    begin_status_turn(umo)
+    turn = begin_status_turn(umo)
+    # 主动消息没有「他在问什么」，别让上一轮聊天的问题参与保留答案
+    _TURN_USER_TEXT[str(umo or "").strip()] = (turn, "")
     said = _status_said(umo, now, count=None, seconds=PROACTIVE_STATUS_SECONDS)
     fixed, _dropped = _drop_repeated_status(value, said)
     refs = _repeat_guard.recent_reference(plugin, umo, DEDUP_WINDOW)
@@ -1266,12 +1340,19 @@ def apply_segment_dedup(text, plugin, umo="", now=None):
     turn = _ACTIVE_TURN.get(str(umo or "").strip())
     if turn is None:  # 不是我们这一轮发出去的（别的插件/测试直连），不动
         return value
+    question = _turn_question(umo)
     said = _status_said(umo, now, count=None, turn=turn)
     fixed, _dropped = _drop_repeated_status(value, said)
     if not fixed.strip():
-        return ""
+        # 整段被状态去重删空时，如果他问的答案正好在这段里，保留它
+        if _dropped and question and _answers_question(value, question):
+            fixed = value
+        else:
+            return ""
+    before_dedup = fixed
     refs = _repeat_guard.recent_reference(plugin, umo, DEDUP_WINDOW)
-    fixed, _repeated = _repeat_guard.dedup_or_fallback(fixed, umo, refs)
+    fixed, _repeated = _repeat_guard.dedup_or_fallback(before_dedup, umo, refs)
+    fixed = _keep_answer(before_dedup, fixed, question, _repeated)
     _remember_status(umo, fixed, now, turn=turn)
     return fixed
 
@@ -1286,6 +1367,7 @@ def apply_segment_repeat_guard(text, plugin=None, umo=""):
                if _ACTIVE_TURN.get(key) is not None else [])
     refs = _repeat_guard.recent_reference(plugin, umo, DEDUP_WINDOW) + earlier
     fixed, dropped = _repeat_guard.dedup_or_fallback(value, umo, refs)
+    fixed = _keep_answer(value, fixed, _turn_question(umo), dropped)
     for item in dropped:
         logger.debug("[dedup] 分段复读已换掉: %s", item[:40])
     rows = _TURN_SEGMENTS.setdefault(key, [])

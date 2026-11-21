@@ -1,0 +1,75 @@
+# -*- coding: utf-8 -*-
+"""答到点上：问地点/动作/同伴/几点回/吃了吗时，回复不相关就用当前状态兜底（2026-11-22）。
+
+不是替模型写话，而是在它答非所问时用唯一状态视图给一个事实短句。
+"""
+from __future__ import annotations
+
+import re
+
+_WHERE = re.compile(r"在哪|哪里|什么地方|哪个地方")
+_DOING = re.compile(r"在干嘛|干嘛呢|做什么|干啥|忙什么")
+_WHO = re.compile(r"跟谁|和谁|一个人吗|谁在一起")
+_WHEN = re.compile(r"几点回|什么时候回|多久回|到家了吗|什么时候到家")
+_EATEN = re.compile(r"吃了吗|吃了没|吃饭了吗|吃过了吗")
+
+_PLACES = ("家", "公司", "商场", "路上", "地铁", "医院", "餐厅", "学校", "机场")
+
+
+def _act(plugin):
+    try:
+        return plugin.state.current_activity() or {}
+    except Exception:
+        return {}
+
+
+def _category(text):
+    body = str(text or "")
+    for name, pattern in (("where", _WHERE), ("doing", _DOING), ("who", _WHO),
+                          ("when", _WHEN), ("eaten", _EATEN)):
+        if pattern.search(body):
+            return name
+    return ""
+
+
+def _answered(category, reply):
+    body = str(reply or "")
+    if category == "where":
+        return any(word in body for word in _PLACES + ("外面", "这边", "那儿"))
+    if category == "doing":
+        return any(word in body for word in ("在", "忙", "做", "弄", "写", "看", "吃", "睡"))
+    if category == "who":
+        return any(word in body for word in ("一个人", "自己", "和", "跟", "他", "她", "同事", "朋友"))
+    if category == "when":
+        return bool(re.search(r"\d{1,2}[:：]\d{2}|到家|路上|马上|快了|晚点|这就", body))
+    if category == "eaten":
+        return any(word in body for word in ("吃", "饭", "面", "饿"))
+    return False
+
+
+def answer(text, plugin, reply):
+    category = _category(text)
+    if not category or _answered(category, reply):
+        return reply
+    act = _act(plugin)
+    place = str(act.get("place") or "")
+    zone = str(act.get("zone") or "")
+    doing = str(act.get("activity") or "")
+    if category == "where":
+        return "我在%s呢。" % (place or "外面")
+    if category == "doing":
+        return "我在%s。" % (doing or "忙点事")
+    if category == "who":
+        if act.get("together") or act.get("companion"):
+            who = str(act.get("companion") or "朋友")
+            return "和%s在一起呢。" % who
+        return "一个人呢。"
+    if category == "when":
+        if zone.startswith("home") or "家" in place:
+            return "我已经在家啦。"
+        return "还在路上，快到了。"
+    if category == "eaten":
+        if str(act.get("category") or "") == "meal" or "吃" in doing:
+            return "吃过了，你呢？"
+        return "还没呢，你呢？"
+    return reply

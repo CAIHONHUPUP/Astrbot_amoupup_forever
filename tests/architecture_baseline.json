@@ -447,6 +447,7 @@
   "amo_purchase_guard.py": [
     "clock"
   ],
+  "amo_question_guard.py": [],
   "amo_readiness.py": [
     "amo_bootstrap",
     "amo_compat",
@@ -470,6 +471,7 @@
     "amo_observability",
     "amo_persona_store",
     "amo_purchase_guard",
+    "amo_question_guard",
     "amo_repetition_guard",
     "amo_role_guard",
     "amo_share_ledger",
