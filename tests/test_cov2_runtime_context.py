@@ -1129,6 +1129,16 @@ class DynamicContextTests(unittest.TestCase):
         self.assertIn("最近聊到", out)
         self.assertIn("380", out)
 
+    def test_day_digest_is_injected(self):
+        p = entry_plugin()
+        from clock import now_ts as _now_ts
+        yesterday = __import__("time").strftime(
+            "%Y-%m-%d", __import__("time").localtime(_now_ts() - 86400))
+        p.db.kv_set("day_digest:" + yesterday, "试了开衫 380，没买")
+        out = asyncio.run(p._dynamic_context(Ev(text="昨天那件衣服")))
+        self.assertIn("【前几天】", out)
+        self.assertIn("380", out)
+
     def test_dynamic_context_group(self):
         p = entry_plugin()
         p.heartflow = FakeHeartflow()

@@ -900,7 +900,11 @@ class FeatureApiMixin:
                 raw = self.db.kv_get("episodic_memory", []) or []
             except Exception:
                 raw = []
-            items = _merge(raw, body, until, key=key, now=now)
+            try:
+                from .amo_shared import today_str as _today
+            except ImportError:
+                from amo_shared import today_str as _today
+            items = _merge(raw, body, until, key=key, now=now, day=_today())
             self.db.kv_set("episodic_memory", items)
             # 兼容旧读取方
             self.db.kv_set("recent_topic", {"text": body, "until": until})

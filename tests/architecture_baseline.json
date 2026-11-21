@@ -527,6 +527,7 @@
   ],
   "amo_schedule.py": [
     "amo_diary_guard",
+    "amo_episodic",
     "amo_fact_pool",
     "amo_household",
     "amo_human_state",

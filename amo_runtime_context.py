@@ -1099,6 +1099,18 @@ class RuntimeContextMixin(RuntimeMixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.episodic_memory", _amo_exc)
         try:
+            _lines = []
+            _now_ts = now_ts()
+            for _off, _label in ((1, "昨天"), (2, "前天"), (3, "大前天")):
+                _day = time.strftime("%Y-%m-%d", time.localtime(_now_ts - _off * 86400))
+                _dg = str(self.db.kv_get("day_digest:" + _day, "") or "")
+                if _dg:
+                    _lines.append("%s：%s" % (_label, _dg))
+            if _lines:
+                parts.append("【前几天】" + "；".join(_lines)[:240])
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.day_digest", _amo_exc)
+        try:
             _shop = self.db.kv_get("shopping_prompt", {}) or {}
             if isinstance(_shop, dict) and _shop.get("line") and float(_shop.get("until") or 0) > now_ts():
                 parts.append("【购物】" + str(_shop.get("line")))

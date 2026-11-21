@@ -1137,6 +1137,27 @@ class ScheduleMixin(_MixinBase):
             pass  # cleanup: 预算记不上就放行，不能因为记账失败把日记卡死
         return data[key]
 
+    def _day_digest(self, day_text):
+        """取某天缓冲折叠句：有当天条目就现折，没有就用已存的 digest。"""
+        try:
+            try:
+                from .amo_episodic import fold_day
+            except ImportError:
+                from amo_episodic import fold_day
+            try:
+                items = self.db.kv_get("episodic_memory", []) or []
+            except Exception:
+                items = []
+            try:
+                stored = str(self.db.kv_get("day_digest:" + day_text, "") or "")
+            except Exception:
+                stored = ""
+            digest, keep = fold_day(items, day_text, now_ts())
+            return (digest or stored), keep, bool(digest)
+        except Exception as exc:
+            _note_swallowed("amo_schedule._day_digest", exc)
+            return "", [], False
+
     async def _write_one_daily_diary(self, day, now):
         # 写一天的日记：版本变化就静默重来（最多 3 次），写成功才落 kv
         day_text = day.isoformat()
@@ -1197,6 +1218,9 @@ class ScheduleMixin(_MixinBase):
                     from .amo_diary_guard import sanitize_diary as _sanitize_diary
                 except ImportError:
                     from amo_diary_guard import sanitize_diary as _sanitize_diary
+                _digest, _keep_episodic, _had_episodic = self._day_digest(day_text)
+                if _digest and _digest not in text:
+                    text = text.rstrip() + "\n\n" + _digest
                 try:
                     _together = bool(self.db.kv_get("diary_together:" + day_text, False))
                 except Exception:
@@ -1224,6 +1248,10 @@ class ScheduleMixin(_MixinBase):
                         self._bump_daily_diary_rewrite(day_text)
                     # 定稿即锁定：以后任何自动/手动触发都不许再调模型重写
                     self.db.kv_set("diary_locked:" + day_text, True)
+                    if _digest:
+                        self.db.kv_set("day_digest:" + day_text, _digest)
+                        if _had_episodic:
+                            self.db.kv_set("episodic_memory", _keep_episodic)
                     final_version = self.db.schedule_version(day_text)
                     if final_version != current_version:
                         logger.info(
