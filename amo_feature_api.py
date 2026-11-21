@@ -885,6 +885,11 @@ class FeatureApiMixin:
 
 
 
+        def note_recent_topic(self, text, until_ts=0):
+            """记住刚聊过的事（购物/约会插曲），他追问时能接住。"""
+            self.db.kv_set("recent_topic", {"text": str(text or ""),
+                                            "until": float(until_ts or 0)})
+
         def note_shopping_pending(self, line, until_ts=0):
 
             self.db.kv_set("shopping_prompt", {"line": str(line or ""), "until": float(until_ts or 0)})

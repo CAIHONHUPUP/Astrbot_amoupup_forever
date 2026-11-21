@@ -1098,6 +1098,14 @@ class DynamicContextTests(unittest.TestCase):
         self.assertIn("【共同活动】", out)
         self.assertEqual(p._last_uid, "ou_1")
 
+    def test_recent_topic_is_injected(self):
+        p = entry_plugin()
+        p.db.kv_set("recent_topic", {"text": "试了开衫，价格 380 元，余额 120 元",
+                                     "until": __import__("time").time() + 3600})
+        out = asyncio.run(p._dynamic_context(Ev(text="差多少钱")))
+        self.assertIn("刚刚聊到", out)
+        self.assertIn("380", out)
+
     def test_dynamic_context_group(self):
         p = entry_plugin()
         p.heartflow = FakeHeartflow()

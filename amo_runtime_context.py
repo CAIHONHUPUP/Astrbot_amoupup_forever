@@ -1080,6 +1080,12 @@ class RuntimeContextMixin(RuntimeMixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.expense", _amo_exc)
         try:
+            _topic = self.db.kv_get("recent_topic", {}) or {}
+            if isinstance(_topic, dict) and _topic.get("text") and float(_topic.get("until") or 0) > now_ts():
+                parts.append("【刚刚聊到】" + str(_topic.get("text")))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.recent_topic", _amo_exc)
+        try:
             _shop = self.db.kv_get("shopping_prompt", {}) or {}
             if isinstance(_shop, dict) and _shop.get("line") and float(_shop.get("until") or 0) > now_ts():
                 parts.append("【购物】" + str(_shop.get("line")))
