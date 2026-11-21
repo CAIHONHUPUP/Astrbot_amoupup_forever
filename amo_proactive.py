@@ -45,6 +45,7 @@ import asyncio
 import difflib
 import random
 import re
+import unicodedata
 from datetime import timedelta
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
@@ -83,6 +84,12 @@ PROACTIVE_AFTER_FOLLOWUP_SECONDS = 120
 #: 主动消息主题去重：最近 6 小时的主动文本相似度 ≥ 阈值就当作复读。
 PROACTIVE_THEME_DEDUP_SECONDS = 6 * 3600
 PROACTIVE_THEME_THRESHOLD = 0.55  # 实测：复读 0.571，正常不同话题 ≤0.47
+#: 短句按字面相似度容易误判（「好，等你忙完」 vs 「你忙完了没」），要求更高才拦。
+PROACTIVE_SHORT_CHARS = 6
+PROACTIVE_SHORT_THRESHOLD = 0.8
+#: 日程提醒的提前量：太早提醒没意义，太晚又来不及准备。
+SCHEDULE_REMIND_MIN_MINUTES = 10
+SCHEDULE_REMIND_MAX_MINUTES = 60
 
 
 
@@ -97,6 +104,189 @@ PROACTIVE_TOPIC_WORDS = (
     "电影", "综艺", "蛋糕", "冰淇淋", "睡衣", "晚霞", "地铁", "公交", "火锅",
     "外卖", "快递", "感冒", "头痛", "猫", "狗", "桂花",
 )
+
+
+def _schedule_minute(value):
+    """把 "HH:MM" 转成当日分钟；格式不对返回 -1。"""
+    body = str(value or "").strip()
+    if not re.match(r"^\d{1,2}[:：]\d{2}$", body):
+        return -1
+    hour, minute = re.split(r"[:：]", body)
+    return int(hour) * 60 + int(minute)
+
+
+def _schedule_event_key(row):
+    return "%s|%s" % (str(row.get("activity") or ""), str(row.get("place") or ""))
+
+
+def _schedule_rows(db, day):
+    """读某天日程；接口不存在或读取失败时返回 None（调用方按「不误杀」处理）。"""
+    getter = getattr(db, "get_schedule", None)
+    if not callable(getter):
+        return None
+    try:
+        rows = getter(str(day or "")) or []
+    except Exception:
+        return None
+    return [dict(row) for row in rows if isinstance(row, dict)]
+
+
+def _schedule_version(db, day):
+    getter = getattr(db, "schedule_version", None)
+    if not callable(getter):
+        return 0
+    try:
+        return int(getter(str(day or "")) or 0)
+    except Exception:
+        return 0
+
+
+def schedule_reminder_fact(db, now=None, day="", min_minutes=SCHEDULE_REMIND_MIN_MINUTES,
+                           max_minutes=SCHEDULE_REMIND_MAX_MINUTES):
+    """挑一条 10~60 分钟后开始的日程做提醒；没有就返回 {}。
+
+    只认还没提醒过、不是睡觉的那一条；返回的 version 用来在发送前复核
+    「取消/改期」，避免拿旧快照提醒。
+    """
+    now = now or _now()
+    day = str(day or today_str())
+    minute = int(now.hour) * 60 + int(now.minute)
+    best = None
+    for row in _schedule_rows(db, day) or []:
+        activity = str(row.get("activity") or "").strip()
+        start = _schedule_minute(row.get("start"))
+        if not activity or start < 0 or "睡" in activity:
+            continue
+        ahead = start - minute
+        if ahead < min_minutes or ahead > max_minutes:
+            continue
+        key = _schedule_event_key(row)
+        try:
+            if db.kv_get("schedule_reminded:%s:%s" % (day, key), False):
+                continue
+        except Exception:  # cleanup: 读不到已提醒标记按未提醒
+            pass
+        if best is not None and best[0] <= start:
+            continue
+        best = (start, {
+            "day": day, "key": key, "version": _schedule_version(db, day),
+            "time": str(row.get("start") or ""), "place": str(row.get("place") or ""),
+            "event": activity, "zone": str(row.get("zone") or ""),
+        })
+    return best[1] if best else {}
+
+
+def schedule_fact_current(db, fact):
+    """发送/追问前复核：日程还在、开始时间没改；读不到就放行（不误杀）。"""
+    if not isinstance(fact, dict) or not str(fact.get("key") or ""):
+        return True
+    rows = _schedule_rows(db, str(fact.get("day") or ""))
+    if rows is None:
+        return True
+    same = [row for row in rows
+            if _schedule_event_key(row) == str(fact.get("key"))]
+    if not same:
+        return False
+    # 同一天同一活动可能有两段（10:00/17:00）：任一段对得上就放行
+    return any(str(row.get("start") or "") == str(fact.get("time") or "")
+               for row in same)
+
+
+#: 同一条消息里两个问句核心相似到这个程度，就按「同一个追问」合并成一句。
+SYNONYM_QUESTION_THRESHOLD = 0.6
+#: 按句末标点切句，保留标点。
+_QUESTION_CLAUSE_RE = re.compile(r"(?<=[。！？!?~～\n])")
+#: 问句末尾的语气词/否定词，剥掉后比较「问的是什么」。
+_QUESTION_TAIL_RE = re.compile(r"(?:吗|呢|嘛|么|吧|呀|啊|哈|啦|哦|没|没有|了|的|不)+$")
+#: 带可核对答案（时间/地点/明确回答）的句子：去重整条删空时不能被静默吞掉。
+_ANSWER_CUE_RE = re.compile(
+    r"\d{1,2}[:：]\d{2}|在家|在公司|在路|到了|到家|不在|没有|吃饭|吃完饭|好的|是的"
+    r"|医院|商场|餐厅|学校|机场|地铁|公交"
+)
+
+
+def _question_core(text):
+    """问句核心：去掉标点、语气词和开头的人称，只留下「问的那件事」。"""
+    body = unicodedata.normalize("NFKC", str(text or "")).lower()
+    body = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", body)
+    for _ in range(4):
+        trimmed = _QUESTION_TAIL_RE.sub("", body)
+        if trimmed == body:
+            break
+        body = trimmed
+    return re.sub(r"^[你您我他她它]+", "", body)
+
+
+def _is_question_clause(part):
+    """一句是不是在问：有问号，或以「吗/呢/嘛/么/没」收尾。"""
+    body = str(part or "").strip()
+    if not body:
+        return False
+    if re.search(r"[?？]", body):
+        return True
+    return bool(re.search(r"(?:吗|呢|嘛|么|没|没有)[。！!~～\s]*$", body))
+
+
+def _same_question(left, right):
+    """两个问句核心是不是同一个意思：相等、包含或足够相似。"""
+    if len(left) < 2 or len(right) < 2:
+        return False
+    if left == right:
+        return True
+    shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+    if len(shorter) >= 2 and shorter in longer and len(shorter) * 2 >= len(longer):
+        return True
+    return difflib.SequenceMatcher(None, left, right).ratio() >= SYNONYM_QUESTION_THRESHOLD
+
+
+def merge_synonym_questions(text):
+    """同一条消息里连问两遍同一个意思，只留第一句。
+
+    「你忙完了没？忙完了吗？」→「你忙完了没？」
+    两句问的是不同的事（「到家了吗？下班了吗？」）时不动。
+    """
+    body = str(text or "")
+    if not body.strip():
+        return body
+    parts = _QUESTION_CLAUSE_RE.split(body)
+    if len(parts) < 2:
+        return body
+    kept: list = []
+    cores: list = []
+    changed = False
+    for part in parts:
+        if not part:
+            continue
+        if not _is_question_clause(part):
+            kept.append(part)
+            continue
+        core = _question_core(part)
+        if len(core) < 2:
+            kept.append(part)
+            continue
+        if any(_same_question(core, old) for old in cores):
+            changed = True
+            continue
+        cores.append(core)
+        kept.append(part)
+    if not changed:
+        return body
+    return "".join(kept).strip() or body
+
+
+def has_answer_cue(text):
+    """这句话里有没有可核对的答案（时间/地点/吃饭/是否）。"""
+    return bool(_ANSWER_CUE_RE.search(str(text or "")))
+
+
+def keep_answer(original, fixed):
+    """去重把整条删空时，带时间/地点/答案的原句要留下，不能被静默吞掉。"""
+    if str(fixed or "").strip():
+        return fixed
+    text = str(original or "").strip()
+    if text and has_answer_cue(text):
+        return text
+    return fixed
 
 
 def proactive_same_topic(text, recent):
@@ -143,7 +333,11 @@ def proactive_repeated(text, recent, threshold=PROACTIVE_THEME_THRESHOLD):
         other = _proactive_plain(old)
         if len(other) < 4:
             continue
-        if difflib.SequenceMatcher(None, mine, other).ratio() >= threshold:
+        ratio = difflib.SequenceMatcher(None, mine, other).ratio()
+        limit = threshold
+        if min(len(mine), len(other)) <= PROACTIVE_SHORT_CHARS:
+            limit = max(limit, PROACTIVE_SHORT_THRESHOLD)
+        if ratio >= limit:
             return str(old)
     return ""
 
@@ -465,13 +659,24 @@ class ProactiveMixin(_MixinBase):
     def _is_proactive_friend(self, profile):
         return str(profile.get("relation") or "普通") in ("熟识", "相恋")
 
-    def _set_proactive_pending(self, uid, kind, text, umo=""):
-        self.db.kv_set(self._pending_key(uid), {
+    def _set_proactive_pending(self, uid, kind, text, umo="", schedule=None):
+        pending = {
             "sent_at": now_ts(), "kind": kind, "text": str(text or ""),
             # 记下真正发出去的会话：追问要回同一个平台，否则会「飞书问完、QQ 追」。
             "umo": str(umo or ""),
             "followup": False, "mood": False,
-        })
+        }
+        # 日程提醒挂上日程身份：追问前复核，取消/改期后不再拿旧快照催。
+        if isinstance(schedule, dict) and str(schedule.get("key") or ""):
+            pending["schedule"] = {
+                "day": str(schedule.get("day") or ""),
+                "key": str(schedule.get("key") or ""),
+                "version": to_int(schedule.get("version"), 0),
+                "time": str(schedule.get("time") or ""),
+                "place": str(schedule.get("place") or ""),
+                "event": str(schedule.get("event") or ""),
+            }
+        self.db.kv_set(self._pending_key(uid), pending)
 
     def _clear_proactive_pending(self, uid):
         pending = self.db.kv_get(self._pending_key(uid), None)
@@ -595,6 +800,18 @@ class ProactiveMixin(_MixinBase):
             # 2026-11-21 夜间照顾（生病/难受/红线急）：他睡着了不是不理她。
             # 不追问、不算被忽略、不扣情绪；等他早上回，或 6 小时后自然清掉。
             if pending.get("night_care"):
+                continue
+            # 提醒发出后日程被取消/改期：旧快照上的追问作废，别再催他。
+            _schedule = pending.get("schedule")
+            if isinstance(_schedule, dict) and not schedule_fact_current(self.db, _schedule):
+                self.db.kv_set(self._pending_key(uid), {})
+                try:
+                    log_event("debug", "proactive.schedule.stale", uid=uid,
+                              schedule=str(_schedule.get("event") or ""))
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_proactive._check_proactive_pending.schedule_log", _amo_exc)
+                logger.info("[amo] 追问取消：日程已取消或改期（%s）",
+                            str(_schedule.get("event") or "")[:40])
                 continue
             followup_minutes = self.cfg_int("proactive_followup_minutes", 30)
             # 0 / 负数 = 关掉追问，只保留「心情变差」这一档
@@ -943,6 +1160,10 @@ class ProactiveMixin(_MixinBase):
             return "unwell"
         if relation == "相恋" and painful and self.cfg_bool("proactive_comfort", True):
             return "comfort"
+        # 日程提醒默认关；打开后把 10~60 分钟内开始的日程排成一次提醒。
+        if self.cfg_bool("proactive_schedule_reminder", False):
+            if schedule_reminder_fact(self.db, _now()):
+                return "schedule_reminder"
         activity = str((snap.get("activity") or {}).get("activity") or "")
         if category == "play" and ("游戏" in activity or "打游戏" in activity):
             return "game"
@@ -1240,10 +1461,13 @@ class ProactiveMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive._send_proactive_lines.fact_guard", _amo_exc)
         # 同一状态 30 分钟内不重复主动发（跨段去重在 send 阶段）
+        before_dedup = raw
         try:
             raw = _reply_pipeline.apply_proactive_dedup(raw, self, target_umo)
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive._send_proactive_lines.status_dedup", _amo_exc)
+        # 去重整条删空时，带时间/地点/答案的句子不能被静默吞掉（提醒尤其如此）。
+        raw = keep_answer(before_dedup, raw)
         if not raw:
             return ""
         # 口头禅去逐字复读：主动消息不走 decorate，这里紧跟事实守卫补一次
@@ -1359,13 +1583,13 @@ class ProactiveMixin(_MixinBase):
     def _voluntary_count(self, uid, day):
         try:
             return to_int(self.db.kv_get("proactive_vol:%s:%s" % (uid, day), 0), 0)
-        except Exception:
+        except Exception:  # cleanup: 读不到按 0
             return 0
 
     def _voluntary_hour(self, uid, day):
         try:
             value = self.db.kv_get("proactive_vol_hour:%s:%s" % (uid, day), None)
-        except Exception:
+        except Exception:  # cleanup: 读不到按 None
             return None
         try:
             return int(value)
@@ -1388,7 +1612,7 @@ class ProactiveMixin(_MixinBase):
     def _goodnight_sent(self, uid, day):
         try:
             return bool(self.db.kv_get("proactive_goodnight:%s:%s" % (uid, day), False))
-        except Exception:
+        except Exception:  # cleanup: 读不到按未发
             return False
 
     def _goodnight_due(self, profile, now):
@@ -1402,7 +1626,7 @@ class ProactiveMixin(_MixinBase):
             return False
         try:
             recent = self.db.recent_proactive_texts(uid, 3, 1) or []
-        except Exception:
+        except Exception:  # cleanup: 读不到按空
             recent = []
         said = " ".join(str(item) for item in recent)
         if any(word in said for word in ("晚安", "睡了", "去睡", "先睡")):
@@ -1461,10 +1685,11 @@ def _one_topic_guard(text, kind):
             if body.startswith(word):
                 body = body[len(word):].lstrip("，,。！!？? ")
                 break
-        return body or str(text or "").strip()
+        return merge_synonym_questions(body or str(text or "").strip())
     parts = _re.split(r"(?<=[。！？!?])", body)
     kept = [part for part in parts if not any(word in part for word in _MICRO_HINTS)]
-    return "".join(kept).strip() or str(text or "").strip()
+    # 同一条消息里连问两遍同一个意思（「你忙完了没？忙完了吗？」）只留一句。
+    return merge_synonym_questions("".join(kept).strip() or str(text or "").strip())
 
 
 async def _proactive_one(self, profile, snap, now, quiet, night):
@@ -1486,13 +1711,19 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         total = int(self.wallet.total_assets())
         if total > 0:
             ratio = int(self.wallet.balance()) / float(total)
-    except Exception:
+    except Exception:  # cleanup: 资产读不到按 None
         ratio = None
     forced = forced_reason(snap, ratio, silence)
     try:
         kind = str(self._choose_proactive_kind(profile, snap, category) or "greet")
-    except Exception:
+    except Exception:  # cleanup: 选不到按问候
         kind = "greet"
+    # 日程提醒：挑一条即将开始的日程；挑不到就退回普通问候，别硬编日程。
+    schedule_fact = {}
+    if kind == "schedule_reminder":
+        schedule_fact = schedule_reminder_fact(self.db, now, day=day)
+        if not schedule_fact:
+            kind = "greet"
     if self.db.kv_get(slot_key, False):
         return
     target_umo = self._pick_proactive_umo(profile)
@@ -1586,7 +1817,7 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         return
     try:
         hunger = self.get_hunger()
-    except Exception:
+    except Exception:  # cleanup: 饥饿值读不到按 80
         hunger = 80
     event = pick_life_event(day, uid)
     micro = ""
@@ -1600,7 +1831,7 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
                 micro = ""
             else:
                 self.db.kv_set("micro_event:shared_ts", stamp)
-    except Exception:
+    except Exception:  # cleanup: 微事件读不到按空
         micro = ""
     extra = []
     if forced:
@@ -1617,15 +1848,18 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
             extra.append("你今天分享欲挺强，遇到一点小事都想告诉他。")
     try:
         recent_said = self.db.recent_proactive_texts(uid, 2, 3)
-    except Exception:
+    except Exception:  # cleanup: 近期主动话读不到按空
         recent_said = []
     said_line = _recent_said_line(recent_said)
     if said_line:
         extra.append(said_line)
     facts = proactive_facts(snap, hunger, now, extra="".join(extra))
     self.db.kv_set(slot_key, True)
+    gen_kwargs = {"facts": facts}
+    if schedule_fact:
+        gen_kwargs["schedule"] = dict(schedule_fact)
     try:
-        text = await self.llm.gen_proactive(target_umo, profile, snap, kind, facts=facts)
+        text = await self.llm.gen_proactive(target_umo, profile, snap, kind, **gen_kwargs)
     except Exception as exc:
         logger.debug("[amo] 主动消息决策失败: %s" % exc)
         self.db.kv_set(slot_key, False)
@@ -1650,14 +1884,29 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     if repeated:
         logger.info("[amo] 主动消息：与最近一条主题重复，本轮不发（%s）", repeated[:40])
         return
+    # 生成要时间：发送前再复核一次日程，取消/改期后这条旧快照提醒必须作废。
+    if schedule_fact and not schedule_fact_current(self.db, schedule_fact):
+        logger.info("[amo] 主动消息：日程在生成期间被取消/改期，这条提醒作废（%s）",
+                    str(schedule_fact.get("event") or "")[:40])
+        try:
+            log_event("debug", "proactive.schedule.stale", uid=uid,
+                      schedule=str(schedule_fact.get("event") or ""))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._proactive_one.schedule_log", _amo_exc)
+        return
     sent_umo = await self._send_proactive_lines(profile, target_umo, text, kind=kind)
     if not sent_umo:
         return
+    if schedule_fact:
+        self.db.kv_set("schedule_reminded:%s:%s" % (day, schedule_fact["key"]), True)
     self._mark_bot_initiated(sent_umo, text)
     self.db.kv_set("last_channel:%s" % uid, sent_umo)
     self.db.bump_proactive(uid)
     self.db.log_proactive(uid, kind, text)
-    self._set_proactive_pending(uid, kind, text, umo=sent_umo)
+    if schedule_fact:
+        self._set_proactive_pending(uid, kind, text, umo=sent_umo, schedule=schedule_fact)
+    else:
+        self._set_proactive_pending(uid, kind, text, umo=sent_umo)
     if (int(now.hour) >= 23 or int(now.hour) < 7) and (forced or kind in ("comfort", "unwell")):
         try:
             _pending = self.db.kv_get(self._pending_key(uid), {}) or {}

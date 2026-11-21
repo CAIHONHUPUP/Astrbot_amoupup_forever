@@ -134,6 +134,12 @@
     "hint": "逗号分隔；留空则只认 AstrBot 全局 admins_id。不再内置默认管理员。",
     "default": ""
   },
+  "proactive_schedule_reminder": {
+    "type": "bool",
+    "description": "启用日程提醒",
+    "default": false,
+    "hint": "开启后，日程开始前 10-60 分钟主动提醒；默认关闭"
+  },
   "persona_source": {
     "type": "string",
     "description": "人设来源",
