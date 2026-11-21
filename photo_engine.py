@@ -978,6 +978,13 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
             canonical = os.path.join(target_dir, self._USER_VIEW_FILES.get(view, ""))
             if canonical and canonical not in targets:
                 targets.append(canonical)
+            # 旧位置也一起清：共享 plugin_data 根、生图插件 amo_templates
+            for legacy in (
+                os.path.join(os.path.dirname(target_dir), self._USER_VIEW_FILES.get(view, "")),
+                os.path.join(self.template_dir(), "amo_user_%s.png" % view),
+            ):
+                if legacy not in targets:
+                    targets.append(legacy)
         else:
             targets = list(mapping.values())
             mapping = {}

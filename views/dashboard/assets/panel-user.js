@@ -185,7 +185,7 @@
   }
 
   async function deleteView(view) {
-    if (!window.confirm("确定删除用户" + LABELS[view] + "模板？")) return;
+    // 嵌入式面板里 window.confirm 可能被拦掉，点了没反应；直接删，删错可重新导入
     try {
       const r = await callApi("photo/user/delete", { view });
       toastMsg(r.msg || "已删除");
