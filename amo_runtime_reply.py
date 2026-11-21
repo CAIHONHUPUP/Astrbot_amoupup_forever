@@ -157,6 +157,16 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                 self._core_decor_logged = True
             text = await self._deco_polish_native(event, result, text)
             text = await self._deco_text_cleanup(event, text)
+            try:
+                try:
+                    from .amo_reply_pipeline import apply_chat_safety
+                except ImportError:
+                    from amo_reply_pipeline import apply_chat_safety
+                text = apply_chat_safety(
+                    text, self, event.unified_msg_origin,
+                    getattr(event, "message_str", ""))
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime_reply.chat_safety", _amo_exc)
             result.chain = [Comp.Plain(text)]
             if await self._maybe_send_voice_reply(event, text, result):
                 return
@@ -325,8 +335,14 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         place = str(act.get("place") or "")
         zone = str(act.get("zone") or "")
         on_road = zone in ("road", "outside") or any(w in place for w in ("路上", "地铁", "公交", "车", "街", "外面"))
-        if on_road and _re.search(r"(到了|到家了|刚进门|进家门|鞋都换了|换好鞋|换上拖鞋)", body):
-            body = _re.sub(r"[^。！？\n]*(?:到了|到家了|刚进门|进家门|鞋都换了|换好鞋|换上拖鞋)[^。！？\n]*",
+        home = zone.startswith("home") or any(w in place for w in ("家",))
+        _arrival = r"(到家了|刚进门|进家门|鞋都换了|换好鞋|换上拖鞋|回来啦|回来了|回去啦|进门了|到家咯)"
+        if not home and _re.search(_arrival, body) and not _re.search(r"从[^。！？\n]{0,10}回来", body):
+            # 不在家却说「我回来啦」：改成还在外面（线上实例：先回来啦、后在外面）
+            body = _re.sub(r"[^。！？\n]*" + _arrival + r"[^。！？\n]*",
+                           "我还在外面呢，晚点就回去", body)
+        elif on_road and _re.search(r"(到了|到家了|刚进门)", body):
+            body = _re.sub(r"[^。！？\n]*(?:到了|到家了|刚进门)[^。！？\n]*",
                            "我还在路上呢，快到了", body)
         body = _re.sub(r"(车|路|家|床|桌|椅|站)上上", r"\1上", body)
         return body

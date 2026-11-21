@@ -9,7 +9,8 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from pose_library import FOOT_POSE_NAMES, SEED_POSES, foot_poses, is_foot_pose  # noqa: E402
+from pose_library import (FOOT_POSE_NAMES, FOOT_REF_GUARD, SEED_POSES, foot_poses,  # noqa: E402
+                          is_foot_pose, pose_ref_prompt)
 from photo_prompt import _FOOT_INTENT, _pick_foot_pose  # noqa: E402
 
 
@@ -39,6 +40,15 @@ class FootPoseOnlyTests(unittest.TestCase):
     def test_pick_returns_foot_pose(self):
         pose = _pick_foot_pose(FakeLibrary())
         self.assertIn(pose["name"], FOOT_POSE_NAMES)
+
+    def test_foot_pose_ref_has_anatomy_guard(self):
+        prompt = pose_ref_prompt("盘腿露脚心", "盘腿坐在床上，一只脚的脚心朝向镜头")
+        self.assertIn("5 根脚趾", prompt)
+        self.assertIn(FOOT_REF_GUARD, prompt)
+
+    def test_normal_pose_ref_has_no_foot_guard(self):
+        prompt = pose_ref_prompt("单手撑床", "侧坐在床上，一只手撑在身后")
+        self.assertNotIn("5 根脚趾", prompt)
 
     def test_foot_intent_words(self):
         self.assertTrue(any(word in "拍一下脚趾" for word in _FOOT_INTENT))

@@ -1093,6 +1093,49 @@ def _answer_food_first(text, plugin, user_text, now=None):
     return answer + "。" + body
 
 
+def apply_chat_safety(text, plugin, umo="", user_text=""):
+    """聊天回复的「最后一道确定性守卫」（2026-11-21 审计：聊天不走 send 阶段）。
+
+    只跑确定性改写，不调模型：极端/暴力词 → 身份 → 人名 → 消费 → 反催问。
+    """
+    value = str(text or "")
+    if not value.strip():
+        return value
+    try:
+        try:
+            from .amo_immersion_guard import fix_identity, sanitize_extreme
+        except ImportError:
+            from amo_immersion_guard import fix_identity, sanitize_extreme
+        value = fix_identity(sanitize_extreme(value))
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.immersion 失败: %s", exc)
+    try:
+        try:
+            from .amo_names import sanitize as _names_sanitize
+        except ImportError:
+            from amo_names import sanitize as _names_sanitize
+        value = _names_sanitize(value) or value
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.names 失败: %s", exc)
+    try:
+        try:
+            from .amo_purchase_guard import rewrite as _purchase_guard
+        except ImportError:
+            from amo_purchase_guard import rewrite as _purchase_guard
+        value = _purchase_guard(value, plugin)
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.purchase 失败: %s", exc)
+    try:
+        try:
+            from .amo_anti_nag import rewrite as _anti_nag
+        except ImportError:
+            from amo_anti_nag import rewrite as _anti_nag
+        value = _anti_nag(value, user_text)
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.anti_nag 失败: %s", exc)
+    return value.strip() or str(text or "")
+
+
 def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
     """整条回复的第一道「重复/答非所问」层（事实守卫之后、分段之前）。
 

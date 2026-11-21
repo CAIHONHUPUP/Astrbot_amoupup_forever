@@ -44,7 +44,7 @@ EXPECTED_METHODS = [
     "_ctx_state_blocks", "_ctx_tail_append", "_ctx_tail_runtime", "_ctx_tail_world",
     "_date_fact_line", "_deco_polish_native", "_deco_rewrite_reply", "_deco_soft_guards",
     "_deco_text_cleanup", "_diary_audit_tick", "_digest_profile_lines", "_digest_profile_write",
-    "_dynamic_context", "_ensure_home_images", "_first_private_umo", "_lean_parts",
+    "_dynamic_context", "_ensure_home_images", "_fill_pose_refs", "_first_private_umo", "_lean_parts",
     "_maybe_daily_digest", "_maybe_milestone_archive", "_maybe_send_voice_reply",
     "_milestone_archive_once", "_rain_fact_line", "_recent_micro_line", "_schedule_proposal_line",
     "_schedule_tool_line", "_self_identity", "_tick", "_tick_housekeeping", "_tick_loop_tasks",
@@ -54,7 +54,7 @@ EXPECTED_METHODS = [
 CODE_MD5 = {
     "on_message": "acc047b7fd28796c805811abd9c7df05",
     "_dynamic_context": "cb95d4b83caf9c5efe0e919ceb10de19",
-    "on_decorating_result": "4b394a34da1d0fd20e8b021ace241765",
+    "on_decorating_result": "2e599167f54a2a15e69bac00c1f20ae9",
     "_tick": "ac96fb9f0472533cfc38feb32d6a078e",
     "_maybe_daily_digest": "4acb3ce8497d6574eaed72b676066486",
     "warm_up": "511847b73896b66a6b03cb204c5832da",
@@ -63,7 +63,7 @@ CODE_MD5 = {
 FINGERPRINTS = {
     "on_message": "6da8d75162f656678fc8120b2a2dbee0",
     "_dynamic_context": "80205d5e7e2942927e3d71ac2c17db71",
-    "on_decorating_result": "8d191ffe4662f269553a11202e21b723",
+    "on_decorating_result": "a9617733ad57bb5a38819ee2df56d4aa",
     "_tick": "ea8ccbb018f28d852b20e7ef4c6f1644",
     "_maybe_daily_digest": "ee8626b0b24ac01c304112f7456abe22",
     "warm_up": "2e1a8372ae7b979ccade341cacff8811",
@@ -120,7 +120,7 @@ class RuntimeSplitTests(unittest.TestCase):
 
     def test_method_set_unchanged(self):
         self.assertEqual(_method_names(), sorted(EXPECTED_METHODS))
-        self.assertEqual(len(_method_names()), 54)
+        self.assertEqual(len(_method_names()), 55)
 
     def test_facade_methods_are_same_objects(self):
         for mixin in (amo_runtime_context.RuntimeContextMixin,

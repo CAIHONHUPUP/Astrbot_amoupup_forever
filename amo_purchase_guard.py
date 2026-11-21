@@ -26,6 +26,15 @@ def _item_phrase(text):
     return match.group(1) if match else ""
 
 
+def _amount(text):
+    """从「花了 649 元」抠金额（元）。"""
+    match = re.search(r"花(?:了)?\s*(\d+(?:\.\d+)?)\s*元?", str(text or ""))
+    try:
+        return float(match.group(1)) if match else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _has_record(plugin, text="", hours=6):
     """近 N 小时账本/衣柜里有没有这件东西（有才允许说买了）。"""
     phrase = _item_phrase(text)
@@ -36,7 +45,7 @@ def _has_record(plugin, text="", hours=6):
             from clock import now_ts as _now_ts
         conn = plugin.db.conn
         rows = conn.execute(
-            "select item_name from wallet_ledger where ts>=? and delta_cents<0",
+            "select item_name, delta_cents from wallet_ledger where ts>=? and delta_cents<0",
             (_now_ts() - hours * 3600,)).fetchall()
     except Exception:
         rows = []
@@ -44,10 +53,21 @@ def _has_record(plugin, text="", hours=6):
         return False
     if not phrase:
         return True   # 没抠出单品名：有消费就放行，避免误伤「买了点东西」
+    amount = _amount(text)
     for row in rows:
         haystack = str((row[0] if row else "") or "")
-        if any(word in haystack for word in (phrase, phrase[:2])):
-            return True
+        if phrase and phrase not in haystack and phrase[:2] not in haystack:
+            continue
+        if amount is not None:
+            try:
+                paid = abs(int(row[1] or 0)) / 100.0
+            except (TypeError, ValueError, IndexError):
+                continue
+            # 金额差 10% 以内才算同一笔（她说 649，账上 300 就不算）
+            if abs(paid - amount) <= max(1.0, amount * 0.1):
+                return True
+            continue
+        return True
     return False
 
 

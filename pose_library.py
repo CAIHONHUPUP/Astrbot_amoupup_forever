@@ -411,6 +411,23 @@ def pose_ref_framing(note):
     return "从胸口以上取景"
 
 
+#: 拍脚参考图的解剖硬约束（2026-11-21：生成的参考图本身就多趾/融合趾）
+FOOT_REF_GUARD = (
+    "解剖严格：每只脚正好 5 根脚趾，脚趾分明、不融合、不多趾、不少趾；"
+    "脚踝、脚跟、脚掌结构自然；脚不要正对镜头大特写，脚在画面里只占一小部分；"
+    "画面里只有两只脚、两只手；不要出现畸形脚、脚趾粘连、多余脚趾。"
+)
+
+
+def pose_ref_prompt(name, note):
+    """姿势参考图提示词：拍脚姿势加解剖约束，避免参考图本身畸形。"""
+    body = str(note or "")
+    guard = FOOT_REF_GUARD if any(word in body for word in _FOOT_POSE_WORDS) else ""
+    return ("自拍姿势参考图：%s。%s。%s。同一个人，手机前置自拍构图，%s，"
+            "动作和手的位置清楚，浅灰色纯色背景，自然光，不出现文字、不出现第二个人。"
+            % (name, body, guard, pose_ref_framing(body)))
+
+
 def batch_status():
     return dict(_ref_state)
 
@@ -444,11 +461,7 @@ async def ensure_pose_ref(plugin, pose, force=False):
         except Exception:
             refs = []
     note = str(pose.get("note") or "").strip()
-    prompt = (
-        "自拍姿势参考图：%s。%s。同一个人，手机前置自拍构图，%s，"
-        "动作和手的位置清楚，浅灰色纯色背景，自然光，不出现文字、不出现第二个人。"
-        % (name, note, pose_ref_framing(note))
-    )
+    prompt = pose_ref_prompt(name, note)
     args = {"prompt": prompt, "count": 1, "record_usage": False}
     if refs:
         args["refs"] = refs

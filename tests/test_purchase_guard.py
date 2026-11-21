@@ -41,6 +41,14 @@ class PurchaseGuardTests(unittest.TestCase):
         text = "今天买了米白色针织开衫，花了 649 元。"
         self.assertEqual(text, rewrite(text, FakePlugin(ledger=True)))
 
+    def test_amount_mismatch_is_rewritten(self):
+        plugin = FakePlugin(ledger=False)
+        plugin.db.conn.execute("insert into wallet_ledger values (?, ?, ?)",
+                               (time.time(), -30000, "米白色针织开衫"))
+        plugin.db.conn.commit()
+        out = rewrite("今天买了米白色针织开衫，花了 649 元。", plugin)
+        self.assertNotIn("买了", out)
+
     def test_other_purchase_does_not_justify_this_item(self):
         plugin = FakePlugin(ledger=False)
         plugin.db.conn.execute("insert into wallet_ledger values (?, ?, ?)",
