@@ -41,7 +41,7 @@ def voice_requested(text) -> bool:
 
 def clean_voice_text(text, limit: int = 600) -> str:
     """TTS 前去掉 Markdown 标记，避免把星号/井号也念出来；过长时按句截断。"""
-    value = str(text or "")
+    value, _actions = split_actions(text)   # 动作/旁白不念出来
     value = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", value)
     value = re.sub(r"[*_#>~]+", "", value)
     value = re.sub(r"\s+", " ", value).strip()
@@ -51,3 +51,31 @@ def clean_voice_text(text, limit: int = 600) -> str:
                    cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
         value = cut[:stop + 1] if stop > limit // 3 else cut[:max(0, limit - 1)] + "…"
     return value
+#: 动作/旁白：中文括号、英文括号、方头括号、星号动作。只用于"从台词里剥离"，
+#: 不改变文字回复——动作本身仍按原文发给用户（2026-11-21 用户要求）。
+_ACTION_RE = re.compile(
+    r"（[^（）\n]{1,80}）"
+    r"|\([^()\n]{1,80}\)"
+    r"|【[^【】\n]{1,80}】"
+    r"|\*[^*\n]{1,80}\*"
+)
+
+
+def split_actions(text):
+    """把回复拆成 (台词, 动作)。动作保留原括号写法，台词去掉动作。
+
+    先去掉 Markdown 加粗（**x**），否则 **粗体** 会被当成 *动作* 吃掉。
+    """
+    # Markdown 链接先还原成纯文字：链接里的 (url) 不能被当成动作吃掉
+    value = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", str(text or ""))
+    value = re.sub(r"\*\*([^*\n]{1,80})\*\*", r"\1", value)
+    actions = [m.group(0) for m in _ACTION_RE.finditer(value)]
+    spoken = _ACTION_RE.sub(" ", value)
+    spoken = re.sub(r"[ \t]+", " ", spoken).strip()
+    return spoken, " ".join(actions)
+
+
+def voice_parts(text, limit=600):
+    """语音回复的两部分：动作文字 + 要念的台词（供同一条消息链使用）。"""
+    spoken, actions = split_actions(text)
+    return actions, clean_voice_text(spoken, limit=limit)

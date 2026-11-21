@@ -61,17 +61,20 @@ def _narrative_place(plugin):
 
 
 try:  # 「发语音 / 用语音说」按需触发
-    from .amo_voice import clean_voice_text, voice_requested
+    from .amo_voice import clean_voice_text, voice_parts, voice_requested
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         try:
-            from amo_voice import clean_voice_text, voice_requested
+            from amo_voice import clean_voice_text, voice_parts, voice_requested
         except Exception:  # pragma: no cover
             def voice_requested(text):  # type: ignore[misc]
                 return False
 
             def clean_voice_text(text, limit=600):  # type: ignore[misc]
                 return str(text or "")
+
+            def voice_parts(text, limit=600):  # type: ignore[misc]
+                return "", clean_voice_text(text, limit)
 
 
 class RuntimeReplyMixin(RuntimeMixinBase):
@@ -498,9 +501,10 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                 timeout = max(5, min(120, int(cfg_int("voice_tts_timeout_seconds", 45))))
         except Exception as exc:
             _note_swallowed("amo_runtime.py.1280", exc)
-        voice_text = clean_voice_text(text, limit=max_chars)
+        # 2026-11-21：动作按文字发，语音只念台词。
+        actions, voice_text = voice_parts(text, limit=max_chars)
         if not voice_text:
-            logger.info("[amo] 按需语音：清理后没有可念的文字，回退文字")
+            logger.info("[amo] 按需语音：剥离动作后没有可念的台词，回退文字")
             return False
         try:
             audio_call = provider.get_audio(voice_text)
@@ -525,7 +529,15 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             record = record_cls(file=audio_path, url=audio_path, text=voice_text)
         except TypeError:
             record = record_cls(file=audio_path)
-        result.chain = [record]
+        chain = []
+        plain_cls = getattr(Comp, "Plain", None)
+        if actions and plain_cls is not None:
+            try:
+                chain.append(plain_cls(text=actions[:300]))
+            except TypeError:
+                chain.append(plain_cls(actions[:300]))
+        chain.append(record)
+        result.chain = chain
         set_extra = getattr(event, "set_extra", None)
         if callable(set_extra):
             set_extra("_amo_voice_done", True)
