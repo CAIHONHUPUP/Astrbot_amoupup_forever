@@ -75,7 +75,27 @@ def audit_day(blocks):
 
 
 def main(argv):
+    block_mode = "--blocks" in argv
+    argv = [item for item in argv if item != "--blocks"]
     days = int(argv[0]) if argv else 14
+    if block_mode:
+        # 强制打开实验开关：验证「一块 = 一件事」时碎片是否归零
+        import work.simulate_weeks as weeks
+        original = weeks.make_plugin
+
+        def _patched(*args, **kwargs):
+            plugin, state = original(*args, **kwargs)
+            real = plugin.cfg_bool
+
+            def _cfg(key, default=False):
+                if key == "schedule_block_mode":
+                    return True
+                return real(key, default)
+
+            plugin.cfg_bool = _cfg
+            return plugin, state
+
+        weeks.make_plugin = _patched
     payload = s7.build_days(days=days)
     totals = {"days": 0, "blocks": 0, "overlap": 0, "gap": 0, "short": 0,
               "jumps": 0, "zone_bad": 0, "same": 0}

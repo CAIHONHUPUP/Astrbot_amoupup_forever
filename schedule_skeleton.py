@@ -722,6 +722,18 @@ class ScheduleSkeletonMixin:
         items = self._smooth_moods(items, ctx)
         items = self._apply_gift_effects(items, ctx)
         items = self._validate(items, ctx)
+        # 2026-11-21：实验开关。开启后把被整点切碎的相邻同内容块合并成一块；
+        # 默认关闭，黄金基线（一天 24 行）保持逐字节不变。
+        try:
+            plugin = getattr(self, "p", None)
+            if plugin is not None and plugin.cfg_bool("schedule_block_mode", False):
+                try:
+                    from .amo_schedule_blocks import coalesce_blocks as _coalesce
+                except ImportError:
+                    from amo_schedule_blocks import coalesce_blocks as _coalesce
+                items = _coalesce(items)
+        except Exception as _amo_exc:
+            _note_swallowed("schedule_skeleton.block_mode", _amo_exc)
         return items
 
     def _seg(self, start, end, activity, place, zone, category,

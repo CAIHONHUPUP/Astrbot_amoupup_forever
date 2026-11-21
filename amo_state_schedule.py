@@ -368,8 +368,37 @@ def place_continuity_problems(items):
     return problems
 
 
-#: 重生成去抖：同一�� 30 秒内被多个功能触发时只落库一次（2026-11-21）
+#: 重生成去抖：同一天 30 秒内被多个功能触发时只落库一次（2026-11-21）
 SCHEDULE_REGEN_DEBOUNCE_SECONDS = 30
+
+#: 用户/聊天/命令/工具/面板：这些是"人"的决定
+HUMAN_SOURCES = frozenset({
+    "manual", "manual_edit", "manual_edit_api", "command", "chat", "llm_tool",
+    "user", "api", "panel", "panel_", "date", "social",
+})
+
+#: 自动生成：这些写入必须给"人"让路
+GENERATED_SOURCES = frozenset({
+    "jit", "jit_recover", "ensure", "ensure_regen", "regen", "snapshot",
+    "auto", "segment", "life", "wander", "generated", "normalize", "ensure_normalize",
+})
+
+#: 手动改过日程后的静默期：这段时间内的自动重生成一律放弃
+HUMAN_EDIT_GRACE_SECONDS = 60
+
+
+def generation_should_yield(db, day, source, now=None):
+    """自动重生成是否应当给刚发生的手动编辑让路（2026-11-21 协调层）。"""
+    if str(source or "") not in GENERATED_SOURCES:
+        return False
+    try:
+        last_human = float(db.kv_get("schedule_human_ts:" + str(day), 0) or 0)
+    except Exception:
+        return False
+    if not last_human:
+        return False
+    current = now_ts() if now is None else float(now)
+    return current - last_human < HUMAN_EDIT_GRACE_SECONDS
 
 
 def regen_debounced(db, day, force=False, gap=SCHEDULE_REGEN_DEBOUNCE_SECONDS):
@@ -625,8 +654,21 @@ class ScheduleStateMixin(_MixinBase):
 
         未来日期不再铺日程（防剧透）：只把“已经定下来的事”写进待办表，
         到了那天由 JIT 按待办锚点落实成真实日程。
+
+        2026-11-21 协调层：自动重生成在「刚有人手动改过」的 60 秒内直接让行，
+        避免一个慢速重生成把用户刚改的日程覆盖掉。
         """
         day_text = str(day or "")
+        _src = str(source or "")
+        if day_text == today_str() and generation_should_yield(self.db, day_text, _src):
+            logger.info("[amo] 生成写入让行：%d 秒内有人手动改过日程（source=%s）",
+                        HUMAN_EDIT_GRACE_SECONDS, _src)
+            try:
+                _ver = self.db.schedule_version(day_text)
+            except Exception:
+                _ver = 0
+            return {"changed": False, "stale": True, "version": _ver,
+                    "changed_hours": [], "cancelled": [], "saved": False}
         # 旅游目的地锁（10B1 单点）：出发后用户改城市/叫回，进入落库前就拦下，
         # 日程/城市/状态零改动，只回一句「票都买好了」的 context。
         if str(source or "") in self._TRIP_GUARD_SOURCES:
@@ -745,10 +787,17 @@ class ScheduleStateMixin(_MixinBase):
         # T1：落库前统一收口路上块的 activity/vehicle/transit（锁外纯内存计算）。
         new_items = self._sync_transit_items(new_items)
         with self._schedule_commit_lock:
-            return self._commit_schedule_change_locked(
+            result = self._commit_schedule_change_locked(
                 day, new_items, old_items=old_items, source=source,
                 reason=reason, invalidate_from=invalidate_from,
             )
+        if _src in HUMAN_SOURCES:
+            # 记下"人刚改过"的时间，自动重生成在静默期内让行（2026-11-21）
+            try:
+                self.db.kv_set("schedule_human_ts:" + day_text, now_ts())
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.human_ts", _amo_exc)
+        return result
 
     def _sync_transit_items(self, items):
         """T1：落库前统一收口路上块的 activity/vehicle/transit；失败返回原列表。"""
