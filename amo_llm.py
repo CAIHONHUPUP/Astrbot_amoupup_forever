@@ -508,7 +508,7 @@ class LlmMixin(_MixinBase):
                 if last and time.monotonic() - last < 60:
                     return body  # 60 秒内刚发过一张，文本里的「发你」不算穿帮
                 target = draw.send_photo_now(event, str(getattr(event, "message_str", "") or "拍一张自拍发给他"), kind="real", force=True)
-                sent = any(word in str(target or "") for word in ("拍一张", "发你", "找张图"))
+                sent = any(word in str(target or "") for word in ("拍一张", "发你", "找张图", "已安排", "已收到"))
         except Exception as _amo_exc:
             logger.debug("[amo] 意图拍照兜底失败: %s" % _amo_exc)
             sent = False

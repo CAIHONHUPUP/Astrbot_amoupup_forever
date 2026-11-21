@@ -1111,6 +1111,13 @@ class CommandMixin(_MixinBase):
                     ("已切换到 %s" % out["active"]) if out.get("ok")
                     else "没有这个人设：%s" % "、".join(out.get("profiles") or []))
                 return
+            if raw.startswith("候选加"):
+                text = raw.replace("候选加", "", 1).strip()
+                out = _store.add_candidate(self, text, scene="manual")
+                yield event.plain_result(
+                    ("已加入候选：%s" % text) if out.get("ok")
+                    else "候选没加进去。")
+                return
             if raw.startswith("候选"):
                 rows = state.get("candidates") or []
                 if not rows:

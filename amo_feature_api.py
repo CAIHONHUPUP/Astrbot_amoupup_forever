@@ -376,6 +376,8 @@ class FeatureApiMixin(PersonaApiMixin):
                 items = []
             start = str(start or "")[:5]
             activity = str(activity or "")
+            if not start and not activity:
+                return {"ok": False, "reason": "bad_args"}
 
             def _hit(item):
                 if start and str(item.get("start") or "")[:5] != start:
@@ -404,7 +406,7 @@ class FeatureApiMixin(PersonaApiMixin):
                     day, kept, source="date_remove", reason="取消/替换约会")
             except Exception as exc:
                 return {"ok": False, "reason": "commit_failed", "error": str(exc)[:80]}
-            return {"ok": True, "changed": True, "result": result}
+            return {"ok": True, "changed": bool(result.get("saved", True)), "result": result}
 
         async def push_to_owner(self, text):
 

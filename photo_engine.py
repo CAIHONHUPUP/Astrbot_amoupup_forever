@@ -1027,7 +1027,8 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
                         and not any(word in (str(p.get("name") or "") + str(p.get("note") or ""))
                                     for word in self._COUPLE_EXPLICIT)]
                 if safe:
-                    return safe[0]
+                    import random as _random
+                    return _random.choice(safe)
             return pose
         except Exception:
             return None

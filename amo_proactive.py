@@ -1213,6 +1213,18 @@ class ProactiveMixin(_MixinBase):
             raw = _marriage_guard(raw)
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive.marriage_guard", _amo_exc)
+        try:
+            try:
+                from .amo_voice_guard import clean as _voice_clean
+                from .amo_persona_store import active_pack as _active_pack
+            except ImportError:
+                from amo_voice_guard import clean as _voice_clean
+                from amo_persona_store import active_pack as _active_pack
+            raw = _voice_clean(raw, _active_pack(self), public=False)
+            if not raw:
+                return ""
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive.voice_guard", _amo_exc)
         # 「不矛盾」守卫：主动消息不走 decorate，切句前补一次（消费校验顺序不变）
         # 事实只读唯一视图（F1）：apply_fact_guard → amo_diary_guard.narrative_check
         try:

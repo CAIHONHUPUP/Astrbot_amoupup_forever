@@ -1246,6 +1246,10 @@ class ScheduleMixin(_MixinBase):
                     self.db.kv_set(stale_key, False)
                     if was_rewrite:
                         self._bump_daily_diary_rewrite(day_text)
+                    try:
+                        self.db.kv_set("diary_notes:" + day_text, [])
+                    except Exception as _amo_exc:
+                        _note_swallowed("amo_schedule.diary_notes.clear", _amo_exc)
                     # 定稿即锁定：以后任何自动/手动触发都不许再调模型重写
                     self.db.kv_set("diary_locked:" + day_text, True)
                     if _digest:
@@ -1541,11 +1545,19 @@ class ScheduleMixin(_MixinBase):
         if callable(_diary_ensure_ending):
             text = _diary_ensure_ending(day, text)
         try:
+            try:
+                from .amo_marriage_guard import rewrite as _marriage_rewrite
+            except ImportError:
+                from amo_marriage_guard import rewrite as _marriage_rewrite
+            text = _marriage_rewrite(text)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.diary.marriage", _amo_exc)
+        try:
             # 守护写进来的事件片段：并进当天大日记，不能被一句话顶掉
             _notes = self.db.kv_get("diary_notes:" + day.isoformat(), []) or []
             if _notes:
                 text = text.rstrip() + "\n\n" + "\n\n".join(str(n) for n in _notes)
-                self.db.kv_set("diary_notes:" + day.isoformat(), [])
+                # 不在这里清：等日记真正落库成功再清，避免重试丢片段
         except Exception as _amo_exc:
             _note_swallowed("amo_schedule.diary_notes", _amo_exc)
         return text if len(text) >= 10 else ""

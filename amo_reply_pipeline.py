@@ -1153,6 +1153,19 @@ def apply_chat_safety(text, plugin, umo="", user_text=""):
         value = _marriage_guard(value)
     except Exception as exc:
         logger.debug("[amo] chat_safety.marriage 失败: %s", exc)
+    try:
+        try:
+            from .amo_voice_guard import clean as _voice_clean
+            from .amo_persona_store import active_pack as _active_pack
+        except ImportError:
+            from amo_voice_guard import clean as _voice_clean
+            from amo_persona_store import active_pack as _active_pack
+        _public = "Group" in str(umo or "")
+        _cleaned = _voice_clean(value, _active_pack(plugin), public=_public)
+        if _cleaned.strip():
+            value = _cleaned
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.voice 失败: %s", exc)
     return value.strip() or str(text or "")
 
 

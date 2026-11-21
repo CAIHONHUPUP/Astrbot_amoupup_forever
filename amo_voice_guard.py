@@ -40,6 +40,23 @@ def _forbidden_hit(text, word):
     return word in text
 
 
+def clean(text, pack=None, public=False):
+    """删掉禁语/公开场合越界的句子，保留其余内容。"""
+    body = str(text or "")
+    card = (pack or {}).get("card") or {}
+    forbidden = [str(word) for word in (card.get("forbidden") or [])]
+    out = []
+    for sentence in __import__("re").split(r"(?<=[。！？!?\n])", body):
+        if not sentence.strip():
+            continue
+        if any(_forbidden_hit(sentence, word) for word in forbidden):
+            continue
+        if public and any(word in sentence for word in PUBLIC_SEX_WORDS):
+            continue
+        out.append(sentence)
+    return "".join(out).strip()
+
+
 def issues(text, plugin, pack=None, public=False):
     body = str(text or "").strip()
     if not body:

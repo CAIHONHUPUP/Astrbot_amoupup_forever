@@ -398,6 +398,8 @@ class EcommerceEngine:
             "logistics": "已下单",
             "user_triggered": bool(user_triggered),
         }
+        _wishes_before = [dict(w) for w in (data.get("wishes") or [])]
+        _furniture_before = list(data.get("furniture_purchases") or [])
         data["orders"].append(order)
         for wish in data.setdefault("wishes", []):
             if str(wish.get("status")) == "想买" and _same_request(wish, items[0]):
@@ -412,6 +414,8 @@ class EcommerceEngine:
                                "ecommerce:" + uuid.uuid4().hex, actor, fund):
                 try:
                     data["orders"].remove(order)
+                    data["wishes"] = _wishes_before
+                    data["furniture_purchases"] = _furniture_before
                     self._save(data)
                 except Exception as exc:
                     logger.debug("[amo] 下单回滚失败: %r", exc)
@@ -456,13 +460,14 @@ class EcommerceEngine:
                     order["eta"] = order["deliver_at"]
                     deliver_at = float(order["deliver_at"])
             if status == "运输中" and now >= deliver_at:
-                if not order.get("received_at") and not self._receive(data, order):
+                first_receive = not order.get("received_at")
+                if first_receive and not self._receive(data, order):
                     # 入库失败：保持运输中/待入库，下一轮重试，不能假装已到货把东西丢了
                     order["logistics"] = "待入库"
                     changed = True
                     continue
                 order["status"] = "已到货"; order["logistics"] = "已到货"; changed = True
-                if not order.get("received_at"):
+                if first_receive:
                     broken = random.Random(str(order.get("id")) + ":break").random()
                     if broken < 0.03:
                         refund = int(int(order.get("amount_cents") or 0) * 0.2)

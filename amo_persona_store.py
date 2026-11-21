@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from typing import Any
 
@@ -65,9 +66,18 @@ def _profile_dir(plugin, profile_id):
     return os.path.join(root, str(profile_id or DEFAULT_ID))
 
 
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+
+
 def ensure_profile(plugin, profile_id=DEFAULT_ID) -> str:
-    folder = _profile_dir(plugin, profile_id)
+    pid = str(profile_id or DEFAULT_ID)
+    if not _SAFE_ID.fullmatch(pid):
+        return ""
+    folder = _profile_dir(plugin, pid)
     if not folder:
+        return ""
+    root = os.path.abspath(_root(plugin))
+    if os.path.commonpath([root, os.path.abspath(folder)]) != root:
         return ""
     os.makedirs(folder, exist_ok=True)
     pack_path = os.path.join(folder, "pack.json")
@@ -114,7 +124,9 @@ def import_pack(plugin, data) -> dict:
     except Exception as exc:
         return {"ok": False, "reason": "invalid", "error": str(exc)[:120]}
     pid = str(data.get("id") or "").strip()
-    if not pid or pid in profiles(plugin):
+    if not pid or not _SAFE_ID.fullmatch(pid):
+        return {"ok": False, "reason": "invalid", "error": "id 只能字母数字_-，最长 32"}
+    if pid in profiles(plugin):
         return {"ok": False, "reason": "exists", "profiles": profiles(plugin)}
     folder = ensure_profile(plugin, pid)
     if not folder:
