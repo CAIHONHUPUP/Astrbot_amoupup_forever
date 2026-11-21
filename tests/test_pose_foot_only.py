@@ -24,9 +24,14 @@ class FakeLibrary:
 
 
 class FootPoseOnlyTests(unittest.TestCase):
-    def test_seed_has_six_foot_poses(self):
+    def test_seed_has_three_foot_poses(self):
         items = foot_poses([{"name": name} for name, _ in SEED_POSES])
         self.assertEqual(3, len(items))
+
+    def test_foot_pool_includes_imported_poses(self):
+        self.assertEqual(7, len(FOOT_POSE_NAMES))
+        imported = {"手抚脚踝", "握脚踝・单膝立起", "站立・踮脚双臂V字", "蹲姿・踮脚双手触地"}
+        self.assertTrue(imported.issubset(set(FOOT_POSE_NAMES)))
 
     def test_foot_poses_filters_non_foot(self):
         names = {item["name"] for item in foot_poses(FakeLibrary().poses())}
