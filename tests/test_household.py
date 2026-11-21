@@ -126,6 +126,31 @@ class WordingTests(unittest.TestCase):
         self.assertIn("同城不同住", hh.presence_line(self.plugin))
 
 
+class WorldviewTests(unittest.TestCase):
+    def setUp(self):
+        self.plugin = FakePlugin(config={"household_enabled": True})
+
+    def test_apart_keeps_worldview(self):
+        data = {"daily_life": "一个人住，约会儿才见面。", "world_rules": "同城不同住。"}
+        self.plugin.db.kv_set("household", {"stage": hh.STAGE_APART})
+        self.assertEqual(data, hh.apply_worldview(self.plugin, data))
+
+    def test_together_removes_conflicting_lines(self):
+        self.plugin.db.kv_set("household", {"stage": hh.STAGE_TOGETHER})
+        data = {"daily_life": "她住出租屋，老公同城但不同住。周末会一起去超市。",
+                "world_rules": "同城不同住，约会才见面。", "summary": "普通女孩。"}
+        out = hh.apply_worldview(self.plugin, data)
+        self.assertNotIn("同城但不同住", out["daily_life"])
+        self.assertNotIn("同城不同住", out["world_rules"])
+        self.assertIn("周末会一起去超市", out["daily_life"])
+        self.assertIn("住在一起", out["world_rules"])
+
+    def test_transition_clears_in_memory_worldview(self):
+        self.plugin.state.worldview = {"summary": "旧世界观"}
+        hh.transition(self.plugin, hh.STAGE_TOGETHER, force=True)
+        self.assertEqual({}, self.plugin.state.worldview)
+
+
 class TransitionTests(unittest.TestCase):
     def setUp(self):
         self.plugin = FakePlugin(config={"household_enabled": True,

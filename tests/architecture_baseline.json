@@ -233,6 +233,7 @@
     "amo_city_index",
     "amo_current_action",
     "amo_events",
+    "amo_household",
     "amo_late_night",
     "amo_observability",
     "amo_shared",

@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date as _date
 from typing import Any, TYPE_CHECKING
@@ -476,10 +477,15 @@ def transition(plugin, to_stage: str, *, force=False, reason="", source="command
         "reason": str(reason or ""), "source": str(source or ""),
     }]
     save(plugin, data)
-    # 世界观缓存失效：下次聊天按新住法重新生成。
+    # 世界观缓存失效：内存 + kv 一起清，否则 ensure_worldview 会拿旧内存继续用。
     try:
         plugin.db.kv_delete("worldview")
     except Exception:  # cleanup: 读不到就用默认
+        pass
+    try:
+        if getattr(plugin, "state", None) is not None:
+            plugin.state.worldview = {}
+    except Exception:  # cleanup: 清不掉就等 7 天自然过期
         pass
     return True, "已切换为%s" % STAGE_LABELS.get(to_stage, to_stage)
 
@@ -577,6 +583,40 @@ def wording(key: str, scene: Scene | None = None, plugin=None) -> str:
         },
     }
     return table.get(key, {}).get(stage, "")
+
+
+#: 世界观里和同居冲突的句子（LLM 按旧人格生成后可能残留）
+_WORLD_CONFLICT = ("不同住", "各住各", "隔几条街", "约会才见", "平时靠 QQ", "平时靠QQ",
+                   "不能凭空出现", "只有约会见面", "各有住处")
+
+
+def apply_worldview(plugin, data) -> dict:
+    """按当前居住档位修正世界观文本（简介/日常/世界三块）。
+
+    世界观是 LLM 按人格生成、缓存 7 天的；同居后旧文案里「同城不同住、约会才见面」
+    会明显出戏。这里只在非分居档清理冲突句，并把「住一起」的设定补进世界规则。
+    """
+    if not isinstance(data, dict):
+        return data
+    try:
+        stage = stage_of(plugin)
+        if stage == STAGE_APART:
+            return data
+        setting = wording("worldview", plugin=plugin)
+    except Exception:  # cleanup: 读不到就保持原样
+        return data
+    out = dict(data)
+    for key in ("summary", "daily_life", "world_rules"):
+        text = str(out.get(key) or "")
+        if not text:
+            continue
+        parts = re.split(r"(?<=[。！？；])", text)
+        kept = [part for part in parts if part and not any(w in part for w in _WORLD_CONFLICT)]
+        out[key] = "".join(kept).strip()
+    if setting and setting not in str(out.get("world_rules") or ""):
+        base = str(out.get("world_rules") or "").strip()
+        out["world_rules"] = (base + setting).strip()
+    return out
 
 
 def presence_line(plugin, now=None) -> str:

@@ -1171,9 +1171,28 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         if not force and self.worldview and now_ts() - to_float(self.worldview.get("_ts")) < 7 * 86400:
             return self.worldview
         persona = await self.p.llm.persona(umo)
+        # 2026-11-21：同居/半同居时把「住法」注入人格，否则生成的简介/日常还是「同城不同住」
+        _hh = None
+        _setting = ""
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            _setting = _hh.wording("worldview", plugin=self.p)
+        except Exception:
+            _hh = None
+            _setting = ""
+        if _setting:
+            persona = (str(persona or "") + "\n\n" + _setting).strip()
         data = await self.p.llm.gen_worldview(umo, persona)
         if not data:
             data = self._fallback_world()
+        if _hh is not None:
+            try:
+                data = _hh.apply_worldview(self.p, data)
+            except Exception:
+                pass
         name = await self.p._persona_name_for(umo)
         if name:
             data["name"] = name
