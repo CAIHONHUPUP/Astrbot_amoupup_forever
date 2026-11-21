@@ -44,7 +44,6 @@ class FakeDB:
 
 
 class FakePlugin:
-    FOLLOWUP_TEMPLATES = HumanCorePlugin.FOLLOWUP_TEMPLATES
     _followup_topics = staticmethod(HumanCorePlugin._followup_topics)
 
     def __init__(self, profiles=None, rows=None):
@@ -72,8 +71,8 @@ class FakePlugin:
     def _pending_key(self, uid):
         return "proactive_pending_" + str(uid)
 
-    def _followup_text(self, uid, kind, previous_text=""):
-        return HumanCorePlugin._followup_text(self, uid, kind, previous_text)
+    async def _followup_text_live(self, umo, uid, kind, previous_text=""):
+        return "你美丽的老婆在等你回话。"
 
     def _recent(self, umo, limit=10):
         return list(self.rows.get(umo, []))
@@ -90,27 +89,6 @@ class FakePlugin:
 
     def state_nudge(self, **kwargs):
         return None
-
-
-class FollowupTextTests(unittest.TestCase):
-    def test_does_not_ask_the_same_topic_again(self):
-        fake = FakePlugin()
-        for _ in range(20):
-            text = HumanCorePlugin._followup_text(fake, "302578963", "meal", "你中午吃啥子嘛，搞点巴适的咯。")
-            for word in ("吃", "饭", "饿", "外卖"):
-                self.assertNotIn(word, text, "追问又把刚问过的吃饭问了一遍: %r" % text)
-
-    def test_comfort_followup_does_not_ask_pain_again(self):
-        fake = FakePlugin()
-        for _ in range(20):
-            text = HumanCorePlugin._followup_text(fake, "302578963", "comfort", "还疼不疼，别硬撑着。")
-            self.assertNotIn("疼", text)
-            self.assertNotIn("难受", text)
-
-    def test_unrelated_kind_keeps_its_templates(self):
-        fake = FakePlugin()
-        text = HumanCorePlugin._followup_text(fake, "302578963", "meal", "在忙吗？")
-        self.assertIn(text, HumanCorePlugin.FOLLOWUP_TEMPLATES["meal"])
 
 
 class PendingPlatformTests(unittest.TestCase):

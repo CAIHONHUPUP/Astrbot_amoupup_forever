@@ -21,7 +21,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 #: _conf_schema.json 的键数；新增/删除配置键时同步这里和 test_config_model.py
-SCHEMA_KEY_COUNT_EXPECTED = 272
+SCHEMA_KEY_COUNT_EXPECTED = 275
 
 
 def check_schema():

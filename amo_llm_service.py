@@ -138,6 +138,9 @@ def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_h
     if kind == "birthday":
         return ("今天是他生日，用你平时对他的称呼自然地祝他生日快乐，"
                 "语气符合你的人设，不要提 AI/模型/日程。")
+    if kind == "goodnight":
+        return ("现在该睡了。只写一句晚安（可以带一点撒娇或不舍），20 字内；"
+                "不要旁白、不要括号动作、不要问问题、不要提明天要做什么。")
     if _pg_compose_task is None:
         return "你突然想起" + name + "，想主动发一条消息。"
     event_text = ""

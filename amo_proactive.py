@@ -148,7 +148,31 @@ def proactive_repeated(text, recent, threshold=PROACTIVE_THEME_THRESHOLD):
     return ""
 
 
-PROACTIVE_SLOTS = (8, 12, 15, 19, 23)
+#: 普通问候的每小时概率（2026-11-21）：40 基础；开心 60 起每 10 点 +10，封顶 60。
+GREET_BASE_PROB = 40
+GREET_MOOD_START = 60
+GREET_MOOD_STEP = 10
+GREET_PROB_CAP = 60
+
+
+def greet_probability(happy) -> int:
+    """普通问候的每小时触发概率（%）。开心只计到 70，所以最高 60%。"""
+    try:
+        value = float(happy or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    if value < GREET_MOOD_START:
+        return GREET_BASE_PROB
+    steps = int((value - GREET_MOOD_START) // GREET_MOOD_STEP) + 1
+    return min(GREET_PROB_CAP, GREET_BASE_PROB + steps * GREET_MOOD_STEP)
+
+
+def _roll_probability(prob) -> bool:
+    """按百分比掷骰；抽成函数便于测试 patch。"""
+    try:
+        return random.random() * 100 < float(prob)
+    except (TypeError, ValueError):
+        return False
 PROACTIVE_NIGHT_START = 30      # 00:30
 PROACTIVE_NIGHT_END = 7 * 60    # 07:00
 
@@ -489,34 +513,15 @@ class ProactiveMixin(_MixinBase):
         )
         return {name for name, words in groups if any(word in text for word in words)}
 
-    def _followup_text(self, uid, kind, previous_text=""):
-        """追问换着说法：同一句不连着出现，也别把刚问的问题再问一遍。"""
-        templates = [t for t in (self.FOLLOWUP_TEMPLATES.get(str(kind)) or self.FOLLOWUP_TEMPLATES["greet"]) if t]
-        if not templates:
-            return "？怎么不理我了？"
-        key = "proactive_followup_last_%s" % uid
-        try:
-            last = str(self.db.kv_get(key, "") or "")
-        except Exception as _amo_exc:
-            _note_swallowed("amo_proactive.ProactiveMixin._followup_text", _amo_exc)
-            last = ""
-        pool = [t for t in templates if t != last]
-        topics = self._followup_topics(previous_text)
-        if topics:
-            fresh = [t for t in pool if not (self._followup_topics(t) & topics)]
-            pool = fresh
-        if not pool:
-            # 同一类话题的问句都问过了，就换成「怎么不理我」的催回，别再问一遍。
-            pool = [t for t in self.FOLLOWUP_TEMPLATES["greet"] if t != last] or list(self.FOLLOWUP_TEMPLATES["greet"])
-        text = random.choice(pool)
-        try:
-            self.db.kv_set(key, text)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_proactive.ProactiveMixin._followup_text", _amo_exc)
-        return text
+    #: 语气样例：只让模型学「怎么说话」，不要求照抄，也不是固定输出
+    FOLLOWUP_STYLE_EXAMPLES = (
+        "老公你在干啥啊，你美丽的老婆找你都不看看。",
+        "喂，你老婆在这儿等你呢，忙完瞄一眼嘛。",
+        "我这么好看的老婆找你，你都不带搭理的。",
+    )
 
     async def _followup_text_live(self, umo, uid, kind, previous_text=""):
-        """追问去模板化：优先让模型按人设现写一句，失败再回落到模板池。"""
+        """追问去模板化：让模型按人设和语气现写一句；生成不出来就不发。"""
         try:
             llm = getattr(self, "llm", None)
             if llm is None:
@@ -529,19 +534,27 @@ class ProactiveMixin(_MixinBase):
             system = ((persona or "你是大肥鱼。") + "\n\n"
                       + "你现在要主动再找他一次。只输出你要发的那一句话，"
                         "不要解释、不要旁白、不要括号动作。")
+            samples = "\n".join("- " + line for line in self.FOLLOWUP_STYLE_EXAMPLES)
             prompt = (
                 "他（老公）还没回你。你上一条主动说的是：“" + str(previous_text or "") + "”\n"
                 + ("你现在在：" + str(activity) + "\n" if activity else "")
-                + "用你自己的口吻再发一句，1 句，20 字内；可以撒娇、换个由头、问他忙完没、"
-                  "说你在等他。不要用「醒醒」「在等你」「你睡了没」「你是不是不想理我」"
-                  "这类假设他睡着/在等你的说法；不要重复上一句，也不要问已经问过的事。"
+                + "学下面几句的语气（只学语气，不要照抄，也不要直接重复它们）：\n" + samples + "\n"
+                + "写一句 20 字内的话：撒娇、小小抱怨他晾着你、可以自称「你美丽的老婆/你老婆」，"
+                  "但别真的生气。\n"
+                  "硬规则：不许编造任何具体事实——天气、新闻、你吃了什么、你看到什么、你在哪里、"
+                  "他做了什么，这些你都不知道，一个都不许写；只能写感受、称呼、撒娇和抱怨。\n"
+                  "不要用「人呢」「在吗」「醒醒」这类敷衍模板；不要重复上一句，也不要问已经问过的事。"
                   "只输出这句话。"
             )
             text = str(await llm.chat(umo, system, prompt, limit=60) or "").strip()
             text = text.strip('"“”').strip()
             if not text or len(text) > 80 or any(
-                    word in text for word in ("醒醒", "在等你", "你睡了没", "是不是不想理我")):
+                    word in text for word in ("醒醒", "在等你", "你睡了没", "是不是不想理我",
+                                              "人呢", "在吗")):
                 raise ValueError("bad followup")
+            # 编事实（天气/新闻/吃了什么）一律打回，避免后面和现实对不上
+            if any(word in text for word in ("下雨", "天气", "新闻", "热搜", "我刚吃", "我刚看")):
+                raise ValueError("fabricated fact")
             if previous_text and proactive_repeated(text, [previous_text], 0.45):
                 raise ValueError("duplicate followup")
             try:
@@ -550,8 +563,8 @@ class ProactiveMixin(_MixinBase):
                 _note_swallowed("amo_proactive._followup_text_live.kv", _amo_exc)
             return text
         except Exception as _amo_exc:
-            _note_swallowed("amo_proactive._followup_text_live.fallback", _amo_exc)
-            return self._followup_text(uid, kind, previous_text)
+            _note_swallowed("amo_proactive._followup_text_live.failed", _amo_exc)
+            return ""   # 兜底池已删除：生成不出来就不发，绝不套模板
 
     async def _check_proactive_pending(self):
         _dating = getattr(self, "_dating_active", None)
@@ -591,10 +604,11 @@ class ProactiveMixin(_MixinBase):
                 if not quiet_now(self.cfg_str("quiet_hours", "23:30-07:30")):
                     kind = str(pending.get("kind") or "greet")
                     _live = getattr(self, "_followup_text_live", None)
-                    if callable(_live):
-                        followup = await _live(umo, uid, kind, pending.get("text"))
-                    else:  # 旧测试桩/旧宿主：退回模板池
-                        followup = self._followup_text(uid, kind, pending.get("text"))
+                    followup = await _live(umo, uid, kind, pending.get("text")) if callable(_live) else ""
+                    if not followup:
+                        # 没生成出来就不发：不套模板，也不标 followup，下一轮再试
+                        logger.info("[amo] 追问没生成出来，这轮先不发")
+                        continue
                     if await self._send_to_umo(umo, followup):
                         pending["followup"] = True
                         pending["followup_at"] = now
@@ -1113,8 +1127,7 @@ class ProactiveMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive._maybe_proactive.sleep", _amo_exc)
         now = _now()
-        if int(now.hour) not in PROACTIVE_SLOTS:
-            return
+        # 2026-11-21：不再限制固定钟点；每个小时都可以单独掷骰（睡眠/免打扰仍拦）。
         quiet = quiet_now(self.cfg_str("quiet_hours", "23:30-07:30"))
         night = night_now(now)
         try:
@@ -1130,7 +1143,7 @@ class ProactiveMixin(_MixinBase):
         for profile in profiles:
             await _proactive_one(self, profile, snap, now, quiet, night)
 
-    async def _send_proactive_lines(self, profile, target_umo, text):
+    async def _send_proactive_lines(self, profile, target_umo, text, kind="greet"):
         """像真人一样连发 1-3 句，句间留一点打字延迟。"""
         raw = str(text or "").strip()
         if not raw:
@@ -1152,9 +1165,18 @@ class ProactiveMixin(_MixinBase):
                 self._proactive_burst = burst
             key = str(target_umo or "")
             last = to_float(burst.get(key), 0)
-            if last and now_ts() - last < PROACTIVE_BURST_GUARD_SECONDS:
-                logger.debug("[amo] 主动消息：%s 秒内刚发过，跳过这一轮",
-                             PROACTIVE_BURST_GUARD_SECONDS)
+            window = PROACTIVE_BURST_GUARD_SECONDS
+            if str(kind or "") in ("greet", "share", "slack", "commute", "game"):
+                try:
+                    try:
+                        from . import amo_proactive_gate as _gate
+                    except ImportError:
+                        import amo_proactive_gate as _gate
+                    window = max(window, _gate.CROSS_WINDOW_SECONDS)
+                except Exception:
+                    window = max(window, 300)
+            if last and now_ts() - last < window:
+                logger.debug("[amo] 主动消息：%s 秒内刚发过，跳过这一轮", window)
                 return ""
             burst[key] = now_ts()
         except Exception as _amo_exc:
@@ -1245,13 +1267,150 @@ class ProactiveMixin(_MixinBase):
         return "proactive_pending_" + str(uid)
 
 
+
+    def _proactive_quiet(self):
+        """主动消息免打扰（默认 23:00-07:30，和聊天的 quiet_hours 分开）。"""
+        try:
+            spec = self.cfg_str("proactive_quiet_hours", "23:00-07:30")
+        except Exception:
+            spec = "23:00-07:30"
+        return quiet_now(spec)
+
+    def _voluntary_count(self, uid, day):
+        try:
+            return to_int(self.db.kv_get("proactive_vol:%s:%s" % (uid, day), 0), 0)
+        except Exception:
+            return 0
+
+    def _voluntary_hour(self, uid, day):
+        try:
+            value = self.db.kv_get("proactive_vol_hour:%s:%s" % (uid, day), None)
+        except Exception:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _mark_voluntary(self, uid, day, hour, kind):
+        try:
+            try:
+                from . import amo_proactive_gate as _gate
+            except ImportError:
+                import amo_proactive_gate as _gate
+            if _gate.counts_cap(kind):
+                key = "proactive_vol:%s:%s" % (uid, day)
+                self.db.kv_set(key, self._voluntary_count(uid, day) + 1)
+            self.db.kv_set("proactive_vol_hour:%s:%s" % (uid, day), int(hour))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._mark_voluntary", _amo_exc)
+
+    def _goodnight_sent(self, uid, day):
+        try:
+            return bool(self.db.kv_get("proactive_goodnight:%s:%s" % (uid, day), False))
+        except Exception:
+            return False
+
+    def _goodnight_due(self, profile, now):
+        try:
+            from . import amo_proactive_gate as _gate
+        except ImportError:
+            import amo_proactive_gate as _gate
+        uid = str(profile.get("uid") or "")
+        day = _gate.sleep_day(now, today_str())
+        if self._goodnight_sent(uid, day):
+            return False
+        try:
+            recent = self.db.recent_proactive_texts(uid, 3, 1) or []
+        except Exception:
+            recent = []
+        said = " ".join(str(item) for item in recent)
+        if any(word in said for word in ("晚安", "睡了", "去睡", "先睡")):
+            try:
+                self.db.kv_set("proactive_goodnight:%s:%s" % (uid, day), True)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_proactive._goodnight_due.mark", _amo_exc)
+            return False
+        last_seen = to_float(profile.get("last_seen"), 0)
+        return bool(last_seen) and (now_ts() - last_seen) >= 300
+
+    async def _send_goodnight(self, profile, snap, target_umo, now):
+        try:
+            from . import amo_proactive_gate as _gate
+        except ImportError:
+            import amo_proactive_gate as _gate
+        uid = str(profile.get("uid") or "")
+        day = _gate.sleep_day(now, today_str())
+        text = ""
+        try:
+            text = await self.llm.gen_proactive(
+                target_umo, profile, snap, "goodnight",
+                facts="现在该睡了。只写一句晚安，1 句，20 字内，不要旁白、不要括号动作。")
+        except Exception as exc:
+            logger.debug("[amo] 晚安生成失败: %s" % exc)
+        text = str(text or "").strip()
+        if not text:
+            text = "晚安，我先睡啦。"
+        sent = await self._send_proactive_lines(profile, target_umo, text, kind="goodnight")
+        if not sent:
+            return False
+        try:
+            self.db.kv_set("proactive_goodnight:%s:%s" % (uid, day), True)
+            self.db.log_proactive(uid, "goodnight", text)
+            self._mark_voluntary(uid, day, now.hour, "goodnight")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive._send_goodnight.mark", _amo_exc)
+        self._mark_bot_initiated(sent, text)
+        logger.info("[amo] 晚安 -> %s: %s", sent, text[:40])
+        return True
+
+_GREET_OPEN = ("在干嘛", "干嘛呢", "忙吗", "忙不忙", "睡了吗", "在吗", "人呢", "干嘛呀")
+_MICRO_HINTS = ("我刚看到", "刚才路过", "刚看到", "路过看到", "刚才看到")
+
+
+def _one_topic_guard(text, kind):
+    """一条只做一件事：share 去掉开头问候；非 share 去掉“身边小事”句。"""
+    import re as _re
+    body = str(text or "").strip()
+    if not body:
+        return body
+    if kind == "share":
+        for word in _GREET_OPEN:
+            if body.startswith(word):
+                body = body[len(word):].lstrip("，,。！!？? ")
+                break
+        return body or str(text or "").strip()
+    parts = _re.split(r"(?<=[。！？!?])", body)
+    kept = [part for part in parts if not any(word in part for word in _MICRO_HINTS)]
+    return "".join(kept).strip() or str(text or "").strip()
+
+
 async def _proactive_one(self, profile, snap, now, quiet, night):
-    """处理一个画像的主动消息判断（原 _maybe_proactive 的循环体）。"""
+    """处理一个画像的主动消息判断（2026-11-21：概率/上限/跳整点/夜间白名单/晚安）。"""
     uid = str(profile.get("uid") or "")
     if not uid:
         return
-    slot_key = "proactive_slot:%s:%s:%02d" % (uid, today_str(), now.hour)
+    try:
+        from . import amo_proactive_gate as gate
+    except ImportError:
+        import amo_proactive_gate as gate
+    day = today_str()
+    slot_key = "proactive_slot:%s:%s:%02d" % (uid, day, now.hour)
     started_at = now_ts()
+    category = (snap.get("activity") or {}).get("category", "")
+    silence = silence_hours(profile.get("last_seen"), now_ts())
+    ratio = None
+    try:
+        total = int(self.wallet.total_assets())
+        if total > 0:
+            ratio = int(self.wallet.balance()) / float(total)
+    except Exception:
+        ratio = None
+    forced = forced_reason(snap, ratio, silence)
+    try:
+        kind = str(self._choose_proactive_kind(profile, snap, category) or "greet")
+    except Exception:
+        kind = "greet"
     if self.db.kv_get(slot_key, False):
         return
     target_umo = self._pick_proactive_umo(profile)
@@ -1265,15 +1424,17 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         logger.info("[amo] 主动消息：目标群是工作群/陌生群，取消发送")
         self.db.kv_set(slot_key, True)
         return
-    # 刚发过照片（尤其面板测试图）先闭嘴：15:11 测试图 + 15:12 主动消息会像同一条日常分享
-    if self._photo_proactive_blocked():
-        logger.info("[amo] 主动消息：%d 分钟内刚分享过照片，先不打扰",
-                    PROACTIVE_PHOTO_SILENCE_SECONDS // 60)
-        return
-    if self._proactive_user_just_talked(profile, now_ts()):
-        return
-    # 刚追问过（10 分钟没回音的「人呢？」）就先安静两分钟：08:10 追问 + 08:11 新主动
-    # 会让人觉得她在刷屏（2026-11-19 飞书实测）。
+    # 晚安保底：23:00 起、你安静 5 分钟后发；00:30 截止；说过就跳过
+    if not forced and gate.goodnight_window(now) and self._goodnight_due(profile, now):
+        if await self._send_goodnight(profile, snap, target_umo, now):
+            return
+    if not forced:
+        if self._photo_proactive_blocked():
+            logger.info("[amo] 主动消息：%d 分钟内刚分享过照片，先不打扰",
+                        PROACTIVE_PHOTO_SILENCE_SECONDS // 60)
+            return
+        if self._proactive_user_just_talked(profile, now_ts()):
+            return
     try:
         followup_at = to_float(self.db.kv_get("proactive_followup_at_" + uid, 0), 0)
     except Exception as _amo_exc:
@@ -1286,20 +1447,13 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         if now_ts() - to_float(pending.get("sent_at"), 0) < 6 * 3600:
             return
         self.db.kv_set(self._pending_key(uid), {})
-    category = (snap.get("activity") or {}).get("category", "")
-    silence = silence_hours(profile.get("last_seen"), now_ts())
-    sent_today = to_int(profile.get("proactive_count"), 0) if profile.get("proactive_day") == today_str() else 0
+    if forced:
+        if self._forced_sent_this_hour(uid) or not self._proactive_forced_allowed(profile, now_ts()):
+            logger.info("[amo] 主动消息：红线想找他，但刚主动过，先压一压")
+            return
+    sent_today = to_int(profile.get("proactive_count"), 0) if profile.get("proactive_day") == day else 0
     ignored = to_int(self.db.kv_get("proactive_ignored_" + uid, 0), 0)
     held = bool(self.db.kv_get("proactive_held_" + uid, False))
-    ratio = None
-    try:
-        total = int(self.wallet.total_assets())
-        if total > 0:
-            ratio = int(self.wallet.balance()) / float(total)
-    except Exception:
-        ratio = None
-    forced = forced_reason(snap, ratio, silence)
-    # 她睡了 / 夜间 / 免打扰：只有红线才允许打扰
     try:
         try:
             from .amo_rest import resting_now
@@ -1311,11 +1465,38 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
             return
     except Exception as _amo_exc:
         _note_swallowed("amo_proactive.user_resting", _amo_exc)
-    if (quiet or night or category == "sleep") and not forced:
+    _night_ok = forced or gate.night_allowed(kind)
+    if (quiet or night or category == "sleep") and not _night_ok:
         self.db.kv_set(slot_key, True)
         logger.info("[amo] 主动消息：夜间或免打扰，她把想说的话留到明天")
         return
-    # 软阈值：今天主动很多次都没回音，她也高冷起来
+    if not _night_ok and self._proactive_quiet():
+        self.db.kv_set(slot_key, True)
+        logger.info("[amo] 主动消息：主动免打扰时段，她把想说的话留到明天")
+        return
+    if not forced and self._goodnight_sent(uid, gate.sleep_day(now, day)) and int(now.hour) < 7:
+        logger.info("[amo] 主动消息：已经说过晚安，早上再聊")
+        return
+    if not forced and gate.counts_cap(kind):
+        cap = max(1, self.cfg_int("proactive_daily_cap", gate.DAILY_CAP))
+        if self._voluntary_count(uid, day) >= cap:
+            self.db.kv_set(slot_key, True)
+            logger.info("[amo] 主动消息：今天闲聊已达 %d 条上限", cap)
+            return
+        if gate.skip_next_hour(self._voluntary_hour(uid, day), now.hour):
+            self.db.kv_set(slot_key, True)
+            logger.info("[amo] 主动消息：上一小时刚发过，这一小时跳过")
+            return
+    if not forced and gate.chat_rolls(kind):
+        roll_key = "proactive_roll:%s:%s:%02d" % (uid, day, now.hour)
+        if self.db.kv_get(roll_key, False):
+            return
+        self.db.kv_set(roll_key, True)
+        happy = float((snap.get("mood") or {}).get("开心") or 0)
+        prob = greet_probability(happy)
+        if not _roll_probability(prob):
+            logger.info("[amo] 主动消息：掷骰没中（kind=%s 开心=%.0f 概率=%d%%）", kind, happy, prob)
+            return
     if sent_today >= 5 and ignored >= 3 and not forced:
         self.db.kv_set(slot_key, True)
         logger.info("[amo] 主动消息：今天找过 %d 次都没回音，她决定先不打扰" % sent_today)
@@ -1324,12 +1505,11 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         hunger = self.get_hunger()
     except Exception:
         hunger = 80
-    event = pick_life_event(today_str(), uid)
+    event = pick_life_event(day, uid)
     micro = ""
     try:
         record = self.db.kv_get("micro_event:last", {}) or {}
         micro = _fresh_micro_text(record, now_ts())
-        # 同一条小事只当一次素材：14:26 讲过奶茶，15:00 又讲一遍会显得失忆
         if micro:
             shared = float(self.db.kv_get("micro_event:shared_ts", 0) or 0)
             stamp = float(record.get("ts") or 0)
@@ -1344,11 +1524,14 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         extra.append("【必须主动】" + forced)
     if held:
         extra.append("上次你主动找他，他很久没回你，你有点委屈；这次开口可以带点小脾气，但别质问他。")
-    extra.append("你现在有点想他（想念值 %d/100）。" % missing_score(silence))
-    if share_drive(silence, sent_today, ignored) >= 40:
-        extra.append("你今天分享欲挺强，遇到一点小事都想告诉他。")
-    if micro or event:
-        extra.append("你身边的小事：" + (micro or event))
+    if kind == "share":
+        if micro or event:
+            extra.append("你身边的小事：" + (micro or event))
+        extra.append("只讲这一件小事，一条消息只做一件事，不要先问他在干嘛。")
+    else:
+        extra.append("你现在有点想他（想念值 %d/100）。" % missing_score(silence))
+        if kind != "greet" and share_drive(silence, sent_today, ignored) >= 40:
+            extra.append("你今天分享欲挺强，遇到一点小事都想告诉他。")
     try:
         recent_said = self.db.recent_proactive_texts(uid, 2, 3)
     except Exception:
@@ -1357,15 +1540,12 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     if said_line:
         extra.append(said_line)
     facts = proactive_facts(snap, hunger, now, extra="".join(extra))
-    # 先占坑再生成：proactive_slot = 「这一小时已经决策过」。以前放在 LLM 之后写，
-    # 两轮并发都能过检查（2026-11-19 08:00 实测 6 秒内 3 条、11 分钟后又补一条）。
-    # 事件循环里 check→set 之间没有 await，等价于原子占坑。
     self.db.kv_set(slot_key, True)
     try:
-        text = await self.llm.gen_proactive(target_umo, profile, snap, "decide", facts=facts)
+        text = await self.llm.gen_proactive(target_umo, profile, snap, kind, facts=facts)
     except Exception as exc:
         logger.debug("[amo] 主动消息决策失败: %s" % exc)
-        self.db.kv_set(slot_key, False)  # 失败释放，下一轮还能重试
+        self.db.kv_set(slot_key, False)
         return
     elapsed = now_ts() - started_at
     if elapsed > PROACTIVE_STALE_SECONDS:
@@ -1382,18 +1562,21 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         _note_swallowed("amo_proactive._proactive_one.theme_dedup", _amo_exc)
         recent_all = []
     text = strip_mixed_checkin(text)
+    text = _one_topic_guard(text, kind)
     repeated = proactive_repeated(text, recent_all) or proactive_same_topic(text, recent_all)
     if repeated:
         logger.info("[amo] 主动消息：与最近一条主题重复，本轮不发（%s）", repeated[:40])
         return
-    sent_umo = await self._send_proactive_lines(profile, target_umo, text)
+    sent_umo = await self._send_proactive_lines(profile, target_umo, text, kind=kind)
     if not sent_umo:
         return
     self._mark_bot_initiated(sent_umo, text)
     self.db.kv_set("last_channel:%s" % uid, sent_umo)
     self.db.bump_proactive(uid)
-    self.db.log_proactive(uid, "decide", text)
-    self._set_proactive_pending(uid, "decide", text, umo=sent_umo)
-    logger.info("[amo] 主动分享 -> %s (%s)" % (profile.get("name", ""), "forced" if forced else "decide"))
-
-
+    self.db.log_proactive(uid, kind, text)
+    self._set_proactive_pending(uid, kind, text, umo=sent_umo)
+    self._mark_voluntary(uid, day, now.hour, "forced" if forced else kind)
+    if forced:
+        self._mark_forced_hour(uid)
+    logger.info("[amo] 主动分享 -> %s (%s/%s)", profile.get("name", ""),
+                "forced" if forced else "decide", kind)

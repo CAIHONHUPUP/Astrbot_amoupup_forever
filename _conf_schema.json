@@ -318,6 +318,24 @@
     "description": "主动私聊检查间隔（秒）",
     "default": 300
   },
+  "proactive_quiet_hours": {
+    "type": "string",
+    "description": "【主动消息】免打扰时段",
+    "default": "23:00-07:30",
+    "hint": "只拦主动消息；聊天仍按 quiet_hours。生日/生病/难受/红线急/日程提醒例外。"
+  },
+  "proactive_daily_cap": {
+    "type": "int",
+    "description": "【主动消息】每天最多几条闲聊",
+    "default": 6,
+    "hint": "只算问候/分享/饭点/下班这类；生病/难受/红线/生日/提醒不计。"
+  },
+  "proactive_forced_gap_minutes": {
+    "type": "int",
+    "description": "【主动消息】红线最短间隔（分钟）",
+    "default": 60,
+    "hint": "情绪极值/重病这类红线，两次之间至少隔这么久。"
+  },
 
 
 

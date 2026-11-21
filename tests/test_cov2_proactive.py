@@ -26,6 +26,17 @@ from amo_proactive import ProactiveMixin  # noqa: E402
 
 NOW = dt.datetime(2026, 11, 18, 15, 0)
 
+#: 2026-11-21：普通问候改成概率掷骰；这个文件测的是门控，不是概率，统一放行。
+_ORIGINAL_ROLL = amo_proactive._roll_probability
+
+
+def setUpModule():
+    amo_proactive._roll_probability = lambda prob: True
+
+
+def tearDownModule():
+    amo_proactive._roll_probability = _ORIGINAL_ROLL
+
 
 class ProactiveDB:
     def __init__(self, profiles=None, kv=None, proactive_rows=None,
@@ -143,11 +154,6 @@ class FakeLLM:
 
 
 class FakeProactive(ProactiveMixin):
-    FOLLOWUP_TEMPLATES = {
-        "greet": ["在忙吗？", "怎么不理我呀", "你吃饭了吗？"],
-        "decide": ["刚看到一只猫", "今天累不累"],
-    }
-
     def __init__(self, db=None, config=None, state=None, wallet=None, llm=None, profiles=None):
         self.db = db or ProactiveDB(profiles=profiles)
         self.config = FakeConfig(config or {})
@@ -469,47 +475,16 @@ class PendingTests(unittest.TestCase):
         self.assertEqual(p._followup_topics("下班加班"), {"work"})
         self.assertEqual(p._followup_topics("天气"), set())
 
-    def test_followup_text_rotates(self):
-        p = FakeProactive()
-        p.FOLLOWUP_TEMPLATES = {"greet": ["A", "B"], "decide": ["A", "B"]}
-        p.db.kv["proactive_followup_last_u1"] = "A"
-        with mock.patch.object(amo_proactive.random, "choice", lambda pool: pool[0]):
-            self.assertEqual(p._followup_text("u1", "greet"), "B")
-
-    def test_followup_text_topic_filter_falls_back(self):
-        p = FakeProactive()
-        p.FOLLOWUP_TEMPLATES = {"greet": ["你吃饭了吗？", "下班了吗"], "decide": []}
-        with mock.patch.object(amo_proactive.random, "choice", lambda pool: pool[0]):
-            text = p._followup_text("u1", "decide", previous_text="吃饭")
-        self.assertIn(text, p.FOLLOWUP_TEMPLATES["greet"])
-
-    def test_followup_text_empty_templates(self):
-        p = FakeProactive()
-        p.FOLLOWUP_TEMPLATES = {"greet": []}
-        self.assertEqual(p._followup_text("u1", "greet"), "？怎么不理我了？")
-
-    def test_followup_text_kv_raises(self):
-        p = FakeProactive()
-        p.db.raise_kv = True
-        with mock.patch.object(amo_proactive.random, "choice", lambda pool: pool[0]):
-            p._followup_text("u1", "greet")
-        self.assertEqual(p.db.writes[0][0], "proactive_followup_last_u1")
-
-        class BoomWrite(ProactiveDB):
-            def kv_set(self, key, value):
-                raise RuntimeError("写 kv 炸了")
-
-        p2 = FakeProactive(db=BoomWrite())
-        with mock.patch.object(amo_proactive.random, "choice", lambda pool: pool[0]):
-            p2._followup_text("u1", "greet")
-
-
 class CheckPendingTests(unittest.TestCase):
     def _plugin(self, pending, **kwargs):
         db = ProactiveDB(profiles=[{"uid": "u1", "private_umo": "lark:private:u1"}],
                          kv={("proactive_pending_u1"): pending})
         p = FakeProactive(db=db, **kwargs)
-        p._followup_text = lambda uid, kind, previous="": "在忙吗"
+
+        async def _live(umo, uid, kind, previous=""):
+            return "在忙吗"
+
+        p._followup_text_live = _live
         return p
 
     def test_dating_active_returns(self):
@@ -1352,6 +1327,7 @@ class MaybeProactiveTests(unittest.TestCase):
 class OneTests(unittest.TestCase):
     def _plugin(self, **kwargs):
         p = FakeProactive(profiles=[], **kwargs)
+        p.config["proactive_share_prob"] = 0   # 固定 kind，避免 share 随机
         p._pick_proactive_umo = lambda profile: "lark:private:u1"
         p._photo_proactive_blocked = lambda: False
         p._proactive_user_just_talked = lambda profile, now: False
@@ -1392,7 +1368,7 @@ class OneTests(unittest.TestCase):
             asyncio.run(amo_proactive._proactive_one(p, {"uid": "u1"}, {}, NOW, False, False))
         self.assertEqual(p.sent, [])
         old = now - 7 * 3600
-        p._send_proactive_lines = lambda profile, umo, text: _send_lines(profile, umo, text)
+        p._send_proactive_lines = lambda profile, umo, text, kind="greet": _send_lines(profile, umo, text)
         p.db.kv["proactive_pending_u1"] = {"sent_at": old}
         with mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
             asyncio.run(amo_proactive._proactive_one(p, {"uid": "u1"}, {}, NOW, False, False))
@@ -1459,7 +1435,7 @@ class OneTests(unittest.TestCase):
 
     def test_send_success_writes_all(self):
         p = self._plugin(llm=FakeLLM(text="你好"))
-        p._send_proactive_lines = lambda profile, umo, text: _send_lines(profile, umo, text)
+        p._send_proactive_lines = lambda profile, umo, text, kind="greet": _send_lines(profile, umo, text)
         with mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
             asyncio.run(amo_proactive._proactive_one(
                 p, {"uid": "u1", "name": "老公", "last_seen": amo_proactive.now_ts()},
@@ -1467,13 +1443,13 @@ class OneTests(unittest.TestCase):
         self.assertEqual(p.marked, [("lark:private:u1", "你好")])
         self.assertEqual(p.db.kv["last_channel:u1"], "lark:private:u1")
         self.assertEqual(p.db.bumped, ["u1"])
-        self.assertEqual(p.db.logs[-1][1], "decide")
+        self.assertEqual(p.db.logs[-1][1], "greet")
         self.assertEqual(p.db.kv["proactive_pending_u1"]["text"], "你好")
 
     def test_forced_reason_path(self):
         p = self._plugin(llm=FakeLLM(text="你不舒服吗"))
         snap = {"mood": {"开心": 95}, "health": {"sick": False}, "activity": {"category": "sleep"}}
-        p._send_proactive_lines = lambda profile, umo, text: _send_lines(profile, umo, text)
+        p._send_proactive_lines = lambda profile, umo, text, kind="greet": _send_lines(profile, umo, text)
         with mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
             asyncio.run(amo_proactive._proactive_one(
                 p, {"uid": "u1", "last_seen": amo_proactive.now_ts()},
@@ -1561,7 +1537,7 @@ class ProactiveGuardTests(unittest.TestCase):
                 return "在忙吗？"
 
         p.llm = ProbeLLM()
-        p._send_proactive_lines = lambda profile, umo, text: _send_lines(profile, umo, text)
+        p._send_proactive_lines = lambda profile, umo, text, kind="greet": _send_lines(profile, umo, text)
         with mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
             asyncio.run(amo_proactive._proactive_one(
                 p, {"uid": "u1"}, {}, NOW, False, False))
@@ -1578,7 +1554,7 @@ class ProactiveGuardTests(unittest.TestCase):
                 return "早，我到楼下买早餐了。"
 
         p.llm = SlowLLM()
-        p._send_proactive_lines = lambda profile, umo, text: _send_lines(profile, umo, text)
+        p._send_proactive_lines = lambda profile, umo, text, kind="greet": _send_lines(profile, umo, text)
         with mock.patch.object(amo_proactive, "now_ts", lambda: clock["t"]), \
                 mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
             asyncio.run(amo_proactive._proactive_one(
@@ -1592,7 +1568,7 @@ class ProactiveGuardTests(unittest.TestCase):
         p.db.proactive_texts = ["终于逮到你了，昨天一整天都没怎么跟你说话。"]
         p.llm = FakeLLM(text="早，我到楼下买早餐了，昨天一整天没怎么跟你说上话，今天怎么样，忙不忙。")
 
-        async def record_send(profile, umo, text):
+        async def record_send(profile, umo, text, kind="greet"):
             p.sent.append((umo, text))
             return umo
 
@@ -1614,6 +1590,11 @@ class ProactiveGuardTests(unittest.TestCase):
 
     def test_followup_marks_gap(self):
         p = FakeProactive()
+
+        async def _live(umo, uid, kind, previous=""):
+            return "你美丽的老婆在等你回话。"
+
+        p._followup_text_live = _live
         p.db.proactive_rows = [{"uid": "u1", "private_umo": "lark:private:u1", "relation": "相恋"}]
         p.db.kv["proactive_pending_u1"] = {"sent_at": amo_proactive.now_ts() - 3600,
                                           "kind": "decide", "text": "今天累不累",
@@ -1683,6 +1664,114 @@ class ChannelTests(unittest.TestCase):
         self.assertTrue(p._depressed_active("u1"))
         self.assertFalse(p._depressed_active("u2"))
         self.assertEqual(p._pending_key("u1"), "proactive_pending_u1")
+
+
+class CapSkipNightTests(unittest.TestCase):
+    """2026-11-21：日上限、跳整点、夜间白名单、晚安。"""
+
+    def _plugin(self):
+        return OneTests()._plugin()
+
+    def _day(self):
+        return amo_proactive.today_str()
+
+    def _run(self, p, profile=None, snap=None, now=None, night=False):
+        profile = profile or {"uid": "u1", "last_seen": amo_proactive.now_ts()}
+        with mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
+            asyncio.run(amo_proactive._proactive_one(
+                p, profile, snap or {}, now or NOW, False, night))
+
+    def test_daily_cap_blocks(self):
+        p = self._plugin()
+        p.db.kv["proactive_vol:u1:%s" % self._day()] = 6
+        self._run(p)
+        self.assertEqual(p.sent, [])
+        self.assertTrue(p.db.kv.get("proactive_slot:u1:%s:%02d" % (self._day(), NOW.hour)))
+
+    def test_skip_next_hour_blocks(self):
+        p = self._plugin()
+        p.db.kv["proactive_vol_hour:u1:%s" % self._day()] = NOW.hour - 1
+        self._run(p)
+        self.assertEqual(p.sent, [])
+
+    def test_night_blocks_greeting(self):
+        p = self._plugin()
+        late = NOW.replace(hour=23, minute=10)
+        p.config["proactive_quiet_hours"] = "23:00-07:30"
+        self._run(p, now=late, night=True)
+        self.assertEqual(p.sent, [])
+
+    def test_night_allows_comfort(self):
+        p = self._plugin()
+        late = NOW.replace(hour=23, minute=10)
+        snap = {"mood": {"开心": 10, "委屈": 70, "郁闷": 20},
+                "health": {"sick": False, "severity": "none"},
+                "period": {"pain": 0}, "activity": {"category": "rest"}}
+        p.config["proactive_comfort"] = True
+        p.config["proactive_quiet_hours"] = "23:00-07:30"
+        profile = {"uid": "u1", "last_seen": amo_proactive.now_ts(), "relation": "相恋"}
+        self._run(p, profile=profile, snap=snap, now=late, night=True)
+        self.assertTrue(p.sent, "难受属于夜间白名单")
+
+    def test_goodnight_sent_after_five_minutes_silence(self):
+        p = self._plugin()
+        late = NOW.replace(hour=23, minute=10)
+        profile = {"uid": "u1", "last_seen": amo_proactive.now_ts() - 600}
+        p.config["proactive_quiet_hours"] = "23:00-07:30"
+        self._run(p, profile=profile, now=late, night=True)
+        self.assertTrue(p.sent)
+        self.assertTrue(p.db.kv.get("proactive_goodnight:u1:%s" % self._day()))
+
+    def test_goodnight_waits_for_silence(self):
+        p = self._plugin()
+        late = NOW.replace(hour=23, minute=10)
+        profile = {"uid": "u1", "last_seen": amo_proactive.now_ts() - 60}
+        p.config["proactive_quiet_hours"] = "23:00-07:30"
+        self._run(p, profile=profile, now=late, night=True)
+        self.assertEqual(p.sent, [])
+
+
+class ProbabilityGateTests(unittest.TestCase):
+    """2026-11-21：普通问候掷骰；失败只占 roll 键，不挡红线。"""
+
+    def _plugin(self):
+        return OneTests()._plugin()
+
+    def _roll_key(self):
+        return "proactive_roll:u1:%s:%02d" % (amo_proactive.today_str(), NOW.hour)
+
+    def _slot_key(self):
+        return "proactive_slot:u1:%s:%02d" % (amo_proactive.today_str(), NOW.hour)
+
+    def test_failed_roll_does_not_block_the_hour(self):
+        p = self._plugin()
+        profile = {"uid": "u1", "last_seen": amo_proactive.now_ts()}   # 避免「8 小时没交流」红线
+        with mock.patch.object(amo_proactive, "_roll_probability", lambda prob: False), \
+                mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
+            asyncio.run(amo_proactive._proactive_one(p, profile, {}, NOW, False, False))
+        self.assertEqual(p.sent, [])
+        self.assertTrue(p.db.kv.get(self._roll_key()), "这一小时已经掷过")
+        self.assertFalse(p.db.kv.get(self._slot_key()), "掷骰失败不能占 slot")
+
+    def test_second_tick_does_not_re_roll(self):
+        p = self._plugin()
+        profile = {"uid": "u1", "last_seen": amo_proactive.now_ts()}
+        with mock.patch.object(amo_proactive, "_roll_probability", lambda prob: False), \
+                mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
+            asyncio.run(amo_proactive._proactive_one(p, profile, {}, NOW, False, False))
+            asyncio.run(amo_proactive._proactive_one(p, profile, {}, NOW, False, False))
+        self.assertEqual(p.sent, [])
+
+    def test_red_line_bypasses_roll(self):
+        p = self._plugin()
+        snap = {"mood": {"开心": 95, "委屈": 0, "郁闷": 0},
+                "health": {"sick": False, "severity": "none"},
+                "period": {"pain": 0}, "activity": {"category": "work"}}
+        with mock.patch.object(amo_proactive, "_roll_probability", lambda prob: False), \
+                mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
+            asyncio.run(amo_proactive._proactive_one(p, {"uid": "u1"}, snap, NOW, False, False))
+        self.assertTrue(p.sent, "红线不能被掷骰挡住")
+        self.assertFalse(p.db.kv.get(self._roll_key()), "红线不掷骰")
 
 
 if __name__ == "__main__":
