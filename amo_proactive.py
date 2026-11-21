@@ -115,6 +115,32 @@ def _schedule_minute(value):
     return int(hour) * 60 + int(minute)
 
 
+_SCHEDULE_OTHER_PLACES = ("机场", "医院", "餐厅", "公司", "商场", "学校", "地铁")
+_EXTRA_EVENT_WORDS = ("表姐", "拿药", "复查", "开会", "面试", "取快递")
+
+
+def _ground_schedule_text(text, fact):
+    """提醒必须带这条日程的时间/地点/事件；带错时间或别的日程直接不发。"""
+    body = str(text or "")
+    if not isinstance(fact, dict) or not body.strip():
+        return body
+    want_time = str(fact.get("time") or "").replace("：", ":")
+    want_place = str(fact.get("place") or "")
+    want_event = str(fact.get("event") or "")
+    times = [item.replace("：", ":") for item in re.findall(r"\d{1,2}[:：]\d{2}", body)]
+    if want_time and times and want_time not in times:
+        return ""
+    if want_place:
+        for place in _SCHEDULE_OTHER_PLACES:
+            if place in body and place not in want_place:
+                return ""
+    if want_event:
+        for word in _EXTRA_EVENT_WORDS:
+            if word in body and word not in want_event:
+                return ""
+    return body
+
+
 def _schedule_event_key(row):
     return "%s|%s" % (str(row.get("activity") or ""), str(row.get("place") or ""))
 
@@ -1894,6 +1920,11 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive._proactive_one.schedule_log", _amo_exc)
         return
+    if schedule_fact:
+        text = _ground_schedule_text(text, schedule_fact)
+        if not text:
+            logger.info("[amo] 主动消息：提醒与日程事实不符，本轮不发")
+            return
     sent_umo = await self._send_proactive_lines(profile, target_umo, text, kind=kind)
     if not sent_umo:
         return

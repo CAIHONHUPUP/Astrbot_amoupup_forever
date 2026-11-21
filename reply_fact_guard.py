@@ -119,13 +119,25 @@ _WORK_CLAIMS = (
     "在开会", "上班", "加班", "开会",
 )
 
+#: 加班/会议类的口语 edge 写法（不在上面那张短词表里，但同样说明「此刻在工作」）
+_WORK_EDGE_CLAIMS = (
+    "刚开完会", "开完会", "还在改方案", "在改方案", "改方案",
+    "还在赶方案", "在赶方案", "赶方案",
+)
+
+#: 「在做饭」类说法：办公室/餐厅/路上说这个同样是活动矛盾
+_COOK_CLAIMS = (
+    "正在做饭", "在做饭", "做饭中", "在煮饭", "煮饭", "在炒菜", "炒菜",
+    "在做菜", "做菜", "在弄饭", "做饭",
+)
+
 #: 裸的「上班/加班/开会」在这些字后面说的是以后/否定，不算此刻
 _WORK_SKIP_PREFIX = ("下", "去", "回", "赶", "来", "想", "要", "不", "没", "别")
 
 #: 在吃饭的说法 → 非饭点的降级话术（具体吃什么不管）
 _EAT_RE = re.compile(
     r"(刚吃完饭|刚吃完|刚吃了|刚吃|正在吃|正吃着|在吃饭|在吃呢|吃过了|吃了点"
-    r"|在吃(?![货惊力醋香]))"
+    r"|在吃(?![货惊力醋香])|扒了两口(?:饭|菜)?)"
 )
 _EAT_REPL = {
     "刚吃完饭": "等会儿弄点吃的",
@@ -159,7 +171,7 @@ _TOGETHER_CLAIMS = (
     "他刚抱我", "他抱着我", "他搂着我", "刚抱我", "抱着我", "他抱我", "搂着我",
     "他躺我旁边", "躺我旁边", "坐在我旁边", "他在我旁边", "在我旁边", "他在旁边",
     "刚亲我", "他亲我", "亲了我", "亲了我一下", "抱了我一下", "他刚亲了我",
-    "他刚抱了我", "靠在我肩上", "坐我边上", "坐在我边上",
+    "他刚抱了我", "他靠在我肩上", "靠在我肩上", "坐我边上", "坐在我边上",
     "手还搭在我腰上", "手搭在我腰上", "他手还搭在我腰上", "他就坐我边上",
 )
 
@@ -435,17 +447,30 @@ def _activity_rule(clause, ctx):
     category = str(activity.get("category") or "")
     zone = zone_of(activity) or ""
     if category in ("work", "commute"):
-        claims = [(word, "在上班" if category == "work" else "在路上")
-                  for word in _SLEEP_CLAIMS]
-        reason = "日程此刻是%s（category=%s），不能说在睡觉" % (
+        target = "在上班" if category == "work" else "在路上"
+        words = list(_SLEEP_CLAIMS) + list(_COOK_CLAIMS)
+        if category == "commute":
+            # 在路上说「在开会/在加班/刚开完会/还在改方案」同样是活动矛盾
+            words += list(_WORK_CLAIMS) + list(_WORK_EDGE_CLAIMS)
+        claims = [(word, target) for word in words]
+        reason = "日程此刻是%s（category=%s），不能说在睡觉/做饭%s" % (
             str(activity.get("activity") or category), category,
+            "" if category == "work" else "/开会/加班",
         )
     elif category in ("sleep", "meal", "rest", "health"):
-        target = {"sleep": "在睡觉", "meal": "在吃饭", "rest": "在休息"}.get(category)
-        if target is None:
+        target = {"sleep": "在睡觉", "meal": "在吃饭", "rest": "在休息"}.get(category, "")
+        if not target:
             target = "在医院" if zone == "hospital" else "在家歇着"
-        claims = [(word, target) for word in _WORK_CLAIMS]
-        reason = "日程此刻是%s（category=%s），不能说在上班" % (
+        words = list(_WORK_CLAIMS)
+        if category == "meal":
+            # 吃饭时不会「还在开会/改方案」；但睡觉/休息/生病时「刚开完会」很可能是
+            # 刚发生的事（近过去），硬改成「刚在睡觉」会把时间语义改坏，保留原文。
+            words += list(_WORK_EDGE_CLAIMS)
+        if zone != "home":
+            # 在餐厅/公司说「在做饭」也是活动矛盾；家=meal 本来就可能真在做饭
+            words += list(_COOK_CLAIMS)
+        claims = [(word, target) for word in words]
+        reason = "日程此刻是%s（category=%s），不能说在上班/做饭" % (
             str(activity.get("activity") or category), category,
         )
     elif category in ("play", "gym", "date", "shop", "life"):
@@ -453,7 +478,8 @@ def _activity_rule(clause, ctx):
         doing = doing.lstrip("正在")
         target = "在" + (doing or "忙")
         claims = [(word, target) for word in (
-            *_WORK_CLAIMS, "在做饭", "做饭", "在逛街", "逛街", "在健身", "健身",
+            *_WORK_CLAIMS, *_WORK_EDGE_CLAIMS, *_COOK_CLAIMS,
+            "在逛街", "逛街", "在健身", "健身",
             "在买菜", "买菜", "在看电影", "看电影")]
         reason = "日程此刻是%s（category=%s），不能换成别的活动" % (doing or category, category)
     else:
@@ -468,9 +494,14 @@ def _activity_rule(clause, ctx):
         rest = clause[index + len(word):]
         if rest.startswith(("附近", "楼下", "门口", "旁边", "族", "路", "时间")):
             continue
-        # 「在加班」整体换成「在休息」；裸的「加班」只换成「休息」，别多出一个「在」
-        repl = target if word.startswith(("在", "正")) else (
-            target[1:] if target.startswith("在") else target)
+        # 「在加班」整体换成「在休息」；裸的「加班」只换成「休息」，别多出一个「在」。
+        # 「刚开完会」「还在改方案」这类带时间前缀的写法，把前缀一起保留：
+        # 刚/还 + 「在X」→「刚在X」「还在X」，别拼出「刚上班」「刚路上」这类残句。
+        if target.startswith("在") and word[0] in "刚还":
+            repl = word[0] + target
+        else:
+            repl = target if word.startswith(("在", "正")) else (
+                target[1:] if target.startswith("在") else target)
         new = clause.replace(word, repl, 1)
         return new, _clause_hit("activity", clause, new, reason)
     return _travel_rule(clause, ctx)
@@ -644,7 +675,7 @@ def _companion_rule(clause, ctx):
             after = ""
         else:
             repl = subject + when + "在手机上聊了几句"
-            if after.startswith("了"):
+            if after.startswith(("了", "呢")):
                 after = after[1:]
         new = before + repl + after
         reason = "约会状态：现在没在一起（together=false，也没有进行中的 date session）"
