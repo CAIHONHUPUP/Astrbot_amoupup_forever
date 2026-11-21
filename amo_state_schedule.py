@@ -1216,6 +1216,12 @@ class ScheduleStateMixin(_MixinBase):
                 out.append(item)
                 continue
             row = dict(item)
+            # 2026-11-21：约会/社交块的主语由约会会话负责，生成侧不许把「和老公」改成「和闺蜜」
+            if (str(row.get("category") or "") in ("social", "date")
+                    or row.get("locked") or row.get("appointment")
+                    or str(row.get("source") or "") in ("date", "watch", "social")):
+                out.append(row)
+                continue
             allow = bool(approved)
             if not allow and day:
                 try:
