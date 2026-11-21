@@ -820,6 +820,13 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
                       "preview": self.preview_data_url(item), "ts": _amo_clock.now_ts()}
         self._save_kv_json("photo_user_candidates", data)
 
+    def clear_user_candidate(self, view):
+        view = str(view or "").strip().lower()
+        data = self._kv_json("photo_user_candidates")
+        if view in data:
+            data.pop(view, None)
+            self._save_kv_json("photo_user_candidates", data)
+
     def user_template_info(self):
         mapping = self._user_map()
         enabled = self._user_enabled()

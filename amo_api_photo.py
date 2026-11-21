@@ -152,6 +152,8 @@ class PhotoApiMixin(_MixinBase):
         cand = engine.user_candidate(view)
         url = str(data.get("url") or cand.get("file") or cand.get("url") or "")
         msg = await engine.adopt_user(url, view)
+        if str(msg).startswith("✅"):
+            engine.clear_user_candidate(view)
         return {"code": 0 if str(msg).startswith("✅") else 1, "msg": msg,
                 "data": engine.user_template_info()}
 
