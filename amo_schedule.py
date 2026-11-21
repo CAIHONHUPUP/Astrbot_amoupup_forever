@@ -1512,6 +1512,14 @@ class ScheduleMixin(_MixinBase):
                 _note_swallowed("amo_schedule.ScheduleMixin._generate_daily_diary.location_flag", _amo_exc)
         if callable(_diary_ensure_ending):
             text = _diary_ensure_ending(day, text)
+        try:
+            # 守护写进来的事件片段：并进当天大日记，不能被一句话顶掉
+            _notes = self.db.kv_get("diary_notes:" + day.isoformat(), []) or []
+            if _notes:
+                text = text.rstrip() + "\n\n" + "\n\n".join(str(n) for n in _notes)
+                self.db.kv_set("diary_notes:" + day.isoformat(), [])
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.diary_notes", _amo_exc)
         return text if len(text) >= 10 else ""
 
     def _finalize_daily_candidate(self, raw, dating, pool):

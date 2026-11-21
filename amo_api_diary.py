@@ -166,6 +166,48 @@ class DiaryApiMixin(_MixinBase):
         return {"code": 0, "data": {"day": day_text, "report": report,
                                     "text": audit.report_text(self, day_text)}}
 
+    def append_diary_note(self, day, text):
+        """给当天日记追加一段事件（不覆盖正文、不写 diary_written）。"""
+        body = str(text or "").strip()
+        if not body:
+            return {"code": 1, "msg": "空的日记"}
+        try:
+            from .amo_diary_guard import sanitize_diary
+        except ImportError:
+            from amo_diary_guard import sanitize_diary
+        body = sanitize_diary(body)
+        try:
+            target = _diary_parse_day(day if isinstance(day, str) else getattr(day, "isoformat", lambda: "")())
+        except Exception:
+            target = None
+        if target is None:
+            return {"code": 1, "msg": "日期不合法"}
+        day_text = target.isoformat()
+        path = str(self.db.kv_get("diary_written:" + day_text, "") or "")
+        if path and os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    old = fh.read()
+            except Exception:
+                old = ""
+            if body in old:
+                return {"code": 0, "data": {"date": day_text, "path": path}}
+            try:
+                _diary_write(self._diary_dir(), target, old.rstrip() + "\n\n" + body)
+            except Exception as exc:
+                _note_swallowed("amo_api_diary.append_diary_note.write", exc)
+                return {"code": 1, "msg": "追加失败: %s" % exc}
+            return {"code": 0, "data": {"date": day_text, "path": path}}
+        # 大日记还没生成：先存片段，等生成时合并
+        try:
+            notes = list(self.db.kv_get("diary_notes:" + day_text, []) or [])
+            if body not in notes:
+                notes.append(body)
+            self.db.kv_set("diary_notes:" + day_text, notes[-20:])
+        except Exception as exc:
+            _note_swallowed("amo_api_diary.append_diary_note.kv", exc)
+        return {"code": 0, "data": {"date": day_text, "path": ""}}
+
     def write_diary_text(self, day, text, force=False):
         """把给定文本写进长日记（金融事件用；不调模型）。
 
