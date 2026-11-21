@@ -161,7 +161,7 @@ def mark_locked(items, source):
 
 def protect_locked(old_items, new_items, source):
     """非锁定来源不许覆盖已锁块。"""
-    if str(source or "") in _LOCK_SOURCES:
+    if str(source or "") in _LOCK_SOURCES or str(source or "") == "date_remove":
         return list(new_items or [])
     locked = [row for row in (old_items or []) if isinstance(row, dict) and row.get("locked")]
     if not locked:
@@ -179,7 +179,7 @@ MIN_BLOCK_MINUTES = 5
 AUTHORITATIVE_SOURCES = frozenset({
     "manual", "manual_edit", "manual_edit_api", "command", "chat", "user", "api",
     "cleanup_backfill", "audit", "audit_fill", "audit_inject", "audit_repair",
-    "audit_seed", "audit_smooth", "audit_transit", "backfill", "migrate",
+    "audit_seed", "audit_smooth", "audit_transit", "backfill", "migrate", "date_remove",
     "normalize", "ensure_normalize", "snapshot", "synthetic", "test", "writer",
 })
 
