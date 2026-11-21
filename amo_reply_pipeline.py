@@ -1145,6 +1145,14 @@ def apply_chat_safety(text, plugin, umo="", user_text=""):
         value = _companion_guard(value, _activity)
     except Exception as exc:
         logger.debug("[amo] chat_safety.companion 失败: %s", exc)
+    try:
+        try:
+            from .amo_marriage_guard import rewrite as _marriage_guard
+        except ImportError:
+            from amo_marriage_guard import rewrite as _marriage_guard
+        value = _marriage_guard(value)
+    except Exception as exc:
+        logger.debug("[amo] chat_safety.marriage 失败: %s", exc)
     return value.strip() or str(text or "")
 
 

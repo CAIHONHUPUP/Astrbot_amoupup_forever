@@ -1205,6 +1205,14 @@ class ProactiveMixin(_MixinBase):
             raw = _companion_guard(raw, self.state.current_activity() or {})
         except Exception as _amo_exc:
             _note_swallowed("amo_proactive.companion_guard", _amo_exc)
+        try:
+            try:
+                from .amo_marriage_guard import rewrite as _marriage_guard
+            except ImportError:
+                from amo_marriage_guard import rewrite as _marriage_guard
+            raw = _marriage_guard(raw)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_proactive.marriage_guard", _amo_exc)
         # 「不矛盾」守卫：主动消息不走 decorate，切句前补一次（消费校验顺序不变）
         # 事实只读唯一视图（F1）：apply_fact_guard → amo_diary_guard.narrative_check
         try:
