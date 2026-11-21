@@ -228,10 +228,14 @@ def _tone_candidates(rule, prefix, middle, suffix, plugin, activity, variants=No
         variants, _core = _activity_tone(middle)
         if not variants:
             return []
-        if not prefix.endswith("在"):
-            variants = [item if item.startswith("在") else ("在" + item)
-                        for item in variants]
-        return [prefix + item + suffix for item in variants]
+        fixed = []
+        for item in variants:
+            if item.startswith("在") and "在" in prefix:
+                item = item[1:]
+            if not item.startswith(("在", "正", "刚", "先")):
+                item = "在" + item if "在" not in prefix else item
+            fixed.append(item)
+        return [prefix + item + suffix for item in fixed]
     if rule == "meal":
         key = str(middle)
         variants = MEAL_TONE.get(key) or ()

@@ -195,7 +195,7 @@ def _strip_opening(text, phrase):
         return ""
     rest = body[len(phrase):].lstrip()
     rest = rest.lstrip("，,、；;：:。！？!?…~ ")
-    if not rest or not re.search(r"[\w\u4e00-\u9fff]", rest):
+    if len(rest.strip("，,、；;：:。！？!?…~ ")) <= 1:
         return ""
     return rest
 
