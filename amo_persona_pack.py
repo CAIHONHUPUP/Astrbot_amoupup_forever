@@ -124,7 +124,7 @@ def retrieve(pack: dict, scene: str = "", mood: str = "", limit: int = 3) -> lis
         scored.append((score, index, str(row.get("text") or "")))
     scored.sort(key=lambda item: (-item[0], item[1]))
     out = [text for score, _index, text in scored if score > 0][:limit]
-    if len(out) < limit:
+    if (scene_text or mood_text) and len(out) < limit:
         for _score, _index, text in scored:
             if text and text not in out:
                 out.append(text)

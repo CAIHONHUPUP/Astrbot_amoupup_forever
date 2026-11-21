@@ -369,12 +369,15 @@ class EcommerceEngine:
                 continue
             if str(old.get("status") or "") == "已退货":
                 continue
+            if old.get("user_triggered"):
+                continue
             if any(dup_name and dup_name == str((it or {}).get("name") or "")
                    for it in old.get("items") or []):
                 return {"ok": False, "reason": "duplicate_item",
                         "msg": "同款 30 天内买过了"}
         recent = [float(o.get("created") or 0) for o in data["orders"]
                   if str(o.get("status") or "") != "已退货"
+                  and not o.get("user_triggered")
                   and float(o.get("created") or 0) <= float(now)]
         if recent and float(now) - max(recent) < SHOP_MIN_INTERVAL:
             return {"ok": False, "reason": "too_soon", "min_interval_hours": 24,
@@ -586,6 +589,13 @@ class EcommerceEngine:
         for item in (target.get("items") or []) if target.get("received_at") else []:
             kind = _item_kind_safe(item)
             if kind == "furniture":
+                try:
+                    created = float(target.get("created") or 0)
+                    data["furniture_purchases"] = [
+                        ts for ts in (data.get("furniture_purchases") or [])
+                        if abs(float(ts) - created) > 1]
+                except Exception as exc:
+                    logger.debug("[amo] 退货家具额度回收失败: %r", exc)
                 housing = getattr(self.plugin, "housing", None)
                 if housing is not None:
                     try:

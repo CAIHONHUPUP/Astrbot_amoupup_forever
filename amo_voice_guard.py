@@ -7,7 +7,7 @@ from __future__ import annotations
 
 MAX_CHARS = 220
 RECENT_LIMIT = 5
-PUBLIC_SEX_WORDS = ("比基尼", "床上等你", "裸", "想要你", "亲热", "脱")
+PUBLIC_SEX_WORDS = ("比基尼", "床上等你", "裸体", "赤裸", "想要你", "亲热", "脱衣服")
 
 
 def _recent(plugin):
