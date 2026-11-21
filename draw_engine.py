@@ -1146,6 +1146,19 @@ class DrawEngine:
             _note_swallowed("draw_engine.DrawEngine._foot_refs", exc)
             return []
 
+    def _couple_block_reason(self):
+        """合拍被拦的事实原因（给模型自己组织话，不写死台词）。"""
+        try:
+            try:
+                from . import amo_household as _hh
+            except ImportError:
+                import amo_household as _hh
+            scene = _hh.scene_now(self.plugin)
+            return str(getattr(scene, "reason", "") or "他不在她身边")
+        except Exception as exc:
+            logger.debug("[amo] 合拍在场判定失败: %r", exc)
+            return "他不在她身边"
+
     def _can_couple_photo(self):
         """合拍门禁：同居/半同居他在家，或正在约会见面，才可能两个人同框。"""
         try:
@@ -1209,7 +1222,8 @@ class DrawEngine:
                 _couple = False
             if _couple:
                 if not self._can_couple_photo():
-                    return "你又不在这儿，怎么合拍呀，等见着你再拍。"
+                    # 只给事实，不替模型写死台词；由她自己按此刻上下文开口
+                    return "合拍失败：%s，他此刻不在她身边，不能生成两人同框的照片。" % self._couple_block_reason()
                 engine = getattr(self.plugin, "photo", None)
                 if engine is not None:
                     pose = None

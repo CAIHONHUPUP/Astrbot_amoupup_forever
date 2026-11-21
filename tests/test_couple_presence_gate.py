@@ -38,6 +38,11 @@ class CouplePresenceGateTests(unittest.TestCase):
                 mock.patch.object(hh, "scene_now", return_value=SimpleNamespace(partner=True)):
             self.assertTrue(eng._can_couple_photo())
 
+    def test_block_reason_comes_from_scene_not_template(self):
+        eng = self._engine()
+        with mock.patch.object(hh, "scene_now", return_value=SimpleNamespace(partner=False, reason="同居·他上班")):
+            self.assertEqual("同居·他上班", eng._couple_block_reason())
+
     def test_disabled_household_allows(self):
         eng = self._engine()
         with mock.patch.object(hh, "enabled", return_value=False):
