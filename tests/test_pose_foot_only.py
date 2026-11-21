@@ -26,7 +26,7 @@ class FakeLibrary:
 class FootPoseOnlyTests(unittest.TestCase):
     def test_seed_has_six_foot_poses(self):
         items = foot_poses([{"name": name} for name, _ in SEED_POSES])
-        self.assertEqual(6, len(items))
+        self.assertEqual(3, len(items))
 
     def test_foot_poses_filters_non_foot(self):
         names = {item["name"] for item in foot_poses(FakeLibrary().poses())}
@@ -34,7 +34,7 @@ class FootPoseOnlyTests(unittest.TestCase):
         self.assertNotIn("手放腿上坐正", names)
 
     def test_is_foot_pose(self):
-        self.assertTrue(is_foot_pose("盘腿露脚心"))
+        self.assertTrue(is_foot_pose("侧坐伸腿拍脚"))
         self.assertFalse(is_foot_pose("手放腿上坐正"))
 
     def test_pick_returns_foot_pose(self):
@@ -42,7 +42,7 @@ class FootPoseOnlyTests(unittest.TestCase):
         self.assertIn(pose["name"], FOOT_POSE_NAMES)
 
     def test_foot_pose_ref_has_anatomy_guard(self):
-        prompt = pose_ref_prompt("盘腿露脚心", "盘腿坐在床上，一只脚的脚心朝向镜头")
+        prompt = pose_ref_prompt("侧坐伸腿拍脚", "侧身坐着，双腿向前伸直，脚背放松")
         self.assertIn("5 根脚趾", prompt)
         self.assertIn(FOOT_REF_GUARD, prompt)
 
