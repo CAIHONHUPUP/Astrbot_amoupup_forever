@@ -1075,6 +1075,16 @@ def _place_zone(place):
         return ""
 
 
+#: 外地/城外复合地名（「河北省·石家庄·酒店」这种）会让 zone_for_place 回落成 home；
+#: 这些地标即使 zone 认不出也绝不能当作家内部，否则出差日不补通勤、回程还会写成「回家」。
+_AWAY_PLACE_WORDS = (
+    "酒店", "宾馆", "民宿", "旅馆", "客栈", "车站", "机场", "高铁站", "火车站",
+    "客户公司", "公司", "写字楼", "办公室", "商场", "餐厅", "饭馆", "小馆", "食堂",
+    "小吃街", "咖啡", "医院", "学校", "教室", "游乐园", "乐园", "景区", "公园",
+    "古镇", "海边", "沙滩",
+)
+
+
 def _is_home_place(place):
     """家/卧室/客厅/沙发/浴室这种「家内部」地点：来回走不用通勤块。"""
     text = str(place or "").strip()
@@ -1082,7 +1092,19 @@ def _is_home_place(place):
         return False
     if text in INDOOR_PLACES:
         return True
+    if any(word in text for word in _AWAY_PLACE_WORDS):
+        return False
     return _place_zone(text) == "home"
+
+
+def _row_is_home(row):
+    """按块的 zone 判「在家」；没写 zone 的旧行才回落到 place 推断。"""
+    if not isinstance(row, dict):
+        return False
+    zone = str(row.get("zone") or "").strip()
+    if zone:
+        return zone == "home"
+    return _is_home_place(row.get("place"))
 
 
 def _is_known_place(place):
@@ -1128,7 +1150,7 @@ def _needs_transit_block(prev, nxt):
         return False
     if not (_is_known_place(prev_place) and _is_known_place(next_place)):
         return False
-    if _is_home_place(prev_place) and _is_home_place(next_place):
+    if _row_is_home(prev) and _row_is_home(nxt):
         return False
     if str(prev.get("zone") or "") == "road" or _place_zone(prev_place) == "road":
         return False
@@ -1141,8 +1163,8 @@ def _transit_row(day, start_min, minutes, prev, nxt, now_min):
     from_place = str(prev.get("place") or "").strip()
     to_place = str(nxt.get("place") or "").strip()
     end_min = max(int(start_min) + 1, min(24 * 60, int(start_min) + int(minutes)))
-    to_home = _is_home_place(to_place)
-    from_home = _is_home_place(from_place)
+    to_home = _row_is_home(nxt) if isinstance(nxt, dict) else _is_home_place(to_place)
+    from_home = _row_is_home(prev) if isinstance(prev, dict) else _is_home_place(from_place)
     if to_home:
         vehicle = _VEHICLE_RETURN.get(from_place) or vehicle_for(from_place, minutes)
     else:
@@ -1156,7 +1178,10 @@ def _transit_row(day, start_min, minutes, prev, nxt, now_min):
         activity = "出门去%s，%s（在路上）" % (to_place, ride)
         kind = "outbound"
     else:
-        activity = "从%s去%s，%s（在路上）" % (from_place, to_place, ride)
+        # R9：地点归一化后，上一块/下一块的实际地名会和生成时不同，「从X去Y」这种双地名
+        # 文案很容易和归一化后的块对不上。统一成「离开X，坐地铁去Y（在路上）」：
+        # 出发地保留在文案里，目的地只取下一个块，归一化后再由 refresh_transit_texts 刷新。
+        activity = "离开%s，%s去%s（在路上）" % (from_place, ride, to_place)
         kind = "transfer"
     return {
         "start": _minute_text(int(start_min)), "end": _minute_text(end_min),
@@ -1166,6 +1191,96 @@ def _transit_row(day, start_min, minutes, prev, nxt, now_min):
         "transit": mode or kind, "transit_kind": kind,
         "happened": int(start_min) <= int(now_min),
     }
+
+
+#: transit 代码 / vehicle 文案 -> 通勤文案里的交通说法
+_TRANSIT_RIDE_BY_CODE = {
+    "subway": "坐地铁", "bus": "坐公交", "taxi": "打车", "drive": "开车",
+    "train": "坐高铁", "plane": "坐飞机", "walk": "走路", "bicycle": "骑车", "bike": "骑车",
+}
+_TRANSIT_RIDE_BY_VEHICLE = {
+    "地铁": "坐地铁", "公交": "坐公交", "打车": "打车", "出租车": "打车",
+    "开车": "开车", "步行": "走路", "自行车": "骑车",
+}
+
+
+def _ride_text(row):
+    """从 transit/vehicle 字段推出「坐地铁 / 打车 / 开车」这类交通说法。"""
+    data = row if isinstance(row, dict) else {}
+    code = str(data.get("transit") or "")
+    ride = _TRANSIT_RIDE_BY_CODE.get(code) or _TRANSIT_RIDE_BY_VEHICLE.get(
+        str(data.get("vehicle") or "").strip())
+    if ride:
+        return ride
+    if str(data.get("vehicle") or "").strip() and code == "drive":
+        # vehicle 存的是车名（白色大众高尔夫/小电驴）：transit=drive 就是自己开车
+        return "开车"
+    return ""
+
+
+def refresh_transit_texts(rows):
+    """地点归一化之后，用最终的前后块 place 重写通勤块文案（R9）。
+
+    R9：通勤块以前在归一化之前生成，文案里的地名是生成时原文；地点归一化
+    （写字楼→公司、商场·餐厅→楼下小馆）之后，文案和相邻块就对不上了。
+    这里在归一化之后统一按最终的前后块 place 刷新：
+    - 回程：刚出{前块 place}，坐地铁回家（在路上）
+    - 出门：出门去{后块 place}，坐地铁（在路上）
+    - 换场：离开{前块 place}，坐地铁去{后块 place}（在路上）
+
+    不再使用「从X去Y」的双地名句式：归一化前后 X/Y 往往是两套名字，这种句式
+    会同时要求 from 对上原始地点、to 对上下一块，越刷越错；改成「离开X…去Y」
+    只保留最终地名，from 信息仍在文案里但不参与校验。
+    原地修改并返回同一个 list（调用方会继续跑 zone/文案总闸）。
+    """
+    items = [row for row in (rows or []) if isinstance(row, dict)]
+    ordered = sorted((row for row in items if _day_span(row)),
+                     key=lambda row: _day_span(row)[0])
+    positions = {id(row): index for index, row in enumerate(ordered)}
+    for row in items:
+        if str(row.get("source") or "") != "transit_block":
+            continue
+        position = positions.get(id(row))
+        if position is None:
+            continue
+        prev = None
+        nxt = None
+        for pos in range(position - 1, -1, -1):
+            if not _row_is_road(ordered[pos]):
+                prev = ordered[pos]
+                break
+        for pos in range(position + 1, len(ordered)):
+            if not _row_is_road(ordered[pos]):
+                nxt = ordered[pos]
+                break
+        from_place = str((prev or {}).get("place") or "").strip()
+        to_place = str((nxt or {}).get("place") or "").strip()
+        ride = _ride_text(row) or "赶路"
+        if _row_is_home(nxt):
+            activity = "刚出%s，%s回家（在路上）" % (from_place or "上一个地方", ride)
+            kind = "return"
+        elif _row_is_home(prev):
+            activity = ("出门去%s，%s（在路上）" % (to_place, ride) if to_place
+                        else "出门上路，%s（在路上）" % ride)
+            kind = "outbound"
+        elif to_place:
+            activity = "离开%s，%s去%s（在路上）" % (from_place or "上一个地方", ride, to_place)
+            kind = "transfer"
+        else:
+            activity = "在路上，%s（在路上）" % ride
+            kind = "transfer"
+        row["activity"] = activity
+        row["place"] = "路上"
+        row["zone"] = "road"
+        row.setdefault("category", "commute")
+        row["transit_kind"] = kind
+        code = str(row.get("transit") or "")
+        if code in _TRANSIT_RIDE_BY_CODE:
+            continue
+        mode = _TRANSIT_MODE_BY_VEHICLE.get(str(row.get("vehicle") or ""))
+        if mode:
+            row["transit"] = mode
+    return rows
 
 
 def _transit_order(rows):
@@ -1203,6 +1318,48 @@ def _push_after(rows, order, from_pos, floor_min):
         logger.info("[amo] 通勤块占位：日程块 %s 顺延到 %s", _minute_text(start),
                     _minute_text(new_start))
         cursor = new_end
+
+
+def _carve_transit_from_before(rows, end_min, minutes, min_keep=5):
+    """插通勤块前先从「刚结束的活动块」结尾借时间（R2 尾部丢失修复）。
+
+    旧做法是把 end_min 之后的块整体顺延；白天连插几段通勤，累计顺延就把
+    23:xx 的收尾睡眠挤出 24:00，压成 5-10 分钟碎片甚至直接丢掉。
+    这里改成：把结束于 end_min 的活动块提前 minutes 结束，通勤块占
+    [end_min-minutes, end_min)，end_min 之后的块一分钟都不动，尾部睡眠原样保留。
+    借不出时间（那块太短/是路上块/是家内部块）时返回 (None, None)，调用方退回顺延。
+    """
+    try:
+        end_min = int(end_min)
+        minutes = int(minutes)
+    except (TypeError, ValueError):
+        return None, None
+    if minutes <= 0:
+        return None, None
+    candidates = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        span = _day_span(row)
+        if not span or span[1] != end_min:
+            continue
+        if _is_home_place(row.get("place")) or _row_is_road(row):
+            continue
+        if span[1] - span[0] - minutes < int(min_keep):
+            continue
+        candidates.append((span, row))
+    if not candidates:
+        return None, None
+    # 同一结束时间有多块时（嵌套活动子块），缩起点最晚的那块：它是最后一段活动。
+    span, row = max(candidates, key=lambda pair: pair[0][0])
+    origin = str(row.get("end") or "")
+    row["end"] = _minute_text(span[1] - minutes)
+    row["transit_carved"] = "transit"
+    if origin:
+        row.setdefault("origin_end", origin)
+    logger.info("[amo] 通勤块从上一块借时间：%s %s -> %s", row.get("activity") or "",
+                origin, row.get("end"))
+    return span[1] - minutes, row
 
 
 def _has_overlap(rows):
@@ -1252,6 +1409,23 @@ def insert_transit_blocks(day, items, old_items=None, now=None):
         if not minutes:
             cursor += 1
             continue
+        # R2：只有当顺延会把最后一块挤出 24:00（整天骨架一定顶到 24:00）时，
+        # 才改成从「刚结束的活动块」结尾借时间，后面一分钟都不动；局部/白天写入
+        # （尾部本来就没到 24:00）保持原来的顺延语义，家块照旧整体后移。
+        carved_start = _carved = None
+        day_end = max((_day_span(row)[1] for row in rows
+                       if isinstance(row, dict) and _day_span(row)), default=0)
+        if day_end + minutes > 24 * 60:
+            carved_start, _carved = _carve_transit_from_before(rows, prev_span[1], minutes)
+        if carved_start is not None:
+            block = _transit_row(day, carved_start, minutes, prev, nxt, now_min)
+            rows.append(block)
+            inserted.append(block)
+            logger.info("[amo] 跨地点补通勤块 %s-%s（借上一块时间）：%s",
+                        block["start"], block["end"], block["activity"])
+            order = _transit_order(rows)
+            cursor = 0
+            continue
         block = _transit_row(day, prev_span[1], minutes, prev, nxt, now_min)
         rows.append(block)
         inserted.append(block)
@@ -1262,6 +1436,13 @@ def insert_transit_blocks(day, items, old_items=None, now=None):
         cursor = 0
     rows = [row for row in rows if row is not None]
     rows.sort(key=lambda row: (_day_span(row)[0] if _day_span(row) else 24 * 60))
+    # 兜底：本次插过通勤块、却仍因顺延把最后一块丢在 24:00 之前时，把尾块延到 24:00，
+    # 绝不给当天留下尾部悬空。
+    if inserted and rows:
+        last = rows[-1]
+        last_span = _day_span(last)
+        if last_span and last_span[1] < 24 * 60:
+            last["end"] = "24:00"
     if inserted and _has_overlap(rows):
         # 硬兜底：宁可把重叠块压直，也绝不让重叠落库
         logger.error("[amo] 通勤块插入后仍有重叠，已二次压直 day=%s", day)
@@ -1305,7 +1486,7 @@ def _return_leg_source(rows, home_row):
     for row in rows:
         if row is home_row or not isinstance(row, dict):
             continue
-        if _is_home_place(row.get("place")) or _row_is_road(row):
+        if _row_is_home(row) or _row_is_road(row):
             continue
         if not _is_known_place(row.get("place")):
             continue
@@ -1336,7 +1517,7 @@ def _home_already_before(rows, home_row, floor_min):
     for row in rows:
         if row is home_row or not isinstance(row, dict):
             continue
-        if not _is_home_place(row.get("place")):
+        if not _row_is_home(row):
             continue
         span = _day_span(row)
         if not span:
@@ -1427,7 +1608,7 @@ def repair_cross_place_blocks(plugin, day, items=None, now=None):
             [row for row in rows if isinstance(row, dict)],
             key=lambda row: (_day_span(row) or (24 * 60, 24 * 60))[0])
         for home_row in ordered:
-            if not _is_home_place(home_row.get("place")):
+            if not _row_is_home(home_row):
                 continue
             home_span = _day_span(home_row)
             if not home_span:
@@ -1456,6 +1637,19 @@ def repair_cross_place_blocks(plugin, day, items=None, now=None):
         if target is None:
             break
         home_row, place_row, start_min, minutes = target
+        # R2：回程块挤到最后一块 24:00 之外时，从活动段结尾借时间，家块和尾部睡眠不动。
+        day_end = max((_day_span(row)[1] for row in rows
+                       if isinstance(row, dict) and _day_span(row)), default=0)
+        carved_start = None
+        if day_end + minutes > 24 * 60:
+            carved_start, _carved = _carve_transit_from_before(rows, start_min, minutes)
+        if carved_start is not None:
+            block = _transit_row(day, carved_start, minutes, place_row, home_row, now_min)
+            rows.append(block)
+            inserted.append(block)
+            logger.info("[amo] 回程通勤修复（借活动段结尾）%s-%s：%s", block["start"],
+                        block["end"], block["activity"])
+            continue
         block = _transit_row(day, start_min, minutes, place_row, home_row, now_min)
         home_start = (_day_span(home_row) or (start_min, start_min))[0]
         _shift_home_and_after(rows, home_start, start_min + minutes)

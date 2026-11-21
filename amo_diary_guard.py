@@ -7,6 +7,7 @@
 from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
+import hashlib
 import logging
 import re
 import time
@@ -243,7 +244,7 @@ def narrative_view(plugin, now=None, cache=None):
     else:
         try:
             day = _clock_now().date().isoformat()
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             day = None
     use_cache = (now is None) if cache is None else bool(cache)
     if use_cache:
@@ -253,7 +254,7 @@ def narrative_view(plugin, now=None, cache=None):
                 fresh = (cached.get("day") == day
                          and time.monotonic() - float(cached.get("at") or 0.0)
                          <= _VIEW_CACHE_SECONDS)
-            except Exception:
+            except Exception:  # cleanup: 日记容错
                 fresh = False
             if fresh and isinstance(cached.get("view"), dict):
                 return cached["view"]
@@ -638,6 +639,99 @@ _INTERACTION_VERBS = ("提醒", "说", "问", "发消息", "打电话", "叮嘱"
 _PAST_MARKERS = ("以前", "之前", "曾经", "那会儿", "那天", "上次", "从前")
 _SUBJECTS = ("他", "老公")
 _SAFE_INTERACTION_LINE = "突然想起他以前叮嘱过我的话，心里软了一下。"
+#: 兜底句不再只有一句：多天写日记时同一句话反复出现会变成模板（2026-11-22）。
+#: 都只写「以前」的想念，不声称今天发生过具体互动（不含今天的时间词/互动动词）。
+_SAFE_INTERACTION_LINES = (
+    _SAFE_INTERACTION_LINE,
+    "也不知道他这会儿在忙什么，忽然有点想他。",
+    "脑子里闪过以前他说过的话，自己笑了笑。",
+    "有些话他以前说过，我一直记着。",
+    "想起以前他关心我的样子，鼻子有点酸。",
+    "忽然有点想他，也不知道他忙不忙。",
+    "他以前总念叨我要照顾好自己，我没忘。",
+)
+
+#: 长得像人名、其实是物品/文件/食物名的结尾字：人名兜底不许替换这类词。
+_THING_SUFFIX = frozenset(
+    "粉面饭粥菜肉茶奶汤包饼饺锅串果酒水蛋糖瓜豆件档表纸本书稿"
+    "衣物鞋裙裤袜帽袋箱柜门窗床被枕巾杯碗盘筷勺刀叉机脑视话灯"
+    "墙地砖朵枝叶花草树米油盐酱醋壶盆店铺街路站场院校司楼房"
+    "屋车船港园贵好差慢快累忙热冷香甜苦酸辣咸淡新旧多少高低"
+    "长短远近早晚玩睡醒饿渴饱困疼痛红绿蓝白黑亮暗乱脏净空满"
+)
+
+
+#: 长得像「姓+名」、其实是常用词：人名兜底不许换（「终于说」≠ 有人叫终于）。
+_NOT_PERSON_WORDS = frozenset("""
+终于 马上 后来 本来 原来 当然 果然 居然 突然 忽然 已经 曾经 直接 真正 其实
+确实 清楚 明白 容易 简单 麻烦 及时 顺便 随意 故意 特意 万一 向来 仍然 仍然
+方法 方便 方向 方面 方案 高兴 常常 实在 时间 白天 一直 一样 一定 一般 一边
+文章 金额 石头 关系 关于 对于 由于 因为 所以 但是 如果 虽然 而且 不过 然后
+将来 将近 刚刚 刚才 现在 目前 以后 以前 之后 之前 时候 什么 怎么 多少
+沙发 米饭 牛肉 牛奶 文档 公司 公园 阳台 商场 医院 学校 地铁 公交 电梯
+电话 手机 电脑 电视 冰箱 空调 被子 枕头 毛巾 咖啡 奶茶 火锅 面条 鸡蛋
+""".split())
+
+
+def looks_like_person_name(name):
+    """粗糙但保守的人名判定：只在名字像人时才替换（防止「文档/牛肉粉/终于」被换掉）。"""
+    text = str(name or "").strip()
+    if len(text) < 2 or len(text) > 3:
+        return False
+    if text in _NOT_PERSON_WORDS:
+        return False
+    # 人名不会带物品/数量/形容类字（「家店贵」「牛肉粉」「文档」这类整词直接排除）。
+    if any(char in _THING_SUFFIX for char in text[1:]):
+        return False
+    return True
+
+
+def safe_interaction_line(day="", seed=""):
+    """给「今天这句具体互动被删掉」补一句兜底：按日期轮换，避免跨天复读。"""
+    lines = _SAFE_INTERACTION_LINES
+    if not lines:
+        return ""
+    index = 0
+    text = str(day or "").strip()
+    if text:
+        try:
+            import datetime as _dt
+            index = _dt.date.fromisoformat(text[:10]).toordinal() % len(lines)
+            return lines[index]
+        except (ImportError, TypeError, ValueError):
+            pass
+    token = str(seed or day or "").encode("utf-8", "ignore")
+    if token:
+        index = int(hashlib.md5(token).hexdigest(), 16) % len(lines)
+    return lines[index]
+
+
+def scrub_names_guarded(text, first="一个朋友", later="一个同事"):
+    """名单外人名兜底，但只替换真的「像人名」的候选。
+
+    2026-11-22 实锤：amo_immersion_guard.scrub_names 把「文档」「牛肉粉」这类
+    普通词当人名换成「一个朋友/一个同事」，日记读起来直接崩（吃一个朋友）。
+    这里保留防捏造人名的能力，只加一层「像不像人」的过滤。
+    """
+    value = str(text or "")
+    if not value:
+        return value
+    try:
+        try:
+            from .amo_immersion_guard import foreign_names as _foreign
+        except ImportError:
+            from amo_immersion_guard import foreign_names as _foreign
+        hits = [name for name in (_foreign(value) or ()) if looks_like_person_name(name)]
+    except Exception as exc:  # 人名检测失败不能拖垮日记
+        logger.debug("[amo] 日记人名兜底跳过: %s" % exc)
+        return value
+    if not hits:
+        return value
+    for index, name in enumerate(hits):
+        if name:
+            value = value.replace(name, first if index % 2 == 0 else later)
+    logger.warning("[amo] 兜底替换名单外人名: %s", hits)
+    return value
 
 
 def has_chat_material(facts_text):
@@ -682,8 +776,13 @@ def claims_today_interaction(sentence, facts_text="", has_chat=None, partner_hom
 
 
 def strip_fabricated_interaction(text, facts_text="", has_chat=None,
-                                 safe_line=_SAFE_INTERACTION_LINE, partner_home=False):
-    """按句删/改“素材里没有、却声称今天发生”的互动；其余句子（情绪/体感）原样保留。"""
+                                 safe_line=_SAFE_INTERACTION_LINE, partner_home=False,
+                                 day=""):
+    """按句删/改“素材里没有、却声称今天发生”的互动；其余句子（情绪/体感）原样保留。
+
+    day 给了就用按日期轮换的兜底句（跨天不复读同一句）；不给保持原来的固定句，
+    兼容旧的调用方与测试。
+    """
     out: list[Any] = []
     stripped = 0
     for sentence in _sentences(text):
@@ -692,6 +791,8 @@ def strip_fabricated_interaction(text, facts_text="", has_chat=None,
         if claims_today_interaction(sentence, facts_text, has_chat, partner_home=partner_home):
             stripped += 1
             replacement = str(safe_line or "")
+            if day and replacement == _SAFE_INTERACTION_LINE:
+                replacement = safe_interaction_line(day, sentence)
             if replacement and (not out or out[-1] != replacement):
                 out.append(replacement)
             continue
@@ -767,14 +868,8 @@ def sanitize_diary(text, address="老公", together=False):
             continue
         out.append(sentence)
     cleaned = "".join(out)
-    try:  # 防线四：名单外人名绝不入库（日记也兜一层）
-        try:
-            from .amo_immersion_guard import scrub_names as _scrub
-        except ImportError:
-            from amo_immersion_guard import scrub_names as _scrub
-        cleaned = _scrub(cleaned)
-    except Exception as exc:  # 人名兜底失败不能拖垮日记，但要留痕
-        logger.debug("[amo] 日记人名兜底跳过: %s" % exc)
+    # 防线四：名单外人名绝不入库（日记也兜一层）；但别把物品/食物名当人名换掉。
+    cleaned = scrub_names_guarded(cleaned)
     if not together:
         cleaned = _FABRICATED.sub("好想" + address, cleaned)
     cleaned = cleaned.replace("挂了电话", "")

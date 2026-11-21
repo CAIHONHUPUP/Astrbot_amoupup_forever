@@ -3,14 +3,53 @@
 from __future__ import annotations
 
 
+def _trip_places(ctx):
+    """出差三件套：城市 / 所在地前缀 / 客户公司 / 酒店（延续日沿用同一天的地点）。"""
+    event = ctx.get("event") or {}
+    city = str(event.get("city") or "成都")
+    where = str(event.get("where") or ("外省·" + city)).strip() or ("外省·" + city)
+    return city, where, where + "·客户公司", where + "·酒店"
+
+
 def business_trip_segments(ctx, seg, with_city):
     home = ctx["home"]
     event = ctx.get("event") or {}
-    city = str(event.get("city") or "成都")
-    where = str(event.get("where") or ("外省·" + city))
-    office = where + "·客户公司"
-    hotel = where + "·酒店"
+    city, where, office, hotel = _trip_places(ctx)
     effects = event.get("effects") or {}
+    if event.get("continued") and not event.get("return_home"):
+        # R8 出差第 N 天（还要住一晚）：从酒店醒来接着办事，不从家重新出发。
+        return [
+            seg("00:00", "07:00", "睡觉", hotel, "hotel", "sleep"),
+            seg("07:00", "08:00", "起床洗漱，酒店吃早餐", hotel, "hotel", "meal"),
+            seg("08:00", "09:00", "打车去客户公司", "路上", "road", "commute", transit="taxi"),
+            seg("09:00", "12:00", "在客户公司跟进项目", office, "office", "work",
+                event="business_trip", effects=effects),
+            seg("12:00", "13:00", "客户公司附近吃午饭", office + "附近", "restaurant", "meal"),
+            seg("13:00", "18:00", "在客户公司处理项目", office, "office", "work"),
+            seg("18:00", "19:00", "打车回酒店", "路上", "road", "commute", transit="taxi"),
+            seg("19:00", "20:00", "酒店附近吃晚饭", where + "·小吃街", "restaurant", "meal"),
+            seg("20:00", "21:00", "回酒店整理资料", hotel, "hotel", "work"),
+            seg("21:00", "23:00", "在酒店休息", hotel, "hotel", "rest"),
+            seg("23:00", "24:00", "睡觉", hotel, "hotel", "sleep"),
+        ]
+    if event.get("continued") and event.get("return_home"):
+        # R8 出差最后一天：上午还在客户公司收尾，下午坐车回家，晚上睡回家。
+        return [
+            seg("00:00", "07:00", "睡觉", hotel, "hotel", "sleep"),
+            seg("07:00", "08:00", "起床收拾行李、退房", hotel, "hotel", "life"),
+            seg("08:00", "09:00", "打车去客户公司", "路上", "road", "commute", transit="taxi"),
+            seg("09:00", "12:00", "在客户公司做收尾", office, "office", "work",
+                event="business_trip", effects=effects),
+            seg("12:00", "13:00", "客户公司附近吃午饭", office + "附近", "restaurant", "meal"),
+            seg("13:00", "15:00", "在客户公司交接", office, "office", "work"),
+            seg("15:00", "16:00", "打车去车站，准备坐高铁回家", "路上", "road", "commute",
+                transit="taxi"),
+            seg("16:00", "18:30", "坐高铁回家", "路上", "road", "commute", transit="train"),
+            seg("18:30", "19:30", "到家吃晚饭", home, "home", "meal"),
+            seg("19:30", "21:00", "在家瘫着休息", home, "home", "rest"),
+            seg("21:00", "22:00", "洗澡、收拾行李", home, "home", "life"),
+            seg("22:00", "24:00", "睡觉", home, "home", "sleep"),
+        ]
     return [
         seg("00:00", "06:00", "睡觉", home, "home", "sleep"),
         seg("06:00", "07:00", "起床收拾行李", home, "home", "life"),
@@ -107,13 +146,11 @@ def overtime_segments(ctx, seg):
     car = ctx["car"]
     event = ctx.get("event") or {}
     return [
-        seg("00:00", "08:00", "睡觉", home, "home", "sleep"),
-        seg("08:00", "09:00", "起床吃早餐", home, "home", "meal"),
-        seg("09:00", "10:00", "本来打算在家躺一天", home, "home", "rest"),
-        seg("10:00", "11:00", "接到电话，" + str(event.get("task") or "处理点急事"), home, "home", "work",
-            event="overtime", effects=event.get("effects") or {}),
-        seg("11:00", "12:00", "开车赶去公司", "路上", "road", "commute",
+        seg("00:00", "07:00", "睡觉", home, "home", "sleep"),
+        seg("07:00", "08:00", "起床吃早餐", home, "home", "meal"),
+        seg("08:00", "09:00", "开车赶去公司", "路上", "road", "commute",
             transit="drive", vehicle=car, detail="周末也堵，心里更烦了"),
+        seg("09:00", "12:00", "在公司" + str(event.get("task") or "处理事情") + "、被拉去开会", office, "office", "work"),
         seg("12:00", "13:00", "在公司楼下随便吃一口", office + "附近", "restaurant", "meal"),
         seg("13:00", "18:00", "在公司" + str(event.get("task") or "处理事情") + "、被拉去开会", office, "office", "work"),
         seg("18:00", "19:00", "下班回家", "路上", "road", "commute",

@@ -6,7 +6,7 @@ from typing import Any, TYPE_CHECKING
 
 try:  # 包模式（AstrBot 加载插件）
     from .schedule_plan import (
-        Any, CAR_BRANDS, CAR_POOL, CITY_POOL, COMPANY_POOL, DISTRICT_MAP, HOME_STYLES, MOOD_BASE,
+        CAR_BRANDS, CAR_POOL, CITY_POOL, COMPANY_POOL, DISTRICT_MAP, HOME_STYLES, MOOD_BASE,
         MOOD_KEYS, PROVINCE_CITIES, SWIM_DETAILS, SWIM_PLACES, _city_of, _clock_now,
         _clock_today, _note_swallowed, _place_of, _with_city, amusement_segments,
         business_trip_segments, clamp, date, friend_dinner_segments, homebody_segments,
@@ -18,7 +18,7 @@ try:  # 包模式（AstrBot 加载插件）
 except ImportError:  # 直接按文件加载时（测试/模拟器）
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from schedule_plan import (
-            Any, CAR_BRANDS, CAR_POOL, CITY_POOL, COMPANY_POOL, DISTRICT_MAP, HOME_STYLES, MOOD_BASE,
+            CAR_BRANDS, CAR_POOL, CITY_POOL, COMPANY_POOL, DISTRICT_MAP, HOME_STYLES, MOOD_BASE,
             MOOD_KEYS, PROVINCE_CITIES, SWIM_DETAILS, SWIM_PLACES, _city_of, _clock_now,
             _clock_today, _note_swallowed, _place_of, _with_city, amusement_segments,
             business_trip_segments, clamp, date, friend_dinner_segments, homebody_segments,
@@ -242,7 +242,8 @@ class ScheduleSkeletonMixin:
         _, _, cfg_assets = self._split_assets(self.p.cfg_str("schedule_car", "") or "")
         yesterday = self.yesterday_summary(day)
         good_weather = self._good_weather(weather)
-        event = self._pick_event(day, meta, weather, health, period, seed, world)
+        # _pick_event 在工作日「不加班、不出差」时返回 None，上下文统一成 none 事件。
+        event = self._pick_event(day, meta, weather, health, period, seed, world) or {"kind": "none"}
         holiday_plan = self._pick_holiday_plan(
             day, meta, weather, health, period, event, good_weather, seed, city,
         )
@@ -467,8 +468,122 @@ class ScheduleSkeletonMixin:
         "office": ("临时加班", "公司临时有事，被叫过去帮忙"),
     }
 
+    #: 出差默认天数：事件文案就是「当天回不来」，所以至少住一晚、第二天返程。
+    _BUSINESS_TRIP_DEFAULT_DAYS = 2
+
+    def _remember_business_trip(self, day, event):
+        """把这次出差的计划（开始日/天数/地点）写进 kv，供次日延续时判断第几天。"""
+        try:
+            db = getattr(getattr(self, "state", None), "db", None)
+            if db is None:
+                return
+            db.kv_set("business_trip_plan", {
+                "start_day": str(day),
+                "days": int(self._BUSINESS_TRIP_DEFAULT_DAYS),
+                "where": str(event.get("where") or ""),
+                "city": str(event.get("city") or ""),
+                "province": str(event.get("province") or ""),
+            })
+        except Exception as _amo_exc:
+            _note_swallowed("schedule_engine.ScheduleEngine._remember_business_trip", _amo_exc)
+
+    def _continued_business_trip(self, day):
+        """R8：出差跨天延续——昨天睡在外地酒店，今天就不能从家重新开始。
+
+        返回当天的事件（continued/return_home 交给 business_trip_segments 出骨架）；
+        不是延续日返回 None。计划存在 kv 里；强制事件或旧日程没有计划时，按
+        「昨天住酒店 → 今天返程」处理，至少不瞬移回家。
+        """
+        try:
+            prev_day = (date.fromisoformat(str(day)) - timedelta(days=1)).isoformat()
+        except Exception:
+            return None
+        rows = []
+        try:
+            state = getattr(self, "state", None)
+            rows = list((getattr(state, "schedule", {}) or {}).get(prev_day) or [])
+        except Exception:
+            rows = []
+        if not rows:
+            try:
+                rows = list(self.state.db.get_schedule(prev_day) or [])
+            except Exception:
+                rows = []
+        rows = [row for row in rows if isinstance(row, dict)]
+        if not rows:
+            return None
+        prev_ctx: dict = {}
+        try:
+            getter = getattr(self.state, "schedule_context", None)
+            if callable(getter):
+                prev_ctx = getter(prev_day) or {}
+        except Exception:
+            prev_ctx = {}
+        prev_event = dict(prev_ctx.get("event") or {}) if isinstance(prev_ctx, dict) else {}
+
+        def _end_min(row):
+            return parse_hhmm(row.get("end"), 24 * 60)
+
+        last = max(rows, key=_end_min)
+        last_place = str(last.get("place") or "")
+        last_zone = str(last.get("zone") or "")
+        if not (last_zone == "hotel" or "酒店" in last_place):
+            return None
+        signature = (
+            str(prev_event.get("kind") or "") == "business_trip"
+            or any("客户公司" in str(row.get("place") or "") for row in rows)
+            or any(str(row.get("event") or "") == "business_trip" for row in rows)
+        )
+        if not signature:
+            # 旅游/度假也可能住酒店，但没有「客户公司」这套出差痕迹，不能当出差延续。
+            return None
+        where = str(prev_event.get("where") or "")
+        if not where:
+            where = last_place
+            for suffix in ("·酒店", "酒店"):
+                if where.endswith(suffix):
+                    where = where[: -len(suffix)].rstrip("·")
+                    break
+        city = str(prev_event.get("city") or "") or (where.split("·")[-1] if where else "")
+        plan: dict = {}
+        try:
+            plan = self.state.db.kv_get("business_trip_plan", {}) or {}
+        except Exception:
+            plan = {}
+        if not isinstance(plan, dict):
+            plan = {}
+        day_index, days = 1, int(self._BUSINESS_TRIP_DEFAULT_DAYS)
+        if str(plan.get("where") or "") == where and plan.get("start_day"):
+            try:
+                day_index = max(1, (date.fromisoformat(str(day))
+                                    - date.fromisoformat(str(plan["start_day"]))).days)
+                days = max(1, int(plan.get("days") or days))
+            except Exception:
+                day_index, days = 1, int(self._BUSINESS_TRIP_DEFAULT_DAYS)
+        return_home = day_index >= max(1, days - 1)
+        effects = prev_event.get("effects") or {"疲惫": 10, "焦虑": 8}
+        return {
+            "kind": "business_trip",
+            "title": "临时外派",
+            "province": str(prev_event.get("province") or ""),
+            "city": city,
+            "where": where,
+            "note": ("外派的事收尾，傍晚坐车回家" if return_home
+                     else "还在%s出差，今天回不去" % (city or where or "外地")),
+            "task": str(prev_event.get("task") or "处理外派的事"),
+            "effects": dict(effects),
+            "soothe": False,
+            "continued": True,
+            "day_index": int(day_index),
+            "days": int(days),
+            "return_home": bool(return_home),
+        }
+
     def _pick_event(self, day, meta, weather, health, period, seed, world=None):
         """按日期种子决定突发事件，保证同一天多次读取结果一致。"""
+        continued = self._continued_business_trip(day)
+        if continued is not None:
+            return continued
         prob = clamp(self.p.cfg_float("schedule_event_prob", 0.28), 0.0, 0.9)
         rng = random.Random(seed ^ 0x5F3759DF)
         if rng.random() > prob:
@@ -477,14 +592,13 @@ class ScheduleSkeletonMixin:
         if self._is_long_holiday(meta):
             # 长假由 holiday_plan 安排，不再随机塞加班/出差。
             return {"kind": "none"}
-        kind = occupation_kind(world)
         if not rest:
             # 只有会跑外勤的职业才出差；其他人是加班/加课/排班
             if travels_for_work(world) and rng.random() < 0.55:
                 provinces = sorted(PROVINCE_CITIES.keys())
                 province = provinces[rng.randrange(len(provinces))]
                 city = PROVINCE_CITIES[province]
-                return {
+                trip = {
                     "kind": "business_trip",
                     "title": "临时外派",
                     "province": province,
@@ -495,26 +609,11 @@ class ScheduleSkeletonMixin:
                     "effects": {"疲惫": 10, "焦虑": 10, "开心": -6, "生气": 3},
                     "soothe": False,
                 }
-            title, note = self.OVERTIME_NOTES.get(kind, self.OVERTIME_NOTES["office"])
-            return {
-                "kind": "overtime",
-                "title": title,
-                "note": "早上" + note + "，今天回不去了",
-                "task": "处理临时的事",
-                "effects": {"疲惫": 12, "焦虑": 8, "生气": 10, "开心": -8},
-                "soothe": False,
-            }
-        # 休息日：临时加班 / 朋友聚餐。
-        if rng.random() < 0.55:
-            title, note = self.OVERTIME_NOTES.get(kind, self.OVERTIME_NOTES["office"])
-            return {
-                "kind": "overtime",
-                "title": title,
-                "note": "上午接到电话，" + note + "，休息日也泡汤了",
-                "task": "处理临时的事",
-                "effects": {"生气": 16, "暴躁": 8, "焦虑": 12, "开心": -12, "疲惫": 6},
-                "soothe": False,
-            }
+                self._remember_business_trip(day, trip)
+                return trip
+            # 用户明确要求 18:00 下班，不再生成工作日加班事件
+            return None
+        # 休息日：只保留朋友聚餐，不生成临时加班。
         return {
             "kind": "friend_dinner",
             "title": "朋友聚餐",
@@ -539,7 +638,7 @@ class ScheduleSkeletonMixin:
     def _pick_scenic(self, day, meta, weather, health, period, event, good_weather, seed, city):
         if not (meta or {}).get("rest"):
             return None
-        if event.get("kind") == "overtime":
+        if (event or {}).get("kind") in ("overtime", "business_trip"):
             return None
         if (health or {}).get("sick"):
             return None
@@ -692,8 +791,16 @@ class ScheduleSkeletonMixin:
         holiday = ctx.get("holiday_plan") or {}
         if sick_leave and not meta.get("rest"):
             segments = self._sick_rest_segments(ctx)
-        elif event_kind == "business_trip" and not meta.get("rest"):
+        elif event_kind == "business_trip":
+            # R8：跨天延续的出差日可能落在周末；只要是出差事件就按出差骨架生成，
+            # 不能回落到周末骨架（那会从外地酒店瞬移回家）。
             segments = self._business_trip_segments(ctx)
+        elif event_kind == "overtime" and meta.get("rest"):
+            # R7：休息日的「临时加班」事件优先于 outing/homebody/rest，否则事件被日类型吃掉。
+            segments = self._overtime_segments(ctx)
+        elif event_kind == "friend_dinner":
+            # R7：朋友聚餐事件优先于 outing/homebody（以前周末先走出门/宅家分支，事件不落日程）。
+            segments = self._friend_dinner_segments(ctx)
         elif holiday:
             kind = str(holiday.get("kind") or "")
             if kind == "beach":

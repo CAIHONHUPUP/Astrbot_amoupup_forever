@@ -142,15 +142,18 @@ class HolidayPlanTests(unittest.TestCase):
         self.assertTrue(any(item.get("swim") for item in items))
         self.assertTrue(all(item.get("zone") != "office" for item in items))
 
-    def test_rest_day_overtime_is_not_work(self):
+    def test_rest_day_overtime_is_9_to_6(self):
         ctx = dict(BASE)
-        ctx["day_type"] = {"id": "workday"}
+        ctx["day_type"] = {"id": "overtime"}
         ctx["meta"] = {"rest": True}
         ctx["event"] = {"kind": "overtime"}
         ctx["holiday_plan"] = {}
         items = self.engine.build_skeleton(ctx)
-        self.assertFalse(any(item.get("zone") == "office" for item in items))
-        self.assertFalse(any(item.get("category") == "work" for item in items))
+        office = [item for item in items if item.get("zone") == "office"]
+        self.assertTrue(office)
+        for item in office:
+            self.assertGreaterEqual(str(item.get("start")), "09:00")
+            self.assertLessEqual(str(item.get("end")), "18:00")
 
     def test_homebody_all_home(self):
         ctx = dict(BASE)

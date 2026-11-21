@@ -919,8 +919,13 @@ class FeatureApiMixin(PersonaApiMixin):
             except Exception:
                 return ""
 
-        def note_recent_topic(self, text, until_ts=0, key="", ttl_hours=36):
-            """当天记忆缓冲：只留短事实，按 key 合并、限量、过期清理，不写记忆库。"""
+        def note_recent_topic(self, text, until_ts=0, key="", ttl_hours=36, day=""):
+            """当天记忆缓冲：只留短事实，按 key 合并、限量、过期清理，不写记忆库。
+
+            传 day 表示「把这条事实记在那一天」：第二天早上补写昨天的日记时，
+            之前写的小日记事实必须仍然折进昨天，否则 day_digest:<day> 永远是空的
+            （P0 死链路的写入侧，2026-11-22）。
+            """
             try:
                 from .amo_episodic import merge as _merge
             except ImportError:
@@ -938,7 +943,8 @@ class FeatureApiMixin(PersonaApiMixin):
                 from .amo_shared import today_str as _today
             except ImportError:
                 from amo_shared import today_str as _today
-            items = _merge(raw, body, until, key=key, now=now, day=_today())
+            target_day = str(day or "").strip() or _today()
+            items = _merge(raw, body, until, key=key, now=now, day=target_day)
             self.db.kv_set("episodic_memory", items)
             # 兼容旧读取方
             self.db.kv_set("recent_topic", {"text": body, "until": until})

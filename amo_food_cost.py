@@ -28,6 +28,12 @@ except ImportError:
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         import price_book as _price_book
 
+try:  # 地点归一唯一实现（doms 纯函数，未知 zone 不回落「家」）
+    from .domains.schedule.place import normalize_place as _normalize_place
+except ImportError:
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from domains.schedule.place import normalize_place as _normalize_place
+
 logger = logging.getLogger("amo.food")
 
 NIGHT_START_HOUR = 0
@@ -272,10 +278,111 @@ def schedule_rows(state, day):
     return rows
 
 
+#: 路上/车站类 zone：宵夜落在通勤途中时不能把一段通勤劈成两截（schedule_report R13）。
+_TRANSIT_ZONES = frozenset({"road", "street", "transit", "commute", "station"})
+_TRANSIT_SOURCES = frozenset({"transit_block"})
+_TRANSIT_CATEGORIES = frozenset({"commute", "transit"})
+_SNACK_WORDS = ("宵夜", "夜宵")
+#: 当前地点推不出来时的兜底（沿用旧口径：夜里一般在家）。
+_DEFAULT_PLACE_ZONE = ("家", "home")
+
+
+def _is_transit_row(row):
+    """这行是不是「在路上/在车站」：这类块不能被宵夜切分。"""
+    if not isinstance(row, dict):
+        return False
+    zone = str(row.get("zone") or "").strip().lower()
+    if zone in _TRANSIT_ZONES:
+        return True
+    if str(row.get("source") or "").strip().lower() in _TRANSIT_SOURCES:
+        return True
+    return str(row.get("category") or "").strip().lower() in _TRANSIT_CATEGORIES
+
+
+def _place_zone_of(row):
+    """日程块的 (place, zone) 当「当前地点」；未知 zone 保留原文、不回落「家」。"""
+    row = row or {}
+    zone = str(row.get("zone") or "").strip()
+    place = str(row.get("place") or "").strip()
+    try:
+        return _normalize_place(place, zone), zone
+    except Exception as exc:  # 归一失败不能阻断落块
+        logger.debug("[amo] 地点归一失败，沿用原值: %r", exc)
+        return place, zone
+
+
+def _covering_row(rows, begin, finish):
+    """覆盖 [begin,finish) 的日程块；没有返回 None。"""
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        start, end = _minute_of(row.get("start")), _minute_of(row.get("end"))
+        if start is None or end is None or end <= start:
+            continue
+        if start <= begin and end >= finish:
+            return row
+    return None
+
+
+def _adjacent_place_zone(rows, begin, finish):
+    """没有覆盖块时只借紧邻（无空档）的前/后块，避免远处地点串味。"""
+    prev_row = next_row = None
+    prev_end = next_start = None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        start, end = _minute_of(row.get("start")), _minute_of(row.get("end"))
+        if start is None or end is None or end <= start:
+            continue
+        if end == begin and (prev_end is None or end > prev_end):
+            prev_row, prev_end = row, end
+        elif start == finish and (next_start is None or start < next_start):
+            next_row, next_start = row, start
+    for row in (prev_row, next_row):
+        if row is not None:
+            return _place_zone_of(row)
+    return _DEFAULT_PLACE_ZONE
+
+
+def _current_place_zone(rows, begin, finish):
+    """宵夜块要跟随的当前 place/zone（R13）：覆盖块优先，其次紧邻块。"""
+    covering = _covering_row(rows, begin, finish)
+    if covering is not None:
+        return _place_zone_of(covering), covering
+    return _adjacent_place_zone(rows, begin, finish), None
+
+
+def _save_block_rows(state, day, kept, rows, source, reason):
+    """把切分/合并后的块写回日程；返回是否成功。"""
+    try:
+        commit = getattr(state, "commit_schedule_change", None)
+        apply = getattr(state, "apply_schedule", None)
+        saver = getattr(state, "save_day", None)
+        source_text = str(source or "food_spend")
+        reason_text = str(reason or "餐饮落日程")
+        if callable(apply):
+            saved = apply(day, lambda current: list(kept), source=source_text,
+                          reason=reason_text)
+            return bool(saved.get("saved", True)) if isinstance(saved, dict) else bool(saved)
+        if callable(commit):
+            saved = commit(day, kept, old_items=rows, source=source_text,
+                           reason=reason_text)
+            return bool(saved.get("saved", True)) if isinstance(saved, dict) else bool(saved)
+        if callable(saver):
+            return bool(saver(day, kept))
+    except Exception as exc:
+        logger.warning("[amo] 补餐饮块失败 day=%s: %r", day, exc)
+        return False
+    return False
+
+
 def ensure_block_window(plugin, day, start, end, activity, detail="", category="meal",
                         source="food_spend", reason="餐饮落日程"):
     """在 day 的日程里为核心窗口 [start,end) 落一个块；覆盖块切成「前段/中段/后段」。
 
+    宵夜块的 place/zone 跟随当前地点（schedule_report R13）：
+    - 出差住酒店/景区/商场/餐厅：沿用覆盖块的原地点，不再写死「家」；
+    - 正在路上/车站：不切分通勤块（避免劈成两截），把宵夜并进当前通勤块。
     餐饮消费（微型事件、宵夜领域入口）必须先在日程里有块才允许扣款，这里是唯一实现。
     返回 {ok, block_id, day, start, end, activity, reused}；补不上返回 {ok: False, reason}。
     """
@@ -299,8 +406,30 @@ def ensure_block_window(plugin, day, start, end, activity, detail="", category="
             return {"ok": True, "block_id": _block_id_for(day, row), "day": day,
                     "start": str(row.get("start") or ""), "end": str(row.get("end") or ""),
                     "activity": text, "reused": True}
+    (place, zone), covering = _current_place_zone(rows, begin, finish)
+    # R13：在途吃宵夜——不切通勤块，把宵夜并进当前块，地点跟原地（路上/车站）。
+    if covering is not None and _is_transit_row(covering):
+        merged = dict(covering)
+        text = str(merged.get("activity") or "")
+        if not any(word in text for word in _SNACK_WORDS):
+            merged["activity"] = "%s，吃宵夜" % (text or "在路上")
+        note = str(detail or "").strip()
+        if note:
+            old_detail = str(merged.get("detail") or "").strip()
+            merged["detail"] = ("%s；%s" % (old_detail, note)) if old_detail else note
+        kept = [merged if row is covering else row for row in rows]
+        if not _save_block_rows(state, day, kept, rows, source, reason):
+            return {"ok": False, "reason": "save_failed"}
+        try:
+            state.schedule[day] = kept
+        except Exception as exc:
+            logger.debug("[amo] 回写 schedule 快照失败: %r", exc)
+        return {"ok": True, "block_id": _block_id_for(day, merged), "day": day,
+                "start": str(merged.get("start") or ""), "end": str(merged.get("end") or ""),
+                "activity": str(merged.get("activity") or ""), "reused": True,
+                "merged": True}
     new_row = {"start": start_text, "end": end_text, "activity": body,
-               "place": "家", "zone": "home", "category": str(category or "meal"),
+               "place": place, "zone": zone, "category": str(category or "meal"),
                "source": str(source or "food_spend"), "appointment": True,
                "detail": str(detail or "")}
     kept, inserted = [], False
@@ -348,27 +477,7 @@ def ensure_block_window(plugin, day, start, end, activity, detail="", category="
             new_row["event_id"] = fresh
     kept.sort(key=lambda row: _minute_of(row.get("start"))
               if _minute_of(row.get("start")) is not None else 24 * 60)
-    ok = False
-    try:
-        commit = getattr(state, "commit_schedule_change", None)
-        apply = getattr(state, "apply_schedule", None)
-        saver = getattr(state, "save_day", None)
-        source_text = str(source or "food_spend")
-        reason_text = str(reason or "餐饮落日程")
-        if callable(apply):
-            saved = apply(day, lambda current: list(kept), source=source_text,
-                          reason=reason_text)
-            ok = bool(saved.get("saved", True)) if isinstance(saved, dict) else bool(saved)
-        elif callable(commit):
-            saved = commit(day, kept, old_items=rows, source=source_text,
-                           reason=reason_text)
-            ok = bool(saved.get("saved", True)) if isinstance(saved, dict) else bool(saved)
-        elif callable(saver):
-            ok = bool(saver(day, kept))
-    except Exception as exc:
-        logger.warning("[amo] 补餐饮块失败 day=%s: %r", day, exc)
-        return {"ok": False, "reason": "save_failed"}
-    if not ok:
+    if not _save_block_rows(state, day, kept, rows, source, reason):
         return {"ok": False, "reason": "save_failed"}
     try:
         state.schedule[day] = kept

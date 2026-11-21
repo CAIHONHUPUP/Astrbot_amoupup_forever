@@ -279,6 +279,49 @@ class EventIdEditSplitTests(BaseCase):
                          "返回的新块 id 就是它的 event_id（旧账 ref 可直接用）")
         self.assertEqual(3, len({row["event_id"] for row in rows}), rows)
 
+    def test_food_split_follows_current_place(self):
+        """R13：宵夜块跟随当前地点（出差酒店），不再写死「家」。"""
+        parent = _block(start="21:00", end="24:00", activity="在酒店休息",
+                        place="内蒙古自治区·呼和浩特·酒店", zone="hotel",
+                        category="rest")
+        self.commit([parent], old_items=[])
+        result = amo_food_cost.ensure_block_window(
+            self.plugin, self.day, "22:10", "22:30", "吃烧烤（宵夜）")
+        self.assertTrue(result.get("ok"), result)
+        rows = self.saved_rows()
+        snack = [row for row in rows if "宵夜" in str(row.get("activity") or "")]
+        self.assertEqual(1, len(snack), rows)
+        self.assertEqual("内蒙古自治区·呼和浩特·酒店", snack[0]["place"])
+        self.assertEqual("hotel", snack[0]["zone"])
+        self.assertEqual("吃烧烤（宵夜）", snack[0]["activity"])
+
+    def test_food_on_road_keeps_commute_in_one_piece(self):
+        """R13：通勤途中吃宵夜，不把通勤块劈成两截，并进原块、地点仍是「路上」。"""
+        parent = _block(start="21:40", end="22:30", activity="坐地铁回家", place="路上",
+                        zone="road", category="commute", source="transit_block")
+        self.commit([parent], old_items=[])
+        result = amo_food_cost.ensure_block_window(
+            self.plugin, self.day, "22:10", "22:30", "吃烧烤（宵夜）")
+        self.assertTrue(result.get("ok"), result)
+        rows = self.saved_rows()
+        self.assertEqual(1, len(rows), rows)
+        self.assertEqual("路上", rows[0]["place"])
+        self.assertEqual("road", rows[0]["zone"])
+        self.assertTrue(str(rows[0]["activity"]).strip())
+
+    def test_commit_keeps_restaurant_and_playground_places(self):
+        """R1/R14：落库归一不再把商场餐厅折叠成「楼下小馆」、游乐园折成「家」。"""
+        rows = [
+            _block(start="12:00", end="13:00", activity="在商场里吃午饭",
+                   place="东莞·商场·餐厅", category="meal", zone="restaurant"),
+            _block(start="14:00", end="16:00", activity="在园里玩过山车",
+                   place="东莞·游乐园", category="play", zone="playground"),
+        ]
+        self.commit(rows, old_items=[])
+        saved = {row["start"]: row for row in self.saved_rows()}
+        self.assertEqual("东莞·商场·餐厅", saved["12:00"]["place"])
+        self.assertEqual("东莞·游乐园", saved["14:00"]["place"])
+
 
 class IdentityContractTests(unittest.TestCase):
     def test_block_id_prefers_event_id_else_legacy_hash(self):

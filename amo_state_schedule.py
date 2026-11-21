@@ -151,6 +151,58 @@ def _row_overlaps(a, b):
     return a_start < b_end and b_start < a_end
 
 
+def _office_shift_starts(items, work_start=_WORK_START_HOUR, work_end=_WORK_END_HOUR):
+    """给每个 office 块标出「白天连续在岗段」的起始分钟（按 id(row) 索引）。
+
+    连续 = 上一块的 end 正好等于本块 start，且上一块也是 office。用来区分：
+    - 白天上班一直连到晚上：14:00-18:00 接着 18:00-19:00…… 是同一个在岗段，
+      属于真实的延时/夜班，不能折回家；
+    - 夜里突然冒出来的孤立公司块（21:23 在工位）：没有白天连续段，按旧规则折家。
+    """
+    try:
+        work_start = int(work_start)
+        work_end = int(work_end)
+    except (TypeError, ValueError):
+        work_start, work_end = _WORK_START_HOUR, _WORK_END_HOUR
+    rows = []
+    for row in items or []:
+        if not isinstance(row, dict):
+            continue
+        start, end = _hm(row.get("start")), _hm(row.get("end"))
+        if start is None:
+            continue
+        rows.append((start, end if end is not None else start, row))
+    rows.sort(key=lambda item: (item[0], item[1]))
+    starts = {}
+    prev_end, prev_chain = None, None
+    for start, end, row in rows:
+        place = str(row.get("place") or "")
+        at_office = str(row.get("zone") or "") == "office" or any(
+            word in place for word in _OFFICE_WORDS)
+        if not at_office:
+            prev_end, prev_chain = None, None
+            continue
+        if prev_end is not None and prev_end == start:
+            chain = prev_chain
+        else:
+            chain = start
+        starts[id(row)] = chain
+        prev_end, prev_chain = end, chain
+    return starts
+
+
+def _office_shift_continues(chain_start, work_start=_WORK_START_HOUR,
+                            work_end=_WORK_END_HOUR):
+    """连续在岗段是否始于正常上班时段（白天连到晚上才算真实在岗）。"""
+    if chain_start is None:
+        return False
+    try:
+        hour = int(chain_start) // 60
+    except (TypeError, ValueError):
+        return False
+    return int(work_start) <= hour < int(work_end)
+
+
 def mark_locked(items, source):
     """面板/命令/约会写的块打锁；返回新 list。"""
     if str(source or "") not in _LOCK_SOURCES:
@@ -171,6 +223,11 @@ def protect_locked(old_items, new_items, source):
     kept.extend(locked)
     return sorted(kept, key=lambda row: str((row or {}).get("start") or ""))
 
+
+#: 用户/对话直接改的文案原样保留；生成类来源才做「快到目的地」这类补全。
+_HUMAN_TEXT_SOURCES = frozenset({
+    "chat", "command", "manual", "manual_edit", "manual_edit_api", "llm_tool",
+})
 
 #: 日程块最短时长：低于它的碎片没有意义，落库前丢掉（2026-11-20）
 MIN_BLOCK_MINUTES = 5
@@ -448,6 +505,8 @@ def health_problems(items, sick=False, work_start=_WORK_START_HOUR, work_end=_WO
     problems = []
     rows = sorted([row for row in (items or []) if isinstance(row, dict) and row.get("start")],
                   key=lambda row: str(row.get("start") or ""))
+    # 白天在岗一直连到晚上的块是真实延时/夜班，不算「非上班时间出现在公司」。
+    office_chains = _office_shift_starts(items, work_start, work_end)
     furthest = None
     for row in rows:
         start_text = str(row.get("start") or "")
@@ -462,7 +521,9 @@ def health_problems(items, sick=False, work_start=_WORK_START_HOUR, work_end=_WO
         at_office = row.get("zone") == "office" or any(w in place for w in _OFFICE_WORDS)
         if at_office and start is not None:
             hour = start // 60
-            if sick or hour < work_start or hour >= work_end:
+            late_shift = (hour >= work_end and _office_shift_continues(
+                office_chains.get(id(row)), work_start, work_end))
+            if sick or hour < work_start or (hour >= work_end and not late_shift):
                 problems.append("office_out_of_window:%s" % start_text)
     return problems
 
@@ -1450,6 +1511,16 @@ class ScheduleStateMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.commit_schedule_change.place", _amo_exc)
         try:
+            # R9：地点归一化之后，用最终的前后块 place 刷新通勤块文案（「离开X，坐地铁去Y」）。
+            # 必须放在 place 归一之后、zone 总闸之前，文案里才是用户真正看到的地名。
+            try:
+                from .amo_transition import refresh_transit_texts as _refresh_transit
+            except ImportError:
+                from amo_transition import refresh_transit_texts as _refresh_transit
+            new_items = _refresh_transit(new_items)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.normalize.transit_text", _amo_exc)
+        try:
             new_items = self._guard_activity_subjects(new_items, source, day)
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState._commit_schedule_change_locked", _amo_exc)
@@ -1465,6 +1536,19 @@ class ScheduleStateMixin(_MixinBase):
             new_items = self._enforce_zone_activity(new_items, day, source, sick=sick)
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.HumanState._enforce_zone_activity", _amo_exc)
+        if sick:
+            # 病假当天不许出现「通勤去公司/在公司」：整块换成在家休息
+            fixed = []
+            for row in new_items:
+                if not isinstance(row, dict):
+                    fixed.append(row)
+                    continue
+                text = str(row.get("activity") or "")
+                place = str(row.get("place") or "")
+                if ("公司" in place or "公司" in text) and str(row.get("category") or "") in ("work", "commute"):
+                    row = dict(row, activity="在家歇着", place="家", zone="home", category="rest")
+                fixed.append(row)
+            new_items = fixed
         return new_items
 
     #: 病假/夜间/工作日下班后不许去公司（2026-11-18 用户要求：工作日回家后不准再回公司，周末可加班）。
@@ -1476,18 +1560,31 @@ class ScheduleStateMixin(_MixinBase):
     _ZONE_CONFLICT = {
         "home": ("挤地铁", "坐地铁", "在公司", "到公司", "在工位", "办公室", "在商场", "逛街", "在路上", "开车去", "打车去"),
         "office": ("在家里", "在家", "窝在", "躺在床上", "被窝", "厨房", "客厅", "卧室"),
-        "road": ("工位", "公司", "办公室", "沙发", "床", "电视", "厨房", "被窝", "家"),
+        # 路上块只拦「明显人已经到室内」的说法。以前裸词「公司/家」也拦：
+        # 「坐高铁去石家庄」里的「家」被误当成「在家」，整句被抹成「在路上赶路」（R6）；
+        # 「快到公司，楼下便利店…」也会被误判成在公司（R9）。改成短语/室内词。
+        "road": ("工位", "办公室", "在公司", "到公司了", "在公司了", "沙发", "床",
+                 "电视", "厨房", "被窝", "在家", "家里"),
     }
     _ZONE_FALLBACK = {
         "home": "在家待着，做点自己的事",
         "office": "在工位上忙工作",
         "road": "在路上赶路",
     }
-    _ROAD_EXEMPT = ("回家", "到家", "路上", "地铁", "公交", "开车", "打车", "走", "车厢", "等车")
+    _ROAD_EXEMPT = ("回家", "到家", "路上", "地铁", "公交", "开车", "打车", "走",
+                    "车厢", "等车", "赶路", "离开", "高铁", "火车", "飞机")
     #: 非约会日程里绝不能出现的实体陪伴词（用户物理上不在她身边）。
     _CATEGORY_WORDS = {
         "sleep": ("睡", "被窝", "床", "枕头", "眯", "梦", "醒", "赖", "翻", "烧", "冷", "热", "闹钟", "困", "闭眼"),
-        "commute": ("地铁", "公交", "车", "路上", "站", "走", "通勤", "堵", "车厢", "赶", "出门", "打车", "骑车", "扶", "下班", "回家", "到家"),
+        # 通勤词表除了交通工具，也算「在路上/刚到达」的细节词：以前只认交通词，
+        # 「到楼下便利店买了早餐，边吃边等电梯」「坐高铁去呼和浩特」都被抹成
+        # 「在路上赶路」，细节全丢（2026-11-22 R6）。这里只补真实通勤细节，
+        # 办公室/居家词仍交给下面的 zone 冲突表处理。
+        "commute": ("地铁", "公交", "车", "路上", "站", "走", "通勤", "堵", "车厢", "赶", "出门",
+                    "打车", "骑车", "扶", "下班", "回家", "到家",
+                    "高铁", "火车", "动车", "飞机", "机场", "候车", "进站", "出站", "换乘",
+                    "检票", "站台", "便利店", "早餐", "电梯", "楼下", "门口", "小区", "打卡",
+                    "导航", "高架", "红灯", "路口", "停车场", "车位", "路边"),
     }
     _CATEGORY_FALLBACK = {"sleep": "一个人裹着被子睡着", "commute": "在路上赶路"}
     _PARTNER_PHYSICAL = ("黏着老公", "抱着老公", "搂着老公", "靠在老公", "躺在老公",
@@ -1497,6 +1594,16 @@ class ScheduleStateMixin(_MixinBase):
     @classmethod
     def _enforce_zone_activity(cls, items, day="", source="", sick=False):
         """所有写日程路径的总闸：zone 和 activity 明显打架时纠正文案，保留物理骨架。"""
+        # 白天在岗一直连到晚上的块是真实延时/夜班：只按「起点小时」判会把整段加班
+        # 折成「在家休息」，办公室瞬间回家、还不补通勤（2026-11-22 R4）。
+        office_chains = _office_shift_starts(items, cls._WORK_START_HOUR, cls._WORK_END_HOUR)
+        # 「到楼下便利店买了早餐」这种到达类通勤块：目的地要对齐归一化后的下一块，
+        # 不然仿真会把「便利店」当成这一程的目的地，和下一块的「公司」对不上（R9）。
+        ordered = sorted(
+            [row for row in (items or []) if isinstance(row, dict)
+             and _hm(row.get("start")) is not None],
+            key=lambda row: (_hm(row.get("start")) or 0, _hm(row.get("end")) or 0))
+        position = {id(row): index for index, row in enumerate(ordered)}
         for row in items or []:
             if not isinstance(row, dict):
                 continue
@@ -1510,22 +1617,49 @@ class ScheduleStateMixin(_MixinBase):
             start = str(row.get("start") or "")
             hour = int(start[:2]) if start[:2].isdigit() else -1
             place = str(row.get("place") or "")
+            if (zone == "road" and category == "commute" and act.startswith("到")
+                    and str(row.get("source") or "") != "transit_block"
+                    and str(source or "") not in _HUMAN_TEXT_SOURCES):
+                index = position.get(id(row))
+                next_row = None
+                if index is not None:
+                    for ahead in ordered[index + 1:]:
+                        ahead_zone = str(ahead.get("zone") or "")
+                        ahead_place = str(ahead.get("place") or "")
+                        if ahead_zone == "road" or ahead_place == "路上":
+                            continue
+                        next_row = ahead
+                        break
+                next_place = str((next_row or {}).get("place") or "").strip()
+                if next_place and next_place != "路上":
+                    # 「快到公司，楼下便利店买了早餐，边吃边等电梯」：既保留细节，
+                    # 又把第一处「到X」变成真正的目的地。
+                    row["activity"] = "快到%s，%s" % (next_place, act[1:])
+                    act = str(row["activity"])
             # 只按「所在地」判，不按文案判：08:00 的 zone=road 写「在工位上发呆」是文案问题，
             # 该走下面的 zone 纠偏，不该被当成「去公司」折回家（2026-11-18）。
             at_office = zone == "office" or any(word in place for word in cls._OFFICE_WORDS)
             blocked = bool(sick) or hour >= cls._WORK_END_HOUR or (0 <= hour < cls._WORK_START_HOUR)
             if at_office and blocked:
-                safe = "在家养病休息" if sick else "在家休息"
-                logger.warning("[amo] 病假/夜间禁止去公司，已折回家: day=%s %s category=%s zone=%s %r -> %r source=%s sick=%s",
-                               day, start, category, zone, act[:40], safe, source, sick)
-                row["activity"] = safe
-                row["place"] = "家"
-                row["zone"] = "home"
-                row["category"] = "rest"
-                row["detail"] = ""
-                row.pop("transit", None)
-                row.pop("vehicle", None)
-                continue
+                # 病假照旧全天折家；非病假但「白天连到晚上」的在岗段保留 office，
+                # 只走下面的文案纠偏（防止把加班块写成居家）。夜里孤立的公司块
+                # （没有白天连续段，例如 21:18 突然去公司）仍按旧规则折家。
+                late_shift = (not sick and hour >= cls._WORK_END_HOUR
+                              and _office_shift_continues(
+                                  office_chains.get(id(row)),
+                                  cls._WORK_START_HOUR, cls._WORK_END_HOUR))
+                if not late_shift:
+                    safe = "在家养病休息" if sick else "在家休息"
+                    logger.warning("[amo] 病假/夜间禁止去公司，已折回家: day=%s %s category=%s zone=%s %r -> %r source=%s sick=%s",
+                                   day, start, category, zone, act[:40], safe, source, sick)
+                    row["activity"] = safe
+                    row["place"] = "家"
+                    row["zone"] = "home"
+                    row["category"] = "rest"
+                    row["detail"] = ""
+                    row.pop("transit", None)
+                    row.pop("vehicle", None)
+                    continue
             allowed = cls._CATEGORY_WORDS.get(category)
             if allowed and not any(word in act for word in allowed):
                 safe = cls._CATEGORY_FALLBACK[category]

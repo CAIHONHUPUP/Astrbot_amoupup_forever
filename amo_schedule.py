@@ -144,7 +144,7 @@ def diary_in_window(now, hh, mm, window_minutes=30):
             end = (start + span) % (24 * 60)
             return current >= start or current <= end
         return start <= current <= start + span
-    except Exception:
+    except Exception:  # cleanup: 日记容错
         return False
 
 
@@ -263,6 +263,245 @@ OWN_PLACE_RULES = (
 )
 
 
+# ---------------- 日记事实 / 最近三天 digest（P0/P1，2026-11-22） ----------------
+
+#: 事实池里算「这一天有内容」的类型（有这些就不该再暗示「今天非常平淡」）。
+_DAY_FACT_TYPES = frozenset(
+    ("日程", "活动", "物理场景", "线下约会", "状态", "天气", "做饭", "外卖", "消费", "收入"))
+
+
+def _pool_has_day_facts(pool):
+    """这一天素材里有没有真实内容（日程/身体/天气/消费），而不是纯空闲。"""
+    if not isinstance(pool, dict):
+        return False
+    meta = pool.get("meta") or {}
+    if meta.get("places") or meta.get("date_together"):
+        return True
+    for fact in pool.get("facts") or ():
+        if isinstance(fact, dict) and str(fact.get("type") or "") in _DAY_FACT_TYPES:
+            return True
+    return False
+
+
+def _block_digest_worthy(item):
+    """这条日程块值不值得记进当天缓冲：出门/吃饭/约会/身体/社交才记，居家routine 不记。"""
+    item = item if isinstance(item, dict) else {}
+    zone = str(item.get("zone") or "")
+    category = str(item.get("category") or "")
+    activity = str(item.get("activity") or "")
+    if category in ("meal", "date", "health", "social"):
+        return True
+    if zone and zone not in ("home", "sleep", "road"):
+        return True
+    return any(word in activity for word in ("吃", "做饭", "外卖", "约会", "医院", "奶茶", "咖啡"))
+
+
+def _strip_fabricated_interaction_for_day(text, pool, day_text):
+    """大日记清洗「素材里没有却声称今天发生」的互动；兜底句按日期轮换，跨天不复读。"""
+    try:
+        try:
+            from .amo_diary_guard import strip_fabricated_interaction as _strip
+        except ImportError:
+            from amo_diary_guard import strip_fabricated_interaction as _strip
+        pool = pool if isinstance(pool, dict) else {}
+        facts_text = " ".join(
+            str((fact or {}).get("detail") or "") for fact in (pool.get("facts") or []))
+        has_chat = bool((pool.get("meta") or {}).get("has_chat"))
+        return _strip(text, facts_text, has_chat, day=str(day_text or ""))
+    except Exception as exc:  # cleanup: 兜底失败不能拖垮日记生成
+        _note_swallowed("amo_schedule._strip_fabricated_interaction_for_day", exc)
+        return text
+
+
+async def _diary_day_fact_lines(plugin, day):
+    """一天里值得进「最近三天」digest 的短事实（最多 6 条，覆盖出门/三餐/身体/天气/熬夜）。
+
+    只走 amo_schedule 已有的依赖：日程块用 Timeline（唯一块读入口），身体/天气/出门
+    这类事实用 amo_fact_pool 的统一事实池（它本来就由 amo_fact_timeline 生产）。
+    """
+    day_text = day.isoformat() if hasattr(day, "isoformat") else str(day)[:10]
+    try:
+        items = [row for row in (Timeline(plugin).blocks(day_text) or [])
+                 if isinstance(row, dict)]
+    except Exception as exc:
+        _note_swallowed("amo_schedule._diary_day_fact_lines.items", exc)
+        items = []
+    lines = []
+    places = []
+    for row in items:
+        place = str(row.get("place") or "").strip()
+        zone = str(row.get("zone") or "").strip()
+        short = place.split("·")[-1] if place else ""
+        if not short or zone in ("home", "sleep", "road"):
+            continue
+        if short in ("家", "出租屋", "卧室", "路上", "床上", "被窝"):
+            continue
+        if short not in places:
+            places.append(short)
+    if places:
+        lines.append("今天去了" + "、".join(places[:3]))
+    for row in [row for row in items if str(row.get("category") or "") == "meal"][:2]:
+        activity = str(row.get("activity") or "").strip()
+        if activity:
+            lines.append(activity[:40])
+    facts = []
+    try:
+        try:
+            from .amo_fact_pool import build_fact_pool
+        except ImportError:
+            from amo_fact_pool import build_fact_pool
+        facts = (await build_fact_pool(plugin, day)).get("facts") or []
+    except Exception as exc:
+        _note_swallowed("amo_schedule._diary_day_fact_lines.pool", exc)
+        facts = []
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        kind = str(fact.get("type") or "")
+        detail = str(fact.get("detail") or "").strip()
+        if kind == "状态" and detail.startswith("身体："):
+            status = detail[len("身体："):].split("（")[0].strip()
+            if status:
+                lines.append("今天有点%s" % status)
+        elif kind == "天气" and detail.startswith("天气："):
+            weather_text = re.sub(r"（[^）]*）$", "", detail[len("天气："):].strip()).strip()
+            if weather_text:
+                lines.append("今天" + weather_text)
+    for row in reversed(items):
+        if str(row.get("start") or "") >= "22:00" and str(row.get("category") or "") != "sleep":
+            activity = str(row.get("activity") or "").strip()
+            if activity:
+                lines.append("晚上还在" + activity[:16])
+            break
+    out = []
+    for line in lines:
+        line = str(line or "").strip()[:80]
+        if line and line not in out:
+            out.append(line)
+    return out[:6]
+
+
+def _merge_episodic_fact(plugin, text, day_text, key, ttl_hours=48):
+    """没有 note_recent_topic 的宿主/测试替身：用同一口径直接合并当天缓冲。"""
+    try:
+        from .amo_episodic import merge as _merge
+    except ImportError:
+        from amo_episodic import merge as _merge
+    stamp = now_ts()
+    items = plugin.db.kv_get("episodic_memory", []) or []
+    items = _merge(items, text, stamp + int(ttl_hours) * 3600, key=key, now=stamp, day=day_text)
+    plugin.db.kv_set("episodic_memory", items)
+
+
+def _block_key_of(plugin, day_text, item):
+    """块身份：生产插件走 _block_key，测试替身退回 block_id/start。"""
+    getter = getattr(plugin, "_block_key", None)
+    if callable(getter):
+        try:
+            value = str(getter(day_text, item) or "")
+            if value:
+                return value
+        except Exception:  # cleanup: 日记容错
+            pass
+    try:
+        return str(block_id(day_text, item) or "")
+    except Exception:  # cleanup: 日记容错
+        return str((item or {}).get("start") or "")
+
+
+def _note_diary_episodic(plugin, day, item, text):
+    """块小日记落库后记一条当天缓冲事实（最近三天 digest 的生产写入方，P0）。
+
+    以前 note_recent_topic 只有定义、没有任何生产调用方，episodic_memory 恒空，
+    day_digest 恒空，【前几天】注入恒空。这里把「出门/吃饭/约会/身体」这类
+    值得追问的块事实按当天记进缓冲；第二天补写大日记时由 _day_digest 折成
+    day_digest:<day>，之后三天都能读到。
+    """
+    try:
+        body = str(text or "").strip()
+        if not body or not _block_digest_worthy(item):
+            return
+        day_text = day.isoformat() if hasattr(day, "isoformat") else str(day)[:10]
+        key = "block:%s:%s" % (day_text, _block_key_of(plugin, day_text, item))
+        writer = getattr(plugin, "note_recent_topic", None)
+        if callable(writer):
+            plugin.note_recent_topic(body[:80], ttl_hours=48, day=day_text, key=key)
+        else:
+            _merge_episodic_fact(plugin, body[:80], day_text, key)
+    except Exception as exc:
+        _note_swallowed("amo_schedule._note_diary_episodic", exc)
+
+
+async def _seed_day_digest(plugin, day):
+    """大日记定稿后把这一天的事实补进缓冲并折成 day_digest（P0，2026-11-22）。
+
+    生产里主要靠块小日记边写边记（_note_diary_episodic）；但块小日记没跑、
+    数据插件没接、或首次启用时，也要保证 day_digest:<day> 不是空的，
+    否则后几天的【前几天】一直是空的。这里用当天事实兜一层，写入后立刻折叠。
+    """
+    try:
+        day_text = day.isoformat() if hasattr(day, "isoformat") else str(day)[:10]
+    except Exception:  # cleanup: 日记容错
+        return
+    if not day_text:
+        return
+    try:
+        if str(plugin.db.kv_get("day_digest:" + day_text, "") or "").strip():
+            return
+    except Exception:  # cleanup: 日记容错
+        pass
+    try:
+        lines = await _diary_day_fact_lines(plugin, day)
+    except Exception as exc:
+        _note_swallowed("amo_schedule._seed_day_digest.lines", exc)
+        lines = []
+    # 跨天去重：前两天的 digest 里已经有的事实不再重复注入（【前几天】连看三天不啰嗦）。
+    history = []
+    try:
+        if isinstance(day, datetime):
+            base = day.date()
+        elif isinstance(day, date):
+            base = day
+        else:
+            base = date.fromisoformat(day_text)
+        for offset in (1, 2):
+            previous = (base - timedelta(days=offset)).isoformat()
+            stored = str(plugin.db.kv_get("day_digest:" + previous, "") or "")
+            if stored:
+                history.append(stored)
+    except Exception:  # cleanup: 日记容错
+        history = []
+    fresh = [line for line in lines if not any(line in stored for stored in history)]
+    lines = fresh or lines
+    for index, line in enumerate(lines):
+        key = "day:%s:%d" % (day_text, index)
+        try:
+            writer = getattr(plugin, "note_recent_topic", None)
+            if callable(writer):
+                plugin.note_recent_topic(line, ttl_hours=48, day=day_text, key=key)
+            else:
+                _merge_episodic_fact(plugin, line, day_text, key)
+        except Exception as exc:
+            _note_swallowed("amo_schedule._seed_day_digest.note", exc)
+    folder = getattr(plugin, "_day_digest", None)
+    if not callable(folder):
+        return
+    try:
+        digest, keep, had = folder(day_text)
+    except Exception as exc:
+        _note_swallowed("amo_schedule._seed_day_digest.fold", exc)
+        return
+    if not digest:
+        return
+    try:
+        plugin.db.kv_set("day_digest:" + day_text, digest)
+        if had:
+            plugin.db.kv_set("episodic_memory", keep)
+        logger.info("[DIARY_DEBUG] day=%s day_digest=%d chars", day_text, len(digest))
+    except Exception as exc:
+        _note_swallowed("amo_schedule._seed_day_digest.save", exc)
+
+
 class ScheduleMixin(_MixinBase):
     def _schedule_change_allowed(self, event) -> bool:
         """改日程是会落库的副作用：只认老公的私聊，群聊/其他人不算。"""
@@ -323,15 +562,15 @@ class ScheduleMixin(_MixinBase):
         current: dict[str, Any] = {}
         try:
             current = self.state.current_activity() or {}
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             current: dict[str, Any] = {}
         try:
             cash = int(self.state.p.wallet.balance())
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             cash = 0
         try:
             mood = self.state.mood_words()
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             mood = ""
         proposal = {
             "activity": str(change.get("activity") or ""),
@@ -761,6 +1000,7 @@ class ScheduleMixin(_MixinBase):
                 self.db.kv_set("diary_task_failed:%s:%s" % (day, start), 0)
             except Exception as _amo_exc:
                 _note_swallowed("amo_schedule._land_diary_task.clear_mark", _amo_exc)
+            _note_diary_episodic(self, day, item, text)
             return result
         fallback = ""
         try:
@@ -830,7 +1070,7 @@ class ScheduleMixin(_MixinBase):
             _minute_key = now.strftime("%Y%m%d%H%M")
             try:
                 _budget = self.db.kv_get("diary_backfill_minute", {}) or {}
-            except Exception:
+            except Exception:  # cleanup: 日记容错
                 _budget = {}
             _used = (int(_budget.get("count") or 0)
                      if isinstance(_budget, dict) and _budget.get("minute") == _minute_key else 0)
@@ -1089,7 +1329,7 @@ class ScheduleMixin(_MixinBase):
         day_text = day.isoformat()
         try:
             path = str(self.db.kv_get("diary_written:" + day_text, "") or "")
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             path = ""
         if path and os.path.isfile(path):
             try:
@@ -1120,20 +1360,20 @@ class ScheduleMixin(_MixinBase):
         """这一天的大日记自动重写了几次（共用 diary_rewrites，key 用 day|daily）。"""
         try:
             data = self.db.kv_get("diary_rewrites", {}) or {}
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             data = {}
         return int((data or {}).get(str(day_text) + "|daily") or 0)
 
     def _bump_daily_diary_rewrite(self, day_text):
         try:
             data = dict(self.db.kv_get("diary_rewrites", {}) or {})
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             data = {}
         key = str(day_text) + "|daily"
         data[key] = int(data.get(key) or 0) + 1
         try:
             self.db.kv_set("diary_rewrites", data)
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             pass  # cleanup: 预算记不上就放行，不能因为记账失败把日记卡死
         return data[key]
 
@@ -1146,11 +1386,11 @@ class ScheduleMixin(_MixinBase):
                 from amo_episodic import fold_day
             try:
                 items = self.db.kv_get("episodic_memory", []) or []
-            except Exception:
+            except Exception:  # cleanup: 日记容错
                 items = []
             try:
                 stored = str(self.db.kv_get("day_digest:" + day_text, "") or "")
-            except Exception:
+            except Exception:  # cleanup: 日记容错
                 stored = ""
             digest, keep = fold_day(items, day_text, now_ts())
             return (digest or stored), keep, bool(digest)
@@ -1223,7 +1463,7 @@ class ScheduleMixin(_MixinBase):
                     text = text.rstrip() + "\n\n" + _digest
                 try:
                     _together = bool(self.db.kv_get("diary_together:" + day_text, False))
-                except Exception:
+                except Exception:  # cleanup: 日记容错
                     _together = False
                 text = _sanitize_diary(text, together=_together)
                 path = _diary_write(self._diary_dir(), day, text)
@@ -1274,6 +1514,10 @@ class ScheduleMixin(_MixinBase):
                 )
                 break
             if committed:
+                try:
+                    await _seed_day_digest(self, day)
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_schedule._write_one_daily_diary.seed_digest", _amo_exc)
                 self._finalize_live_diary(day_text, now)
             if not committed:
                 self.db.kv_set(stale_key, True)
@@ -1405,7 +1649,7 @@ class ScheduleMixin(_MixinBase):
             except ImportError:
                 import amo_household as _hh
             _residence_rule = _hh.wording("schedule_boundary", plugin=self)
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             _residence_rule = ""
         _residence_rule = _residence_rule or (
             "物理边界：你们同城不同住、各有住处；平时他不在你身边，只能手机聊天；"
@@ -1460,7 +1704,7 @@ class ScheduleMixin(_MixinBase):
                 if _sc.presence == "home":
                     _together_home = True
                     break
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             _together_home = False
         _call_title = "老公"
         try:
@@ -1469,7 +1713,7 @@ class ScheduleMixin(_MixinBase):
             except ImportError:
                 import amo_person_ref as _pr
             _call_title = _pr.title(self)
-        except Exception:
+        except Exception:  # cleanup: 日记容错
             _call_title = "老公"
         system = fact_rules(dating, home=_together_home, title=_call_title) + "\n\n" + system
         try:
@@ -1477,9 +1721,17 @@ class ScheduleMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_schedule.ScheduleMixin._generate_daily_diary.together", _amo_exc)
         if not chat_lines and not hourly_lines:
-            prompt += ("\n\n今天没有任何聊天、消费或外出记录，非常平淡。"
-                       "请结合她的日常状态写一篇碎碎念：可以吐槽无聊、想念老公、抱怨天气、"
-                       "分享刷剧感受；消费和事件只写素材包里真实有的。")
+            # 2026-11-22：以前只看聊天/块日记，不看日程事实，于是有外出块的当天也被
+            # 暗示「非常平淡」，模型就写成「一整天窝在家」。有日程/身体/天气事实时
+            # 改成按素材写，不再下「平淡」结论。
+            if _pool_has_day_facts(pool):
+                prompt += ("\n\n今天没有聊天和块小日记记录，但素材包里有当天真实的日程、"
+                           "身体和天气事实：按素材写这一天的日常（去了哪儿、吃了什么、"
+                           "身体怎么样），不要因为没聊天就写成整天窝在家里。")
+            else:
+                prompt += ("\n\n今天没有任何聊天、消费或外出记录，非常平淡。"
+                           "请结合她的日常状态写一篇碎碎念：可以吐槽无聊、想念老公、抱怨天气、"
+                           "分享刷剧感受；消费和事件只写素材包里真实有的。")
         prompt += ("\n\n硬性要求：即使今天很平淡也要写，每天都有一篇；"
                    "素材包里真实发生的事才写；消费、地点、经历都以素材包为准；"
                    "不写“心情+5”这类数值；篇幅 200-400 字，语言每天要有变化。")
@@ -1533,6 +1785,12 @@ class ScheduleMixin(_MixinBase):
             except Exception as _amo_exc:
                 _note_swallowed("amo_schedule.ScheduleMixin._generate_daily_diary.location", _amo_exc)
             try:
+                # 兜底句按「这一天」轮换：先用带日期的清洗，validate_text 里就不会
+                # 再插入那句固定的「突然想起他以前叮嘱过我的话」（跨天复读）。
+                text = _strip_fabricated_interaction_for_day(text, pool, day.isoformat())
+            except Exception as _amo_exc:
+                _note_swallowed("amo_schedule.diary.strip_fabrication", _amo_exc)
+            try:
                 text = validate_text(text, pool)
             except Exception as _amo_exc:
                 _note_swallowed("amo_schedule.ScheduleMixin._generate_daily_diary.validate", _amo_exc)
@@ -1584,6 +1842,8 @@ class ScheduleMixin(_MixinBase):
             _note_swallowed("amo_schedule.diary_household", _amo_exc)
         if dating:
             text = rewrite_together_chat(text)
+        day_text = str(((pool or {}).get("meta") or {}).get("day") or "")
+        text = _strip_fabricated_interaction_for_day(text, pool, day_text)
         return text if len(text) >= 10 else ""
 
     async def _guard_daily_location(self, text, pool, umo, system, prompt, dating):
@@ -1938,9 +2198,15 @@ def _diary_time_rules(self, target_day=None):
     now = _now()
     finished = isinstance(target_day, date) and target_day < now.date()
     if finished:
-        parts.append("\n\n时间边界：这是已经过完的 %s，00:00-24:00 一整天都是事实"
-                     "（包括 23:30 的宵夜、深夜的聊天）；只不要写今天 %02d:%02d 以后和明天的事。"
-                     % (target_day.strftime("%Y-%m-%d"), now.hour, now.minute))
+        target_text = target_day.strftime("%Y-%m-%d")
+        next_text = (target_day + timedelta(days=1)).strftime("%Y-%m-%d")
+        parts.append(
+            "\n\n时间边界：这是已经过完的 %s，素材里的 [今日] 都指 %s，"
+            "00:00-24:00 一整天都是事实（包括 23:30 的宵夜、深夜的聊天）。"
+            "现在是 %s %02d:%02d 在补写，日记里的「今天」一律是 %s、不是 %s；"
+            "%s 及以后的事（第二天的清晨、上班）一个字都不要写。"
+            % (target_text, target_text, now.strftime("%Y-%m-%d"), now.hour, now.minute,
+               target_text, now.strftime("%Y-%m-%d"), next_text))
     else:
         parts.append("\n\n时间边界：今天的事实只到 %02d:%02d。绝对不要写明天要做什么、"
                      "明天的天气、明天才到的账单/快递；素材包里没有的未来内容一律不写。"

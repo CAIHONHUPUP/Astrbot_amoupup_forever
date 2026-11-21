@@ -97,15 +97,18 @@ def _meal_row(row):
 
 def audit_meals(rows):
     """一天最多四顿；同一餐别重复扣款（如和闺蜜吃晚饭又单独扣晚饭）标出来。"""
-    days = {}
+    days: dict = {}
     duplicate = 0
     for row in rows or []:
         if not isinstance(row, dict) or not _meal_row(row):
             continue
-        slot = _meal_slot(row.get("ts"))
+        ts = row.get("ts")
+        if not isinstance(ts, (int, float)):
+            continue
+        slot = _meal_slot(ts)
         if not slot:
             continue
-        day = _dt.datetime.fromtimestamp(float(row.get("ts"))).strftime("%Y-%m-%d")
+        day = _dt.datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d")
         bucket = days.setdefault(day, {})
         bucket.setdefault(slot, []).append(row)
     too_many = 0

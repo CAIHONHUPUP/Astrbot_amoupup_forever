@@ -102,7 +102,7 @@ _COMMAND = re.compile(r"(?:^|\s)/[\w\u4e00-\u9fa5]+")
 #: 稳定排序的权重：约会物理场景最前，线下约会记录最后（顺序即渲染顺序）。
 WEIGHTS = {
     "date": 0, "schedule": 10, "activity": 20, "routine": 30, "place": 40,
-    "ledger": 50, "date_ledger": 50, "health": 60, "chat": 70, "mood": 80,
+    "ledger": 50, "date_ledger": 50, "weather": 55, "health": 60, "chat": 70, "mood": 80,
     "date_kv": 90, "meal_block": 95, "meal_ledger": 96,
 }
 
@@ -645,12 +645,219 @@ def read_ledger(plugin):
         return []
 
 
-def read_health(plugin):
+#: 健康快照按天存（补写昨天时「生成时刻」已经不是当天状态了，2026-11-22）。
+HEALTH_SNAPSHOT_PREFIX = "health_day:"
+#: 天气快照按天存（同上：第二天早上补写时 state.weather 已经是今天的天气）。
+WEATHER_SNAPSHOT_PREFIX = "weather_day:"
+
+
+def _kv_get(plugin, key, default=None):
+    """读一个 kv；读不到/没有 db 都返回 default（事实读取不抛错）。"""
+    try:
+        return plugin.db.kv_get(key, default)
+    except Exception:  # cleanup: 日记容错
+        return default
+
+
+def _kv_set(plugin, key, value):
+    """写一个 kv（快照/缓存失败不能影响事实读取本身）。"""
+    try:
+        plugin.db.kv_set(key, value)
+    except Exception as exc:
+        logger.debug("[amo] 事实快照写入失败 %s: %r", key, exc)
+
+
+def _health_active(health):
+    """这份健康状态算不算「身体有状况」（sick 或 疲惫等非健康状态）。"""
+    if not isinstance(health, dict):
+        return False
+    if health.get("sick"):
+        return True
+    return str(health.get("status") or "") not in ("", "健康")
+
+
+def _health_brief(health):
+    """快照存最小事实字段，避免把整份内部状态塞回 kv。"""
+    health = health if isinstance(health, dict) else {}
+    return {
+        "status": str(health.get("status") or "健康"),
+        "sick": bool(health.get("sick")),
+        "note": str(health.get("note") or ""),
+        "kind": str(health.get("kind") or ""),
+        "severity": str(health.get("severity") or ""),
+        "since": health.get("since") or 0,
+        "until": health.get("until") or 0,
+    }
+
+
+def _read_health_current(plugin):
+    """当前健康（唯一口径 state.health_info）。"""
     try:
         return plugin.state.health_info() or {}
     except Exception as exc:
         logger.debug("[amo] 身体状态读取失败: %r", exc)
         return {}
+
+
+def _aware(window_day, since, until):
+    """[since, until) 这段病情和 window_day 这一天有没有重叠。"""
+    try:
+        start = _dt.datetime.combine(window_day, _dt.time.min).timestamp()
+    except Exception:  # cleanup: 日记容错
+        return False
+    end = start + 86400
+    try:
+        since = float(since or 0)
+        until = float(until or 0)
+    except (TypeError, ValueError):
+        return False
+    if since <= 0 or until <= 0:
+        return False
+    return since < end and until > start
+
+
+def read_health(plugin, day=None, now=None):
+    """目标日期的健康事实（P1，2026-11-22）。
+
+    以前读的是「此刻」state.health：第二天早上补写昨天时，昨天发过低烧、
+    早上已经康复，素材包里就完全没有生病这件事。现在按天读：
+    1. 目标日已存过快照 → 用快照（当天任何一次事实读取都会顺手存一份）；
+    2. 目标日就是今天 → 用当前状态，并写快照留给明天补写；
+    3. 历史日没快照 → 用当前病情的 [since, until) 是否覆盖目标日兜底；
+    4. 都没有 → 健康。
+    """
+    now = now or _amo_clock.now()
+    target = normalize_day(day, now)
+    day_text = target.isoformat()
+    current = _read_health_current(plugin)
+    if target == now.date():
+        if _health_active(current):
+            _kv_set(plugin, HEALTH_SNAPSHOT_PREFIX + day_text, _health_brief(current))
+        return current
+    snapshot = _kv_get(plugin, HEALTH_SNAPSHOT_PREFIX + day_text, {}) or {}
+    if _health_active(snapshot):
+        return dict(snapshot)
+    if _health_active(current):
+        if _aware(target, current.get("since"), current.get("until")):
+            return dict(current)
+        # 老数据/测试替身没有 since/until：退回旧口径（当前状态），不把生病吞掉。
+        if not current.get("since") and not current.get("until"):
+            return dict(current)
+    return {"status": "健康", "sick": False, "note": ""}
+
+
+def _weather_ts_day(weather):
+    """天气数据自带的日期：优先 ts（真实刷新/仿真注入都带），再看 day/fxDate 字段。"""
+    weather = weather if isinstance(weather, dict) else {}
+    try:
+        stamp = float(weather.get("ts") or 0)
+    except (TypeError, ValueError):
+        stamp = 0.0
+    if stamp > 0:
+        try:
+            return _dt.datetime.fromtimestamp(stamp).date()
+        except (OverflowError, OSError, ValueError):
+            return None
+    text = str(weather.get("day") or weather.get("fxDate") or "")[:10]
+    try:
+        return _dt.date.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _weather_brief(weather, day_text=""):
+    """快照存最小天气事实。"""
+    weather = weather if isinstance(weather, dict) else {}
+    return {
+        "day": str(day_text or ""),
+        "text": str(weather.get("text") or ""),
+        "tag": str(weather.get("tag") or ""),
+        "temp": weather.get("temp", ""),
+        "city": str(weather.get("city") or ""),
+        "ts": weather.get("ts") or 0,
+    }
+
+
+def _current_weather(plugin):
+    """当前天气：内存态优先，回落 kv 缓存。"""
+    state = getattr(plugin, "state", None)
+    weather = getattr(state, "weather", None)
+    if isinstance(weather, dict) and weather.get("text"):
+        return dict(weather)
+    cached = _kv_get(plugin, "weather", {})
+    if isinstance(cached, dict) and cached.get("text"):
+        return dict(cached)
+    return {}
+
+
+def _forecast_weather(plugin, day_text):
+    """预报缓存里找目标日（补写历史天时唯一还能拿到的天气来源）。"""
+    cache = _kv_get(plugin, "weather_daily", {}) or {}
+    items = cache.get("items") if isinstance(cache, dict) else None
+    for item in items or ():
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("fxDate") or "") != day_text:
+            continue
+        text = str(item.get("textDay") or item.get("textNight") or "").strip()
+        if not text:
+            return {}
+        temp = item.get("tempMax") if item.get("tempMax") not in (None, "") else item.get("tempMin")
+        return {"text": text, "tag": "", "temp": temp,
+                "city": str((cache or {}).get("city") or ""), "ts": 0}
+    return {}
+
+
+def read_weather(plugin, day=None, now=None):
+    """目标日期的天气事实（P1，2026-11-22）：日记素材必须先有天气，模型才有得依据。
+
+    按优先级：目标日快照 → 当前天气（ts 落在目标日才认）→ 预报缓存里的目标日。
+    读今天时顺手存快照，第二天补写还能拿到昨天真实的天气。
+    """
+    now = now or _amo_clock.now()
+    target = normalize_day(day, now)
+    day_text = target.isoformat()
+    snapshot = _kv_get(plugin, WEATHER_SNAPSHOT_PREFIX + day_text, {}) or {}
+    if isinstance(snapshot, dict) and snapshot.get("text"):
+        return dict(snapshot)
+    current = _current_weather(plugin)
+    if current:
+        current_day = _weather_ts_day(current)
+        # 只在 ts 确实落在目标日时才算「当天天气」，否则就是生成时刻的天气，不能冒充。
+        if current_day == target:
+            _kv_set(plugin, WEATHER_SNAPSHOT_PREFIX + day_text,
+                    _weather_brief(current, day_text))
+            return current
+        # 老缓存/注入数据没有 ts：真实刷新一定会带 ts，这种没有时间戳的天气只能按
+        # 「目标日天气」用（兼容旧数据与隔离仿真，且必须在预报兜底之前）。
+        if current_day is None:
+            _kv_set(plugin, WEATHER_SNAPSHOT_PREFIX + day_text,
+                    _weather_brief(current, day_text))
+            return current
+        # 读今天时顺便把今天这份天气存下来（明天补写要用）。
+        if current_day == now.date() and target != now.date():
+            _kv_set(plugin, WEATHER_SNAPSHOT_PREFIX + now.date().isoformat(),
+                    _weather_brief(current, now.date().isoformat()))
+    forecast = _forecast_weather(plugin, day_text)
+    if forecast:
+        return forecast
+    return {}
+
+
+def weather_entries(weather, day=""):
+    """天气事实 → 时间线条目（没有天气就没有事实，绝不凭空补一个）。"""
+    weather = weather if isinstance(weather, dict) else {}
+    text = str(weather.get("text") or "").strip()
+    if not text:
+        return []
+    temp = weather.get("temp")
+    detail = "天气：%s" % text
+    if temp not in (None, ""):
+        detail += " %s℃" % temp
+    city = str(weather.get("city") or "").strip()
+    if city:
+        detail += "（%s）" % city
+    return [make_entry(str(day or ""), "weather", "天气", detail)]
 
 
 def read_outfit(plugin, day):
@@ -1487,7 +1694,7 @@ def build_day_view(plugin, day, now=None):
     _apply_diaries(day_text, events, index, read_block_diaries(plugin, day_text))
     _apply_date_session(day_text, events, read_date_session(plugin))
     _apply_social_events(day_text, events, read_watch_social(plugin, day_text))
-    events = _finalize_view(events + _health_view(read_health(plugin)))
+    events = _finalize_view(events + _health_view(read_health(plugin, day_text, now)))
     occasions = []
     for event in events:
         value = str(event.get("occasion") or "").strip()
@@ -1647,7 +1854,8 @@ async def _compose(plugin, day, now=None, hour_slot=None, slot_start=None, slot_
     entries += place_entries(day_text, places, place, day_scope)
     entries += ledger_entries(read_ledger(plugin), day_text, day_start, day_end,
                               window, plugin, transfer_context)
-    entries += health_entries(read_health(plugin))
+    entries += weather_entries(read_weather(plugin, day, now), day_text)
+    entries += health_entries(read_health(plugin, day, now))
     rows = await read_chat_rows(plugin, day_start, day_end, window)
     entries += chat_entries(rows, window, day_text)
     outfit = read_outfit(plugin, day)
@@ -1677,6 +1885,22 @@ def offline_meet(facts, entries):
     return any(item.get("source") in ("date", "date_kv") for item in entries or ())
 
 
+def _label_anchor(day, now):
+    """素材时间标签的锚点（P1，2026-11-22）。
+
+    提示词首句说「下面是你今天真实发生的事」；如果补写昨天时素材行标 [昨日]，
+    两个口径打架，模型就会把当天事实说成昨天，也容易写成「今天哪儿也没去」。
+    统一用目标日做锚点：目标日是今天 → 原时钟；补写过去/未来的某天 → 那一天中午。
+    这样素材行是 [今日]，再由 amo_schedule._diary_time_rules 明确「这篇的今天就是那天」。
+    """
+    try:
+        if day != now.date():
+            return _dt.datetime.combine(day, _dt.time(12, 0))
+    except Exception:  # cleanup: 日记容错
+        pass
+    return now
+
+
 def build_meta(plugin, ctx, facts):
     """事实池 meta（字段与重构前一致；值从时间线条目推，不再二次读事实）。"""
     entries = ctx["entries"]
@@ -1692,7 +1916,8 @@ def build_meta(plugin, ctx, facts):
         "has_phone": any("电话" in str(item.get("detail") or "") for item in facts),
         "has_offline_meet": offline_meet(facts, entries),
         "day": ctx["day_text"],
-        "now": ctx["now"].isoformat(),
+        "now": _label_anchor(ctx["day"], ctx["now"]).isoformat(),
+        "backfill": ctx["day"] != ctx["now"].date(),
         "date_together": any(bool(item.get("together")) for item in ctx["date_facts"]),
         "partner_home": False,
         "date_hour": ctx["hour_slot"],

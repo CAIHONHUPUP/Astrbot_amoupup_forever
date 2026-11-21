@@ -221,6 +221,7 @@
   "amo_food_cost.py": [
     "amo_timeline",
     "clock",
+    "domains",
     "price_book"
   ],
   "amo_food_event.py": [

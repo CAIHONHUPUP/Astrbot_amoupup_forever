@@ -64,11 +64,12 @@ DAY_TYPES: list[DayType] = [
     {
         "id": "overtime",
         "name": "加班日",
+        # 强制规定：只有周末允许，且每周最多一天；工作日绝不加班
         "enabled": True,
         "weight": 1,
-        "scope": "weekday",
-        "guide": "活多的一天：照常上班，但一直忙到很晚，午饭晚饭都随便对付，"
-                 "回家已经很累，倒头就睡。",
+        "scope": "weekend",
+        "guide": "周末偶尔加班的一天：早 9 晚 6，中午随便吃一口，"
+                 "18:00 准时下班回家，不熬到晚上。",
     },
     {
         "id": "slacking",
@@ -124,9 +125,21 @@ def _weight_of(item: DayType) -> float:
         return 0.0
 
 
+def _weekend_overtime_day(seed: str) -> int:
+    """每周只允许一天周末加班：按周数固定选周六或周日（0=周一）。"""
+    try:
+        from datetime import date
+        day = date.fromisoformat(str(seed or "")[:10])
+        year, week, _ = day.isocalendar()
+        return 5 + (int(year) + int(week)) % 2
+    except (TypeError, ValueError):
+        return 5
+
+
 def pick_day_type(day_types: Sequence[DayType], is_weekend: bool, seed: str) -> DayType:
     """按权重抽一个今天的类型；同一个种子结果稳定。"""
     pool: list[DayType] = []
+    _allowed_overtime_day = _weekend_overtime_day(seed)
     for item in day_types:
         if not isinstance(item, dict) or not item.get("enabled", True):
             continue
@@ -135,6 +148,13 @@ def pick_day_type(day_types: Sequence[DayType], is_weekend: bool, seed: str) -> 
             continue
         if scope == "weekend" and not is_weekend:
             continue
+        if is_weekend and str(item.get("id") or "") == "overtime":
+            try:
+                from datetime import date
+                if date.fromisoformat(str(seed or "")[:10]).weekday() != _allowed_overtime_day:
+                    continue
+            except (TypeError, ValueError):
+                continue
         if _weight_of(item) <= 0:
             continue
         pool.append(item)
