@@ -170,6 +170,7 @@
     "photo_scene",
     "reply_fact_guard"
   ],
+  "amo_episodic.py": [],
   "amo_events.py": [],
   "amo_fact_binder.py": [
     "amo_current_action",
@@ -197,6 +198,7 @@
     "amo_closet_image",
     "amo_current_action",
     "amo_date_session",
+    "amo_episodic",
     "amo_food_event",
     "amo_names",
     "amo_shared",
@@ -477,6 +479,7 @@
     "amo_current_action",
     "amo_date_context",
     "amo_date_session",
+    "amo_episodic",
     "amo_fact_binder",
     "amo_household",
     "amo_observability",
@@ -837,6 +840,7 @@
   "domains/schedule/swim.py": [],
   "done_action_guard.py": [],
   "draw_engine.py": [
+    "amo_household",
     "amo_image_common",
     "amo_observability",
     "amo_photo_intent",

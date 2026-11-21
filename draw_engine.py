@@ -1347,9 +1347,11 @@ class DrawEngine:
         except Exception as exc:
             logger.warning("[DRAW] 补拍失败: %s", exc)
             return body
-        if str(result or "").startswith("好呀"):
+        _blocked = ("画图功能未开启", "画图没开", "权限不足", "拍不了", "上一张还在生成",
+                    "这次不发图", "合拍失败", "没找到")
+        if result and not any(word in str(result) for word in _blocked):
             logger.info("[DRAW] 他说要重拍但她只想演，已真试一次（不保证出图）")
-            return "已收到：正在生成"
+            return "我试试，等我一下。"
         return body
 
     def enforce_photo_claim(self, event, text):

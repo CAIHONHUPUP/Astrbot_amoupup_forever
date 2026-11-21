@@ -887,12 +887,11 @@ class FeatureApiMixin:
 
         def note_recent_topic(self, text, until_ts=0, key="", ttl_hours=36):
             """当天记忆缓冲：只留短事实，按 key 合并、限量、过期清理，不写记忆库。"""
-            import time as _time
             try:
                 from .amo_episodic import merge as _merge
             except ImportError:
                 from amo_episodic import merge as _merge
-            now = _time.time()
+            now = _amo_clock.now_ts()
             body = str(text or "").strip()[:80]
             if not body:
                 return
