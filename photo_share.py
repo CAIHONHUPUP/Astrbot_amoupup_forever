@@ -231,6 +231,8 @@ class PhotoShareMixin:
         _image_component: Any
         _find_omni: Any
         _pick_selfie: Any
+        _photo_event_binding: dict[str, Any] | None
+        _photo_send_meta: dict[str, Any] | None
         _selfie_ready: Any
         _selfie_prompt_for: Any
         _prompt_for: Any
@@ -727,8 +729,13 @@ class PhotoShareMixin:
         _binding = self._photo_event_binding or {}
         outfit_meta = ""
         try:
-            outfit_meta = (self._selfie_outfit_text(str(getattr(plan, "zone", "") or ""))
-                           if selfie else self.outfit_today())
+            if selfie:
+                _outfit_fn = getattr(self, "_selfie_outfit_text", None)
+                outfit_meta = (_outfit_fn(str(getattr(plan, "zone", "") or ""))
+                               if callable(_outfit_fn) else "")
+            else:
+                _today_fn = getattr(self, "outfit_today", None)
+                outfit_meta = _today_fn() if callable(_today_fn) else ""
         except Exception as _amo_exc:
             _note_swallowed("photo_share.PhotoShareMixin._share.outfit_meta", _amo_exc)
             outfit_meta = ""

@@ -1,3 +1,11 @@
+## 7.6.2（2026-11-22 稳定版收尾）
+
+- **候选还原层修好**：`amo_rewrite_safety.recover()` 原先把 `guard_mod` 用在赋值之前，任何「有候选且与现行文本不同」的调用都 `NameError`，被调用方 `except Exception` 吞掉——整层守卫实际失效。现在先取 registry，且只在现行文本命中兜底注册表（`FALLBACKS`）或多池拼装时才还原候选；完整候选与场景冲突时交给场景守卫改写，不再整条顶回去。固定 seed 日常 50/50、614/614、residual 0、guard_introduced 0。
+- **统一时钟**：`amo_rewrite_safety` 的候选 TTL 改走 `clock.now_ts()`，不再裸调 `time.time()`。
+- **改日程「出去吃」不再折回「在家」**：`schedule_change._sync_zone` 在 `zone_for_place` 认不出地点时回落到 `EXPLICIT_PLACE_ZONES`（外面→路面），避免 `normalize_place(外面, home)` 把地点折成「家」；场景块/日记/提醒用同一份 activity+place。S1/S2/S2b/S3 四个改日程场景一致性全 True。
+- **测试口径修正**：IMM 机械改写率改回文档定义的稳态（先热身，冷启动首句属 N2 设计）；到货重试测试钉死随机 roll；架构棘轮补登检查点新增的 8 条内部依赖边；严格 mypy 53 → 0（23 个文件，纯注解/窄化，无 `type: ignore`）。
+- **数据清理（有备份）**：42 条日记孤儿只标 `stale`（正文不动，可一条 UPDATE 回滚）；23 条纯运维记忆归档（不碰 59 条生活/关系记忆）；钱包 1666.32 差额与健康/天气快照缺口**未动**（前者缺原始扣款、后者无历史来源，补写等于编造）。
+
 ## 7.6.1（2026-11-20 一个饭点只吃一顿 / 穿搭按块时刻）
 
 - **一个饭点只吃一顿**：`meal_spent()` 先看日程里的 meal/social/date 餐饮块（`meal_claim()`），不再只看流水；守护侧买饭前查 `finance.schedule_windows`。18:00 不会再在 19:09 的火锅前又买一碗面。

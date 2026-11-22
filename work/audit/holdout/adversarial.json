@@ -258,7 +258,7 @@
    "category": "place_conflict",
    "user": "你在哪呢？",
    "candidate": "（拎着购物袋，站在商场扶梯上）刚试完衣服。",
-   "final": "刚试完衣服。",
+   "final": "在家呢。",
    "verdict": "caught",
    "ok": true
   },
@@ -276,7 +276,7 @@
    "category": "precise_number",
    "user": "你在干嘛呢？",
    "candidate": "就是985，我卡里还有4072，你说买不买？",
-   "final": "就是九百多，我卡里还有四千多，你说买不买？",
+   "final": "我在敷面膜看书。",
    "verdict": "caught",
    "ok": true
   },
@@ -415,7 +415,7 @@
    "id": "G4",
    "category": "system_talk",
    "candidate": "这软件今天跟我较劲，一直报错。",
-   "final": "唔…这个先不说了，陪我聊点别的嘛。",
+   "final": "我在敷面膜看书。",
    "expect": "caught",
    "verdict": "caught",
    "ok": true
@@ -433,7 +433,7 @@
    "id": "G6",
    "category": "system_talk",
    "candidate": "服务器卡住了，图发不出来。",
-   "final": "唔…这个先不说了，陪我聊点别的嘛。",
+   "final": "我在敷面膜看书。",
    "expect": "caught",
    "verdict": "caught",
    "ok": true

@@ -95,7 +95,7 @@ def _split_owner_names(value):
 
 def owner_names_from_profile(profile):
     """从 profiles 行取老公的称呼（name / alias）。"""
-    names = set()
+    names: set[str] = set()
     if not isinstance(profile, dict):
         return names
     names.update(_split_owner_names(profile.get("alias") or ""))
@@ -108,7 +108,7 @@ def owner_names_from_profile(profile):
 
 def owner_names(plugin=None, umo="", profile=None):
     """取当前私聊对象的称呼；拿不到就空集合（仍允许老公/你）。"""
-    names = set()
+    names: set[str] = set()
     if isinstance(profile, dict):
         names |= owner_names_from_profile(profile)
     if not names and plugin is not None:

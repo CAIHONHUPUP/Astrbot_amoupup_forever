@@ -344,50 +344,50 @@
   "prod_db_before": {
    "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
    "size": 1191936,
-   "mtime": 1795324670,
-   "sha256": "4db4f17ea2d5e297e16b47f037a82f1a5f2d81d2637d3f855c4aaaaed4a9e6a5"
+   "mtime": 1795337428,
+   "sha256": "75c21a824246d1daf17986f34f903df3f622b34533688463ff91a9af092dc407"
   },
   "prod_db_after": {
    "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
    "size": 1191936,
-   "mtime": 1795324670,
-   "sha256": "4db4f17ea2d5e297e16b47f037a82f1a5f2d81d2637d3f855c4aaaaed4a9e6a5"
+   "mtime": 1795337428,
+   "sha256": "75c21a824246d1daf17986f34f903df3f622b34533688463ff91a9af092dc407"
   },
   "blocked_calls": {
    "amo_db_init": 0,
    "sqlite": 0
   }
  },
- "generated_at": "2026-11-22 13:27:59",
+ "generated_at": "2026-11-22 17:36:38",
  "mode": "simulated_provider",
  "code_snapshot": {
   "amo_state_consistency.py": {
-   "sha256_16": "161245345d0a3d9f",
-   "mtime": 1795325173
+   "sha256_16": "13ae05fd6070632a",
+   "mtime": 1795336380
   },
   "tone_guard.py": {
    "sha256_16": "89659d29759a8239",
    "mtime": 1795276133
   },
   "reply_fact_guard.py": {
-   "sha256_16": "415384606ffb5495",
-   "mtime": 1795325037
+   "sha256_16": "d815effdb346a27e",
+   "mtime": 1795326010
   },
   "place_guard.py": {
    "sha256_16": "2e85d04e3f1fd593",
    "mtime": 1794975340
   },
   "amo_reply_pipeline.py": {
-   "sha256_16": "1a163e700a673d72",
-   "mtime": 1795325173
+   "sha256_16": "a1ea1d2d89671760",
+   "mtime": 1795326950
   },
   "amo_diary_guard.py": {
-   "sha256_16": "05e0142695a9ac5c",
-   "mtime": 1795314529
+   "sha256_16": "0ae929c46c473768",
+   "mtime": 1795336332
   },
   "amo_runtime_reply.py": {
-   "sha256_16": "6a14de726569419f",
-   "mtime": 1795318365
+   "sha256_16": "fe96804cfe515ea0",
+   "mtime": 1795326291
   },
   "amo_message.py": {
    "sha256_16": "df9a64e98e79db2a",
@@ -402,12 +402,12 @@
    "mtime": 1795276133
   },
   "domains/reply/repetition_guard.py": {
-   "sha256_16": "5f9b642af240c9c4",
-   "mtime": 1795316217
+   "sha256_16": "cf6e8a1f665bc4b8",
+   "mtime": 1795326142
   }
  },
- "elapsed_sec": 5.86,
- "determinism_signature": "548284df2e3391d7",
+ "elapsed_sec": 7.49,
+ "determinism_signature": "f5e9a9fd7d7f0df6",
  "samples": [],
  "root_causes": [
   "【已修复·问句意图覆盖】amo_question_guard._category 只认标准句式（几点回/在干嘛/吃了吗），「今晚回不回来」「到公司了吗」「你旁边有人吗」「你是不是在偷懒」认不出来 → 答非所问时兜不了底。本轮把这些口语问法归到同一意图，并加「第三人称作主语不算问她」（我同事摸鱼≠问她干嘛）。证据：failure probe_unanswered 31→0；context_checks.question_intent_coverage PASS。",
@@ -4658,7 +4658,7 @@
    },
    "meal_ok": true,
    "candidate": "等有空我们一起回去看看。",
-   "sent": "还是老样子。",
+   "sent": "等有空我们一起回去看看。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -4832,7 +4832,7 @@
    },
    "meal_ok": false,
    "candidate": "等有空我们一起回去看看。",
-   "sent": "嗯，我在呢。",
+   "sent": "在听你说呢。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -5703,7 +5703,7 @@
    },
    "meal_ok": true,
    "candidate": "正改方案，怎么啦？",
-   "sent": "我在工位上班。",
+   "sent": "正改方案，怎么啦？",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -11661,7 +11661,7 @@
    },
    "meal_ok": false,
    "candidate": "没干嘛，改方案。",
-   "sent": "我在工位改方案。",
+   "sent": "没干嘛，改方案。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -15346,7 +15346,7 @@
    },
    "meal_ok": false,
    "candidate": "到家跟我说一声。",
-   "sent": "你说，我听着呢。",
+   "sent": "嗯嗯，知道啦。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -16138,7 +16138,7 @@
    },
    "meal_ok": false,
    "candidate": "别逞强，慢慢来。",
-   "sent": "嗯嗯，知道啦。",
+   "sent": "好，我记着呢。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -16377,7 +16377,7 @@
    },
    "meal_ok": true,
    "candidate": "发我看看呗，我帮你参谋。",
-   "sent": "好，我记着呢。",
+   "sent": "发我看看呗，",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -16731,7 +16731,7 @@
    },
    "meal_ok": false,
    "candidate": "你穿什么都好看。",
-   "sent": "嗯，我在呢。",
+   "sent": "在听你说呢。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -17187,7 +17187,7 @@
    },
    "meal_ok": true,
    "candidate": "看完记得跟我讲。",
-   "sent": "在听你说呢。",
+   "sent": "我这儿一直在。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -18548,7 +18548,7 @@
    },
    "meal_ok": false,
    "candidate": "别打太晚。",
-   "sent": "我这儿一直在。",
+   "sent": "你说，我听着呢。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -18860,7 +18860,7 @@
    },
    "meal_ok": true,
    "candidate": "没干嘛，改稿。",
-   "sent": "我在咖啡店改稿。",
+   "sent": "没干嘛，改稿。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -18936,7 +18936,7 @@
    },
    "meal_ok": false,
    "candidate": "别往心里去，你已经很好了。",
-   "sent": "你说，我听着呢。",
+   "sent": "嗯，我在呢。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -20974,7 +20974,7 @@
    },
    "meal_ok": true,
    "candidate": "看完记得跟我讲。",
-   "sent": "嗯嗯，知道啦。",
+   "sent": "在听你说呢。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -22107,7 +22107,7 @@
    },
    "meal_ok": true,
    "candidate": "时间过得真快。",
-   "sent": "好，我记着呢。",
+   "sent": "我这儿一直在。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -23675,7 +23675,7 @@
    },
    "meal_ok": false,
    "candidate": "别跟家里人置气。",
-   "sent": "你说，我听着呢。",
+   "sent": "嗯，我在呢。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -25507,7 +25507,7 @@
    "prev_snap": null,
    "meal_ok": false,
    "candidate": "我在商场门口等你呢。",
-   "sent": "嗯嗯，知道啦。",
+   "sent": "在听你说呢。",
    "delivered": true,
    "cand_codes": [
     "place_conflict"
@@ -25923,7 +25923,7 @@
    },
    "meal_ok": false,
    "candidate": "等放假我们好好计划一下。",
-   "sent": "好，我记着呢。",
+   "sent": "嗯嗯，知道啦。",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],
@@ -26281,7 +26281,7 @@
    },
    "meal_ok": false,
    "candidate": "改方案呢，你呢？",
-   "sent": "我在工位上班。",
+   "sent": "改方案呢，你呢？",
    "delivered": true,
    "cand_codes": [],
    "sent_codes": [],

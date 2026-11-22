@@ -31,7 +31,7 @@ except ImportError:  # 按文件直接加载（离线单测）
 #: 插件载入时刻，用来给 /status 的 obs_health.uptime_s 当起点
 _OBS_STARTED_AT = _obs_now_ts()
 
-PLUGIN_VERSION = "7.6.1"
+PLUGIN_VERSION = "7.6.2"
 
 try:  # 包模式优先（AstrBot 正常加载）
     from .amo_bootstrap import (
@@ -238,8 +238,9 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
         for key in ("life_state", "metrics"):
             descriptor = {}
             module = None
-            for module_name in (("." + "services." + key) if package else (),
-                                "services." + key, key):
+            module_names = (["." + "services." + key, "services." + key, key]
+                            if package else ["services." + key, key])
+            for module_name in module_names:
                 try:
                     module = _importlib.import_module(module_name,
                                                       package or None)

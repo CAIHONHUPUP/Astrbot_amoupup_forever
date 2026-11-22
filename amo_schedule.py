@@ -604,7 +604,10 @@ def _row_timestamp(row):
         return 0.0
     for key in ("created_at", "ts", "timestamp", "time"):
         try:
-            value = float(row.get(key))
+            raw = row.get(key)
+            if raw is None:
+                continue
+            value = float(raw)
         except (TypeError, ValueError):
             continue
         if value > 0:
@@ -619,7 +622,7 @@ def _digest_fragments(digest):
 
 def _clip_day_digest(digest, limit=DIGEST_DAY_MAX_CHARS):
     """按「；」边界把 day_digest 收到 limit 字内：不切断单条事实，保证三天总量 < 240。"""
-    pieces = []
+    pieces: list[str] = []
     total = 0
     for piece in _digest_fragments(digest):
         if not pieces:
@@ -2526,7 +2529,7 @@ class ScheduleMixin(_MixinBase):
             label = "早上" if slot == "morning" else "晚上"
             slot_min = morning_min if slot == "morning" else evening_min
             try:
-                late = int(now_min) - int(slot_min)
+                late = int(now_min) - int(slot_min) if slot_min is not None else 0
             except (TypeError, ValueError):
                 late = 0
             # 迟到窗口只约束会真的发消息的晚间槽位；早上槽位只做判断，晚跑不打扰用户。

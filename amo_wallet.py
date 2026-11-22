@@ -393,7 +393,7 @@ class Wallet:
                         "FROM wallet_ledger ORDER BY ts ASC, rowid ASC").fetchall()]
             accounts = {str(row[0]): int(row[1] or 0) for row in self.db.conn.execute(
                 "SELECT account, balance_cents FROM wallet_account").fetchall()}
-        sums = {}
+        sums: dict[str, int] = {}
         by_idem = {}
         for row in rows:
             account = str(row.get("account") or "")
@@ -415,7 +415,7 @@ class Wallet:
                                   "delta_cents": delta})
         refunds = [row for row in rows
                    if int(row.get("delta_cents") or 0) > 0 and self._row_is_refund(row)]
-        grouped = {}
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for row in refunds:
             grouped.setdefault(str(row.get("ref") or ""), []).append(row)
         orphan_rows = []
@@ -440,7 +440,7 @@ class Wallet:
                 })
         # 无原扣退款聚合提示：同金额同分钟的多笔算一条（生产 6×275.22 一条说清），
         # 单笔也照常报一条；详情里保留全部 idem/ref 方便人工核对。
-        buckets = {}
+        buckets: dict[tuple[int, int], list[dict[str, Any]]] = {}
         for row in orphan_rows:
             key = (int(row.get("delta_cents") or 0),
                    int(float(row.get("ts") or 0) // 60))
@@ -457,9 +457,10 @@ class Wallet:
                 "minute": int(minute),
             })
         if anomalies:
-            kinds = {}
+            kinds: dict[str, int] = {}
             for anomaly in anomalies:
-                kinds[anomaly["kind"]] = kinds.get(anomaly["kind"], 0) + 1
+                _kind = str(anomaly["kind"])
+                kinds[_kind] = kinds.get(_kind, 0) + 1
             logger.warning("[amo] 钱包对账异常 %d 项 %s（详见 Wallet.reconcile()）",
                            len(anomalies), kinds)
         return {"ok": not anomalies, "accounts": {

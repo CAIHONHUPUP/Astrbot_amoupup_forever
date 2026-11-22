@@ -25,10 +25,10 @@ import re
 from typing import Any, TypedDict
 
 try:  # 纯规则模块，不依赖 AstrBot 运行时
-    from .photo_rules import zone_for_place
+    from .photo_rules import EXPLICIT_PLACE_ZONES, zone_for_place
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        from photo_rules import zone_for_place
+        from photo_rules import EXPLICIT_PLACE_ZONES, zone_for_place
 
 
 def _sync_zone(item: dict, place: str = "", category: str = "") -> dict:
@@ -51,7 +51,12 @@ def _sync_zone(item: dict, place: str = "", category: str = "") -> dict:
         return item
     zone = zone_for_place(current_place)
     if not zone:
-        return item
+        # 聊天改日程只给 place、不给 zone 时（「我们出去吃吧」→ place=外面），
+        # 用 EXPLICIT_PLACE_ZONES 纠偏。否则 zone 留着旧 home，地点会被
+        # normalize_place 折回「家」，出现「日程在家、日记写出去吃」的自相矛盾。
+        zone = str(EXPLICIT_PLACE_ZONES.get(current_place) or "")
+        if not zone:
+            return item
     item["zone"] = zone
     if zone != "road":
         item["transit"] = ""

@@ -530,7 +530,7 @@ def filter_recalled(plugin, uid, memories):
                 break
         annotated.append((item, conflict))
     # 同一 conflict_key 只留最新 created_at（列表顺序通常已是相关度/新旧混合）
-    keep_index = {}
+    keep_index: dict[str, int] = {}
     for index, (item, conflict) in enumerate(annotated):
         if not conflict:
             continue

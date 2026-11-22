@@ -35,7 +35,7 @@ build_snapshot / amo_presence.current_scene / 约会 Scene），空档还会用 
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 try:  # Phase 11：统一时钟
     from . import clock as _amo_clock
@@ -196,16 +196,19 @@ def normalize_zone(zone, place=""):
         return _ZONE_ALIASES[base]
     if text:
         return text
+    zone_fn: Callable[[Any], str] | None = None
     try:
         from .photo_scene import zone_for_place as _zone_for_place
+        zone_fn = _zone_for_place
     except ImportError:
         try:
             from photo_scene import zone_for_place as _zone_for_place
+            zone_fn = _zone_for_place
         except Exception:
-            _zone_for_place = None
-    if _zone_for_place is not None and place:
+            zone_fn = None
+    if zone_fn is not None and place:
         try:
-            value = str(_zone_for_place(place) or "")
+            value = str(zone_fn(place) or "")
             return _ZONE_ALIASES.get(value, value)
         except Exception:
             return ""
@@ -313,7 +316,7 @@ def constraints(plugin, day=None, now=None):
 
 def _violations(scene, cons):
     """一条场景是否违反硬约束；返回违反项（空表示合法）。"""
-    bad = []
+    bad: list[str] = []
     if not isinstance(scene, dict) or not cons:
         return bad
     place = str(scene.get("place") or "").strip()
@@ -420,7 +423,7 @@ def _quality_of(reason, activity=None):
 
 def unknown_scene(now=None, reason="日程空档，地点未知"):
     now = _now(now)
-    data = dict(_UNKNOWN_ACTIVITY)
+    data: dict[str, Any] = dict(_UNKNOWN_ACTIVITY)
     data.update({"ts": now.timestamp(), "day": _day_of(now),
                  "quality": QUALITY_UNKNOWN, "reason": reason, "constraints": []})
     return data
@@ -620,7 +623,7 @@ def sanitize_prompt_zone(prompt, primary_zone):
         return prompt
     compatible = {primary} | set(ZONE_COMPAT.get(primary, set()))
     other = [zone for zone in ZONE_WORDS if zone not in compatible]
-    banned = []
+    banned: list[str] = []
     for zone in other:
         banned.extend(word for word in ZONE_WORDS[zone] if word not in ZONE_WORDS.get(primary, ()))
     if not banned:

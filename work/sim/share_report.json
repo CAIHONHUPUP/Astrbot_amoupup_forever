@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-11-22T13:01:14",
+    "generated_at": "2026-11-22T17:36:54",
     "plugin_root": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever",
     "sim_dir": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever\\work\\sim",
     "seed_base": 20261121,
@@ -43,14 +43,14 @@
     ],
     "code_fingerprint": {
       "amo_reply_pipeline.py": {
-        "sha256_16": "675c2a3940537b98",
-        "bytes": 82887,
-        "mtime": 1795318187
+        "sha256_16": "a1ea1d2d89671760",
+        "bytes": 87042,
+        "mtime": 1795326950
       },
       "amo_state_consistency.py": {
-        "sha256_16": "53b5900caed5c8bf",
-        "bytes": 45813,
-        "mtime": 1795323624
+        "sha256_16": "13ae05fd6070632a",
+        "bytes": 52553,
+        "mtime": 1795336380
       },
       "amo_share_ledger.py": {
         "sha256_16": "a943eb8aaa1ab961",
@@ -58,9 +58,9 @@
         "mtime": 1795314337
       },
       "amo_grounding_critic.py": {
-        "sha256_16": "c2fbf2a66ac78b05",
-        "bytes": 7981,
-        "mtime": 1795318059
+        "sha256_16": "e5e33bdc4f9d7cf0",
+        "bytes": 10500,
+        "mtime": 1795325975
       },
       "amo_llm_service.py": {
         "sha256_16": "396c465c040dd20d",
@@ -73,9 +73,9 @@
         "mtime": 1795319080
       },
       "reply_fact_guard.py": {
-        "sha256_16": "86b1a38f5d5f5ef3",
-        "bytes": 32166,
-        "mtime": 1795289259
+        "sha256_16": "d815effdb346a27e",
+        "bytes": 38372,
+        "mtime": 1795326010
       },
       "tone_guard.py": {
         "sha256_16": "89659d29759a8239",
@@ -83,14 +83,14 @@
         "mtime": 1795276133
       },
       "amo_proactive.py": {
-        "sha256_16": "c6cb7fc999d9162c",
-        "bytes": 109677,
-        "mtime": 1795323558
+        "sha256_16": "6ba14917599239eb",
+        "bytes": 110280,
+        "mtime": 1795324366
       },
       "amo_question_guard.py": {
-        "sha256_16": "a230f220e7d3ef49",
-        "bytes": 4571,
-        "mtime": 1795318227
+        "sha256_16": "65c13d5bf7aff6cc",
+        "bytes": 6729,
+        "mtime": 1795326100
       }
     }
   },
@@ -184,9 +184,9 @@
       "guard_fallback_turns": 0
     },
     "critic": {
-      "first_hit_turns": 0,
-      "retry_still_hit_turns": 0,
-      "safe_fallback_turns": 0
+      "first_hit_turns": 87,
+      "retry_still_hit_turns": 55,
+      "safe_fallback_turns": 55
     },
     "share_ledger": {
       "noted_turns": 120,
@@ -279,9 +279,9 @@
         "guard_fallback_turns": 0
       },
       "critic": {
-        "first_hit_turns": 0,
-        "retry_still_hit_turns": 0,
-        "safe_fallback_turns": 0
+        "first_hit_turns": 66,
+        "retry_still_hit_turns": 66,
+        "safe_fallback_turns": 66
       },
       "share_ledger": {
         "noted_turns": 146,
@@ -421,7 +421,7 @@
         "group": 0,
         "turn": 7,
         "raw": "我等会儿再说。",
-        "final": "然后一只柯基追自己的尾巴，追到原地转圈。",
+        "final": "然后它转晕了，一屁股坐地上，我在沙发上笑到打滚。",
         "raw_problems": [
           "opener_repeat:刚刷到",
           "place_home_says_road:share:地铁上",
@@ -718,7 +718,9 @@
         {
           "user": "在哪看到的",
           "reply": "在商场歇脚的时候刷到的",
-          "issues": []
+          "issues": [
+            "短追问/短反应没有接住她刚分享的内容"
+          ]
         },
         {
           "user": "你在哪看到的",
@@ -762,7 +764,9 @@
         {
           "user": "真的假的",
           "reply": "真的，排队排到马路上",
-          "issues": []
+          "issues": [
+            "短追问/短反应没有接住她刚分享的内容"
+          ]
         }
       ]
     },
@@ -965,19 +969,19 @@
         "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
         "exists": true,
         "size": 1191936,
-        "mtime_ns": 1795318603757635600,
+        "mtime_ns": 1795337428628645000,
         "wal_size": 4185952,
-        "wal_mtime_ns": 1795323649754058000,
+        "wal_mtime_ns": 1795340190450353700,
         "shm_size": 32768,
-        "shm_mtime_ns": 1795312666411710700,
+        "shm_mtime_ns": 1795335124359870200,
         "tables": 17,
         "rows": {
-          "block_diary": 281,
+          "block_diary": 286,
           "cleanup_audit": 19,
           "dialects": 185,
-          "kv": 1108,
+          "kv": 1131,
           "memories": 0,
-          "messages": 124,
+          "messages": 51,
           "proactive_log": 88,
           "profiles": 1,
           "relation_network": 1,
@@ -996,31 +1000,31 @@
         "exists": true,
         "size": 6811648,
         "mtime_ns": 1795311777681166400,
-        "wal_size": 1124792,
-        "wal_mtime_ns": 1795323540442940200,
+        "wal_size": 1812832,
+        "wal_mtime_ns": 1795339195192829300,
         "shm_size": 32768,
-        "shm_mtime_ns": 1795312665811568100,
+        "shm_mtime_ns": 1795335123666249400,
         "tables": 25,
         "rows": {
           "cache": 18,
-          "entities": 857,
-          "entity_edges": 3094,
+          "entities": 859,
+          "entity_edges": 3107,
           "identity_alias": 8,
           "logs": 0,
-          "memories": 920,
-          "memories_fts": 920,
+          "memories": 922,
+          "memories_fts": 922,
           "memories_fts_config": 1,
-          "memories_fts_data": 48,
-          "memories_fts_docsize": 927,
-          "memories_fts_idx": 46,
-          "memories_ftst": 920,
+          "memories_fts_data": 50,
+          "memories_fts_docsize": 929,
+          "memories_fts_idx": 48,
+          "memories_ftst": 922,
           "memories_ftst_config": 1,
-          "memories_ftst_data": 131,
-          "memories_ftst_docsize": 933,
-          "memories_ftst_idx": 129,
-          "memory_entities": 2611,
+          "memories_ftst_data": 133,
+          "memories_ftst_docsize": 935,
+          "memories_ftst_idx": 131,
+          "memory_entities": 2618,
           "memory_vec": 915,
-          "messages": 391,
+          "messages": 355,
           "person_links": 3,
           "persons": 1,
           "profiles": 1,
@@ -1035,9 +1039,9 @@
         "size": 1011712,
         "mtime_ns": 1795171222156878600,
         "wal_size": 4161232,
-        "wal_mtime_ns": 1795320114556177500,
+        "wal_mtime_ns": 1795335157671184100,
         "shm_size": 32768,
-        "shm_mtime_ns": 1795312665434858700,
+        "shm_mtime_ns": 1795335123293574600,
         "tables": 21,
         "rows": {
           "api_keys": 1,
@@ -1053,7 +1057,7 @@
           "personas": 2,
           "platform_message_history": 97,
           "platform_sessions": 21,
-          "platform_stats": 252,
+          "platform_stats": 253,
           "preferences": 38,
           "provider_stats": 1369,
           "session_project_relations": 0,
@@ -1069,19 +1073,19 @@
         "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
         "exists": true,
         "size": 1191936,
-        "mtime_ns": 1795318603757635600,
+        "mtime_ns": 1795337428628645000,
         "wal_size": 4185952,
-        "wal_mtime_ns": 1795323649754058000,
+        "wal_mtime_ns": 1795340190450353700,
         "shm_size": 32768,
-        "shm_mtime_ns": 1795312666411710700,
+        "shm_mtime_ns": 1795335124359870200,
         "tables": 17,
         "rows": {
-          "block_diary": 281,
+          "block_diary": 286,
           "cleanup_audit": 19,
           "dialects": 185,
-          "kv": 1108,
+          "kv": 1131,
           "memories": 0,
-          "messages": 124,
+          "messages": 51,
           "proactive_log": 88,
           "profiles": 1,
           "relation_network": 1,
@@ -1100,31 +1104,31 @@
         "exists": true,
         "size": 6811648,
         "mtime_ns": 1795311777681166400,
-        "wal_size": 1124792,
-        "wal_mtime_ns": 1795323540442940200,
+        "wal_size": 1812832,
+        "wal_mtime_ns": 1795339195192829300,
         "shm_size": 32768,
-        "shm_mtime_ns": 1795312665811568100,
+        "shm_mtime_ns": 1795335123666249400,
         "tables": 25,
         "rows": {
           "cache": 18,
-          "entities": 857,
-          "entity_edges": 3094,
+          "entities": 859,
+          "entity_edges": 3107,
           "identity_alias": 8,
           "logs": 0,
-          "memories": 920,
-          "memories_fts": 920,
+          "memories": 922,
+          "memories_fts": 922,
           "memories_fts_config": 1,
-          "memories_fts_data": 48,
-          "memories_fts_docsize": 927,
-          "memories_fts_idx": 46,
-          "memories_ftst": 920,
+          "memories_fts_data": 50,
+          "memories_fts_docsize": 929,
+          "memories_fts_idx": 48,
+          "memories_ftst": 922,
           "memories_ftst_config": 1,
-          "memories_ftst_data": 131,
-          "memories_ftst_docsize": 933,
-          "memories_ftst_idx": 129,
-          "memory_entities": 2611,
+          "memories_ftst_data": 133,
+          "memories_ftst_docsize": 935,
+          "memories_ftst_idx": 131,
+          "memory_entities": 2618,
           "memory_vec": 915,
-          "messages": 391,
+          "messages": 355,
           "person_links": 3,
           "persons": 1,
           "profiles": 1,
@@ -1139,9 +1143,9 @@
         "size": 1011712,
         "mtime_ns": 1795171222156878600,
         "wal_size": 4161232,
-        "wal_mtime_ns": 1795320114556177500,
+        "wal_mtime_ns": 1795335157671184100,
         "shm_size": 32768,
-        "shm_mtime_ns": 1795312665434858700,
+        "shm_mtime_ns": 1795335123293574600,
         "tables": 21,
         "rows": {
           "api_keys": 1,
@@ -1157,7 +1161,7 @@
           "personas": 2,
           "platform_message_history": 97,
           "platform_sessions": 21,
-          "platform_stats": 252,
+          "platform_stats": 253,
           "preferences": 38,
           "provider_stats": 1369,
           "session_project_relations": 0,

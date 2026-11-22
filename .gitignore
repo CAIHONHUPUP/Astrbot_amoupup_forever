@@ -17,3 +17,5 @@ pytest-cache-files-*/
 .coverage
 .coverage.json
 htmlcov/
+# 本地模型探针凭据：绝不入库（历史上曾误提交，推送前务必轮换 key）
+work/sim/provider.env

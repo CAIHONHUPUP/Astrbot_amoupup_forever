@@ -1,0 +1,1405 @@
+{
+ "schema": "sd_schedule_change_scenarios_v1",
+ "generated_at": "2026-11-22T16:38:58",
+ "mode": "FakeDB(:memory:) + clock.freeze；未连生产库",
+ "scenarios": [
+  {
+   "id": "S1",
+   "name": "下午外出改成在家休息",
+   "day": "2026-11-01",
+   "entry": {
+    "kind": "chat",
+    "text": "不去了",
+    "now": [
+     15,
+     0
+    ],
+    "detected_change": {
+     "activity": "不去了，改回家待着",
+     "place": "家",
+     "category": "rest",
+     "anchor": "now"
+    }
+   },
+   "before": {
+    "block": {
+     "start": "14:00",
+     "end": "15:28",
+     "activity": "继续逛、找地方坐着",
+     "place": "东莞·商场",
+     "zone": "mall",
+     "category": "play",
+     "event_id": "ev_b69e69c35cb84501"
+    },
+    "block_id": "ev_b69e69c35cb84501",
+    "scene": {
+     "activity": "继续逛、找地方坐着",
+     "place": "东莞·商场",
+     "zone": "mall",
+     "category": "play",
+     "quality": "covering",
+     "source": "schedule",
+     "version": 0
+    },
+    "reminder": {
+     "event": "继续逛、找地方坐着",
+     "place": "东莞·商场",
+     "time": "14:00",
+     "zone": "mall",
+     "day": "2026-11-01",
+     "key": "继续逛、找地方坐着|东莞·商场|14:00"
+    }
+   },
+   "after": {
+    "blocks": [
+     {
+      "start": "00:00",
+      "end": "08:00",
+      "activity": "睡觉",
+      "place": "家",
+      "zone": "home",
+      "category": "sleep",
+      "event_id": "ev_6fdf56f6cee64f08"
+     },
+     {
+      "start": "08:00",
+      "end": "09:00",
+      "activity": "面包配咖啡",
+      "place": "家",
+      "zone": "home",
+      "category": "meal",
+      "event_id": "ev_d289a01ed30a4b4e"
+     },
+     {
+      "start": "09:00",
+      "end": "10:00",
+      "activity": "收拾屋子、洗衣服",
+      "place": "家",
+      "zone": "home",
+      "category": "life",
+      "event_id": "ev_42c9232638ac4bb1"
+     },
+     {
+      "start": "10:00",
+      "end": "11:00",
+      "activity": "开车去商场",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_1b5e90be6e144716"
+     },
+     {
+      "start": "11:00",
+      "end": "12:33",
+      "activity": "逛商场",
+      "place": "东莞·商场",
+      "zone": "mall",
+      "category": "play",
+      "event_id": "ev_1e7c53172dff42c8"
+     },
+     {
+      "start": "12:33",
+      "end": "13:00",
+      "activity": "离开东莞·商场，坐地铁去东莞·商场·餐厅（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_10ed7d4f951d4af9"
+     },
+     {
+      "start": "13:00",
+      "end": "13:41",
+      "activity": "下楼吃牛肉粉",
+      "place": "东莞·商场·餐厅",
+      "zone": "restaurant",
+      "category": "meal",
+      "event_id": "ev_cad6d0bba9e141df"
+     },
+     {
+      "start": "13:41",
+      "end": "14:00",
+      "activity": "刚出东莞·商场·餐厅，坐地铁回家（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_232bee05b7a04c0e"
+     },
+     {
+      "start": "14:00",
+      "end": "15:28",
+      "activity": "不去了，改回家待着",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_b69e69c35cb84501"
+     },
+     {
+      "start": "15:28",
+      "end": "16:00",
+      "activity": "出门去东莞·商场·咖啡店，坐地铁（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_48f7bb73f0af4fc1"
+     },
+     {
+      "start": "16:00",
+      "end": "17:00",
+      "activity": "喝杯热饮",
+      "place": "东莞·商场·咖啡店",
+      "zone": "restaurant",
+      "category": "rest",
+      "event_id": "ev_fae2ca3b713b4306"
+     },
+     {
+      "start": "17:00",
+      "end": "18:00",
+      "activity": "开车回家",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_2735504c517e44b5"
+     },
+     {
+      "start": "18:00",
+      "end": "19:00",
+      "activity": "到家缓一会儿",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_0e3887f4b7cd4bb4"
+     },
+     {
+      "start": "19:00",
+      "end": "20:00",
+      "activity": "炒两个菜",
+      "place": "家",
+      "zone": "home",
+      "category": "meal",
+      "event_id": "ev_3a6c0ffa326845d1"
+     },
+     {
+      "start": "20:00",
+      "end": "22:00",
+      "activity": "追剧、刷手机",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_c04bd82191204e6e"
+     },
+     {
+      "start": "22:00",
+      "end": "23:00",
+      "activity": "洗澡",
+      "place": "家",
+      "zone": "home",
+      "category": "life",
+      "event_id": "ev_269a5533da6c4d6d"
+     },
+     {
+      "start": "23:00",
+      "end": "24:00",
+      "activity": "睡觉",
+      "place": "家",
+      "zone": "home",
+      "category": "sleep",
+      "event_id": "ev_91db8682d6e74195"
+     }
+    ],
+    "block": {
+     "start": "14:00",
+     "end": "15:28",
+     "activity": "不去了，改回家待着",
+     "place": "家",
+     "zone": "home",
+     "category": "rest",
+     "event_id": "ev_b69e69c35cb84501"
+    },
+    "block_id": "ev_b69e69c35cb84501",
+    "scene": {
+     "activity": "不去了，改回家待着",
+     "place": "家",
+     "zone": "home",
+     "category": "rest",
+     "quality": "covering",
+     "source": "schedule",
+     "version": 0
+    },
+    "reminder": {
+     "event": "不去了，改回家待着",
+     "place": "家",
+     "time": "14:00",
+     "zone": "home",
+     "day": "2026-11-01",
+     "key": "不去了，改回家待着|家|14:00"
+    },
+    "old_reminder_still_valid": false,
+    "diary": {
+     "text": "这一会儿我在家，不去了，改回家待着，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+     "block_id": "ev_b69e69c35cb84501",
+     "version": 3,
+     "pending": false,
+     "prompt_current_hour": "这一小时：14:00-15:28，不去了，改回家待着，在家（home），心情开心。",
+     "prompt_place_action": [
+      "家",
+      "不去了，改回家待着"
+     ],
+     "guard_violations": [],
+     "new_record": {
+      "text": "这一会儿我在家，不去了，改回家待着，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+      "status": "valid",
+      "version": 3,
+      "start": "14:00",
+      "end": "15:28",
+      "place": "家"
+     },
+     "old_record_status": "valid",
+     "old_record": {
+      "text": "这一会儿我在家，不去了，改回家待着，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+      "status": "valid",
+      "version": 3,
+      "start": "14:00",
+      "end": "15:28",
+      "place": "家"
+     },
+     "old_text_seed": "我在东莞·商场，继续逛、找地方坐着。",
+     "sync_stale_ids": [
+      "ev_232bee05b7a04c0e",
+      "ev_48f7bb73f0af4fc1",
+      "ev_b69e69c35cb84501"
+     ],
+     "llm_calls": 2,
+     "prompt_len": 2988
+    }
+   },
+   "checks": {
+    "block_activity_place_consistent": true,
+    "scene_matches_block": true,
+    "reminder_matches_block": true,
+    "diary_prompt_matches_block": true,
+    "diary_text_matches_block": true,
+    "diary_guard_clean": true,
+    "diary_not_pending": true,
+    "old_place_absent_from_current_hour": true,
+    "old_block_diary_invalidated": true,
+    "old_reminder_invalidated": true,
+    "new_diary_record_valid": true
+   },
+   "change_result": {
+    "changed": true,
+    "version": 3,
+    "changed_hours": [
+     14,
+     15
+    ],
+    "saved": true
+   },
+   "debug": {
+    "sync_calls": [
+     {
+      "day": "2026-11-01",
+      "stale_ids": [
+       "ev_232bee05b7a04c0e",
+       "ev_48f7bb73f0af4fc1",
+       "ev_b69e69c35cb84501"
+      ],
+      "current": [
+       "ev_0e3887f4b7cd4bb4",
+       "ev_10ed7d4f951d4af9",
+       "ev_1b5e90be6e144716",
+       "ev_1e7c53172dff42c8",
+       "ev_232bee05b7a04c0e",
+       "ev_269a5533da6c4d6d",
+       "ev_2735504c517e44b5",
+       "ev_3a6c0ffa326845d1",
+       "ev_42c9232638ac4bb1",
+       "ev_48f7bb73f0af4fc1",
+       "ev_6fdf56f6cee64f08",
+       "ev_91db8682d6e74195",
+       "ev_b69e69c35cb84501",
+       "ev_c04bd82191204e6e",
+       "ev_cad6d0bba9e141df",
+       "ev_d289a01ed30a4b4e",
+       "ev_fae2ca3b713b4306"
+      ]
+     }
+    ],
+    "store_keys": [
+     "2026-11-01|ev_b69e69c35cb84501"
+    ],
+    "old_bid": "ev_b69e69c35cb84501",
+    "changed_ids": [
+     "ev_232bee05b7a04c0e",
+     "ev_48f7bb73f0af4fc1",
+     "ev_b69e69c35cb84501"
+    ]
+   },
+   "consistent": true,
+   "extra": false
+  },
+  {
+   "id": "S2",
+   "name": "晚饭改到餐厅（/改日程 结构化 change：activities/place/category）",
+   "day": "2026-11-01",
+   "entry": {
+    "kind": "command_apply_at",
+    "start": "19:00",
+    "change": {
+     "activity": "去餐厅吃晚饭",
+     "place": "餐厅",
+     "category": "meal"
+    },
+    "now": [
+     17,
+     30
+    ],
+    "change_dict": {
+     "activity": "去餐厅吃晚饭",
+     "place": "餐厅",
+     "category": "meal"
+    }
+   },
+   "before": {
+    "block": {
+     "start": "19:00",
+     "end": "20:00",
+     "activity": "炒两个菜",
+     "place": "家",
+     "zone": "home",
+     "category": "meal",
+     "event_id": "ev_316d6446ee624b64"
+    },
+    "block_id": "ev_316d6446ee624b64",
+    "scene": {
+     "activity": "炒两个菜",
+     "place": "家",
+     "zone": "home",
+     "category": "meal",
+     "quality": "covering",
+     "source": "schedule",
+     "version": 0
+    },
+    "reminder": {
+     "event": "炒两个菜",
+     "place": "家",
+     "time": "19:00",
+     "zone": "home",
+     "day": "2026-11-01",
+     "key": "炒两个菜|家|19:00"
+    }
+   },
+   "after": {
+    "blocks": [
+     {
+      "start": "00:00",
+      "end": "08:00",
+      "activity": "睡觉",
+      "place": "家",
+      "zone": "home",
+      "category": "sleep",
+      "event_id": "ev_6df5b1f90a0d4299"
+     },
+     {
+      "start": "08:00",
+      "end": "09:00",
+      "activity": "面包配咖啡",
+      "place": "家",
+      "zone": "home",
+      "category": "meal",
+      "event_id": "ev_5133d59782f1429e"
+     },
+     {
+      "start": "09:00",
+      "end": "10:00",
+      "activity": "收拾屋子、洗衣服",
+      "place": "家",
+      "zone": "home",
+      "category": "life",
+      "event_id": "ev_eea726167ae44be3"
+     },
+     {
+      "start": "10:00",
+      "end": "11:00",
+      "activity": "开车去商场",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_8bf7370173ad44d4"
+     },
+     {
+      "start": "11:00",
+      "end": "12:33",
+      "activity": "逛商场",
+      "place": "东莞·商场",
+      "zone": "mall",
+      "category": "play",
+      "event_id": "ev_58ace5105d2542f0"
+     },
+     {
+      "start": "12:33",
+      "end": "13:00",
+      "activity": "离开东莞·商场，坐地铁去东莞·商场·餐厅（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_cdeb1aa703de400d"
+     },
+     {
+      "start": "13:00",
+      "end": "13:41",
+      "activity": "下楼吃牛肉粉",
+      "place": "东莞·商场·餐厅",
+      "zone": "restaurant",
+      "category": "meal",
+      "event_id": "ev_d668c8e5af5c4431"
+     },
+     {
+      "start": "13:41",
+      "end": "14:00",
+      "activity": "离开东莞·商场·餐厅，坐地铁去东莞·商场（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_e2b775b7c3674089"
+     },
+     {
+      "start": "14:00",
+      "end": "15:28",
+      "activity": "继续逛、找地方坐着",
+      "place": "东莞·商场",
+      "zone": "mall",
+      "category": "play",
+      "event_id": "ev_92db2971fef34b73"
+     },
+     {
+      "start": "15:28",
+      "end": "16:00",
+      "activity": "离开东莞·商场，坐地铁去东莞·商场·咖啡店（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_e28884f54801442c"
+     },
+     {
+      "start": "16:00",
+      "end": "17:00",
+      "activity": "喝杯热饮",
+      "place": "东莞·商场·咖啡店",
+      "zone": "restaurant",
+      "category": "rest",
+      "event_id": "ev_127c156d807841e9"
+     },
+     {
+      "start": "17:00",
+      "end": "18:00",
+      "activity": "开车回家",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_092f56f7820b4aed"
+     },
+     {
+      "start": "18:00",
+      "end": "19:00",
+      "activity": "到家缓一会儿",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_d1b444941f704f33"
+     },
+     {
+      "start": "19:00",
+      "end": "19:25",
+      "activity": "出门去餐厅，坐公交（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_8e847a07ec7e4dac"
+     },
+     {
+      "start": "19:25",
+      "end": "20:01",
+      "activity": "去餐厅吃晚饭",
+      "place": "餐厅",
+      "zone": "restaurant",
+      "category": "meal",
+      "event_id": "ev_316d6446ee624b64"
+     },
+     {
+      "start": "20:01",
+      "end": "20:25",
+      "activity": "刚出餐厅，坐公交回家（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_2e4d585819544c05"
+     },
+     {
+      "start": "20:25",
+      "end": "22:25",
+      "activity": "追剧、刷手机",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_f0d1d3215e9a47dc"
+     },
+     {
+      "start": "22:25",
+      "end": "23:25",
+      "activity": "洗澡",
+      "place": "家",
+      "zone": "home",
+      "category": "life",
+      "event_id": "ev_46d96409f7694d84"
+     },
+     {
+      "start": "23:25",
+      "end": "24:00",
+      "activity": "睡觉",
+      "place": "家",
+      "zone": "home",
+      "category": "sleep",
+      "event_id": "ev_fa0e0b337c824922"
+     }
+    ],
+    "block": {
+     "start": "19:25",
+     "end": "20:01",
+     "activity": "去餐厅吃晚饭",
+     "place": "餐厅",
+     "zone": "restaurant",
+     "category": "meal",
+     "event_id": "ev_316d6446ee624b64"
+    },
+    "block_id": "ev_316d6446ee624b64",
+    "scene": {
+     "activity": "去餐厅吃晚饭",
+     "place": "餐厅",
+     "zone": "restaurant",
+     "category": "meal",
+     "quality": "covering",
+     "source": "schedule",
+     "version": 0
+    },
+    "reminder": {
+     "event": "去餐厅吃晚饭",
+     "place": "餐厅",
+     "time": "19:25",
+     "zone": "restaurant",
+     "day": "2026-11-01",
+     "key": "去餐厅吃晚饭|餐厅|19:25"
+    },
+    "old_reminder_still_valid": false,
+    "diary": {
+     "text": "这一会儿我在餐厅，去餐厅吃晚饭，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+     "block_id": "ev_316d6446ee624b64",
+     "version": 3,
+     "pending": false,
+     "prompt_current_hour": "这一小时：19:25-20:01，去餐厅吃晚饭，在餐厅（restaurant），心情开心。",
+     "prompt_place_action": [
+      "餐厅",
+      "去餐厅吃晚饭"
+     ],
+     "guard_violations": [],
+     "new_record": {
+      "text": "这一会儿我在餐厅，去餐厅吃晚饭，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+      "status": "valid",
+      "version": 3,
+      "start": "19:25",
+      "end": "20:01",
+      "place": "餐厅"
+     },
+     "old_record_status": "valid",
+     "old_record": {
+      "text": "这一会儿我在餐厅，去餐厅吃晚饭，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+      "status": "valid",
+      "version": 3,
+      "start": "19:25",
+      "end": "20:01",
+      "place": "餐厅"
+     },
+     "old_text_seed": "我在家，炒两个菜。",
+     "sync_stale_ids": [
+      "ev_316d6446ee624b64",
+      "ev_46d96409f7694d84",
+      "ev_f0d1d3215e9a47dc",
+      "ev_fa0e0b337c824922"
+     ],
+     "llm_calls": 2,
+     "prompt_len": 2947
+    }
+   },
+   "checks": {
+    "block_activity_place_consistent": true,
+    "scene_matches_block": true,
+    "reminder_matches_block": true,
+    "diary_prompt_matches_block": true,
+    "diary_text_matches_block": true,
+    "diary_guard_clean": true,
+    "diary_not_pending": true,
+    "old_place_absent_from_current_hour": true,
+    "old_block_diary_invalidated": true,
+    "old_reminder_invalidated": true,
+    "new_diary_record_valid": true
+   },
+   "change_result": {
+    "changed": true,
+    "version": 3,
+    "changed_hours": [
+     19
+    ],
+    "saved": true
+   },
+   "debug": {
+    "sync_calls": [
+     {
+      "day": "2026-11-01",
+      "stale_ids": [
+       "ev_316d6446ee624b64",
+       "ev_46d96409f7694d84",
+       "ev_f0d1d3215e9a47dc",
+       "ev_fa0e0b337c824922"
+      ],
+      "current": [
+       "ev_092f56f7820b4aed",
+       "ev_127c156d807841e9",
+       "ev_2e4d585819544c05",
+       "ev_316d6446ee624b64",
+       "ev_46d96409f7694d84",
+       "ev_5133d59782f1429e",
+       "ev_58ace5105d2542f0",
+       "ev_6df5b1f90a0d4299",
+       "ev_8bf7370173ad44d4",
+       "ev_8e847a07ec7e4dac",
+       "ev_92db2971fef34b73",
+       "ev_cdeb1aa703de400d",
+       "ev_d1b444941f704f33",
+       "ev_d668c8e5af5c4431",
+       "ev_e28884f54801442c",
+       "ev_e2b775b7c3674089",
+       "ev_eea726167ae44be3",
+       "ev_f0d1d3215e9a47dc",
+       "ev_fa0e0b337c824922"
+      ]
+     }
+    ],
+    "store_keys": [
+     "2026-11-01|ev_316d6446ee624b64"
+    ],
+    "old_bid": "ev_316d6446ee624b64",
+    "changed_ids": [
+     "ev_316d6446ee624b64",
+     "ev_46d96409f7694d84",
+     "ev_f0d1d3215e9a47dc",
+     "ev_fa0e0b337c824922"
+    ]
+   },
+   "consistent": true,
+   "extra": false
+  },
+  {
+   "id": "S2b",
+   "name": "附加探针：同一场景改用对话「我们出去吃吧」",
+   "day": "2026-11-01",
+   "entry": {
+    "kind": "chat",
+    "text": "我们出去吃吧",
+    "now": [
+     17,
+     30
+    ],
+    "detected_change": {
+     "activity": "和他一起出去吃饭",
+     "place": "外面",
+     "category": "meal",
+     "anchor": "meal"
+    }
+   },
+   "before": {
+    "block": {
+     "start": "19:00",
+     "end": "20:00",
+     "activity": "炒两个菜",
+     "place": "家",
+     "zone": "home",
+     "category": "meal",
+     "event_id": "ev_4a594adb64574f73"
+    },
+    "block_id": "ev_4a594adb64574f73",
+    "scene": {
+     "activity": "炒两个菜",
+     "place": "家",
+     "zone": "home",
+     "category": "meal",
+     "quality": "covering",
+     "source": "schedule",
+     "version": 0
+    },
+    "reminder": {
+     "event": "炒两个菜",
+     "place": "家",
+     "time": "19:00",
+     "zone": "home",
+     "day": "2026-11-01",
+     "key": "炒两个菜|家|19:00"
+    }
+   },
+   "after": {
+    "blocks": [
+     {
+      "start": "00:00",
+      "end": "08:00",
+      "activity": "睡觉",
+      "place": "家",
+      "zone": "home",
+      "category": "sleep",
+      "event_id": "ev_4a814ca011b647fa"
+     },
+     {
+      "start": "08:00",
+      "end": "09:00",
+      "activity": "面包配咖啡",
+      "place": "家",
+      "zone": "home",
+      "category": "meal",
+      "event_id": "ev_d38eec9f2d3f4003"
+     },
+     {
+      "start": "09:00",
+      "end": "10:00",
+      "activity": "收拾屋子、洗衣服",
+      "place": "家",
+      "zone": "home",
+      "category": "life",
+      "event_id": "ev_434bd6afaf664895"
+     },
+     {
+      "start": "10:00",
+      "end": "11:00",
+      "activity": "开车去商场",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_93507e810862481b"
+     },
+     {
+      "start": "11:00",
+      "end": "12:33",
+      "activity": "逛商场",
+      "place": "东莞·商场",
+      "zone": "mall",
+      "category": "play",
+      "event_id": "ev_5253bc81cfdc45ee"
+     },
+     {
+      "start": "12:33",
+      "end": "13:00",
+      "activity": "离开东莞·商场，坐地铁去东莞·商场·餐厅（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_643695d25a174d76"
+     },
+     {
+      "start": "13:00",
+      "end": "13:41",
+      "activity": "下楼吃牛肉粉",
+      "place": "东莞·商场·餐厅",
+      "zone": "restaurant",
+      "category": "meal",
+      "event_id": "ev_71be25ba9f4b4b71"
+     },
+     {
+      "start": "13:41",
+      "end": "14:00",
+      "activity": "离开东莞·商场·餐厅，坐地铁去东莞·商场（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_3e1b6b3f3d034b29"
+     },
+     {
+      "start": "14:00",
+      "end": "15:28",
+      "activity": "继续逛、找地方坐着",
+      "place": "东莞·商场",
+      "zone": "mall",
+      "category": "play",
+      "event_id": "ev_a4ec8834ff264ad5"
+     },
+     {
+      "start": "15:28",
+      "end": "16:00",
+      "activity": "离开东莞·商场，坐地铁去东莞·商场·咖啡店（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_676df6e1f2004972"
+     },
+     {
+      "start": "16:00",
+      "end": "17:00",
+      "activity": "喝杯热饮",
+      "place": "东莞·商场·咖啡店",
+      "zone": "restaurant",
+      "category": "rest",
+      "event_id": "ev_8259953d6efc4afa"
+     },
+     {
+      "start": "17:00",
+      "end": "18:00",
+      "activity": "开车回家",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_783334795931419a"
+     },
+     {
+      "start": "18:00",
+      "end": "19:00",
+      "activity": "到家缓一会儿",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_31e792381d584e67"
+     },
+     {
+      "start": "19:00",
+      "end": "20:00",
+      "activity": "和他一起出去吃饭",
+      "place": "外面",
+      "zone": "road",
+      "category": "meal",
+      "event_id": "ev_4a594adb64574f73"
+     },
+     {
+      "start": "20:00",
+      "end": "22:00",
+      "activity": "追剧、刷手机",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_fa2bf118dfc8485b"
+     },
+     {
+      "start": "22:00",
+      "end": "23:00",
+      "activity": "洗澡",
+      "place": "家",
+      "zone": "home",
+      "category": "life",
+      "event_id": "ev_e1875a2d9206472d"
+     },
+     {
+      "start": "23:00",
+      "end": "24:00",
+      "activity": "睡觉",
+      "place": "家",
+      "zone": "home",
+      "category": "sleep",
+      "event_id": "ev_fe08b20ff1754fc1"
+     }
+    ],
+    "block": {
+     "start": "19:00",
+     "end": "20:00",
+     "activity": "和他一起出去吃饭",
+     "place": "外面",
+     "zone": "road",
+     "category": "meal",
+     "event_id": "ev_4a594adb64574f73"
+    },
+    "block_id": "ev_4a594adb64574f73",
+    "scene": {
+     "activity": "和他一起出去吃饭",
+     "place": "外面",
+     "zone": "road",
+     "category": "meal",
+     "quality": "covering",
+     "source": "schedule",
+     "version": 0
+    },
+    "reminder": {
+     "event": "和他一起出去吃饭",
+     "place": "外面",
+     "time": "19:00",
+     "zone": "road",
+     "day": "2026-11-01",
+     "key": "和他一起出去吃饭|外面|19:00"
+    },
+    "old_reminder_still_valid": false,
+    "diary": {
+     "text": "这一会儿我在外面，和老公一起出去吃饭，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+     "block_id": "ev_4a594adb64574f73",
+     "version": 3,
+     "pending": false,
+     "prompt_current_hour": "这一小时：19:00-20:00，和他一起出去吃饭，在外面（road），心情开心。",
+     "prompt_place_action": [
+      "外面",
+      "和他一起出去吃饭"
+     ],
+     "guard_violations": [],
+     "new_record": {
+      "text": "这一会儿我在外面，和老公一起出去吃饭，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+      "status": "valid",
+      "version": 3,
+      "start": "19:00",
+      "end": "20:00",
+      "place": "外面"
+     },
+     "old_record_status": "valid",
+     "old_record": {
+      "text": "这一会儿我在外面，和老公一起出去吃饭，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+      "status": "valid",
+      "version": 3,
+      "start": "19:00",
+      "end": "20:00",
+      "place": "外面"
+     },
+     "old_text_seed": "我在家，炒两个菜。",
+     "sync_stale_ids": [
+      "ev_4a594adb64574f73"
+     ],
+     "llm_calls": 2,
+     "prompt_len": 2957
+    }
+   },
+   "checks": {
+    "block_activity_place_consistent": true,
+    "scene_matches_block": true,
+    "reminder_matches_block": true,
+    "diary_prompt_matches_block": true,
+    "diary_text_matches_block": true,
+    "diary_guard_clean": true,
+    "diary_not_pending": true,
+    "old_place_absent_from_current_hour": true,
+    "old_block_diary_invalidated": true,
+    "old_reminder_invalidated": true,
+    "new_diary_record_valid": true
+   },
+   "change_result": {
+    "changed": true,
+    "version": 3,
+    "changed_hours": [
+     19
+    ],
+    "saved": true
+   },
+   "debug": {
+    "sync_calls": [
+     {
+      "day": "2026-11-01",
+      "stale_ids": [
+       "ev_4a594adb64574f73"
+      ],
+      "current": [
+       "ev_31e792381d584e67",
+       "ev_3e1b6b3f3d034b29",
+       "ev_434bd6afaf664895",
+       "ev_4a594adb64574f73",
+       "ev_4a814ca011b647fa",
+       "ev_5253bc81cfdc45ee",
+       "ev_643695d25a174d76",
+       "ev_676df6e1f2004972",
+       "ev_71be25ba9f4b4b71",
+       "ev_783334795931419a",
+       "ev_8259953d6efc4afa",
+       "ev_93507e810862481b",
+       "ev_a4ec8834ff264ad5",
+       "ev_d38eec9f2d3f4003",
+       "ev_e1875a2d9206472d",
+       "ev_fa2bf118dfc8485b",
+       "ev_fe08b20ff1754fc1"
+      ]
+     }
+    ],
+    "store_keys": [
+     "2026-11-01|ev_4a594adb64574f73"
+    ],
+    "old_bid": "ev_4a594adb64574f73",
+    "changed_ids": [
+     "ev_4a594adb64574f73"
+    ]
+   },
+   "consistent": true,
+   "extra": true
+  },
+  {
+   "id": "S3",
+   "name": "加一段加班（17:00-19:00 留在公司）",
+   "day": "2026-11-02",
+   "entry": {
+    "kind": "chat_apply_schedule",
+    "window": [
+     "17:00",
+     "19:00"
+    ],
+    "activity": "加班",
+    "place": "公司",
+    "zone": "office",
+    "category": "work",
+    "now": [
+     16,
+     0
+    ]
+   },
+   "before": {
+    "block": {
+     "start": "17:00",
+     "end": "18:00",
+     "activity": "泡杯咖啡续命",
+     "place": "公司",
+     "zone": "office",
+     "category": "work",
+     "event_id": "ev_7060a947c80b4994"
+    },
+    "block_id": "ev_7060a947c80b4994",
+    "scene": {
+     "activity": "泡杯咖啡续命",
+     "place": "公司",
+     "zone": "office",
+     "category": "work",
+     "quality": "covering",
+     "source": "schedule",
+     "version": 0
+    },
+    "reminder": {
+     "event": "泡杯咖啡续命",
+     "place": "公司",
+     "time": "17:00",
+     "zone": "office",
+     "day": "2026-11-02",
+     "key": "泡杯咖啡续命|公司|17:00"
+    }
+   },
+   "after": {
+    "blocks": [
+     {
+      "start": "00:00",
+      "end": "07:00",
+      "activity": "睡觉",
+      "place": "家",
+      "zone": "home",
+      "category": "sleep",
+      "event_id": "ev_793b296874224e68"
+     },
+     {
+      "start": "07:00",
+      "end": "08:00",
+      "activity": "急急忙忙洗漱，准备出门",
+      "place": "家",
+      "zone": "home",
+      "category": "life",
+      "event_id": "ev_49026af130624370"
+     },
+     {
+      "start": "08:00",
+      "end": "08:45",
+      "activity": "挤地铁去公司",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_cd57a8485ec6434f"
+     },
+     {
+      "start": "08:45",
+      "end": "09:00",
+      "activity": "快到公司，楼下便利店买了早餐，边吃边等电梯",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_d3f0f5d351df4803"
+     },
+     {
+      "start": "09:00",
+      "end": "10:00",
+      "activity": "回消息处理事情",
+      "place": "公司",
+      "zone": "office",
+      "category": "work",
+      "event_id": "ev_a0378ea280b949fc"
+     },
+     {
+      "start": "10:00",
+      "end": "11:00",
+      "activity": "整理文档",
+      "place": "公司",
+      "zone": "office",
+      "category": "work",
+      "event_id": "ev_8c17d6f95fec4b22"
+     },
+     {
+      "start": "11:00",
+      "end": "11:36",
+      "activity": "开会过方案",
+      "place": "公司",
+      "zone": "office",
+      "category": "work",
+      "event_id": "ev_53cfde7bc1924484"
+     },
+     {
+      "start": "11:36",
+      "end": "12:00",
+      "activity": "离开公司，坐地铁去东莞·写字楼附近（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_b70bc5bd8f74496c"
+     },
+     {
+      "start": "12:00",
+      "end": "12:44",
+      "activity": "在楼下小馆吃碗面",
+      "place": "东莞·写字楼附近",
+      "zone": "restaurant",
+      "category": "meal",
+      "event_id": "ev_bfd3edf79a9d41f8"
+     },
+     {
+      "start": "12:44",
+      "end": "13:00",
+      "activity": "离开东莞·写字楼附近，坐地铁去公司（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_cd03e9f5efcf4cab"
+     },
+     {
+      "start": "13:00",
+      "end": "14:00",
+      "activity": "午休",
+      "place": "公司",
+      "zone": "office",
+      "category": "rest",
+      "event_id": "ev_98b53212768e4f8e"
+     },
+     {
+      "start": "14:00",
+      "end": "15:00",
+      "activity": "写周报",
+      "place": "公司",
+      "zone": "office",
+      "category": "work",
+      "event_id": "ev_1580991985874011"
+     },
+     {
+      "start": "15:00",
+      "end": "16:00",
+      "activity": "开会过方案",
+      "place": "公司",
+      "zone": "office",
+      "category": "work",
+      "event_id": "ev_c3648051baf74889"
+     },
+     {
+      "start": "16:00",
+      "end": "17:00",
+      "activity": "整理文档",
+      "place": "公司",
+      "zone": "office",
+      "category": "work",
+      "event_id": "ev_03fd40a18a464f1a"
+     },
+     {
+      "start": "17:00",
+      "end": "18:37",
+      "activity": "加班",
+      "place": "公司",
+      "zone": "office",
+      "category": "work",
+      "event_id": "ev_7060a947c80b4994"
+     },
+     {
+      "start": "18:37",
+      "end": "19:00",
+      "activity": "刚出公司，坐地铁回家（在路上）",
+      "place": "路上",
+      "zone": "road",
+      "category": "commute",
+      "event_id": "ev_cd8e4f5d9ad54b10"
+     },
+     {
+      "start": "19:00",
+      "end": "20:00",
+      "activity": "点外卖",
+      "place": "家",
+      "zone": "home",
+      "category": "meal",
+      "event_id": "ev_e7abedf35e5549f0"
+     },
+     {
+      "start": "20:00",
+      "end": "21:00",
+      "activity": "追剧",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_d3f3ca5a04704db1"
+     },
+     {
+      "start": "21:00",
+      "end": "22:00",
+      "activity": "听歌",
+      "place": "家",
+      "zone": "home",
+      "category": "rest",
+      "event_id": "ev_d1386c3239da4e64"
+     },
+     {
+      "start": "22:00",
+      "end": "23:00",
+      "activity": "敷面膜",
+      "place": "家",
+      "zone": "home",
+      "category": "life",
+      "event_id": "ev_02392e7c844447cb"
+     },
+     {
+      "start": "23:00",
+      "end": "24:00",
+      "activity": "睡觉",
+      "place": "家",
+      "zone": "home",
+      "category": "sleep",
+      "event_id": "ev_2cb8bec768b64ba6"
+     }
+    ],
+    "block": {
+     "start": "17:00",
+     "end": "18:37",
+     "activity": "加班",
+     "place": "公司",
+     "zone": "office",
+     "category": "work",
+     "event_id": "ev_7060a947c80b4994"
+    },
+    "block_id": "ev_7060a947c80b4994",
+    "scene": {
+     "activity": "加班",
+     "place": "公司",
+     "zone": "office",
+     "category": "work",
+     "quality": "covering",
+     "source": "schedule",
+     "version": 0
+    },
+    "reminder": {
+     "event": "加班",
+     "place": "公司",
+     "time": "17:00",
+     "zone": "office",
+     "day": "2026-11-02",
+     "key": "加班|公司|17:00"
+    },
+    "old_reminder_still_valid": false,
+    "diary": {
+     "text": "这一会儿我在公司，加班，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+     "block_id": "ev_7060a947c80b4994",
+     "version": 3,
+     "pending": false,
+     "prompt_current_hour": "这一小时：17:00-18:37，加班，在公司（office），心情平静。",
+     "prompt_place_action": [
+      "公司",
+      "加班"
+     ],
+     "guard_violations": [],
+     "new_record": {
+      "text": "这一会儿我在公司，加班，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+      "status": "valid",
+      "version": 3,
+      "start": "17:00",
+      "end": "18:37",
+      "place": "公司"
+     },
+     "old_record_status": "valid",
+     "old_record": {
+      "text": "这一会儿我在公司，加班，没什么特别的，就安安静静待着，听着外面的动静，慢慢把这一阵过完。",
+      "status": "valid",
+      "version": 3,
+      "start": "17:00",
+      "end": "18:37",
+      "place": "公司"
+     },
+     "old_text_seed": "我在公司，泡杯咖啡续命。",
+     "sync_stale_ids": [
+      "ev_0d0a8eb227de4fc8",
+      "ev_7060a947c80b4994",
+      "ev_cd8e4f5d9ad54b10"
+     ],
+     "llm_calls": 2,
+     "prompt_len": 2823
+    }
+   },
+   "checks": {
+    "block_activity_place_consistent": true,
+    "scene_matches_block": true,
+    "reminder_matches_block": true,
+    "diary_prompt_matches_block": true,
+    "diary_text_matches_block": true,
+    "diary_guard_clean": true,
+    "diary_not_pending": true,
+    "old_place_absent_from_current_hour": true,
+    "old_block_diary_invalidated": true,
+    "old_reminder_invalidated": true,
+    "new_diary_record_valid": true
+   },
+   "change_result": {
+    "changed": true,
+    "version": 3,
+    "changed_hours": [
+     17,
+     18
+    ],
+    "saved": true
+   },
+   "debug": {
+    "sync_calls": [
+     {
+      "day": "2026-11-02",
+      "stale_ids": [
+       "ev_0d0a8eb227de4fc8",
+       "ev_7060a947c80b4994",
+       "ev_cd8e4f5d9ad54b10"
+      ],
+      "current": [
+       "ev_02392e7c844447cb",
+       "ev_03fd40a18a464f1a",
+       "ev_1580991985874011",
+       "ev_2cb8bec768b64ba6",
+       "ev_49026af130624370",
+       "ev_53cfde7bc1924484",
+       "ev_7060a947c80b4994",
+       "ev_793b296874224e68",
+       "ev_8c17d6f95fec4b22",
+       "ev_98b53212768e4f8e",
+       "ev_a0378ea280b949fc",
+       "ev_b70bc5bd8f74496c",
+       "ev_bfd3edf79a9d41f8",
+       "ev_c3648051baf74889",
+       "ev_cd03e9f5efcf4cab",
+       "ev_cd57a8485ec6434f",
+       "ev_cd8e4f5d9ad54b10",
+       "ev_d1386c3239da4e64",
+       "ev_d3f0f5d351df4803",
+       "ev_d3f3ca5a04704db1",
+       "ev_e7abedf35e5549f0"
+      ]
+     }
+    ],
+    "store_keys": [
+     "2026-11-02|ev_7060a947c80b4994"
+    ],
+    "old_bid": "ev_7060a947c80b4994",
+    "changed_ids": [
+     "ev_0d0a8eb227de4fc8",
+     "ev_7060a947c80b4994",
+     "ev_cd8e4f5d9ad54b10"
+    ]
+   },
+   "consistent": true,
+   "extra": false
+  }
+ ],
+ "required_consistent": true,
+ "extra_consistent": true
+}

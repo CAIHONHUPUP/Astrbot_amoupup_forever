@@ -19,7 +19,11 @@ from __future__ import annotations
 
 import logging
 import re
-import time
+
+try:  # Phase 11 统一时钟：生产代码不许裸调 time.time()
+    from . import clock as _amo_clock
+except ImportError:  # 直接按文件加载时
+    import clock as _amo_clock
 
 logger = logging.getLogger("amo.rewrite_safety")
 
@@ -78,7 +82,7 @@ def remember_candidate(plugin, umo, text):
     data = _store(plugin)
     if data is None:
         return
-    data[str(umo or "")] = {"text": body, "ts": time.time()}
+    data[str(umo or "")] = {"text": body, "ts": _amo_clock.now_ts()}
 
 
 def peek_candidate(plugin, umo):
@@ -90,7 +94,7 @@ def peek_candidate(plugin, umo):
     if not isinstance(entry, dict):
         return ""
     try:
-        age = time.time() - float(entry.get("ts") or 0)
+        age = _amo_clock.now_ts() - float(entry.get("ts") or 0)
     except (TypeError, ValueError):
         return ""
     if age < 0 or age > CANDIDATE_TTL:

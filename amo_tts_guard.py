@@ -40,7 +40,7 @@ except ImportError:  # 直接按文件加载时
 try:  # 统一时钟：源码守护禁止生产代码裸调 time.time()
     from . import clock as _clock
 except ImportError:  # 直接按文件加载时
-    import clock as _clock  # type: ignore[no-redef]
+    import clock as _clock
 
 logger = logging.getLogger("amo")
 

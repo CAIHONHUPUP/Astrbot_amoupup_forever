@@ -57,13 +57,19 @@ class ShippingFixTests(unittest.TestCase):
         shop = EcommerceEngine(plugin)
         order = shop.order([{"name": "绿衬衫", "category": "top", "price_cents": 10000}],
                            now=NOW)["order"]
-        with mock.patch.object(shop, "_receive", return_value=False):
+        # order id 是随机生成的，而「快递延误」按 id 做确定性 roll（8%）；全量跑时
+        # 前面测试消耗掉随机数会让这里的 id 变化，一旦命中延误 deliver_at 就 +1 天，
+        # 固定 +20 秒的重试永远到不了货。这里把 roll 钉成 0.5，并让入库第一次失败、
+        # 第二次成功，专门验证「失败保持运输中/待入库，下一轮重试成功」。
+        with mock.patch("ecommerce_engine.random.Random") as fake_random, \
+                mock.patch.object(shop, "_receive", side_effect=[False, True]):
+            fake_random.return_value.random.return_value = 0.5
             shop.tick(order["deliver_at"] + 10)
             state = shop._state()["orders"][0]
             self.assertEqual("运输中", state["status"])
             self.assertEqual("待入库", state["logistics"])
-        shop.tick(order["deliver_at"] + 20)
-        self.assertEqual("已到货", shop._state()["orders"][0]["status"])
+            shop.tick(order["deliver_at"] + 20)
+            self.assertEqual("已到货", shop._state()["orders"][0]["status"])
 
 
 if __name__ == "__main__":

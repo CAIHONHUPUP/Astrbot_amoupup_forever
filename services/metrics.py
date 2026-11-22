@@ -112,6 +112,8 @@ def _text(row, key):
 
 def _delta(row):
     value = row.get("delta_cents") if isinstance(row, dict) else 0
+    if value is None:
+        return 0
     try:
         return int(value)
     except (TypeError, ValueError):

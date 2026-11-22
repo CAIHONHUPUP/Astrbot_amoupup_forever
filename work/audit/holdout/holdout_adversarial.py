@@ -72,7 +72,7 @@ async def run_chat(plan, hhmm, user_text, candidate, history=None, kv=None):
             stages["send_error"] = repr(exc)[:200]
         try:
             text = await plugin._send_to_umo(UMO, text, source="chat")
-        except Exception:
+        except Exception:  # cleanup: send 失败时仍按已发文本判
             pass
         final = "".join(plugin.context.sent).strip()
     return {"final": final, "stages": stages, "plugin": plugin}

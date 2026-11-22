@@ -1878,7 +1878,8 @@ class ScheduleStateMixin(_MixinBase):
 
     def _changed_block_ids(self, day, old_items, new_items):
         """日程里「被删 / 内容被改」的块身份（按 event_id 算 diff，不按小时猜）。"""
-        before, after = {}, {}
+        before: dict[str, dict[str, Any]] = {}
+        after: dict[str, dict[str, Any]] = {}
         for rows, target in ((old_items, before), (new_items, after)):
             for row in rows or []:
                 if not isinstance(row, dict):

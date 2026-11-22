@@ -153,7 +153,7 @@ def load_schedule():
             data = json.loads(row[0])
             health = {"status": data.get("status") or "健康",
                       "sick": bool(data.get("status") and data.get("status") != "健康")}
-    except Exception:
+    except Exception:  # cleanup: 快照缺失就按无健康数据处理
         pass
     con.close()
     return blocks, health

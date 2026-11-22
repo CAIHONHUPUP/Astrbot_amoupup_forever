@@ -341,7 +341,7 @@ def snapshot_with_scene(plugin, now=None):
     是给 LLM 的扁平快照，两者不能互换。这里保留 state.snapshot() 的其它字段，
     只让「此刻在哪/在做什么」唯一走 scene_ledger.scene_at（含请假/出差/约会硬约束）。
     """
-    snap = {}
+    snap: dict[str, Any] = {}
     state = getattr(plugin, "state", None)
     getter = getattr(state, "snapshot", None)
     if callable(getter):

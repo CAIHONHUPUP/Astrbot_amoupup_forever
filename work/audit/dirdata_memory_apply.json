@@ -1,0 +1,58 @@
+{
+  "applied": true,
+  "changed": 23,
+  "ids": [
+    485,
+    508,
+    533,
+    537,
+    542,
+    552,
+    554,
+    555,
+    557,
+    559,
+    562,
+    564,
+    566,
+    580,
+    582,
+    583,
+    586,
+    590,
+    591,
+    594,
+    599,
+    625,
+    693
+  ],
+  "backup": {
+    "schema": 1,
+    "tool": "apply_memory_23",
+    "source": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_data\\amo_data.db",
+    "backup": "D:\\dafeiyu\\backup\\migrations\\data-pre-memory23-20261122-171955.db",
+    "name": "data-pre-memory23-20261122-171955.db",
+    "sha256": "2ab14a2a7d7ae7e90f422d1fc159ed0663e8142ea171aba0ebf7c66f7af5359b",
+    "bytes": 6811648,
+    "created_at": "2026-11-22T17:19:55+0800",
+    "reason": "archive 23 pure-ops memories (dirdata plan)",
+    "integrity": "ok",
+    "user_version": 3,
+    "from_version": 3,
+    "to_version": 3
+  },
+  "before": {
+    "active": 775,
+    "archived": 26,
+    "merged": 114,
+    "superseded": 7
+  },
+  "after": {
+    "active": 752,
+    "archived": 49,
+    "merged": 114,
+    "superseded": 7
+  },
+  "audit82_residue": 59,
+  "applied_at": "2026-11-22T17:19:55+0800"
+}

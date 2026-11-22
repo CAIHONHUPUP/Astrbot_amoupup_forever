@@ -23,6 +23,8 @@ watch/tests/test_life_state_contract.py（消费端容错）。
 """
 from __future__ import annotations
 
+from typing import Any
+
 import datetime as _dt
 import re
 
@@ -265,7 +267,7 @@ def _outfit(plugin, now):
 
 def _mood(plugin):
     state = getattr(plugin, "state", None)
-    out = {"score": None, "words": []}
+    out: dict[str, Any] = {"score": None, "words": []}
     if state is None:
         return out
     try:

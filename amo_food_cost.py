@@ -9,7 +9,7 @@
   绝不随机分位。
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import datetime as _dt
 import hashlib
@@ -483,7 +483,7 @@ def meal_charged(plugin, instance_id):
 def meal_instances_today(plugin, day):
     """今天已经吃了哪几顿：{slot: [rows]}（只读账本，按实例去重）。"""
     day_text = str(day or "")
-    out = {}
+    out: dict[str, list[dict[str, Any]]] = {}
     for row in _wallet_ledger_rows(plugin):
         if int(row.get("delta_cents") or 0) >= 0:
             continue
@@ -520,7 +520,8 @@ def coalesce_meal_blocks(plugin, day, slot=""):
     rows = schedule_rows(state, day)
     if not rows:
         return {"ok": True, "merged": 0}
-    groups, others = {}, []
+    groups: dict[str, list[dict[str, Any]]] = {}
+    others: list[dict[str, Any]] = []
     for row in rows:
         if str(row.get("category") or "") != "meal":
             others.append(row)

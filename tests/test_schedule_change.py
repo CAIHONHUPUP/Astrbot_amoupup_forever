@@ -101,6 +101,20 @@ class ScheduleChangeTests(unittest.TestCase):
         self.assertEqual(new[0]["zone"], "road")
         self.assertEqual(new[0]["place"], "路上")
 
+    def test_eat_out_syncs_zone_away_from_home(self):
+        # 「我们出去吃吧」只给 place=外面、没给 zone：zone 必须从 home 纠偏成路面，
+        # 否则 normalize_place 会把「外面」折回「家」，日程在家、日记却写出去吃。
+        items = [
+            {"start": "19:00", "end": "20:00", "activity": "炒两个菜", "place": "家",
+             "zone": "home", "category": "meal"},
+        ]
+        change = detect_schedule_change("我们出去吃吧")
+        self.assertTrue(change)
+        new = apply_change(items, change, datetime.datetime(2026, 11, 12, 17, 30))
+        self.assertEqual(new[0]["zone"], "road")
+        self.assertEqual(new[0]["place"], "外面")
+        self.assertNotEqual(new[0]["place"], "家")
+
     def test_sleep_change_moves_zone_home(self):
         items = [
             {"start": "21:00", "end": "22:00", "activity": "加班", "place": "公司",

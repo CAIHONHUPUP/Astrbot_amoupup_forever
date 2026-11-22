@@ -870,8 +870,10 @@ def drop_repeated_clauses(text, refs, min_chars=5):
             norm = _normalize_clause(unit)
             if len(norm) >= min_chars:
                 ref_units.append(norm)
+    _matcher: type[SequenceMatcher] | None
     try:
-        from difflib import SequenceMatcher as _matcher
+        from difflib import SequenceMatcher
+        _matcher = SequenceMatcher
     except Exception:  # pragma: no cover - 标准库不会失败
         _matcher = None
     kept, dropped, seen = [], [], set()
@@ -942,7 +944,7 @@ def dedupe_reply_segments(segments, refs=None, plugin=None, umo=""):
     refs = list(refs or [])
     if not refs:
         refs = history_bot_texts(plugin, umo)
-    out = []
+    out: list[str] = []
     for raw in segments or ():
         segment = str(raw or "")
         if not segment.strip():

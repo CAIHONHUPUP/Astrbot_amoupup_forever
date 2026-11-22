@@ -636,7 +636,7 @@ _TODAY_MARKERS = ("今天", "今日", "今早", "早上", "上午", "中午", "�
 _INTERACTION_VERBS = ("提醒", "说", "问", "发消息", "打电话", "叮嘱", "关心",
                       "让我", "叫我", "跟我说", "告诉我")
 #: 讲“以前”的句子不算声称今天发生，是真·安全写法。
-_PAST_MARKERS = ("以前", "之前", "曾经", "那会儿", "那天", "上次", "从前")
+_PAST_MARKERS: tuple[str, ...] = ("以前", "之前", "曾经", "那会儿", "那天", "上次", "从前")
 _SUBJECTS = ("他", "老公")
 _SAFE_INTERACTION_LINE = "突然想起他以前叮嘱过我的话，心里软了一下。"
 #: 兜底句不再只有一句：多天写日记时同一句话反复出现会变成模板（2026-11-22）。
@@ -909,7 +909,7 @@ _SCENE_GROUPS = (
     ("gym", ("健身房", "跑步机")),
     ("school", ("图书馆", "教室", "学校", "宿舍", "操场")),
 )
-_SCENE_WORD_GROUP = {}
+_SCENE_WORD_GROUP: dict[str, str] = {}
 for _scene_group, _scene_words in _SCENE_GROUPS:
     for _scene_word in _scene_words:
         _SCENE_WORD_GROUP.setdefault(_scene_word, _scene_group)
@@ -938,7 +938,7 @@ def add_scene_transitions(text):
         return value
     added = 0
     out = []
-    previous = set()
+    previous: set[str] = set()
     for sentence in _sentences(value):
         if not sentence.strip():
             out.append(sentence)

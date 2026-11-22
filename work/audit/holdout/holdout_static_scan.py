@@ -133,7 +133,7 @@ def scan():
             for tok in tokenize.generate_tokens(io.StringIO(source).readline):
                 if tok.type == tokenize.COMMENT and CJK_RE.search(tok.string):
                     comments.append({"line": tok.start[0], "text": tok.string[:300]})
-        except Exception:
+        except Exception:  # cleanup: tokenize 失败就跳过注释扫描
             pass
         rows = classify_code_strings(rel, tree, doc_ids)
         totals["code_strings_cjk"] += len(rows)

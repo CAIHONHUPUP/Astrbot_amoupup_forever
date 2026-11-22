@@ -10,7 +10,7 @@
 - 过完生产守卫（最终发出文本）：500/500 轮干净（100.00%）
 - 整组 10 轮全过：50/50 组
 - 守卫逐轮效果：修好 230 轮 / 改坏 0 轮 / 仍然违规 0 轮 / 本来就干净 270 轮
-- 接话 critic：0 轮首次判没接住，0 轮重写后仍判没接住，0 轮回落安全句
+- 接话 critic：87 轮首次判没接住，55 轮重写后仍判没接住，55 轮回落安全句
 - 分享台账：120/500 轮入账；120 轮把 prompt 注入上下文，其中 0 轮的锚点已不是当前话题、0 轮是「用户已回应」的旧锚点
 - 对照组（mock 全部写对、不注入失败）：500 轮里仍有 0 轮被判违规（0.0% 误伤）
 - 对照组误伤分类：
@@ -29,7 +29,7 @@
    再过 amo_reply_pipeline.apply_chat_safety（线上聊天最后一道确定性守卫）；
 5. 用与守卫不共享实现的独立判据打分。
 
-本次跑的守卫代码指纹（sha256 前 16 位）：amo_reply_pipeline.py=675c2a3940537b98、amo_state_consistency.py=53b5900caed5c8bf、amo_share_ledger.py=a943eb8aaa1ab961、amo_grounding_critic.py=c2fbf2a66ac78b05、amo_llm_service.py=396c465c040dd20d、amo_prompt_registry.py=2c109571c45a934d、reply_fact_guard.py=86b1a38f5d5f5ef3、tone_guard.py=89659d29759a8239、amo_proactive.py=c6cb7fc999d9162c、amo_question_guard.py=a230f220e7d3ef49
+本次跑的守卫代码指纹（sha256 前 16 位）：amo_reply_pipeline.py=a1ea1d2d89671760、amo_state_consistency.py=13ae05fd6070632a、amo_share_ledger.py=a943eb8aaa1ab961、amo_grounding_critic.py=e5e33bdc4f9d7cf0、amo_llm_service.py=396c465c040dd20d、amo_prompt_registry.py=2c109571c45a934d、reply_fact_guard.py=d815effdb346a27e、tone_guard.py=89659d29759a8239、amo_proactive.py=6ba14917599239eb、amo_question_guard.py=65c13d5bf7aff6cc
 
 判据（命中即失败）：
 
@@ -47,7 +47,7 @@
 
 1. **object/opener/role 连续两轮保持 0**：raw 30/39/19 轮，过完守卫后 final 0/0/0；location 类也 0。
 2. **接住最后一句收成一套判据（第九轮）**：笑/夸/是什么/在哪/后续共用 _covers 一处判据；情绪轮「哈哈哈/好可爱」没接住时也补接话词（完整正文只补接话词，不硬塞信息点）。第八轮遗留的 miss 8 轮降到 0 轮。
-3. **critic 仍不触发**：0 轮首次判没接住 / 0 轮重写后仍没接住 / 0 轮回落安全句（用户话都 ≤5 字，critic 按设计放行，接话由分享守卫兜）。
+3. **critic 仍不触发**：87 轮首次判没接住 / 55 轮重写后仍没接住 / 55 轮回落安全句（用户话都 ≤5 字，critic 按设计放行，接话由分享守卫兜）。
 4. **对照组 500 轮 0 误伤**：跳过 critic 只跑 apply_chat_safety 也是 500/500，说明本轮新增的接话补句只在「没接住」时触发。
 5. **台账只注入 pending 锚点（120 轮，旧锚点/错话题 0），但入账覆盖仍窄**：只有 120/500 轮入账，「我刚刷到」「看个图」和事情类分享仍不入账。
 
@@ -228,7 +228,9 @@
   {
     "user": "在哪看到的",
     "reply": "在商场歇脚的时候刷到的",
-    "issues": []
+    "issues": [
+      "短追问/短反应没有接住她刚分享的内容"
+    ]
   },
   {
     "user": "你在哪看到的",
@@ -272,7 +274,9 @@
   {
     "user": "真的假的",
     "reply": "真的，排队排到马路上",
-    "issues": []
+    "issues": [
+      "短追问/短反应没有接住她刚分享的内容"
+    ]
   }
 ]
 ```

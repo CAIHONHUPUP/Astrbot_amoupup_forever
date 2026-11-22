@@ -546,7 +546,7 @@ def _patch_logger_add_handler(filter_obj):
             pass
         return _ORIGINAL_ADD_HANDLER(self, hdlr)
 
-    logging.Logger.addHandler = _add_handler
+    setattr(logging.Logger, "addHandler", _add_handler)
     _REDACTION_PATCHED = True
 
 

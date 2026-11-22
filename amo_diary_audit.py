@@ -579,7 +579,8 @@ def _block_fact_entries(plugin, day, item, text, ctx):
     返回两桶 (hard, warn)。地点冲突是 HARD（标 stale 重写）；其余只进报告，
     避免靠启发式金额/措辞把正常日记反复标 stale。
     """
-    hard, warn = [], []
+    hard: list[dict[str, Any]] = []
+    warn: list[dict[str, Any]] = []
     start = str(item.get("start") or "")
     end = str(item.get("end") or "")
     body = str(text or "")

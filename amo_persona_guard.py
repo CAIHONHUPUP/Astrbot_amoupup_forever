@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 logger = logging.getLogger("amo.persona_guard")
 
@@ -229,7 +230,7 @@ def safe_reply(user_text, self_texts=None):
 
 
 def _recent_context(plugin, umo):
-    rows = []
+    rows: list[Any] = []
     try:
         reader = getattr(plugin, "_recent", None)
         if callable(reader):
@@ -379,13 +380,12 @@ def prepare_outbound(plugin, umo, text, source="chat"):
         return "", "empty"
     try:
         try:
-            from .amo_memory_ledger import approximate_amounts, collapse_repeats, system_word_hit
+            from .amo_memory_ledger import approximate_amounts, collapse_repeats
         except ImportError:
-            from amo_memory_ledger import approximate_amounts, collapse_repeats, system_word_hit
+            from amo_memory_ledger import approximate_amounts, collapse_repeats
     except Exception:  # 账本模块缺失时只做本地卫生，不挡发送
         approximate_amounts = lambda value: value
         collapse_repeats = lambda value: value
-        system_word_hit = lambda value: ""
     body = collapse_repeats(body)
     stripped = strip_action_narration(body)
     if stripped != body:

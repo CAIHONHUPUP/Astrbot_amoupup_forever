@@ -455,9 +455,13 @@
   "amo_person_ref.py": [],
   "amo_persona_guard.py": [
     "amo_addressee_guard",
+    "amo_anti_nag",
     "amo_memory_ledger",
     "amo_message",
-    "amo_names"
+    "amo_names",
+    "amo_purchase_guard",
+    "amo_reply_pipeline",
+    "amo_shared_text"
   ],
   "amo_persona_pack.py": [],
   "amo_persona_store.py": [
@@ -534,10 +538,12 @@
     "amo_message",
     "amo_names",
     "amo_observability",
+    "amo_persona_guard",
     "amo_persona_store",
     "amo_purchase_guard",
     "amo_question_guard",
     "amo_repetition_guard",
+    "amo_rewrite_safety",
     "amo_role_guard",
     "amo_share_ledger",
     "amo_shared",
@@ -564,6 +570,14 @@
   "amo_retention.py": [
     "amo_shared",
     "amo_state_store"
+  ],
+  "amo_rewrite_safety.py": [
+    "amo_persona_guard",
+    "amo_reply_pipeline",
+    "amo_state_consistency",
+    "amo_state_snapshot",
+    "clock",
+    "domains"
   ],
   "amo_role_guard.py": [],
   "amo_route_table.py": [],
@@ -611,6 +625,7 @@
     "amo_message",
     "amo_observability",
     "amo_reply_pipeline",
+    "amo_rewrite_safety",
     "amo_runtime_ports",
     "amo_share_ledger",
     "amo_shared",
@@ -756,6 +771,7 @@
     "amo_addressee_guard",
     "amo_message",
     "amo_reply_pipeline",
+    "amo_scene_ledger",
     "amo_share_ledger",
     "domains"
   ],
@@ -1213,6 +1229,7 @@
   "relation_learn.py": [],
   "relation_sediment.py": [],
   "reply_fact_guard.py": [
+    "amo_memory_ledger",
     "clock",
     "photo_scene",
     "place_guard"

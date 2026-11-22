@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_at": "2026-11-22 05:06:28",
+  "generated_at": "2026-11-22 14:06:58",
   "python": "3.12.16",
   "root": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever",
   "city": "东莞",
@@ -36,28 +36,28 @@
     "mtime": 1795087878
    },
    "amo_transition.py": {
-    "sha256_16": "02fbc23daf0ea940",
-    "mtime": 1795294606
+    "sha256_16": "5f5262a9d1a56c54",
+    "mtime": 1795316645
    },
    "amo_state_schedule.py": {
-    "sha256_16": "e57a95ad53ef206b",
-    "mtime": 1795294440
+    "sha256_16": "a0b4b1fe405bd190",
+    "mtime": 1795317308
    },
    "amo_food_cost.py": {
-    "sha256_16": "ed6beaf798184298",
-    "mtime": 1795293862
+    "sha256_16": "0565fa55adde808b",
+    "mtime": 1795317181
    },
    "amo_food_audit.py": {
     "sha256_16": "020bd800bfcb2135",
     "mtime": 1795292188
    },
    "amo_food_event.py": {
-    "sha256_16": "522c3ff43fb30868",
-    "mtime": 1795186033
+    "sha256_16": "f4177e582196a66f",
+    "mtime": 1795316749
    },
    "micro_events.py": {
-    "sha256_16": "04e38635e30751d5",
-    "mtime": 1795091710
+    "sha256_16": "61150ca6d8811f4b",
+    "mtime": 1795318423
    },
    "clock.py": {
     "sha256_16": "fe47c5242ffbd76a",
@@ -92,15 +92,15 @@
      "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
      "exists": true,
      "size": 1191936,
-     "mtime": 1795295010.57,
-     "sha256": "58fac3d5076dda416643f7df101221452518449c4d0cc9c531023ecb5dad6472"
+     "mtime": 1795324670.399,
+     "sha256": "4db4f17ea2d5e297e16b47f037a82f1a5f2d81d2637d3f855c4aaaaed4a9e6a5"
     },
     {
      "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_data\\amo_data.db",
      "exists": true,
      "size": 6811648,
-     "mtime": 1795291570.228,
-     "sha256": "506b4d3bdc069b15836e040ca9c812329772f033737fb9a337642a48d05d3893"
+     "mtime": 1795311777.681,
+     "sha256": "1b0d9b942d6d927addf54c8ca576f8b85e5e0d1e8b204c9991e81b2e2a19f4ba"
     }
    ],
    "side": [
@@ -108,13 +108,13 @@
      "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db-wal",
      "exists": true,
      "size": 4185952,
-     "mtime": 1795295185.307
+     "mtime": 1795327611.98
     },
     {
      "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db-shm",
      "exists": true,
      "size": 32768,
-     "mtime": 1795246814.621
+     "mtime": 1795312666.412
     }
    ]
   },
@@ -124,15 +124,15 @@
      "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
      "exists": true,
      "size": 1191936,
-     "mtime": 1795295010.57,
-     "sha256": "58fac3d5076dda416643f7df101221452518449c4d0cc9c531023ecb5dad6472"
+     "mtime": 1795324670.399,
+     "sha256": "4db4f17ea2d5e297e16b47f037a82f1a5f2d81d2637d3f855c4aaaaed4a9e6a5"
     },
     {
      "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_data\\amo_data.db",
      "exists": true,
      "size": 6811648,
-     "mtime": 1795291570.228,
-     "sha256": "506b4d3bdc069b15836e040ca9c812329772f033737fb9a337642a48d05d3893"
+     "mtime": 1795311777.681,
+     "sha256": "1b0d9b942d6d927addf54c8ca576f8b85e5e0d1e8b204c9991e81b2e2a19f4ba"
     }
    ],
    "side": [
@@ -140,13 +140,13 @@
      "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db-wal",
      "exists": true,
      "size": 4185952,
-     "mtime": 1795295185.307
+     "mtime": 1795327611.98
     },
     {
      "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db-shm",
      "exists": true,
      "size": 32768,
-     "mtime": 1795246814.621
+     "mtime": 1795312666.412
     }
    ]
   },
@@ -164,9 +164,9 @@
    "amo_db": 0
   },
   "external_writer": false,
-  "side_files_note": "amo_forever.db-wal size 4185952→4185952 mtime 1795295185.307→1795295185.307；amo_forever.db-shm size 32768→32768 mtime 1795246814.621→1795246814.621",
+  "side_files_note": "amo_forever.db-wal size 4185952→4185952 mtime 1795327611.98→1795327611.98；amo_forever.db-shm size 32768→32768 mtime 1795312666.412→1795312666.412",
   "temp_clean": true,
-  "temp_root_deleted": "C:\\Users\\123\\AppData\\Local\\Temp\\amo-schedsim-r41fx1q5",
+  "temp_root_deleted": "C:\\Users\\123\\AppData\\Local\\Temp\\amo-schedsim-hf1bkznz",
   "guard_blocked": {
    "open": 0,
    "sqlite": 0,
@@ -519,15 +519,15 @@
       "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
       "exists": true,
       "size": 1191936,
-      "mtime": 1795295010.57,
-      "sha256": "58fac3d5076dda416643f7df101221452518449c4d0cc9c531023ecb5dad6472"
+      "mtime": 1795324670.399,
+      "sha256": "4db4f17ea2d5e297e16b47f037a82f1a5f2d81d2637d3f855c4aaaaed4a9e6a5"
      },
      {
       "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_data\\amo_data.db",
       "exists": true,
       "size": 6811648,
-      "mtime": 1795291570.228,
-      "sha256": "506b4d3bdc069b15836e040ca9c812329772f033737fb9a337642a48d05d3893"
+      "mtime": 1795311777.681,
+      "sha256": "1b0d9b942d6d927addf54c8ca576f8b85e5e0d1e8b204c9991e81b2e2a19f4ba"
      }
     ],
     "side": [
@@ -535,13 +535,13 @@
       "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db-wal",
       "exists": true,
       "size": 4185952,
-      "mtime": 1795295185.307
+      "mtime": 1795327611.98
      },
      {
       "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db-shm",
       "exists": true,
       "size": 32768,
-      "mtime": 1795246814.621
+      "mtime": 1795312666.412
      }
     ]
    },
@@ -551,15 +551,15 @@
       "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
       "exists": true,
       "size": 1191936,
-      "mtime": 1795295010.57,
-      "sha256": "58fac3d5076dda416643f7df101221452518449c4d0cc9c531023ecb5dad6472"
+      "mtime": 1795324670.399,
+      "sha256": "4db4f17ea2d5e297e16b47f037a82f1a5f2d81d2637d3f855c4aaaaed4a9e6a5"
      },
      {
       "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_data\\amo_data.db",
       "exists": true,
       "size": 6811648,
-      "mtime": 1795291570.228,
-      "sha256": "506b4d3bdc069b15836e040ca9c812329772f033737fb9a337642a48d05d3893"
+      "mtime": 1795311777.681,
+      "sha256": "1b0d9b942d6d927addf54c8ca576f8b85e5e0d1e8b204c9991e81b2e2a19f4ba"
      }
     ],
     "side": [
@@ -567,13 +567,13 @@
       "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db-wal",
       "exists": true,
       "size": 4185952,
-      "mtime": 1795295185.307
+      "mtime": 1795327611.98
      },
      {
       "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db-shm",
       "exists": true,
       "size": 32768,
-      "mtime": 1795246814.621
+      "mtime": 1795312666.412
      }
     ]
    },
@@ -591,9 +591,9 @@
     "amo_db": 0
    },
    "external_writer": false,
-   "side_files_note": "amo_forever.db-wal size 4185952→4185952 mtime 1795295185.307→1795295185.307；amo_forever.db-shm size 32768→32768 mtime 1795246814.621→1795246814.621",
+   "side_files_note": "amo_forever.db-wal size 4185952→4185952 mtime 1795327611.98→1795327611.98；amo_forever.db-shm size 32768→32768 mtime 1795312666.412→1795312666.412",
    "temp_clean": true,
-   "temp_root_deleted": "C:\\Users\\123\\AppData\\Local\\Temp\\amo-schedsim-r41fx1q5",
+   "temp_root_deleted": "C:\\Users\\123\\AppData\\Local\\Temp\\amo-schedsim-hf1bkznz",
    "guard_blocked": {
     "open": 0,
     "sqlite": 0,
@@ -846,7 +846,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-05:22:ev_a4475"
+       "meal:2026-10-05:late:0"
       ],
       "attempts": [
        {
@@ -855,10 +855,7 @@
         "eat": true,
         "skipped": "",
         "charged": 1500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -1151,7 +1148,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-06:22:ev_a11f2"
+       "meal:2026-10-06:late:0"
       ],
       "attempts": [
        {
@@ -1160,10 +1157,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -1456,7 +1450,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-07:22:ev_dc514"
+       "meal:2026-10-07:late:0"
       ],
       "attempts": [
        {
@@ -1465,10 +1459,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -1832,7 +1823,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-02:22:ev_2c265"
+       "meal:2026-11-02:late:0"
       ],
       "attempts": [
        {
@@ -1841,10 +1832,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -2183,7 +2171,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-03:23:ev_4b748"
+       "meal:2026-11-03:late:0"
       ],
       "attempts": [
        {
@@ -2200,10 +2188,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -2527,7 +2512,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-04:22:ev_d42ae"
+       "meal:2026-11-04:late:0"
       ],
       "attempts": [
        {
@@ -2536,10 +2521,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -2834,7 +2816,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-25:22:ev_b17aa"
+       "meal:2026-10-25:late:0"
       ],
       "attempts": [
        {
@@ -2843,10 +2825,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -3183,7 +3162,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-26:23:ev_2b3b6"
+       "meal:2026-10-26:late:0"
       ],
       "attempts": [
        {
@@ -3200,10 +3179,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -3527,7 +3503,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-27:22:ev_c2481"
+       "meal:2026-10-27:late:0"
       ],
       "attempts": [
        {
@@ -3536,10 +3512,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -3861,7 +3834,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-07:22:ev_05e8f"
+       "meal:2026-10-07:late:0"
       ],
       "attempts": [
        {
@@ -3870,10 +3843,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -4210,7 +4180,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-08:22:ev_e8c96"
+       "meal:2026-10-08:late:0"
       ],
       "attempts": [
        {
@@ -4219,10 +4189,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -4561,7 +4528,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-09:22:ev_b215e"
+       "meal:2026-10-09:late:0"
       ],
       "attempts": [
        {
@@ -4570,10 +4537,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -4939,7 +4903,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-08:22:ev_b9043"
+       "meal:2026-10-08:late:0"
       ],
       "attempts": [
        {
@@ -4948,10 +4912,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -5290,7 +5251,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-09:23:ev_ec646"
+       "meal:2026-10-09:late:0"
       ],
       "attempts": [
        {
@@ -5307,10 +5268,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -5563,7 +5521,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-10:22:ev_5d164"
+       "meal:2026-10-10:late:0"
       ],
       "attempts": [
        {
@@ -5572,10 +5530,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -5886,7 +5841,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-05:22:ev_c64b5"
+       "meal:2026-10-05:late:0"
       ],
       "attempts": [
        {
@@ -5895,10 +5850,7 @@
         "eat": true,
         "skipped": "",
         "charged": 1500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -6191,7 +6143,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-06:22:ev_f86dd"
+       "meal:2026-10-06:late:0"
       ],
       "attempts": [
        {
@@ -6200,10 +6152,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -6496,7 +6445,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-07:22:ev_6dad3"
+       "meal:2026-10-07:late:0"
       ],
       "attempts": [
        {
@@ -6505,10 +6454,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -7512,7 +7458,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-02:22:ev_07e20"
+       "meal:2026-11-02:late:0"
       ],
       "attempts": [
        {
@@ -7521,10 +7467,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -7863,7 +7806,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-03:23:ev_9c5d4"
+       "meal:2026-11-03:late:0"
       ],
       "attempts": [
        {
@@ -7880,10 +7823,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -8207,7 +8147,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-04:22:ev_31936"
+       "meal:2026-11-04:late:0"
       ],
       "attempts": [
        {
@@ -8216,10 +8156,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -9154,7 +9091,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-25:22:ev_15496"
+       "meal:2026-10-25:late:0"
       ],
       "attempts": [
        {
@@ -9163,10 +9100,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -9503,7 +9437,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-26:23:ev_941a4"
+       "meal:2026-10-26:late:0"
       ],
       "attempts": [
        {
@@ -9520,10 +9454,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -9847,7 +9778,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-27:22:ev_d9552"
+       "meal:2026-10-27:late:0"
       ],
       "attempts": [
        {
@@ -9856,10 +9787,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -10198,7 +10126,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-28:23:ev_b1305"
+       "meal:2026-10-28:late:0"
       ],
       "attempts": [
        {
@@ -10215,10 +10143,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -10845,7 +10770,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-07:22:ev_7ab99"
+       "meal:2026-10-07:late:0"
       ],
       "attempts": [
        {
@@ -10854,10 +10779,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -11194,7 +11116,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-08:22:ev_40513"
+       "meal:2026-10-08:late:0"
       ],
       "attempts": [
        {
@@ -11203,10 +11125,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -11545,7 +11464,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-09:22:ev_dead8"
+       "meal:2026-10-09:late:0"
       ],
       "attempts": [
        {
@@ -11554,10 +11473,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -12436,7 +12352,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-08:22:ev_32905"
+       "meal:2026-10-08:late:0"
       ],
       "attempts": [
        {
@@ -12445,10 +12361,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -12787,7 +12700,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-09:23:ev_43051"
+       "meal:2026-10-09:late:0"
       ],
       "attempts": [
        {
@@ -12804,10 +12717,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -13060,7 +12970,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-10:22:ev_77d92"
+       "meal:2026-10-10:late:0"
       ],
       "attempts": [
        {
@@ -13069,10 +12979,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -13656,7 +13563,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-12:22:ev_cc472"
+       "meal:2026-10-12:late:0"
       ],
       "attempts": [
        {
@@ -13665,10 +13572,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -13981,7 +13885,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-05:22:ev_992ef"
+       "meal:2026-10-05:late:0"
       ],
       "attempts": [
        {
@@ -13990,10 +13894,7 @@
         "eat": true,
         "skipped": "",
         "charged": 1500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -14286,7 +14187,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-06:22:ev_23958"
+       "meal:2026-10-06:late:0"
       ],
       "attempts": [
        {
@@ -14295,10 +14196,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -14591,7 +14489,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-07:22:ev_cde3c"
+       "meal:2026-10-07:late:0"
       ],
       "attempts": [
        {
@@ -14600,10 +14498,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -16120,7 +16015,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-02:22:ev_6353d"
+       "meal:2026-11-02:late:0"
       ],
       "attempts": [
        {
@@ -16129,10 +16024,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -16471,7 +16363,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-03:23:ev_589f5"
+       "meal:2026-11-03:late:0"
       ],
       "attempts": [
        {
@@ -16488,10 +16380,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -16815,7 +16704,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-11-04:22:ev_177a3"
+       "meal:2026-11-04:late:0"
       ],
       "attempts": [
        {
@@ -16824,10 +16713,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -18292,7 +18178,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-25:22:ev_30ad3"
+       "meal:2026-10-25:late:0"
       ],
       "attempts": [
        {
@@ -18301,10 +18187,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -18641,7 +18524,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-26:23:ev_9634c"
+       "meal:2026-10-26:late:0"
       ],
       "attempts": [
        {
@@ -18658,10 +18541,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -18985,7 +18865,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-27:22:ev_d22d3"
+       "meal:2026-10-27:late:0"
       ],
       "attempts": [
        {
@@ -18994,10 +18874,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -19336,7 +19213,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-28:23:ev_e5034"
+       "meal:2026-10-28:late:0"
       ],
       "attempts": [
        {
@@ -19353,10 +19230,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -20586,7 +20460,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-07:22:ev_7a3e4"
+       "meal:2026-10-07:late:0"
       ],
       "attempts": [
        {
@@ -20595,10 +20469,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -20935,7 +20806,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-08:22:ev_218f2"
+       "meal:2026-10-08:late:0"
       ],
       "attempts": [
        {
@@ -20944,10 +20815,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -21286,7 +21154,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-09:22:ev_5946e"
+       "meal:2026-10-09:late:0"
       ],
       "attempts": [
        {
@@ -21295,10 +21163,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -22150,7 +22015,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-12:22:ev_643cd"
+       "meal:2026-10-12:late:0"
       ],
       "attempts": [
        {
@@ -22159,10 +22024,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -22501,7 +22363,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-13:22:ev_dec41"
+       "meal:2026-10-13:late:0"
       ],
       "attempts": [
        {
@@ -22510,10 +22372,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -22879,7 +22738,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-08:22:ev_82ce2"
+       "meal:2026-10-08:late:0"
       ],
       "attempts": [
        {
@@ -22888,10 +22747,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -23230,7 +23086,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-09:23:ev_4dd64"
+       "meal:2026-10-09:late:0"
       ],
       "attempts": [
        {
@@ -23247,10 +23103,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -23503,7 +23356,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-10:22:ev_c143b"
+       "meal:2026-10-10:late:0"
       ],
       "attempts": [
        {
@@ -23512,10 +23365,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -24099,7 +23949,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-12:22:ev_29846"
+       "meal:2026-10-12:late:0"
       ],
       "attempts": [
        {
@@ -24108,10 +23958,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -24450,7 +24297,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-13:22:ev_91e7c"
+       "meal:2026-10-13:late:0"
       ],
       "attempts": [
        {
@@ -24459,10 +24306,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -24801,7 +24645,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-14:22:ev_c546b"
+       "meal:2026-10-14:late:0"
       ],
       "attempts": [
        {
@@ -24810,10 +24654,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -25108,7 +24949,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-10:22:ev_b0b4d"
+       "meal:2026-10-10:late:0"
       ],
       "attempts": [
        {
@@ -25117,10 +24958,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -25413,7 +25251,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-11:22:ev_d5dba"
+       "meal:2026-10-11:late:0"
       ],
       "attempts": [
        {
@@ -25422,10 +25260,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -25718,7 +25553,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-17:22:ev_41f67"
+       "meal:2026-10-17:late:0"
       ],
       "attempts": [
        {
@@ -25727,10 +25562,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -26023,7 +25855,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-18:22:ev_42134"
+       "meal:2026-10-18:late:0"
       ],
       "attempts": [
        {
@@ -26032,10 +25864,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -26336,7 +26165,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-08:22:ev_91214"
+       "meal:2026-10-08:late:0"
       ],
       "attempts": [
        {
@@ -26345,10 +26174,7 @@
         "eat": true,
         "skipped": "",
         "charged": 2800,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -26624,7 +26450,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-09:23:ev_776f4"
+       "meal:2026-10-09:late:0"
       ],
       "attempts": [
        {
@@ -26641,10 +26467,7 @@
         "eat": true,
         "skipped": "",
         "charged": 3000,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -26932,7 +26755,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-14:22:ev_50ee0"
+       "meal:2026-10-14:late:0"
       ],
       "attempts": [
        {
@@ -26941,10 +26764,7 @@
         "eat": true,
         "skipped": "",
         "charged": 500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -27220,7 +27040,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-15:23:ev_88723"
+       "meal:2026-10-15:late:0"
       ],
       "attempts": [
        {
@@ -27237,10 +27057,7 @@
         "eat": true,
         "skipped": "",
         "charged": 1500,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null
@@ -27528,7 +27345,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-16:22:ev_02ca2"
+       "meal:2026-10-16:late:0"
       ],
       "attempts": [
        {
@@ -27537,10 +27354,7 @@
         "eat": true,
         "skipped": "",
         "charged": 1500,
-        "block": {
-         "start": "22:00",
-         "end": "22:20"
-        }
+        "block": null
        },
        {
         "hour": "22:00#again",
@@ -27816,7 +27630,7 @@
       "eat": true,
       "charged_count": 1,
       "idems": [
-       "late_snack:2026-10-17:23:ev_025e6"
+       "meal:2026-10-17:late:0"
       ],
       "attempts": [
        {
@@ -27833,10 +27647,7 @@
         "eat": true,
         "skipped": "",
         "charged": 1500,
-        "block": {
-         "start": "23:00",
-         "end": "23:20"
-        }
+        "block": null
        }
       ],
       "error": null

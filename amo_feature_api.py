@@ -1093,7 +1093,9 @@ class FeatureApiMixin(PersonaApiMixin):
             except (TypeError, ValueError):
                 record["price_cents"] = 0
             try:
-                record["wallet_balance_cents_at_write"] = int(self.wallet.balance("cash") or 0)
+                _wallet = getattr(self, "wallet", None)
+                record["wallet_balance_cents_at_write"] = (
+                    int(_wallet.balance("cash") or 0) if _wallet is not None else 0)
             except Exception:
                 record["wallet_balance_cents_at_write"] = 0
             record["written_at"] = _amo_clock.now_ts()

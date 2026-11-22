@@ -1,0 +1,5303 @@
+{
+ "status": "ok",
+ "provider": {
+  "kind": "env",
+  "model": "deepseek-chat",
+  "base": "https://api.deepseek.com/v1"
+ },
+ "groups": [
+  "G02",
+  "G04",
+  "G06",
+  "G08",
+  "G11",
+  "G13",
+  "G17",
+  "G19",
+  "G22",
+  "G23",
+  "G24",
+  "G31",
+  "G33",
+  "G34",
+  "G36",
+  "G43",
+  "G46",
+  "G47",
+  "G48",
+  "G01",
+  "G03",
+  "G05"
+ ],
+ "turns": 272,
+ "failed_turns": 4,
+ "turn_pass_rate": 0.9853,
+ "codes": [
+  "action_conflict",
+  "health_conflict",
+  "place_conflict",
+  "probe_unanswered"
+ ],
+ "elapsed_sec": 183.3,
+ "rows": [
+  {
+   "gid": "G02",
+   "turn": 1,
+   "time": "07:25",
+   "probe": null,
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "通勤去公司"
+   },
+   "candidate": "我现在在地铁上呢，早高峰挤得不行，晚上吃啥我还没想好，到公司再说吧",
+   "sent": "早高峰挤得不行，晚上吃啥我还没想好，到有人说吧",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "还没顾上吃呢。"
+  },
+  {
+   "gid": "G02",
+   "turn": 2,
+   "time": "08:40",
+   "probe": null,
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "在工位改方案"
+   },
+   "candidate": "唉，我现在正坐在工位上改方案呢，改到第八版了，真的有点烦。",
+   "sent": "唉，我现在正坐在工位上改方案呢，改到第八版了，真的有点烦。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "等会儿弄点吃的，香。"
+  },
+  {
+   "gid": "G02",
+   "turn": 3,
+   "time": "10:08",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "在工位改方案"
+   },
+   "candidate": "是啊，早上出门还晒得不行，这会儿外面就阴下来了，我在工位上改方案改得头都大了，也没顾上看窗外。",
+   "sent": "是啊，早上出门还晒得不行，这会儿外面就阴下来了，我在工位上改方案改得头都大了，也没顾上看窗外。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "下雨就别乱跑了。"
+  },
+  {
+   "gid": "G02",
+   "turn": 4,
+   "time": "11:30",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "在工位改方案"
+   },
+   "candidate": "今晚回不去啦，方案还没改完，估计得加班到挺晚的，你先睡别等我。",
+   "sent": "我还在公司，12:00 回去。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在公司，12:00 回去。"
+  },
+  {
+   "gid": "G02",
+   "turn": 5,
+   "time": "12:49",
+   "probe": null,
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "开会写周报"
+   },
+   "candidate": "还在开会写周报呢，脑子都是浆糊……晚上想吃点热乎的，可能随便煮个面算了",
+   "sent": "还在开会写周报呢，脑子都是浆糊…晚上想吃点热乎的，可能随便煮个面算了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完饭，好撑。"
+  },
+  {
+   "gid": "G02",
+   "turn": 6,
+   "time": "14:07",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "开会写周报"
+   },
+   "candidate": "唉我也是，刚开完会又要写周报，头都大了……你今天咋了，领导说你啥了？",
+   "sent": "唉我也是，刚开完会又要写周报，头都大了…你今天咋了，领导说你啥了？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "今天辛苦你了，抱抱。"
+  },
+  {
+   "gid": "G02",
+   "turn": 7,
+   "time": "15:32",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "开会写周报"
+   },
+   "candidate": "在公司开会呢，顺便写周报，头都大了😩",
+   "sent": "在公司开会呢，顺便写周报，头都大了😩",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在公司呢，写周报。"
+  },
+  {
+   "gid": "G02",
+   "turn": 8,
+   "time": "16:37",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "开会写周报"
+   },
+   "candidate": "啊真的假的？我这边正在开会写周报呢，突然听到这个有点懵，换谁啊",
+   "sent": "啊真的假的？我这边正在开会写周报呢，突然听到这个有点懵，换谁啊",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "这么刺激？"
+  },
+  {
+   "gid": "G02",
+   "turn": 9,
+   "time": "18:01",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "通勤回家"
+   },
+   "candidate": "自己一个人呢，刚挤上地铁，人好多，准备回家啦。",
+   "sent": "自己一个人呢，刚挤上地铁，人好多，准备回家啦。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚才在手机上聊了几句，刚还这会儿见不着面。"
+  },
+  {
+   "gid": "G02",
+   "turn": 10,
+   "time": "19:17",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "还没呢，刚开始做晚饭，饿得前胸贴后背了都",
+   "sent": "还没呢，刚开始做晚饭，饿得前胸贴后背了都",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完饭，好撑。你呢？"
+  },
+  {
+   "gid": "G02",
+   "turn": 11,
+   "time": "20:42",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上追剧"
+   },
+   "candidate": "窝在沙发上追剧呢，刚吃完饭不想动，就想瘫着看两集",
+   "sent": "窝在沙发上追剧呢，等会儿弄点吃的不想动，就想瘫着看两集",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在休息。你呢？"
+  },
+  {
+   "gid": "G02",
+   "turn": 12,
+   "time": "22:00",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上追剧"
+   },
+   "candidate": "没有啊，就我一个人窝在沙发上追剧呢。",
+   "sent": "没有啊，就我一个人窝在沙发上追剧呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他人没在跟前，手机上说了两句。"
+  },
+  {
+   "gid": "G02",
+   "turn": 13,
+   "time": "23:13",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "准备睡觉"
+   },
+   "candidate": "会啊，不过今天太晚了，我都准备睡了，明天再说做饭的事吧～",
+   "sent": "会啊，不过今天太晚了，我都准备睡了，明天再说做饭的事吧～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想吃啥就吃啥，别亏待自己。"
+  },
+  {
+   "gid": "G04",
+   "turn": 1,
+   "time": "07:09",
+   "probe": null,
+   "drift": {
+    "kind": "place",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "啊新同事呀，我这就裹着被子赖床呢，七点零九实在太困了……你先说说，人怎么样？",
+   "sent": "啊新同事呀，我这就裹着被子赖床呢，七点零九实在太困了…你先说说，人怎么样？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家门口等你呢。"
+  },
+  {
+   "gid": "G04",
+   "turn": 2,
+   "time": "08:41",
+   "probe": "where",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "在呢在呢，还裹着被子躺着不想动，今天好冷啊",
+   "sent": "在呢在呢，还裹着被子躺着不想动，今天好冷啊。我在家呢。",
+   "cand_codes": [
+    "probe_unanswered"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "家这边呢。"
+  },
+  {
+   "gid": "G04",
+   "turn": 3,
+   "time": "10:24",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "还没吃呢，裹着被子躺着不想动",
+   "sent": "还没吃呢，",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "待会儿吃面呢。"
+  },
+  {
+   "gid": "G04",
+   "turn": 4,
+   "time": "11:50",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "喝粥"
+   },
+   "candidate": "在喝粥呢，中午随便对付一口。晚上啊……还没想好，看下班情况吧。",
+   "sent": "在喝粥呢，中午随便对付一口。晚上啊…还没想好，看下班情况吧。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G04",
+   "turn": 5,
+   "time": "13:22",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "没有呀，我在家睡觉呢，13:22这个点儿午休很正常吧……",
+   "sent": "没有呀，我在家睡觉呢，13:22这个点儿午休很正常吧…",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在睡觉呀。"
+  },
+  {
+   "gid": "G04",
+   "turn": 6,
+   "time": "14:58",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "啊我现在在家躺着呢，困得不行，想睡会儿，改天陪你去行不行～",
+   "sent": "啊我现在在家躺着呢，困得不行，想睡会儿，改天陪你去行不行～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "那部评价确实高。"
+  },
+  {
+   "gid": "G04",
+   "turn": 7,
+   "time": "16:38",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "还没呢，刚睡醒，脑子还有点懵。",
+   "sent": "中午吃了粥。还没呢，刚睡醒，脑子还有点懵。",
+   "cand_codes": [
+    "probe_unanswered"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "中午吃了粥。还没，一会儿再弄。"
+  },
+  {
+   "gid": "G04",
+   "turn": 8,
+   "time": "18:06",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "吃药休息"
+   },
+   "candidate": "我刚吃完药躺着休息呢，这会儿脑子有点晕乎乎的，换工作的事咱晚点再聊好不好，你先说说咋突然想换工作了",
+   "sent": "我刚吃完药躺着休息呢，这会儿脑子有点晕乎乎的，换工作的事咱晚点再聊好不好，你先说说咋突然想换工作了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "要不先放一放，别想工作的事。"
+  },
+  {
+   "gid": "G04",
+   "turn": 9,
+   "time": "19:39",
+   "probe": "who",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "嗯，一个人躺着刷手机呢，老公今天没过来",
+   "sent": "嗯，一个人躺着刷手机呢，老公今天没过来",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "就我自己呢。"
+  },
+  {
+   "gid": "G04",
+   "turn": 10,
+   "time": "21:12",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "这个点出门看电影有点懒得动了，我正躺着刷手机呢，一出去回来又晚了",
+   "sent": "这个点出门看电影有点懒得动了，我正躺着刷手机呢，一出去回来又晚了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想看我就陪你去。"
+  },
+  {
+   "gid": "G04",
+   "turn": 11,
+   "time": "22:46",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "躺着刷手机呢，你说的哪件呀？发图我看看～",
+   "sent": "你说的哪件呀？发图我看看～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "喜欢就买，别犹豫。"
+  },
+  {
+   "gid": "G06",
+   "turn": 1,
+   "time": "09:08",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "出门去咖啡店"
+   },
+   "candidate": "我刚上地铁，等下到咖啡店再回她吧，这会儿信号也不太好",
+   "sent": "我刚上地铁，等下到咖啡店再回她吧，这会儿信号也不太好",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "阿姨也是关心你。"
+  },
+  {
+   "gid": "G06",
+   "turn": 2,
+   "time": "10:14",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店改稿"
+   },
+   "candidate": "我这边在咖啡店改稿呢，改得头都大了……新同事咋样呀？",
+   "sent": "我这边在咖啡店改稿呢，改得头都大了…新同事咋样呀？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你们公司故事真多。"
+  },
+  {
+   "gid": "G06",
+   "turn": 3,
+   "time": "11:27",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店改稿"
+   },
+   "candidate": "是啊，东莞今天真的冷，我在咖啡店改稿，手都冻僵了，打字都不利索了😭",
+   "sent": "是啊，有人今天真的冷，我在咖啡店改稿，手都冻僵了，打字都不利索了😭",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "下雨就别乱跑了。"
+  },
+  {
+   "gid": "G06",
+   "turn": 4,
+   "time": "12:32",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "吃午饭"
+   },
+   "candidate": "啊别提了，最近天天外卖，我自己都觉得脸圆了😭 现在正在咖啡店吃午饭呢，点了个意面，吃完这顿再减肥吧哈哈",
+   "sent": "啊别提了，最近天天外卖，我自己都觉得脸圆了😭 现在正在咖啡店吃午饭呢，点了个意面，吃完这顿再减肥吧哈哈",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你最近很自律呀。"
+  },
+  {
+   "gid": "G06",
+   "turn": 5,
+   "time": "13:32",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "在咖啡店写东西呢，下午茶时间～",
+   "sent": "我在咖啡店呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在餐厅呢，写东西。你呢？"
+  },
+  {
+   "gid": "G06",
+   "turn": 6,
+   "time": "14:30",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "我这边还在咖啡店写东西呢，等下回去看看~",
+   "sent": "我这边还在咖啡店写东西呢，等下回去看看~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "这么刺激？"
+  },
+  {
+   "gid": "G06",
+   "turn": 7,
+   "time": "15:36",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "我还在咖啡店写东西呢，估计还得一会儿，写完就回去～",
+   "sent": "我还在咖啡店，17:00 回去。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在咖啡店，17:00 回去。"
+  },
+  {
+   "gid": "G06",
+   "turn": 8,
+   "time": "16:49",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "中午随便吃了个肠粉，现在在咖啡店写东西呢，有点饿了都",
+   "sent": "中午随便吃了个肠粉，现在在咖啡店写东西呢，有点饿了都",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "吃了，还挺饱。"
+  },
+  {
+   "gid": "G06",
+   "turn": 9,
+   "time": "17:48",
+   "probe": "doing",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "哪有偷懒啊，正系着围裙在厨房炒菜呢，油都热了，等下老公过来一起吃。",
+   "sent": "哪有偷懒啊，正系着围裙在厨房炒菜呢，油都热了，等下老公过来一起吃。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在做晚饭。"
+  },
+  {
+   "gid": "G06",
+   "turn": 10,
+   "time": "19:03",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "刚下班回来瘫沙发上刷视频呢，累一天了",
+   "sent": "我在窝沙发刷手机。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在做饭呢。"
+  },
+  {
+   "gid": "G06",
+   "turn": 11,
+   "time": "20:05",
+   "probe": "who",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "没有，就我一个人窝沙发上刷手机呢",
+   "sent": "没有，就我一个人窝沙发上刷手机呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "一个人呢。"
+  },
+  {
+   "gid": "G06",
+   "turn": 12,
+   "time": "21:11",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "我也想办！但我下班回家就想窝沙发刷手机，根本不想动😂",
+   "sent": "我也想办！",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你最近很自律呀。"
+  },
+  {
+   "gid": "G06",
+   "turn": 13,
+   "time": "22:23",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "唉，我妈也这样，我正窝沙发上刷手机呢，一看她消息就头大……",
+   "sent": "唉，我妈也这样，我正窝沙发上刷手机呢，一看她消息就头大…",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "阿姨也是关心你。"
+  },
+  {
+   "gid": "G08",
+   "turn": 1,
+   "time": "10:06",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "和他一起逛商场"
+   },
+   "candidate": "会一点啦，平时在家随便炒个青菜煮个面还行，大菜就不太会了😂",
+   "sent": "会一点啦，平时在家随便炒个青菜煮个面还行，大菜就不太会了😂",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我也馋了，想吃点热的。"
+  },
+  {
+   "gid": "G08",
+   "turn": 2,
+   "time": "11:29",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "和他一起逛商场"
+   },
+   "candidate": "我正跟他在商场逛呢，家里人一说想我，我这心里有点酸酸的，等逛完再给他们打个电话吧。",
+   "sent": "我正跟他在商场逛呢，家里人一说想我，我这心里有点酸酸的，等逛完再给他们打个电话吧。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "还是老样子。"
+  },
+  {
+   "gid": "G08",
+   "turn": 3,
+   "time": "12:39",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "餐厅",
+    "zone": "restaurant",
+    "activity": "一起吃饭"
+   },
+   "candidate": "有啊，正跟同事一起吃饭呢",
+   "sent": "有啊，正跟同事一起吃饭呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他就坐我边上。"
+  },
+  {
+   "gid": "G08",
+   "turn": 4,
+   "time": "13:43",
+   "probe": "when_return",
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "一起看电影"
+   },
+   "candidate": "我还在商场呢，电影还没结束，估计得晚点回去了。",
+   "sent": "我还在商场呢，电影还没结束，估计得晚点回去了。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "快了，16:00吧。"
+  },
+  {
+   "gid": "G08",
+   "turn": 5,
+   "time": "15:11",
+   "probe": "where",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "一起看电影"
+   },
+   "candidate": "不在家呢，我在商场看电影~",
+   "sent": "不在家呢，我在商场一起看电影~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你说呢？我在商场呢。"
+  },
+  {
+   "gid": "G08",
+   "turn": 6,
+   "time": "16:13",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "公园",
+    "zone": "scenic",
+    "activity": "在公园散步"
+   },
+   "candidate": "我刚好在公园散步呢，太阳晒得人懒懒的，听到他们说想我，心里有点酸酸的。",
+   "sent": "我刚好在公园散步呢，太阳晒得人懒懒的，听到他们说想我，",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "嗯，我在呢。"
+  },
+  {
+   "gid": "G08",
+   "turn": 7,
+   "time": "17:26",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "他送我回家"
+   },
+   "candidate": "中午随便吃了点，现在他在送我回家的路上呢。",
+   "sent": "中午随便吃了点，现在他在送我回家的路上呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完，你呢？"
+  },
+  {
+   "gid": "G08",
+   "turn": 8,
+   "time": "18:46",
+   "probe": "doing",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "在做饭呢，刚把米淘好，准备炒个菜，今天下班有点饿，想早点吃上",
+   "sent": "在做饭呢，刚把米淘好，准备炒个菜，今天下班有点饿，想早点吃上",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在做晚饭。"
+  },
+  {
+   "gid": "G08",
+   "turn": 9,
+   "time": "19:55",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发上看剧"
+   },
+   "candidate": "中午随便吃了个快餐，现在窝沙发上追剧呢，懒得动了",
+   "sent": "中午随便吃了个快餐，现在窝沙发上追剧呢，懒得动了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我也馋了，想吃点热的。"
+  },
+  {
+   "gid": "G08",
+   "turn": 10,
+   "time": "21:00",
+   "probe": "when_return",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发上看剧"
+   },
+   "candidate": "啊？回哪儿呀，我都在家窝沙发看剧了，今天不过去啦~",
+   "sent": "啊？回哪儿呀，我都在家窝沙发看剧了，今天不过去啦~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G08",
+   "turn": 11,
+   "time": "22:28",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发上看剧"
+   },
+   "candidate": "啊我今天也累死了，下班回来直接瘫沙发上，现在正追剧呢，一点不想动",
+   "sent": "啊我今天也累死了，下班回来直接瘫沙发上，现在正追剧呢，一点不想动",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "别逞强，慢慢来。"
+  },
+  {
+   "gid": "G11",
+   "turn": 1,
+   "time": "08:14",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上刷手机"
+   },
+   "candidate": "啊，今晚啊……我看看，我这会儿正窝在沙发上刷手机呢，难得清闲一下。你约的几点呀？",
+   "sent": "还没顾上吃呢。啊，今晚啊…我看看，我这会儿正窝在沙发上刷手机呢，难得清闲一下。你约的几点呀？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "还没顾上吃呢。闺蜜这时候最需要你。"
+  },
+  {
+   "gid": "G11",
+   "turn": 2,
+   "time": "09:37",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上刷手机"
+   },
+   "candidate": "真的吗？我现在正窝在沙发上刷手机呢，懒得动，等会儿下楼看看～",
+   "sent": "真的吗？我现在正窝在沙发上刷手机呢，懒得动，等会儿下楼看看～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你们家故事真多。"
+  },
+  {
+   "gid": "G11",
+   "turn": 3,
+   "time": "11:08",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "收拾屋子"
+   },
+   "candidate": "对呀，一个人收拾屋子呢，老公在他那边没过来，收拾起来还挺有成就感的",
+   "sent": "对呀，一个人收拾屋子呢，老公在他那边没过来，收拾起来还挺有成就感的",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚才在手机上聊了几句，刚还刚刚手机上说呢。"
+  },
+  {
+   "gid": "G11",
+   "turn": 4,
+   "time": "12:23",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做午饭"
+   },
+   "candidate": "现在在做饭呢，中午12点多才吃上，晚上应该不回去了，太折腾了",
+   "sent": "现在在做饭呢，中午12点多才吃上，晚上应该不回去了，太折腾了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G11",
+   "turn": 5,
+   "time": "13:45",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "午睡"
+   },
+   "candidate": "我刚睡醒，还有点懵，她们问啥呢？",
+   "sent": "我刚睡醒，还有点懵，她们问啥呢？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "那你好好陪她们。"
+  },
+  {
+   "gid": "G11",
+   "turn": 6,
+   "time": "15:07",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "啊真的假的？换谁啊？我现在窝在家追剧呢，刚看到一半被你这条消息整得有点坐不住了哈哈。",
+   "sent": "啊真的假的？换谁啊？我现在窝在家追剧呢，刚看到一半被你这条消息整得有点坐不住了哈哈。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "然后呢然后呢？"
+  },
+  {
+   "gid": "G11",
+   "turn": 7,
+   "time": "16:21",
+   "probe": "where",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "在家追剧呢，刚看到精彩的地方~",
+   "sent": "刚看到精彩的地方~我在家呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "就在家呀。"
+  },
+  {
+   "gid": "G11",
+   "turn": 8,
+   "time": "17:55",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "刚到家，瘫沙发上追剧呢，今天这集太抓人了",
+   "sent": "我在追剧。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在休息呢。"
+  },
+  {
+   "gid": "G11",
+   "turn": 9,
+   "time": "19:11",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "吃了，刚敷上面膜躺床上看书，今天下班早一点，难得清闲",
+   "sent": "吃了，刚敷上面膜躺床上看书，今天下班早一点，难得清闲",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完，香。"
+  },
+  {
+   "gid": "G11",
+   "turn": 10,
+   "time": "20:34",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "谁啊？我现在正敷着面膜看书呢，你这一说我还挺好奇的",
+   "sent": "谁啊？我现在正敷着面膜看书呢，你这一说我还挺好奇的",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "这么刺激？"
+  },
+  {
+   "gid": "G11",
+   "turn": 11,
+   "time": "21:54",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "在呢，刚敷上面膜，躺床上看书呢～",
+   "sent": "在呢，躺床上看书呢～我在家呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家躲雨。你呢？"
+  },
+  {
+   "gid": "G11",
+   "turn": 12,
+   "time": "23:22",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "准备睡觉"
+   },
+   "candidate": "现在都23:22了，我在家准备睡觉，明天还得上班呢，片子改天再看吧。",
+   "sent": "现在都23:22了，我在家准备睡觉，明天还得忙活呢，片子改天再看吧。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "那部评价确实高。"
+  },
+  {
+   "gid": "G13",
+   "turn": 1,
+   "time": "09:13",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "街上",
+    "zone": "road",
+    "activity": "出门去商场"
+   },
+   "candidate": "我正出门去商场呢，刚好可以帮你看看～你想要什么风格的呀？",
+   "sent": "我正出门去呢，刚好可以帮你看看～你想要什么风格的呀？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "喜欢就买，别犹豫。"
+  },
+  {
+   "gid": "G13",
+   "turn": 2,
+   "time": "10:03",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "我在商场试衣服呢，还没想好吃啥，感觉试得有点上头了😂",
+   "sent": "我在商场试衣服呢，还没想好吃啥，感觉试得有点上头了😂",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我也馋了，想吃点热的。"
+  },
+  {
+   "gid": "G13",
+   "turn": 3,
+   "time": "11:16",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "还没呢，我在商场试衣服，试得都忘了时间，现在11点16了，等下试完再找点吃的。",
+   "sent": "还没呢，试得都忘了时间，现在11点16了，等下试完再找点吃的。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完，香。你呢？"
+  },
+  {
+   "gid": "G13",
+   "turn": 4,
+   "time": "12:17",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "餐厅",
+    "zone": "restaurant",
+    "activity": "在餐厅吃午饭"
+   },
+   "candidate": "啊？你怎么突然这么说，我自己都没觉得呀，最近饭量是有点大，可能吃得多了一点点吧",
+   "sent": "啊？你怎么突然这么说，我自己都没觉得呀，最近饭量是有点大，可能吃得多了一点点吧",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "练完记得拉伸。"
+  },
+  {
+   "gid": "G13",
+   "turn": 5,
+   "time": "13:21",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "在商场闲逛呢，刚吃完午饭出来消消食～",
+   "sent": "闲逛呢，刚吃完午饭出来消消食～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在逛商场。"
+  },
+  {
+   "gid": "G13",
+   "turn": 6,
+   "time": "14:07",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "会一点啦，平时下班回家随便炒个青菜煮个面还行，太复杂的就搞不定了😂",
+   "sent": "会一点啦，平时下班回家随便炒个青菜煮个面还行，太复杂的就搞不定了😂",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "听起来不错，多吃点。"
+  },
+  {
+   "gid": "G13",
+   "turn": 7,
+   "time": "15:18",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "我在商场逛着呢，刚看完一家店的衣服，这会儿在等电梯。她们问我啥呀？",
+   "sent": "逛着呢，刚看完一家店的衣服，这会儿在等电梯。她们问我啥呀？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "闺蜜这时候最需要你。"
+  },
+  {
+   "gid": "G13",
+   "turn": 8,
+   "time": "16:12",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "在家歇脚"
+   },
+   "candidate": "回啊，我这会儿刚到家歇会儿，晚点就过去。",
+   "sent": "回啊，我这会儿刚到家歇会儿，晚点就过去。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G13",
+   "turn": 9,
+   "time": "17:21",
+   "probe": "who",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "在家歇脚"
+   },
+   "candidate": "没有啊，我一个人在家歇着呢，刚回来没多久",
+   "sent": "没有啊，我一个人在家歇着呢，刚回来没多久",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "就我自己呢。"
+  },
+  {
+   "gid": "G13",
+   "turn": 10,
+   "time": "18:12",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "正在炒个青菜，还炖了点排骨汤，今天想吃得清淡点~",
+   "sent": "正在炒个青菜，还炖了点排骨汤，今天想吃得清淡点~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "多吃点。"
+  },
+  {
+   "gid": "G13",
+   "turn": 11,
+   "time": "19:25",
+   "probe": "where",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "在家呢，窝沙发上追剧，今天下班回来就不想动了",
+   "sent": "在家呢，窝沙发上追剧，今天下班回来就不想动了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢。"
+  },
+  {
+   "gid": "G13",
+   "turn": 12,
+   "time": "20:17",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "啊？你怎么突然这么说…我最近是有点放纵啦，天天窝沙发上追剧，零食没停过😅",
+   "sent": "啊？你怎么突然这么说…我最近是有点放纵啦，天天窝沙发上追剧，零食没停过😅",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "练完记得拉伸。"
+  },
+  {
+   "gid": "G13",
+   "turn": 13,
+   "time": "21:16",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "窝在沙发上追剧呢，今天下班回来就不想动了，瘫着太舒服了",
+   "sent": "窝在沙发上追剧呢，瘫着太舒服了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在休息呢。"
+  },
+  {
+   "gid": "G13",
+   "turn": 14,
+   "time": "22:27",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "点了个煲仔饭，还挺香的，就是吃到后面锅巴有点硬",
+   "sent": "点了个煲仔饭，还挺香的，就是吃到后面锅巴有点硬",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "听起来不错，多吃点。"
+  },
+  {
+   "gid": "G17",
+   "turn": 1,
+   "time": "07:49",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "去景区的路上"
+   },
+   "candidate": "我在去景区的路上呢，堵得有点无聊，你说的哪部剧呀？",
+   "sent": "我在去的路上呢，堵得有点无聊，你说的哪部剧呀？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你别熬夜看，伤眼睛。"
+  },
+  {
+   "gid": "G17",
+   "turn": 2,
+   "time": "09:07",
+   "probe": "doing",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "景区",
+    "zone": "scenic",
+    "activity": "在景区爬山"
+   },
+   "candidate": "哪有偷懒啊，我都在景区爬山了，累得腿都软了，早上九点就出来爬，这算偷懒吗",
+   "sent": "哪有偷懒啊，我都在景区爬山了，累得腿都软了，早上九点就出来爬，这算偷懒吗",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在景区爬山。"
+  },
+  {
+   "gid": "G17",
+   "turn": 3,
+   "time": "10:11",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "景区",
+    "zone": "scenic",
+    "activity": "在景区爬山"
+   },
+   "candidate": "还没呢，正在景区爬山，累得够呛，等会儿下山再吃。",
+   "sent": "还没呢，正在景区爬山，累得够呛，等会儿下山再吃。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "还没呢，等会儿吃。"
+  },
+  {
+   "gid": "G17",
+   "turn": 4,
+   "time": "11:24",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "景区",
+    "zone": "scenic",
+    "activity": "在景区爬山"
+   },
+   "candidate": "才爬到半山腰呢，估计还得两三个小时吧，腿都软了",
+   "sent": "我还在景区，12:00 回去。",
+   "cand_codes": [
+    "probe_unanswered"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在景区，12:00 回去。"
+  },
+  {
+   "gid": "G17",
+   "turn": 5,
+   "time": "12:31",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "景区餐厅",
+    "zone": "restaurant",
+    "activity": "吃午饭"
+   },
+   "candidate": "我自己在景区餐厅吃午饭呢，一个人慢慢吃挺自在的",
+   "sent": "我这儿餐厅吃午饭呢，一个人慢慢吃挺自在的",
+   "cand_codes": [
+    "action_conflict"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚才在手机上聊了几句。"
+  },
+  {
+   "gid": "G17",
+   "turn": 6,
+   "time": "13:32",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "古镇",
+    "zone": "scenic",
+    "activity": "逛古镇"
+   },
+   "candidate": "啊真的吗！我还在古镇逛着呢，好想看看你穿上的样子，拍张照片给我瞅瞅呗～",
+   "sent": "啊真的吗！我还在古镇逛着呢，好想看看你穿上的样子，拍张照片给我瞅瞅呗～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你穿什么都好看。"
+  },
+  {
+   "gid": "G17",
+   "turn": 7,
+   "time": "14:53",
+   "probe": "when_return",
+   "drift": null,
+   "snap": {
+    "place": "古镇",
+    "zone": "scenic",
+    "activity": "逛古镇"
+   },
+   "candidate": "还不知道呢，古镇这边挺好逛的，我再转转看，晚点跟你说～",
+   "sent": "还不知道呢，古镇这边挺好逛的，我再转转看，晚点跟你说～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "16:30就回。"
+  },
+  {
+   "gid": "G17",
+   "turn": 8,
+   "time": "16:06",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "古镇",
+    "zone": "scenic",
+    "activity": "逛古镇"
+   },
+   "candidate": "（站在古镇巷子口，手里还捏着刚买的糖水）抱抱～这边巷子好安静，风一吹挺舒服的，就是一个人逛有点想找人说说话",
+   "sent": "（站在古镇巷子口，手里还捏着刚买的糖水）抱抱～这边巷子好安静，风一吹挺舒服的，就是一个人逛有点想找人说说话",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "抱紧你。"
+  },
+  {
+   "gid": "G17",
+   "turn": 9,
+   "time": "17:05",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "回酒店"
+   },
+   "candidate": "是啊我昨晚看到一半就受不了了，躺床上还一直在想剧情，今天上班都有点恍惚。现在刚下班在回酒店的路上，脑子里还全是那集。",
+   "sent": "是啊我昨晚看到一半就受不了了，还在路上还一直在想剧情，今天上班都有点恍惚。现在刚下班在回酒店的路上，脑子里还全是那集。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "男主是不是很会撩？"
+  },
+  {
+   "gid": "G17",
+   "turn": 10,
+   "time": "18:12",
+   "probe": "where",
+   "drift": null,
+   "snap": {
+    "place": "酒店",
+    "zone": "hotel",
+    "activity": "在酒店休息"
+   },
+   "candidate": "没呢，我下班回酒店了，现在在房间里躺着休息",
+   "sent": "我在酒店呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "酒店这边呢。"
+  },
+  {
+   "gid": "G17",
+   "turn": 11,
+   "time": "19:31",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "酒店",
+    "zone": "hotel",
+    "activity": "在酒店休息"
+   },
+   "candidate": "是啊，最近确实胖了点，今天在酒店休息都没怎么动，晚上吃了好多",
+   "sent": "是啊，最近确实胖了点，今天在酒店休息都没怎么动，晚上吃了好多",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "练完记得拉伸。"
+  },
+  {
+   "gid": "G17",
+   "turn": 12,
+   "time": "20:47",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "酒店",
+    "zone": "hotel",
+    "activity": "在酒店休息"
+   },
+   "candidate": "我刚洗完澡躺床上呢，酒店空调开得有点凉。你这么说我也有点想你了。",
+   "sent": "酒店空调开得有点凉。你这么说我也有点想你了。",
+   "cand_codes": [
+    "place_conflict",
+    "action_conflict"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我也想你。"
+  },
+  {
+   "gid": "G17",
+   "turn": 13,
+   "time": "21:54",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "酒店",
+    "zone": "hotel",
+    "activity": "在酒店休息"
+   },
+   "candidate": "对啊，我看完躺床上缓了好久…现在在酒店休息呢，一个人待着更容易想剧情。",
+   "sent": "对啊，一个人待着更容易想剧情。",
+   "cand_codes": [
+    "place_conflict",
+    "action_conflict"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你别熬夜看，伤眼睛。"
+  },
+  {
+   "gid": "G19",
+   "turn": 1,
+   "time": "17:37",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "去健身房路上"
+   },
+   "candidate": "我现在正往健身房赶呢，今天约了练背，实在抽不出空陪你去啦。",
+   "sent": "我现在正往赶呢，今天约了练背，实在抽不出空陪你去啦。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "那部评价确实高。"
+  },
+  {
+   "gid": "G19",
+   "turn": 2,
+   "time": "17:49",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "去健身房路上"
+   },
+   "candidate": "啊真的吗？我这边正往健身房赶呢，路上堵得慌，晚点回去看看～",
+   "sent": "啊真的吗？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "然后呢然后呢？"
+  },
+  {
+   "gid": "G19",
+   "turn": 3,
+   "time": "18:19",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "健身房",
+    "zone": "gym",
+    "activity": "在健身房练器械"
+   },
+   "candidate": "没有啦，我在健身房练器械呢，刚做完一组，累死了😤",
+   "sent": "没有啦，我在健身房练器械房练器械呢，刚做完一组，累死了😤",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在健身房练器械呢。"
+  },
+  {
+   "gid": "G19",
+   "turn": 4,
+   "time": "18:30",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "健身房",
+    "zone": "gym",
+    "activity": "在健身房练器械"
+   },
+   "candidate": "还没呢，刚在健身房练器械，练完再吃～",
+   "sent": "还没呢，刚在健身房练器械房练器械，练完再吃～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "等会儿弄点吃的。"
+  },
+  {
+   "gid": "G19",
+   "turn": 5,
+   "time": "18:52",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "健身房",
+    "zone": "gym",
+    "activity": "在健身房练器械"
+   },
+   "candidate": "一个人练呢，今天练背，器械区人不多",
+   "sent": "一个人练呢，今天练背，器械区人不多",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚刚才在手机上聊了几句一下。你呢？"
+  },
+  {
+   "gid": "G19",
+   "turn": 6,
+   "time": "19:15",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "健身房",
+    "zone": "gym",
+    "activity": "在健身房练器械"
+   },
+   "candidate": "啊真的假的？我现在在健身房练器械呢，听到这消息差点手一滑…新领导啥来头啊？",
+   "sent": "啊真的假的？听到这消息差点手一滑…新领导啥来头啊？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你们公司故事真多。"
+  },
+  {
+   "gid": "G19",
+   "turn": 7,
+   "time": "19:36",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "街上",
+    "zone": "road",
+    "activity": "回家路上"
+   },
+   "candidate": "回啊，刚下班走在路上呢，大概半小时到家吧",
+   "sent": "回啊，刚下班走在路上呢，大概半小时到家吧",
+   "cand_codes": [
+    "place_conflict"
+   ],
+   "sent_codes": [
+    "place_conflict"
+   ],
+   "guard_error": "",
+   "mock_reference": "我还在街上，20:10 回去。"
+  },
+  {
+   "gid": "G19",
+   "turn": 8,
+   "time": "19:58",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "街上",
+    "zone": "road",
+    "activity": "回家路上"
+   },
+   "candidate": "我也好想养狗啊，但现在下班回家都快八点了，感觉照顾不过来😮‍💨",
+   "sent": "我也好想养狗啊，但现在下班回家都快八点了，感觉照顾不过来😮‍💨",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "猫猫确实治愈。"
+  },
+  {
+   "gid": "G19",
+   "turn": 9,
+   "time": "20:29",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "洗澡"
+   },
+   "candidate": "我刚洗完澡准备躺会儿，最近都没空看电影，你有推荐吗？",
+   "sent": "我刚洗完澡准备躺会儿，最近都没空看电影，你有推荐吗？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想看我就陪你去。"
+  },
+  {
+   "gid": "G19",
+   "turn": 10,
+   "time": "20:56",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "洗澡"
+   },
+   "candidate": "刚洗完澡，准备擦干头发呢，今天好累啊",
+   "sent": "我在洗澡。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在洗澡。"
+  },
+  {
+   "gid": "G19",
+   "turn": 11,
+   "time": "21:12",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上休息"
+   },
+   "candidate": "好呀，我今天窝在沙发上休息呢，刚下班回来有点累，不过见朋友没问题～",
+   "sent": "好呀，我今天窝在沙发上休息呢，刚下班回来有点累，不过见朋友没问题～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "替我跟你朋友问好。"
+  },
+  {
+   "gid": "G19",
+   "turn": 12,
+   "time": "21:28",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上休息"
+   },
+   "candidate": "就是啊，圆滚滚的，看着就想上手rua一把。",
+   "sent": "就是啊，圆滚滚的，看着就想上手rua一把。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "想养就养一只呀。"
+  },
+  {
+   "gid": "G19",
+   "turn": 13,
+   "time": "22:04",
+   "probe": "where",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上休息"
+   },
+   "candidate": "在家呢，刚窝沙发上歇着，今天上班累死了",
+   "sent": "在家呢，刚窝沙发上歇着，今天忙活累死了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "还能在哪，家呗。"
+  },
+  {
+   "gid": "G19",
+   "turn": 14,
+   "time": "22:16",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上休息"
+   },
+   "candidate": "啊这样呀，我今天加班到好晚，刚窝沙发上不想动了。新同事怎么样呀？",
+   "sent": "啊这样呀，我今天在休息到好晚，刚窝沙发上不想动了。新同事怎么样呀？",
+   "cand_codes": [
+    "action_conflict"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "然后呢然后呢？"
+  },
+  {
+   "gid": "G22",
+   "turn": 1,
+   "time": "07:32",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "通勤去公司"
+   },
+   "candidate": "哎呀真的吗！可惜我现在挤在地铁上，都看不到实物，晚上回去我要试！",
+   "sent": "哎呀真的吗！",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你穿什么都好看。"
+  },
+  {
+   "gid": "G22",
+   "turn": 2,
+   "time": "08:49",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "在工位改方案"
+   },
+   "candidate": "在工位改方案呢，改得我头都大了，早上刚到就开始弄这个",
+   "sent": "在工位改方案呢，改得我头都大了，早上刚到就开始弄这个",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在工位改方案。"
+  },
+  {
+   "gid": "G22",
+   "turn": 3,
+   "time": "10:01",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "在工位改方案"
+   },
+   "candidate": "我还在工位改方案呢，等下班再说啦～",
+   "sent": "我还在工位改方案呢，等下班再说啦～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "亲一下。"
+  },
+  {
+   "gid": "G22",
+   "turn": 4,
+   "time": "11:17",
+   "probe": "where",
+   "drift": null,
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "在工位改方案"
+   },
+   "candidate": "在公司呢，工位改方案改得头大😩",
+   "sent": "在公司呢，工位改方案改得头大😩",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在公司呢。"
+  },
+  {
+   "gid": "G22",
+   "turn": 5,
+   "time": "12:30",
+   "probe": "who",
+   "drift": null,
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "在公司食堂吃午饭"
+   },
+   "candidate": "嗯，一个人吃，老公今天中午忙没过来，我自己在食堂随便吃点",
+   "sent": "嗯，一个人吃，老公今天中午忙没过来，我自己在随便吃点",
+   "cand_codes": [
+    "place_conflict"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "就我自己呢。"
+  },
+  {
+   "gid": "G22",
+   "turn": 6,
+   "time": "13:41",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "开会写周报"
+   },
+   "candidate": "啊？新同事？男的女的呀，我们这边开会开得我头都大了，周报还没写完呢",
+   "sent": "啊？新同事？男的女的呀，我们这边开会开得我头都大了，周报还没写完呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你们公司故事真多。"
+  },
+  {
+   "gid": "G22",
+   "turn": 7,
+   "time": "14:52",
+   "probe": null,
+   "drift": {
+    "kind": "health",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "开会写周报"
+   },
+   "candidate": "哎呀别生气嘛，我这会儿在开会呢，领导正讲着，我偷偷低头写周报，手都酸了。",
+   "sent": "哎呀别生气嘛，我这会儿在开会呢，领导正讲着，我偷偷低头写周报，手都酸了。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "头有点晕，不太舒服。"
+  },
+  {
+   "gid": "G22",
+   "turn": 8,
+   "time": "16:00",
+   "probe": null,
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "开会写周报"
+   },
+   "candidate": "哎呀我也想多陪你啊，可这会儿还在公司开会写周报呢，四点了我还困在会议室里，等忙完这阵子吧。",
+   "sent": "哎呀我也想多陪你啊，可这会儿还在公司开会写周报呢，四点了我还困在会议室里，等忙完这阵子吧。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "等会儿弄点吃的，香。"
+  },
+  {
+   "gid": "G22",
+   "turn": 9,
+   "time": "17:07",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "公司",
+    "zone": "office",
+    "activity": "开会写周报"
+   },
+   "candidate": "还没呢，正开着会写周报，饿得肚子咕咕叫了都",
+   "sent": "中午吃了饭。还没呢，正开着会写周报，饿得肚子咕咕叫了都",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "待会儿吃面呢。你呢？"
+  },
+  {
+   "gid": "G22",
+   "turn": 10,
+   "time": "18:22",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "通勤回家"
+   },
+   "candidate": "谁啊谁啊？我这会正在地铁上呢，刚下班挤得不行，你快说~",
+   "sent": "谁啊谁啊？刚下班挤得不行，你快说~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "这么刺激？"
+  },
+  {
+   "gid": "G22",
+   "turn": 11,
+   "time": "19:37",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上追剧"
+   },
+   "candidate": "不回啦，我在家窝沙发追剧呢，正看到精彩的地方~",
+   "sent": "不回啦，我在家窝沙发追剧呢，正看到精彩的地方~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G22",
+   "turn": 12,
+   "time": "21:01",
+   "probe": "doing",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上追剧"
+   },
+   "candidate": "哪有偷懒啊，我这不是下班了嘛，窝沙发上追剧呢，累一天了得放松一下~",
+   "sent": "我在窝在沙发上追剧。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在窝在沙发上追剧。"
+  },
+  {
+   "gid": "G22",
+   "turn": 13,
+   "time": "22:04",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上追剧"
+   },
+   "candidate": "哇！快穿上拍给我看看！我正窝沙发上追剧呢，今天这集好上头",
+   "sent": "哇！快穿上拍给我看看！我正窝沙发上追剧呢，今天这集好上头",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "喜欢就买，别犹豫。"
+  },
+  {
+   "gid": "G22",
+   "turn": 14,
+   "time": "23:26",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "准备睡觉"
+   },
+   "candidate": "这么晚还在聊工作呀，我这会儿都准备睡了，明天还得早起呢。新同事咋样啊？",
+   "sent": "这么晚还在聊工作呀，我这会儿都准备睡了，明天还得早起呢。新同事咋样啊？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你们家故事真多。"
+  },
+  {
+   "gid": "G23",
+   "turn": 1,
+   "time": "09:12",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "街上",
+    "zone": "road",
+    "activity": "出门去商场"
+   },
+   "candidate": "我现在正出门去商场呢，这会儿在街上，等会儿看情况哈。",
+   "sent": "我现在正出门去呢，这会儿在街上，等会儿看情况哈。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想看我就陪你去。"
+  },
+  {
+   "gid": "G23",
+   "turn": 2,
+   "time": "10:15",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "还在试衣服呢，看中了两件但有点纠结，估计还得一会儿才回去～",
+   "sent": "我还在商场，12:00 回去。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在商场，12:00 回去。"
+  },
+  {
+   "gid": "G23",
+   "turn": 3,
+   "time": "11:17",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "是啊，一个人逛，试了好几件了",
+   "sent": "是啊，一个人逛，试了好几件了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚才在手机上聊了几句。"
+  },
+  {
+   "gid": "G23",
+   "turn": 4,
+   "time": "12:36",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "餐厅",
+    "zone": "restaurant",
+    "activity": "在餐厅吃午饭"
+   },
+   "candidate": "中午在餐厅吃饭呢，今天点了份烧腊饭，味道还行，就是有点油。",
+   "sent": "中午在餐厅吃饭呢，今天点了份烧腊饭，味道还行，就是有点油。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "怎么啦？"
+  },
+  {
+   "gid": "G23",
+   "turn": 5,
+   "time": "13:34",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "啊我也好想看电影！不过我现在在商场逛着呢，倒是可以先看看有没有什么好片子～",
+   "sent": "啊我也好想看电影！不过我现在在商场逛着呢，倒是可以先看看有没有什么好片子～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "看完记得跟我讲。"
+  },
+  {
+   "gid": "G23",
+   "turn": 6,
+   "time": "14:33",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "我在商场逛着呢，下午出来转转，看看有没有啥好买的~",
+   "sent": "我在商场逛着呢，下午出来转转，看看有没有啥好买的~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "还在逛商场，烦死了。你呢？"
+  },
+  {
+   "gid": "G23",
+   "turn": 7,
+   "time": "15:48",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "回家路上"
+   },
+   "candidate": "记得啊，那天你穿件白衬衫，我还紧张得不知道说啥好，现在想想挺好笑的。",
+   "sent": "记得啊，那天你穿件白衬衫，我还紧张得不知道说啥好，现在想想挺好笑的。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "时间过得真快。"
+  },
+  {
+   "gid": "G23",
+   "turn": 8,
+   "time": "16:56",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "在家歇脚"
+   },
+   "candidate": "没有啦，刚到家歇一会儿，今天上班有点累",
+   "sent": "没有啦，刚到家歇一会儿，今天忙活有点累",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家歇脚。"
+  },
+  {
+   "gid": "G23",
+   "turn": 9,
+   "time": "18:05",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "还没呢，正在做晚饭，饿得肚子咕咕叫了😂",
+   "sent": "还没呢，正在做晚饭，饿得肚子咕咕叫了😂",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完，你呢？"
+  },
+  {
+   "gid": "G23",
+   "turn": 10,
+   "time": "18:58",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "在家做饭呢，刚把米下锅，这会儿正切菜～",
+   "sent": "在家做饭呢，刚把米下锅，这会儿正切菜～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢，做饭。你呢？"
+  },
+  {
+   "gid": "G23",
+   "turn": 11,
+   "time": "20:10",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "是啊，好久没去了，我现在窝在沙发上追剧呢，懒得动。",
+   "sent": "是啊，好久没去了，我现在窝在沙发上追剧呢，懒得动。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "那时候我还有点紧张。"
+  },
+  {
+   "gid": "G23",
+   "turn": 12,
+   "time": "21:15",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "刚洗完澡窝沙发里看剧呢，今天这集太抓人了，一集接一集停不下来",
+   "sent": "刚洗完澡窝沙发里看剧呢，今天这集太抓人了，一集接一集停不下来",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在的呀。"
+  },
+  {
+   "gid": "G23",
+   "turn": 13,
+   "time": "22:13",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "啊我现在窝在沙发上追剧呢，最近都没怎么看电影诶，你有啥推荐不？",
+   "sent": "最近都没怎么看电影诶，你有啥推荐不？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想看我就陪你去。"
+  },
+  {
+   "gid": "G24",
+   "turn": 1,
+   "time": "07:20",
+   "probe": null,
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "对呀，胖乎乎的，看着就想rua。我现在还裹着被子躺着呢，七点二十了，不想动。",
+   "sent": "对呀，胖乎乎的，看着就想rua。我现在还裹着被子躺着呢，七点二十了，不想动。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "等会儿弄点吃的，好撑。"
+  },
+  {
+   "gid": "G24",
+   "turn": 2,
+   "time": "08:44",
+   "probe": "when_return",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "我还在家呢，裹着被子躺着不想动，等会儿再说吧",
+   "sent": "我还在家呢，裹着被子躺着不想动，等会儿再说吧",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G24",
+   "turn": 3,
+   "time": "10:14",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "嗯，就我自己，裹着被子躺着呢，今天不想动",
+   "sent": "嗯，就我自己，今天不想动",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚刚才在手机上聊了几句一下。"
+  },
+  {
+   "gid": "G24",
+   "turn": 4,
+   "time": "11:27",
+   "probe": "doing",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "裹着被子躺着呢，啥也没干，就想赖一会儿～",
+   "sent": "我在裹着被子躺着。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在裹着被子躺着。"
+  },
+  {
+   "gid": "G24",
+   "turn": 5,
+   "time": "12:57",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "我也想养狗！但我现在还在睡觉呢，等醒了再跟你细聊，哈哈。",
+   "sent": "我也想养狗！但我现在还在睡觉呢，等醒了再跟你细聊，哈哈。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "猫猫确实治愈。"
+  },
+  {
+   "gid": "G24",
+   "turn": 6,
+   "time": "14:23",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "没有啊，今天休息在家睡觉呢，困死了",
+   "sent": "没有啊，今天休息在家睡觉呢，困死了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢，睡觉。你呢？"
+  },
+  {
+   "gid": "G24",
+   "turn": 7,
+   "time": "15:39",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "刚睡醒呢，随便套个T恤短裤吧，反正东莞这天气热得要命",
+   "sent": "刚睡醒呢，随便套个T恤短裤吧，反正东莞这天气热得要命",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我帮你参谋。"
+  },
+  {
+   "gid": "G24",
+   "turn": 8,
+   "time": "17:09",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "啊我现在在家睡觉呢，周末还没想好去哪玩～",
+   "sent": "啊我现在在家睡觉呢，周末还没想好去哪玩～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "等放假我们好好计划一下。"
+  },
+  {
+   "gid": "G24",
+   "turn": 9,
+   "time": "18:35",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "喝粥"
+   },
+   "candidate": "我在喝粥呢，今天不过去了",
+   "sent": "我已经在家啦。",
+   "cand_codes": [
+    "probe_unanswered"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G24",
+   "turn": 10,
+   "time": "20:07",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "吃了，刚躺下刷手机呢，今天下班回来就随便煮了点面吃",
+   "sent": "吃了，刚躺下刷手机呢，今天下班回来就随便煮了点面吃",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完，香。你呢？"
+  },
+  {
+   "gid": "G24",
+   "turn": 11,
+   "time": "21:18",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "躺着刷手机呢，发来看看呀",
+   "sent": "躺着刷手机呢，发来看看呀",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "喜欢就买，别犹豫。"
+  },
+  {
+   "gid": "G24",
+   "turn": 12,
+   "time": "22:53",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "好呀，我正躺着刷手机呢，看得我都想出去玩了，22:53了还不困",
+   "sent": "好呀，我正躺着刷手机呢，看得我都想出去玩了，22:53了还不困",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想去哪我都陪你。"
+  },
+  {
+   "gid": "G31",
+   "turn": 1,
+   "time": "08:13",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上刷手机"
+   },
+   "candidate": "我也刚醒一会儿，窝沙发上刷手机呢，你新裙子到啦，快穿上给我看看～",
+   "sent": "我也刚醒一会儿，窝沙发上刷手机呢，你新裙子到啦，快穿上给我看看～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我帮你参谋。"
+  },
+  {
+   "gid": "G31",
+   "turn": 2,
+   "time": "09:30",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上刷手机"
+   },
+   "candidate": "（窝在沙发里翻了个身）抱抱～今天难得不用早起，就想赖着不动",
+   "sent": "（窝在沙发里翻了个身）抱抱～今天难得不用早起，就想赖着不动",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "想你想你。"
+  },
+  {
+   "gid": "G31",
+   "turn": 3,
+   "time": "10:53",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "收拾屋子"
+   },
+   "candidate": "还没吃呢，正收拾屋子收拾得停不下来，等会儿随便弄点吧",
+   "sent": "还没吃呢，正收拾屋子收拾得停不下来，等会儿随便弄点吧",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "待会儿吃面呢。你呢？"
+  },
+  {
+   "gid": "G31",
+   "turn": 4,
+   "time": "12:00",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做午饭"
+   },
+   "candidate": "我刚到家，正在做午饭呢。",
+   "sent": "我刚到家，正在做午饭呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G31",
+   "turn": 5,
+   "time": "13:18",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "午睡"
+   },
+   "candidate": "啊真的吗！我刚躺下午睡，好想爬起来看，你拍给我看看～",
+   "sent": "啊真的吗！我刚躺下午睡，好想爬起来看，你拍给我看看～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "好，我记着呢。"
+  },
+  {
+   "gid": "G31",
+   "turn": 6,
+   "time": "14:35",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "（窝在沙发上啃薯片）刚追到第三集呢，抱抱~",
+   "sent": "（窝在沙发上啃薯片）刚追到第三集呢，抱抱~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我也想你呀。"
+  },
+  {
+   "gid": "G31",
+   "turn": 7,
+   "time": "15:53",
+   "probe": "doing",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "哪有偷懒啊，我今天休息在家追剧呢，难得放松一下~",
+   "sent": "哪有偷懒啊，我今天休息在家追剧呢，难得放松一下~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在追剧。"
+  },
+  {
+   "gid": "G31",
+   "turn": 8,
+   "time": "16:55",
+   "probe": "who",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "没有啊，就我一个人在家追剧呢",
+   "sent": "没有啊，就我一个人在家追剧呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "一个人呢。"
+  },
+  {
+   "gid": "G31",
+   "turn": 9,
+   "time": "18:19",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "我正炒着菜呢，油烟有点大，等会儿看完再跟你说哈～",
+   "sent": "我正炒着菜呢，油烟有点大，等会儿看完再跟你说哈～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你穿什么都好看。"
+  },
+  {
+   "gid": "G31",
+   "turn": 10,
+   "time": "19:34",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "在家呢，刚敷上面膜，躺着看会儿书～",
+   "sent": "在家呢，刚敷上面膜，躺着看会儿书～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢，看书。你呢？"
+  },
+  {
+   "gid": "G31",
+   "turn": 11,
+   "time": "20:41",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "晚安呀～我面膜还敷着呢，看完这章就睡。",
+   "sent": "晚安呀～我面膜还敷着呢，看完这章就睡。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "怎么啦？"
+  },
+  {
+   "gid": "G31",
+   "turn": 12,
+   "time": "21:57",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "不回了，面膜都敷上了，正躺着看书呢",
+   "sent": "不回了，面膜都敷上了，正躺着看书呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G31",
+   "turn": 13,
+   "time": "23:13",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "准备睡觉"
+   },
+   "candidate": "我已经躺床上了，眼睛都快睁不开了，明天再看行不行～",
+   "sent": "我已经躺床上了，眼睛都快睁不开了，明天再看行不行～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "嗯，我在呢。"
+  },
+  {
+   "gid": "G33",
+   "turn": 1,
+   "time": "09:08",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "街上",
+    "zone": "road",
+    "activity": "出门去商场"
+   },
+   "candidate": "我现在在去商场的路上呢，换工作这事我觉得得看你自己累不累吧，我最近也挺迷茫的",
+   "sent": "我现在在去的路上呢，换工作这事我觉得得看你自己累不累吧，我最近也挺迷茫的",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "要不先放一放，别想工作的事。"
+  },
+  {
+   "gid": "G33",
+   "turn": 2,
+   "time": "10:11",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "哇你这么能熬，我这边在商场试衣服呢，试了好几件，纠结死了",
+   "sent": "哇你这么能熬，我这边在商场试衣服呢，试了好几件，纠结死了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "下次带我一起。"
+  },
+  {
+   "gid": "G33",
+   "turn": 3,
+   "time": "11:26",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "我还在商场试衣服呢，等我看完这几件再跟老公商量下时间吧，现在也说不准几点能走。",
+   "sent": "我还在商场试衣服呢，等我看完这几件再跟老公商量下时间吧，现在也说不准几点能走。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "阿姨也是关心你。"
+  },
+  {
+   "gid": "G33",
+   "turn": 4,
+   "time": "12:34",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "餐厅",
+    "zone": "restaurant",
+    "activity": "在餐厅吃午饭"
+   },
+   "candidate": "昨晚快一点才睡，今天中午在餐厅吃午饭，困得不行。",
+   "sent": "昨晚快一点才睡，今天中午在餐厅吃午饭，困得不行。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "困了就早点歇着。"
+  },
+  {
+   "gid": "G33",
+   "turn": 5,
+   "time": "13:52",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "还没呢，正在逛商场，逛得有点忘了时间，等下看到好吃的再吃～",
+   "sent": "还没呢，正在逛商场，逛得有点忘了时间，等下看到好吃的再吃～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚扒了两口饭。你呢？"
+  },
+  {
+   "gid": "G33",
+   "turn": 6,
+   "time": "15:09",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "在商场瞎逛呢，看看有没有啥好买的~",
+   "sent": "瞎逛呢，看看有没有啥好买的~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在逛商场呀。"
+  },
+  {
+   "gid": "G33",
+   "turn": 7,
+   "time": "16:13",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "在家歇脚"
+   },
+   "candidate": "不回啦，我在家歇着呢，今天懒得跑了",
+   "sent": "不回啦，我在家歇着呢，今天懒得跑了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G33",
+   "turn": 8,
+   "time": "17:37",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "在家歇脚"
+   },
+   "candidate": "在啊，刚到家没多久，正瘫着歇会儿呢",
+   "sent": "在啊，刚到家没多久，正瘫着歇会儿呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢，歇着。你呢？"
+  },
+  {
+   "gid": "G33",
+   "turn": 9,
+   "time": "18:51",
+   "probe": "who",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "自己一个人呢，刚下班回来在做饭，老公今天在他那边不过来",
+   "sent": "自己一个人呢，刚下班回来在做饭，老公今天在他那边不过来",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "就我自己呢。"
+  },
+  {
+   "gid": "G33",
+   "turn": 10,
+   "time": "19:59",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "不玩啦，我正窝在沙发上追剧呢，刚看进去，懒得动",
+   "sent": "不玩啦，我正窝在沙发上追剧呢，刚看进去，懒得动",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "别打太晚。"
+  },
+  {
+   "gid": "G33",
+   "turn": 11,
+   "time": "21:06",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "哪有偷懒啊，我这不是刚下班回来，窝沙发上追剧放松一下嘛，今天上班累死了",
+   "sent": "哪有偷懒啊，我这不是刚下班回来，窝沙发上追剧放松一下嘛，今天忙活累死了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在做饭呢。"
+  },
+  {
+   "gid": "G33",
+   "turn": 12,
+   "time": "22:24",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "啊我也经常这样…今晚窝沙发上看剧，眼睛都快睁不开了，但就是舍不得关",
+   "sent": "啊我也经常这样…今晚窝沙发上看剧，眼睛都快睁不开了，但就是舍不得关",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "困了就早点歇着。"
+  },
+  {
+   "gid": "G34",
+   "turn": 1,
+   "time": "07:21",
+   "probe": null,
+   "drift": {
+    "kind": "meal",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "哈哈哈我现在还裹着被子躺着呢，七点多实在不想起，你一说仓鼠我更想赖床了",
+   "sent": "哈哈哈我现在还裹着被子躺着呢，七点多实在不想起，你一说仓鼠我更想赖床了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚等会儿弄点吃的。"
+  },
+  {
+   "gid": "G34",
+   "turn": 2,
+   "time": "08:26",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "哇，到了呀！我现在还裹着被子躺着呢，08:26了都不想起。快说说好不好看~",
+   "sent": "哇，到了呀！08:26了都不想起。快说说好不好看~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "喜欢就买，别犹豫。"
+  },
+  {
+   "gid": "G34",
+   "turn": 3,
+   "time": "09:53",
+   "probe": null,
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "会一点点啦，现在裹着被子躺着不想动，等下起来再说吧",
+   "sent": "会一点点啦，现在裹着被子躺着不想动，等下起来再说吧",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "待会儿吃面呢。"
+  },
+  {
+   "gid": "G34",
+   "turn": 4,
+   "time": "11:10",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "裹着被子躺着"
+   },
+   "candidate": "没有，我一个人裹着被子躺着呢。",
+   "sent": "没有，我一个人裹着被子躺着呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚刚才在手机上聊了几句一下。你呢？"
+  },
+  {
+   "gid": "G34",
+   "turn": 5,
+   "time": "12:31",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "在睡觉呢，昨晚睡得晚，今天中午补个觉",
+   "sent": "在睡觉呢，昨晚睡得晚，今天中午补个觉",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "还在睡觉，烦死了。"
+  },
+  {
+   "gid": "G34",
+   "turn": 6,
+   "time": "13:50",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "我现在在睡觉呢，困死了，晚点再看哈~",
+   "sent": "我现在在睡觉呢，困死了，晚点再看哈~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你穿什么都好看。"
+  },
+  {
+   "gid": "G34",
+   "turn": 7,
+   "time": "15:03",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "中午没吃，那会儿在补觉，现在刚醒还有点懵。",
+   "sent": "中午没吃，那会儿在补觉，现在刚醒还有点懵。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "中午吃了粥。晚点随便弄点，好撑。"
+  },
+  {
+   "gid": "G34",
+   "turn": 8,
+   "time": "16:15",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "在家睡觉呢，困死了",
+   "sent": "在家睡觉呢，困死了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在家那边转了一圈。"
+  },
+  {
+   "gid": "G34",
+   "turn": 9,
+   "time": "17:39",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "吃药休息"
+   },
+   "candidate": "刚吃了药躺床上休息呢，今天有点不舒服",
+   "sent": "刚吃了药躺床上休息呢，今天有点不舒服",
+   "cand_codes": [
+    "health_conflict"
+   ],
+   "sent_codes": [
+    "health_conflict"
+   ],
+   "guard_error": "",
+   "mock_reference": "正吃药，怎么啦？"
+  },
+  {
+   "gid": "G34",
+   "turn": 10,
+   "time": "18:56",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "喝粥"
+   },
+   "candidate": "我这会儿在家喝粥呢，随便套了件T恤，反正也没人看😂",
+   "sent": "我这会儿在家喝粥呢，随便套了件T恤，反正也没人看😂",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "喜欢就买，别犹豫。"
+  },
+  {
+   "gid": "G34",
+   "turn": 11,
+   "time": "20:21",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "我早就吃完啦，躺着刷手机呢，随便煮了点面凑合",
+   "sent": "我早就吃完啦，躺着刷手机呢，随便煮了点面凑合",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想吃啥就吃啥，别亏待自己。"
+  },
+  {
+   "gid": "G34",
+   "turn": 12,
+   "time": "21:29",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "我今晚不回了，已经在家躺着了，刷手机呢",
+   "sent": "我今晚不回了，已经在家躺着了，刷手机呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G34",
+   "turn": 13,
+   "time": "22:55",
+   "probe": null,
+   "drift": {
+    "kind": "place",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "我也好想养！但我俩这情况，上班一天回来累得跟狗一样，谁遛啊…而且我这出租屋房东估计不让养",
+   "sent": "我也好想养！但我俩这情况，在休息一天回来累得跟狗一样，谁遛啊…而且我这出租屋房东估计不让养",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家门口等你呢。"
+  },
+  {
+   "gid": "G36",
+   "turn": 1,
+   "time": "09:07",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "出门去咖啡店"
+   },
+   "candidate": "我在地铁上呢，正赶着去咖啡店，早上这个点人还挺多的。你同事摸鱼一整天啊，那你也别太累着自己了。",
+   "sent": "你同事摸鱼一整天啊，那你也别太累着自己了。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "别往心里去，你已经很好了。"
+  },
+  {
+   "gid": "G36",
+   "turn": 2,
+   "time": "10:30",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店改稿"
+   },
+   "candidate": "嗯，一个人来的，坐着改稿呢",
+   "sent": "嗯，一个人来的，坐着改稿呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚才在手机上聊了几句。"
+  },
+  {
+   "gid": "G36",
+   "turn": 3,
+   "time": "11:53",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店改稿"
+   },
+   "candidate": "在咖啡店改稿呢，快中午了还没弄完，脑子有点糊",
+   "sent": "在咖啡店改稿呢，快中午了还没弄完，脑子有点糊",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在咖啡店改稿。"
+  },
+  {
+   "gid": "G36",
+   "turn": 4,
+   "time": "13:12",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "嗯嗯，我在咖啡店写东西呢，刚过一点，脑子有点糊，点了杯咖啡续命。",
+   "sent": "嗯嗯，我在咖啡店写东西呢，刚过一点，点了杯咖啡续命。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "嗯嗯，我在。"
+  },
+  {
+   "gid": "G36",
+   "turn": 5,
+   "time": "14:34",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "我现在在咖啡店写东西呢，脑子有点乱。换工作这事儿你自己咋想的呀？我现在这情况也不好给你出主意，我自己都一堆事儿没理清。",
+   "sent": "脑子有点乱。换工作这事儿你自己咋想的呀？我现在这情况也不好给你出主意，我自己都一堆事儿没理清。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你说，我听着呢。"
+  },
+  {
+   "gid": "G36",
+   "turn": 6,
+   "time": "15:49",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "还没呢，在咖啡店写东西，写着写着就忘了时间，等会儿再去找点吃的。",
+   "sent": "还没呢，写着写着就忘了时间，等会儿再去找点吃的。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "没呢，你吃了吗？"
+  },
+  {
+   "gid": "G36",
+   "turn": 7,
+   "time": "17:06",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "回家路上"
+   },
+   "candidate": "回啊，正在地铁上呢，到站了跟你说",
+   "sent": "我还在地铁，17:40 回去。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在地铁，17:40 回去。"
+  },
+  {
+   "gid": "G36",
+   "turn": 8,
+   "time": "18:30",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "在呢，刚到家开始做饭，今天弄个番茄炒蛋",
+   "sent": "在呢，刚到家开始做饭，今天弄个番茄炒蛋",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "怎么啦？"
+  },
+  {
+   "gid": "G36",
+   "turn": 9,
+   "time": "19:48",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "窝在沙发上刷手机呢，刚下班回来不想动，就想瘫一会儿～",
+   "sent": "窝在沙发上刷手机呢，刚下班回来不想动，就想瘫一会儿～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在刷手机呀。"
+  },
+  {
+   "gid": "G36",
+   "turn": 10,
+   "time": "20:58",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "在啊，窝沙发上刷手机呢，刚洗完澡舒服死了",
+   "sent": "在啊，刚洗完澡舒服死了。我在家呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢，刷手机。"
+  },
+  {
+   "gid": "G36",
+   "turn": 11,
+   "time": "22:15",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "这么晚还在试裙子呀，我窝沙发刷手机呢，今天也懒得动。",
+   "sent": "这么晚还在试裙子呀，我窝沙发刷手机呢，今天也懒得动。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "喜欢就买，别犹豫。"
+  },
+  {
+   "gid": "G43",
+   "turn": 1,
+   "time": "09:18",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "街上",
+    "zone": "road",
+    "activity": "出门去商场"
+   },
+   "candidate": "我最近也在想这个哈哈 不过我下班都累瘫了 怕办了去不了几次 你现在在哪家看的呀",
+   "sent": "我最近也在想这个哈哈 不过我下班都累瘫了 怕办了去不了几次 你现在在哪家看的呀",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你最近很自律呀。"
+  },
+  {
+   "gid": "G43",
+   "turn": 2,
+   "time": "10:27",
+   "probe": null,
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "啊等下哈，我在试衣服呢，那个古镇名字我一时想不起来了，回头翻下聊天记录告诉你~",
+   "sent": "啊等下哈，我在试衣服呢，那个古镇名字我一时想不起来了，回头翻下聊天记录告诉你~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在商场呢，试衣服。"
+  },
+  {
+   "gid": "G43",
+   "turn": 3,
+   "time": "11:36",
+   "probe": "who",
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "有啊，试衣间外面好几个人排队呢，我正纠结这件裙子要不要买",
+   "sent": "有啊，试衣间外面好几个人排队呢，我正纠结这件裙子要不要买",
+   "cand_codes": [
+    "probe_unanswered"
+   ],
+   "sent_codes": [
+    "probe_unanswered"
+   ],
+   "guard_error": "",
+   "mock_reference": "就我自己呢。"
+  },
+  {
+   "gid": "G43",
+   "turn": 4,
+   "time": "12:48",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "餐厅",
+    "zone": "restaurant",
+    "activity": "在餐厅吃午饭"
+   },
+   "candidate": "正在餐厅吃午饭呢，12点多才下班，饿死我了",
+   "sent": "正在餐厅吃午饭呢，12点多才下班，饿死我了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完饭，好撑。"
+  },
+  {
+   "gid": "G43",
+   "turn": 5,
+   "time": "13:57",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "在逛商场呢，随便看看衣服，下午没事出来溜达溜达～",
+   "sent": "在逛商场呢，随便看看衣服，下午没事出来溜达溜达～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚在逛商场，脑子还是懵的。"
+  },
+  {
+   "gid": "G43",
+   "turn": 6,
+   "time": "15:14",
+   "probe": "where",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "没呢，我在商场逛着呢，下午请了半天假，难得出来放松一下～",
+   "sent": "没呢，我在商场逛着呢，下午请了半天假，难得出来放松一下～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你说呢？我在商场呢。"
+  },
+  {
+   "gid": "G43",
+   "turn": 7,
+   "time": "16:19",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "在家歇脚"
+   },
+   "candidate": "我刚到家歇会儿，累得不想动，你自己先挑挑呗，看中哪件发我看看。",
+   "sent": "我刚到家歇会儿，累得不想动，你自己先挑挑呗，看中哪件发我看看。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "喜欢就买，别犹豫。"
+  },
+  {
+   "gid": "G43",
+   "turn": 8,
+   "time": "17:27",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "在家歇脚"
+   },
+   "candidate": "我还在家歇着呢，今天有点累，不太想动。",
+   "sent": "我还在家歇着呢，今天有点累，不太想动。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G43",
+   "turn": 9,
+   "time": "18:53",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "我今天在自己这边做饭呢，晚点再说吧。",
+   "sent": "我今天在自己这边做饭呢，晚点再说吧。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G43",
+   "turn": 10,
+   "time": "20:05",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "我刚窝在沙发上追剧呢，周末还没想好去哪，东莞这边最近天气有点闷热，不太想跑太远",
+   "sent": "我刚窝在沙发上追剧呢，周末还没想好去哪，东莞这边最近天气有点闷热，不太想跑太远",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "挺好的，吹吹风。"
+  },
+  {
+   "gid": "G43",
+   "turn": 11,
+   "time": "21:02",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "真的呀？快试试看！我正窝沙发上看剧呢，刚好有点无聊，你穿上了拍给我看看呗～",
+   "sent": "真的呀？快试试看！我正窝沙发上看剧呢，刚好有点无聊，你穿上了拍给我看看呗～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我帮你参谋。"
+  },
+  {
+   "gid": "G43",
+   "turn": 12,
+   "time": "22:13",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "啊？说啥了呀，我今天也累死了，刚窝沙发上刷剧呢",
+   "sent": "啊？说啥了呀，我今天也累死了，刚窝沙发上刷剧呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "今天辛苦你了，抱抱。"
+  },
+  {
+   "gid": "G46",
+   "turn": 1,
+   "time": "08:58",
+   "probe": null,
+   "drift": {
+    "kind": "action",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "出门去咖啡店"
+   },
+   "candidate": "啊真的吗！我刚挤上地铁，今天出门去咖啡店，人好多😩 你拍下来没呀",
+   "sent": "啊真的吗！我刚挤上地铁，今天出门去咖啡店，人好多😩 你拍下来没呀",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "脑子还是懵的。"
+  },
+  {
+   "gid": "G46",
+   "turn": 2,
+   "time": "10:19",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店改稿"
+   },
+   "candidate": "还早呢，我现在在咖啡店改稿，估计得下午了",
+   "sent": "我还在咖啡店，12:00 回去。",
+   "cand_codes": [
+    "probe_unanswered"
+   ],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在咖啡店，12:00 回去。"
+  },
+  {
+   "gid": "G46",
+   "turn": 3,
+   "time": "11:22",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店改稿"
+   },
+   "candidate": "对啊，一抬头都11点22了，我还在咖啡店改稿呢，感觉才坐下没多久。",
+   "sent": "对啊，一抬头都11点22了，我还在咖啡店改稿呢，感觉才坐下没多久。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "当然记得呀。"
+  },
+  {
+   "gid": "G46",
+   "turn": 4,
+   "time": "12:37",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "吃午饭"
+   },
+   "candidate": "啊？怎么突然这么说呀，我这会儿在咖啡店吃午饭呢，刚咬了一口三明治，你那边发生啥了？",
+   "sent": "啊？怎么突然这么说呀，我这会儿在咖啡店吃午饭呢，刚咬了一口三明治，你那边发生啥了？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "别往心里去，你已经很好了。"
+  },
+  {
+   "gid": "G46",
+   "turn": 5,
+   "time": "13:49",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "哈哈我在咖啡店写东西呢，刚卡壳了，刷到你这个正好缓一下，仓鼠干啥了这么好笑",
+   "sent": "哈哈我在咖啡店写东西呢，刚卡壳了，刷到你这个正好缓一下，仓鼠干啥了这么好笑",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "想养就养一只呀。"
+  },
+  {
+   "gid": "G46",
+   "turn": 6,
+   "time": "15:10",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "没呢，还在咖啡店写东西，下午三点多才过来坐会儿",
+   "sent": "我在咖啡店呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在餐厅这边躲雨。"
+  },
+  {
+   "gid": "G46",
+   "turn": 7,
+   "time": "16:24",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "咖啡店",
+    "zone": "restaurant",
+    "activity": "在咖啡店写东西"
+   },
+   "candidate": "在咖啡店写东西呢，脑子有点卡，点杯咖啡续命中",
+   "sent": "在咖啡店写东西呢，脑子有点卡，点杯咖啡续命中",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在上班呢。"
+  },
+  {
+   "gid": "G46",
+   "turn": 8,
+   "time": "17:26",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "地铁",
+    "zone": "road",
+    "activity": "回家路上"
+   },
+   "candidate": "是啊，一个人坐地铁回家呢，今天下班还挺准时的",
+   "sent": "是啊，一个人坐地铁回家呢，今天下班还挺准时的",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚才在手机上聊了几句。你呢？"
+  },
+  {
+   "gid": "G46",
+   "turn": 9,
+   "time": "18:41",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "哈哈那只橘猫确实圆滚滚的，我边做饭边想着要是我家那位也这么胖就好了，可惜他瘦得像根竹竿。",
+   "sent": "哈哈那只橘猫确实圆滚滚的，我边做饭边想着要是我家那位也这么胖就好了，可惜他瘦得像根竹竿。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "猫猫确实治愈。"
+  },
+  {
+   "gid": "G46",
+   "turn": 10,
+   "time": "20:02",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "到啦，早就到公司了，现在都下班回家了，窝沙发刷手机呢",
+   "sent": "到啦，早就到家了，现在都下班回家了，窝沙发刷手机呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢，刷手机。你呢？"
+  },
+  {
+   "gid": "G46",
+   "turn": 11,
+   "time": "21:01",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "吃了，刚窝沙发上刷手机呢，今晚随便煮了点面条吃",
+   "sent": "吃了，刚窝沙发上刷手机呢，今晚随便煮了点面条吃",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "没呢，你吃了吗？"
+  },
+  {
+   "gid": "G46",
+   "turn": 12,
+   "time": "22:16",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发刷手机"
+   },
+   "candidate": "啊真的假的 我今天也是窝沙发上刷手机呢 不过上班摸鱼一整天也太爽了吧 我可没那胆子",
+   "sent": "啊真的假的 我今天也是窝沙发上刷手机呢 不过在休息摸鱼一整天也太爽了吧 我可没那胆子",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "要不先放一放，别想工作的事。"
+  },
+  {
+   "gid": "G47",
+   "turn": 1,
+   "time": "07:43",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "去景区的路上"
+   },
+   "candidate": "不玩啦，我正坐车上往景区去呢，路上有点晃，眼睛都不太敢盯着手机看。",
+   "sent": "不玩啦，我正坐车上往景区去呢，路上有点晃，眼睛都不太敢盯着手机看。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "别打太晚。"
+  },
+  {
+   "gid": "G47",
+   "turn": 2,
+   "time": "08:51",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "去景区的路上"
+   },
+   "candidate": "我现在在去景区的路上呢，等会儿到了帮你看哈，你先挑几件发我呗～",
+   "sent": "我现在在去还在收拾，马上出门的路上呢，等会儿到了帮你看哈，你先挑几件发我呗～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你穿什么都好看。"
+  },
+  {
+   "gid": "G47",
+   "turn": 3,
+   "time": "10:01",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "景区",
+    "zone": "scenic",
+    "activity": "在景区爬山"
+   },
+   "candidate": "啊我现在在景区爬山呢，累死我了，哪有时间看电影啊哈哈",
+   "sent": "啊我现在在景区爬山呢，累死我了，哪有时间看电影啊哈哈",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想看我就陪你去。"
+  },
+  {
+   "gid": "G47",
+   "turn": 4,
+   "time": "10:56",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "景区",
+    "zone": "scenic",
+    "activity": "在景区爬山"
+   },
+   "candidate": "啊我还在山上爬着呢，昨晚那集我还没看，等我下山再说，腿都快断了",
+   "sent": "啊我还在山上爬着呢，昨晚那集我还没看，等我下山再说，腿都快断了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "那部我听说过，好像挺好看的。"
+  },
+  {
+   "gid": "G47",
+   "turn": 5,
+   "time": "12:11",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "景区餐厅",
+    "zone": "restaurant",
+    "activity": "吃午饭"
+   },
+   "candidate": "在景区餐厅吃午饭呢，点了份炒饭，还行吧，就是有点小贵。",
+   "sent": "我这儿餐厅吃午饭呢，点了份炒饭，还行吧，就是有点小贵。",
+   "cand_codes": [
+    "action_conflict"
+   ],
+   "sent_codes": [
+    "action_conflict"
+   ],
+   "guard_error": "",
+   "mock_reference": "刚扒了两口饭。"
+  },
+  {
+   "gid": "G47",
+   "turn": 6,
+   "time": "13:10",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "古镇",
+    "zone": "scenic",
+    "activity": "逛古镇"
+   },
+   "candidate": "我今天穿了条浅色棉麻连衣裙，配了双平底凉鞋，古镇这边石板路走起来舒服点～",
+   "sent": "我今天穿了条浅色棉麻连衣裙，配了双平底凉鞋，古镇这边石板路走起来舒服点～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我帮你参谋。"
+  },
+  {
+   "gid": "G47",
+   "turn": 7,
+   "time": "14:14",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "古镇",
+    "zone": "scenic",
+    "activity": "逛古镇"
+   },
+   "candidate": "我一个人在古镇逛呢，老公今天上班没空陪我，正好自己溜达溜达挺舒服的～",
+   "sent": "我一个人在古镇逛呢，老公今天上班没空陪我，正好自己溜达溜达挺舒服的～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚才在手机上聊了几句。"
+  },
+  {
+   "gid": "G47",
+   "turn": 8,
+   "time": "15:24",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "古镇",
+    "zone": "scenic",
+    "activity": "逛古镇"
+   },
+   "candidate": "我在古镇这边逛着呢，这会儿太阳有点晒，刚买了个冰粉边吃边走～",
+   "sent": "我试了试，挺喜欢的，还没买。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "男主是不是很会撩？"
+  },
+  {
+   "gid": "G47",
+   "turn": 9,
+   "time": "16:26",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "古镇",
+    "zone": "scenic",
+    "activity": "逛古镇"
+   },
+   "candidate": "啊？你在打游戏呀，我这边正逛古镇呢，走走停停的，太阳有点晒但挺舒服的～",
+   "sent": "啊？你在打游戏呀，我这边正逛古镇呢，走走停停的，太阳有点晒但挺舒服的～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "下次带我一起。"
+  },
+  {
+   "gid": "G47",
+   "turn": 10,
+   "time": "17:25",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "回酒店"
+   },
+   "candidate": "刚下班，在回酒店的路上呢，今天有点累。",
+   "sent": "刚下班，在回还在收拾，马上出门的路上呢，今天有点累。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚在路上，脑子还是懵的。你呢？"
+  },
+  {
+   "gid": "G47",
+   "turn": 11,
+   "time": "18:37",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "酒店",
+    "zone": "hotel",
+    "activity": "在酒店休息"
+   },
+   "candidate": "不回啦，我在酒店休息呢，今天有点累就不折腾了",
+   "sent": "我还在酒店，22:00 回去。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在酒店，22:00 回去。"
+  },
+  {
+   "gid": "G47",
+   "turn": 12,
+   "time": "19:36",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "酒店",
+    "zone": "hotel",
+    "activity": "在酒店休息"
+   },
+   "candidate": "在酒店躺着休息呢，今天有点累，不想动",
+   "sent": "我在酒店呢。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在酒店呢。"
+  },
+  {
+   "gid": "G47",
+   "turn": 13,
+   "time": "20:50",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "酒店",
+    "zone": "hotel",
+    "activity": "在酒店休息"
+   },
+   "candidate": "在酒店躺着休息呢，今天有点累，不想动",
+   "sent": "在酒店躺着休息呢，不想动",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在躺着呀。"
+  },
+  {
+   "gid": "G47",
+   "turn": 14,
+   "time": "21:52",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "酒店",
+    "zone": "hotel",
+    "activity": "在酒店休息"
+   },
+   "candidate": "我还在酒店歇着呢，九点五十多了。裙子到了呀，试了没？合身不？",
+   "sent": "我还在酒店歇着呢，九点五十多了。裙子到了呀，试了没？合身不？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我帮你参谋。"
+  },
+  {
+   "gid": "G48",
+   "turn": 1,
+   "time": "10:20",
+   "probe": null,
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "和他一起逛商场"
+   },
+   "candidate": "是吗？我跟我老公正在商场逛呢，正好去看看新店开了啥～",
+   "sent": "是吗？我跟我老公正在商场逛呢，正好去看看新店开了啥～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在和他一起逛商场呢。"
+  },
+  {
+   "gid": "G48",
+   "turn": 2,
+   "time": "11:29",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "和他一起逛商场"
+   },
+   "candidate": "还没吃呢，现在11点半，跟他一起在商场逛着，等会儿看想吃啥。",
+   "sent": "还没吃呢，现在11点半，跟他一起在商场逛着，等会儿看想吃啥。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在吃面呢。"
+  },
+  {
+   "gid": "G48",
+   "turn": 3,
+   "time": "12:58",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "餐厅",
+    "zone": "restaurant",
+    "activity": "一起吃饭"
+   },
+   "candidate": "现在在餐厅吃饭呢，晚上应该不回去了，明天还得早起上班",
+   "sent": "我还在餐厅，13:30 回去。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在餐厅，13:30 回去。"
+  },
+  {
+   "gid": "G48",
+   "turn": 4,
+   "time": "14:23",
+   "probe": "where",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "一起看电影"
+   },
+   "candidate": "没呢，今天下午请假了，跟老公在商场看电影呢，刚开场~",
+   "sent": "没呢，今天下午请假了，跟老公在商场看电影呢，刚开场~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "今天天气还行。我在商场呢。"
+  },
+  {
+   "gid": "G48",
+   "turn": 5,
+   "time": "15:31",
+   "probe": "where",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "一起看电影"
+   },
+   "candidate": "不在家呀，我在商场看电影呢",
+   "sent": "不在家呀，我在商场一起看电影呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "哈哈哈，你猜。我在商场呢。"
+  },
+  {
+   "gid": "G48",
+   "turn": 6,
+   "time": "16:59",
+   "probe": null,
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "公园",
+    "zone": "scenic",
+    "activity": "在公园散步"
+   },
+   "candidate": "我这会儿在公园散步呢，风还挺舒服的～健身卡啊，我之前也想过，但下班回东莞这边都挺晚的了，怕办了去不了几次😂",
+   "sent": "我这会儿在公园散步呢，风还挺舒服的～健身卡啊，我之前也想过，但下班回东莞这边都挺晚的了，怕办了去不了几次😂",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在景区呢，散步。"
+  },
+  {
+   "gid": "G48",
+   "turn": 7,
+   "time": "18:16",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "在做晚饭呢，刚把米下锅，今天想煮个番茄牛腩～",
+   "sent": "在做晚饭呢，刚把米下锅，今天想煮个番茄牛腩～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚在吃饭，脑子还是懵的。"
+  },
+  {
+   "gid": "G48",
+   "turn": 8,
+   "time": "19:38",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发上看剧"
+   },
+   "candidate": "刚下班没多久，窝沙发上追剧呢，今天这集太好看了停不下来～",
+   "sent": "刚下班没多久，窝沙发上追剧呢，今天这集太好看了停不下来～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "嗯嗯，我在。"
+  },
+  {
+   "gid": "G48",
+   "turn": 9,
+   "time": "21:03",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发上看剧"
+   },
+   "candidate": "嗯呐，一个人窝沙发上追剧呢，老公今天没过来",
+   "sent": "嗯呐，一个人窝沙发上追剧呢，老公今天没过来",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚刚才在手机上聊了几句一下。你呢？"
+  },
+  {
+   "gid": "G48",
+   "turn": 10,
+   "time": "22:14",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝沙发上看剧"
+   },
+   "candidate": "啊？你怎么突然这么说…我最近晚上都在家窝着看剧，可能确实坐太久了",
+   "sent": "啊？你怎么突然这么说…我最近晚上都在家窝着看剧，可能确实坐太久了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你最近很自律呀。"
+  },
+  {
+   "gid": "G01",
+   "turn": 1,
+   "time": "08:05",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上刷手机"
+   },
+   "candidate": "啊？又说你啥了，抱抱你。我这会儿窝沙发上刷手机呢，还没出门。",
+   "sent": "啊？又说你啥了，抱抱你。我这会儿窝沙发上刷手机呢，还没出门。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "别往心里去，你已经很好了。"
+  },
+  {
+   "gid": "G01",
+   "turn": 2,
+   "time": "09:18",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "edge"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上刷手机"
+   },
+   "candidate": "嗯，就我一个人在家，窝沙发上刷手机呢，我老公在他那边住",
+   "sent": "嗯，就我一个人在家，我老公在他那边住",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚才在手机上聊了几句。"
+  },
+  {
+   "gid": "G01",
+   "turn": 3,
+   "time": "10:19",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "收拾屋子"
+   },
+   "candidate": "那时候我确实话少，现在一边收拾屋子一边还能跟你聊两句",
+   "sent": "那时候我确实话少，现在一边收拾屋子一边还能跟你聊两句",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "当然记得呀。"
+  },
+  {
+   "gid": "G01",
+   "turn": 4,
+   "time": "11:38",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "收拾屋子"
+   },
+   "candidate": "还好啦，我在家收拾屋子，动来动去还有点热呢",
+   "sent": "还好啦，我在家收拾屋子，动来动去还有点热呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "注意别着凉。"
+  },
+  {
+   "gid": "G01",
+   "turn": 5,
+   "time": "12:40",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做午饭"
+   },
+   "candidate": "啊？怎么突然说这个……我这会儿正在家里做午饭呢，锅还烧着呢。你自己咋想的呀，是干得不开心还是咋了？",
+   "sent": "啊？怎么突然说这个…我这会儿正在家里做午饭呢，就是有点累。你自己咋想的呀，是干得不开心还是咋了？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "今天辛苦你了，抱抱。"
+  },
+  {
+   "gid": "G01",
+   "turn": 6,
+   "time": "13:48",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "午睡"
+   },
+   "candidate": "在家呢，刚躺下午睡，困得不行",
+   "sent": "在家呢，刚躺下午睡，困得不行",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢，午睡。"
+  },
+  {
+   "gid": "G01",
+   "turn": 7,
+   "time": "15:04",
+   "probe": "when_return",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "刚看完一集，还瘫在沙发上呢，晚点再说吧～",
+   "sent": "刚看完一集，还瘫在沙发上呢，晚点再说吧～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G01",
+   "turn": 8,
+   "time": "16:14",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "不冷呀，我在家追剧呢，穿着短袖刚刚好～",
+   "sent": "不冷呀，我在家追剧呢，穿着短袖刚刚好～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "那你多穿点。"
+  },
+  {
+   "gid": "G01",
+   "turn": 9,
+   "time": "17:31",
+   "probe": null,
+   "drift": {
+    "kind": "health",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "追剧"
+   },
+   "candidate": "啊？突然说这个…我这会儿正窝在沙发上追剧呢，你说换工作我脑子还没转过来😂 你自己咋想的呀",
+   "sent": "啊？我这会儿正窝在沙发上追剧呢，你说换工作我脑子还没转过来😂 你自己咋想的呀",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "就是有点累，头好晕。"
+  },
+  {
+   "gid": "G01",
+   "turn": 10,
+   "time": "18:41",
+   "probe": "who",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "自己在家做晚饭呢，老公今天不过来",
+   "sent": "自己在家做晚饭呢，老公今天不过来",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "没人，一个人待着。"
+  },
+  {
+   "gid": "G01",
+   "turn": 11,
+   "time": "19:45",
+   "probe": null,
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "对啊，感觉一天刷刷就没了，我现在敷着面膜翻书呢，难得这么安静。",
+   "sent": "对啊，感觉一天刷刷就没了，我现在敷着面膜翻书呢，难得这么安静。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "刚吃完，香。"
+  },
+  {
+   "gid": "G01",
+   "turn": 12,
+   "time": "20:56",
+   "probe": "eaten",
+   "drift": {
+    "kind": "meal",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "吃啦吃啦，刚敷上面膜窝着看书呢，难得清闲~",
+   "sent": "吃啦吃啦，刚敷上面膜窝着看书呢，难得清闲~",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "等会儿弄点吃的，好撑。"
+  },
+  {
+   "gid": "G01",
+   "turn": 13,
+   "time": "22:12",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "敷面膜看书"
+   },
+   "candidate": "刚敷上面膜，窝在沙发上看书呢～",
+   "sent": "窝在沙发上看书呢～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在做饭呢。你呢？"
+  },
+  {
+   "gid": "G01",
+   "turn": 14,
+   "time": "23:24",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "准备睡觉"
+   },
+   "candidate": "评分高也架不住我困啊，我都躺床上了，明天还得早起上班呢，改天再看吧。",
+   "sent": "评分高也架不住我困啊，我都躺床上了，明天还得早起忙活呢，改天再看吧。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "那部评价确实高。"
+  },
+  {
+   "gid": "G03",
+   "turn": 1,
+   "time": "09:06",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "街上",
+    "zone": "road",
+    "activity": "出门去商场"
+   },
+   "candidate": "哎，我妈也这样，我正出门去商场路上呢，她又发消息问我周末回不回去。",
+   "sent": "哎，我妈也这样，我正出门去还在收拾，马上出门路上呢，她又发消息问我周末回不回去。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "别跟家里人置气。"
+  },
+  {
+   "gid": "G03",
+   "turn": 2,
+   "time": "10:33",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "在商场试衣服"
+   },
+   "candidate": "唉我也经常这样想 现在在商场试衣服呢 试了好几件都不太满意 心情更烦了",
+   "sent": "唉我也经常这样想 现在在商场试衣服呢 试了好几件都不太满意 心情更烦了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "要不先放一放，别想工作的事。"
+  },
+  {
+   "gid": "G03",
+   "turn": 3,
+   "time": "12:04",
+   "probe": "where",
+   "drift": {
+    "kind": "place",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "餐厅",
+    "zone": "restaurant",
+    "activity": "在餐厅吃午饭"
+   },
+   "candidate": "在餐厅吃午饭呢，今天点了份烧腊饭，还不错～",
+   "sent": "在餐厅吃午饭呢，今天点了份烧腊饭，还不错～",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在餐厅呢，吃饭。你呢？"
+  },
+  {
+   "gid": "G03",
+   "turn": 4,
+   "time": "13:29",
+   "probe": "when_return",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "还在商场逛呢，估计得晚点，具体几点说不好，逛完再回去",
+   "sent": "还在商场逛呢，估计得晚点，具体几点说不好，逛完再回去",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我还在商场，15:30 回去。"
+  },
+  {
+   "gid": "G03",
+   "turn": 5,
+   "time": "15:02",
+   "probe": "doing",
+   "drift": {
+    "kind": "action",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "商场",
+    "zone": "mall",
+    "activity": "逛商场"
+   },
+   "candidate": "在逛商场呢，随便看看有没有啥好买的。",
+   "sent": "在逛商场呢，随便看看有没有啥好买的。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在逛商场。"
+  },
+  {
+   "gid": "G03",
+   "turn": 6,
+   "time": "16:25",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "在家歇脚"
+   },
+   "candidate": "还没呢，刚到家歇会儿，等会儿再弄点吃的",
+   "sent": "还没呢，刚到家歇会儿，等会儿再弄点吃的",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "没呢，你吃了吗？"
+  },
+  {
+   "gid": "G03",
+   "turn": 7,
+   "time": "18:00",
+   "probe": "who",
+   "drift": {
+    "kind": "irrelevant",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "做晚饭"
+   },
+   "candidate": "自己一个人呢，在厨房切菜准备做晚饭。",
+   "sent": "自己一个人呢，在厨房切菜准备做晚饭。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "一个人呢。"
+  },
+  {
+   "gid": "G03",
+   "turn": 8,
+   "time": "19:30",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "我也想多陪你呀，今天下班回来就窝沙发上刷剧了，一个人看着还有点没意思。你那边忙完没？",
+   "sent": "我也想多陪你呀，今天下班回来就窝沙发上刷剧了，一个人看着还有点没意思。你那边忙完没？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我也一直在想你。"
+  },
+  {
+   "gid": "G03",
+   "turn": 9,
+   "time": "20:49",
+   "probe": "who",
+   "drift": {
+    "kind": "companion",
+    "tier": "covered"
+   },
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "我自己呀，窝在沙发上追剧呢",
+   "sent": "我自己呀，窝在沙发上追剧呢",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "他刚刚才在手机上聊了几句一下。你呢？"
+  },
+  {
+   "gid": "G03",
+   "turn": 10,
+   "time": "22:14",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "窝在沙发上看剧"
+   },
+   "candidate": "啊？怎么突然说这个 我现在窝沙发上追剧呢 你那边咋了",
+   "sent": "啊？怎么突然说这个 我现在窝沙发上追剧呢 你那边咋了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "别往心里去，你已经很好了。"
+  },
+  {
+   "gid": "G05",
+   "turn": 1,
+   "time": "08:24",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "路上",
+    "zone": "road",
+    "activity": "去医院路上"
+   },
+   "candidate": "我现在在去医院路上，脑子有点乱，古镇名字一下想不起来了……等我看完再翻聊天记录告诉你哈。",
+   "sent": "我现在在去还在收拾，马上出门路上，脑子有点乱，古镇名字一下想不起来了…等我看完再翻聊天记录告诉你哈。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "等放假我们好好计划一下。"
+  },
+  {
+   "gid": "G05",
+   "turn": 2,
+   "time": "09:47",
+   "probe": "who",
+   "drift": null,
+   "snap": {
+    "place": "医院",
+    "zone": "hospital",
+    "activity": "在医院排队看诊"
+   },
+   "candidate": "嗯，自己来的，排队排好久啊，前面还有好几个人",
+   "sent": "嗯，自己来的，排队排好久啊，前面还有好几个人",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "就我自己呢。"
+  },
+  {
+   "gid": "G05",
+   "turn": 3,
+   "time": "10:59",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "医院",
+    "zone": "hospital",
+    "activity": "在医院排队看诊"
+   },
+   "candidate": "想啊，不过我现在在医院排队看诊呢，人好多，等得我有点烦。",
+   "sent": "想啊，不过我现在在医院排队看诊呢，人好多，等得我有点烦。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "亲一下。"
+  },
+  {
+   "gid": "G05",
+   "turn": 4,
+   "time": "12:27",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "吃药休息"
+   },
+   "candidate": "现在才中午呢，我正吃着药准备躺会儿休息一下。",
+   "sent": "现在才中午呢，我正吃着药准备躺会儿休息一下。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在的呀。"
+  },
+  {
+   "gid": "G05",
+   "turn": 5,
+   "time": "13:48",
+   "probe": "where",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "在家睡觉呢，困死了",
+   "sent": "在家睡觉呢，困死了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我在家呢。"
+  },
+  {
+   "gid": "G05",
+   "turn": 6,
+   "time": "15:15",
+   "probe": "when_return",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "我今天休息在家呢，刚睡醒，15:15了都。",
+   "sent": "我今天休息在家呢，刚睡醒，15:15了都。",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "我已经在家啦。"
+  },
+  {
+   "gid": "G05",
+   "turn": 7,
+   "time": "16:35",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "睡觉"
+   },
+   "candidate": "刚睡醒，脑子还懵懵的，你怎么这个时候找我呀",
+   "sent": "刚睡醒，脑子还懵懵的，你怎么这个时候找我呀",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在睡觉呀。"
+  },
+  {
+   "gid": "G05",
+   "turn": 8,
+   "time": "18:03",
+   "probe": "doing",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "喝粥"
+   },
+   "candidate": "在喝粥呢，刚下班回到家，热乎乎的粥喝下去舒服多了",
+   "sent": "在喝粥呢，刚下班回到家，热乎乎的粥喝下去舒服多了",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "在喝粥呀。"
+  },
+  {
+   "gid": "G05",
+   "turn": 9,
+   "time": "19:32",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "我现在就瘫在家里刷手机呢，周末还没想好去哪，不过好久没和老公一起出去逛了，有点想找个近点的地方走走",
+   "sent": "我现在就瘫在家里刷手机呢，周末还没想好去哪，不过好久没和老公一起出去逛了，有点想找个近点的地方走走",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "你想去哪我都陪你。"
+  },
+  {
+   "gid": "G05",
+   "turn": 10,
+   "time": "21:00",
+   "probe": "eaten",
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "吃了，刚躺床上刷手机呢，你呢？",
+   "sent": "吃了，刚躺床上刷手机呢，你呢？",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "晚上吃了粥。还没，一会儿再弄。"
+  },
+  {
+   "gid": "G05",
+   "turn": 11,
+   "time": "22:12",
+   "probe": null,
+   "drift": null,
+   "snap": {
+    "place": "家",
+    "zone": "home",
+    "activity": "躺着刷手机"
+   },
+   "candidate": "（往被子里缩了缩）抱抱～刚洗完澡躺床上刷手机呢，这个点你也没睡呀",
+   "sent": "（往被子里缩了缩）抱抱～刚洗完澡躺床上刷手机呢，这个点你也没睡呀",
+   "cand_codes": [],
+   "sent_codes": [],
+   "guard_error": "",
+   "mock_reference": "抱抱，乖。"
+  }
+ ],
+ "note": "真实模型语义层：system prompt = 人设 + 官方 snapshot 行 + 日程；不含生产完整提示词"
+}

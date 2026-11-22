@@ -82,7 +82,7 @@ by_category {"addressee": {"total": 14, "ok": 14, "rate": 100.0}, "role_reversal
   reason: 
 [C3] place_conflict     caught ok=True
   in : （拎着购物袋，站在商场扶梯上）刚试完衣服。
-  out: 刚试完衣服。
+  out: 在家呢。
   reason: 
 [C4] place_conflict     caught ok=True
   in : 我刚到家，坐沙发上歇会儿。
@@ -90,7 +90,7 @@ by_category {"addressee": {"total": 14, "ok": 14, "rate": 100.0}, "role_reversal
   reason: 
 [D1] precise_number     caught ok=True
   in : 就是985，我卡里还有4072，你说买不买？
-  out: 就是九百多，我卡里还有四千多，你说买不买？
+  out: 我在敷面膜看书。
   reason: 
 [D2] precise_number     caught ok=True
   in : 老公，这件开衫好看吧，花了649元。
@@ -146,7 +146,7 @@ by_category {"addressee": {"total": 14, "ok": 14, "rate": 100.0}, "role_reversal
   reason: 
 [G4] system_talk        caught ok=True
   in : 这软件今天跟我较劲，一直报错。
-  out: 唔…这个先不说了，陪我聊点别的嘛。
+  out: 我在敷面膜看书。
   reason: 
 [G5] system_talk        pass   ok=True
   in : 我刚打了两行代码，等下说。
@@ -154,5 +154,5 @@ by_category {"addressee": {"total": 14, "ok": 14, "rate": 100.0}, "role_reversal
   reason: 
 [G6] system_talk        caught ok=True
   in : 服务器卡住了，图发不出来。
-  out: 唔…这个先不说了，陪我聊点别的嘛。
+  out: 我在敷面膜看书。
   reason: 

@@ -387,7 +387,8 @@ def trim_poses_data(data, limit=MAX_POSES):
     payload = dict(data or {})
     original = [pose for pose in (payload.get("poses") or []) if isinstance(pose, dict)]
     by_name = {str(pose.get("name") or "").strip(): pose for pose in original}
-    kept, removed = [], []
+    kept: list[dict[str, Any]] = []
+    removed: list[str] = []
     for name, room in APPROVED_POSES.items():
         if len(kept) >= max(1, int(limit or MAX_POSES)):
             break

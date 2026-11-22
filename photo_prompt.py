@@ -228,7 +228,7 @@ def verify_photo_media_prompt(prompt, plan=None, pose=None, zone="", place=""):
         normalized = _normalize(zone_key, place_text)
     except Exception:
         normalized = zone_key
-    check = {"ok": True, "zones": [], "extra_zones": []}
+    check: dict[str, Any] = {"ok": True, "zones": [], "extra_zones": []}
     try:
         check = verify_photo_prompt(prompt, {"zone": normalized or zone_key, "place": place_text})
     except Exception as _amo_exc:

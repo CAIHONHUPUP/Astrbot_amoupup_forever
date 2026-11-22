@@ -40,7 +40,12 @@ def _dataset():
 
 
 def _run(dataset, mode="off"):
+    # 与 run_imm.run_all 同口径：先热身一遍，让语气键走完首句固定句，再测稳态。
+    # 机械改写率的产品定义就是稳态（docs/IMM_REPORT_20261117.md：冷启动首命中固定句
+    # 属 N2 设计，不进机械改写率）；不热身会把第 0 条固定句错算成机械改写。
     state = {}
+    for item in dataset["items"]:
+        IMM.run_item(item, mode, 0.0, state)
     return [IMM.run_item(item, mode, 0.0, state) for item in dataset["items"]]
 
 

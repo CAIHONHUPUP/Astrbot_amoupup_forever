@@ -32,12 +32,12 @@ import time
 try:  # Phase 11 统一时钟
     from . import clock as _amo_clock
 except ImportError:  # 直接按文件加载时
-    import clock as _amo_clock  # type: ignore[no-redef]
+    import clock as _amo_clock
 
 try:  # 统一吞异常留痕
     from .amo_observability import note as _note_swallowed
 except ImportError:  # 直接按文件加载时
-    from amo_observability import note as _note_swallowed  # type: ignore[no-redef]
+    from amo_observability import note as _note_swallowed
 
 from astrbot.api import logger
 
@@ -246,7 +246,7 @@ def stats(plugin, now=None):
     """媒体日报用的只读统计（按来源/状态/天）。"""
     stamp = _now(now)
     day = _day_of(stamp)
-    by_source = {}
+    by_source: dict[str, int] = {}
     sent_today = 0
     for entry in rows(plugin):
         if str(entry.get("status") or "") == "sent":
@@ -575,6 +575,8 @@ async def send_photo(plugin, umo, item, *, components=None, origin="auto",
             ok = True
         else:
             context = getattr(plugin, "context", None)
+            if context is None:
+                raise RuntimeError("没有 context，无法发送媒体")
             await context.send_message(umo, _message_chain(parts))
             ok = True
     except Exception as exc:
@@ -670,7 +672,10 @@ def reconcile_external(plugin, umo, omni=None, now=None, remember=True):
     if not isinstance(store, dict) or umo not in store:
         return False
     try:
-        stamp_mono = float(store.get(umo))
+        _raw_stamp = store.get(umo)
+        if _raw_stamp is None:
+            return False
+        stamp_mono = float(_raw_stamp)
     except (TypeError, ValueError):
         return False
     last = _EXTERNAL_SEEN.get(umo)

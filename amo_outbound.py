@@ -24,6 +24,7 @@ import asyncio
 import difflib
 import re
 import time
+from typing import Any
 
 #: 合法来源；缺省 fail-closed 当 push（受控），绝不默认 chat。
 SOURCES = ("chat", "proactive", "followup", "goodnight", "reminder",
@@ -62,10 +63,10 @@ _INTENT_WORDS = {
     "share": ("给你看", "刷到", "分享", "看到了"),
 }
 
-_LOCKS = {}
-_DEFERRED = {}
-_CHAT = {}
-_FLUSH_TASKS = {}
+_LOCKS: dict[str, asyncio.Lock] = {}
+_DEFERRED: dict[str, list[dict[str, Any]]] = {}
+_CHAT: dict[str, dict[str, Any]] = {}
+_FLUSH_TASKS: dict[str, asyncio.Task[Any]] = {}
 
 
 def _strip_media(text):
@@ -523,11 +524,11 @@ def stats(plugin, umo, now=None):
     stamp = _now_ts(now)
     data = rows(plugin, umo)
     sent = [item for item in data if str(item.get("decision") or "") == "sent"]
-    by_source = {}
+    by_source: dict[str, int] = {}
     for item in sent:
         name = str(item.get("source") or "")
         by_source[name] = by_source.get(name, 0) + 1
-    reasons = {}
+    reasons: dict[str, int] = {}
     for item in data:
         if str(item.get("decision") or "") == "sent":
             continue

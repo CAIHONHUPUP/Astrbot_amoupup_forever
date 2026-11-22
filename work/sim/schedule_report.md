@@ -1,6 +1,6 @@
 # 日程隔离仿真报告（3/5/7 天 × 随机种子）
 
-- 生成时间：2026-11-22 05:06:28
+- 生成时间：2026-11-22 14:06:58
 - 插件：Astrbot_amoupup_forever（只读测试；未改生产代码、未写生产库）
 - 生成入口：ScheduleEngine.build_context/build_skeleton -> HumanState.commit_schedule_change(source=ensure) -> _repair_transit_blocks
 - 时钟：clock.freeze()（每天 00:00/22:00/23:00）；库：sim_lib FakeDB(:memory:)；生成过程不调 LLM
@@ -8,11 +8,11 @@
 ## 1. 隔离与生产库校验
 
 - 生产主库前后 sha256 一致：**True**（本进程仅只读访问生产 data 目录（holiday_calendar.json），无写/建连）
-  - amo_forever.db size=1191936 mtime=1795295010.57 sha256=58fac3d5076dda41
-  - amo_data.db size=6811648 mtime=1795291570.228 sha256=506b4d3bdc069b15
-- WAL/SHM（在跑的 AstrBot 进程持续写，本进程未打开）：amo_forever.db-wal size 4185952→4185952 mtime 1795295185.307→1795295185.307；amo_forever.db-shm size 32768→32768 mtime 1795246814.621→1795246814.621
+  - amo_forever.db size=1191936 mtime=1795324670.399 sha256=4db4f17ea2d5e297
+  - amo_data.db size=6811648 mtime=1795311777.681 sha256=1b0d9b942d6d927a
+- WAL/SHM（在跑的 AstrBot 进程持续写，本进程未打开）：amo_forever.db-wal size 4185952→4185952 mtime 1795327611.98→1795327611.98；amo_forever.db-shm size 32768→32768 mtime 1795312666.412→1795312666.412
 - 写守卫拦截次数：{'open': 0, 'sqlite': 0, 'amo_db': 0}；违规：无
-- 临时目录已删除：**True**（C:\Users\123\AppData\Local\Temp\amo-schedsim-r41fx1q5）
+- 临时目录已删除：**True**（C:\Users\123\AppData\Local\Temp\amo-schedsim-hf1bkznz）
 
 ## 2. 总览
 
