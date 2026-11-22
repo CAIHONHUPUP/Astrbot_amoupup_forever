@@ -96,6 +96,17 @@ _ARRIVAL_PARTICLES = ("了", "啦", "呢", "啊", "呀", "吧", "哦", "嘛", "�
 #: 出现在地点词前面说明说的是「去/往某处」：那是目的地，不是此刻所在
 _DEST_PREFIXES = ("去", "往")
 
+#: 句首转述前缀（「他说我在商场呢」「听说我在商场呢」「我妈说我在商场呢」）：
+#: 地点改口必须把这个前缀原样带回去，否则转述会变成她的自述（3a-2b B 的已知缺口）。
+_ATTRIBUTION_RE = re.compile(
+    r"^[\s“\"'「『]*"
+    r"(?:听说|据说|听(?:他|她|人家|别人|朋友|同事)说|据(?:他|她|人家|别人)说|"
+    r"(?:他|她|他们|人家|别人|大家|有人|朋友|同事|同学|老师|老板|"
+    r"我妈|我爸|我朋友|我同事|我同学|我闺蜜|我哥|我姐|我弟|我妹|"
+    r"家里|家人|网上|群里|弹幕)说)"
+    r"(?:[：:]\s*)?"
+)
+
 #: 地点词前面末尾 1-2 字里出现这些方位介词，才算「我现在在哪」的声明
 _LOCATIVE_LEADS = ("在", "到", "从", "进", "出", "回", "往", "去")
 
@@ -286,6 +297,26 @@ def _unique(items):
     return out
 
 
+def _attribution_prefix(text):
+    """句首的转述前缀（他说/听说/我妈说…）；不是转述句就返回空串。"""
+    match = _ATTRIBUTION_RE.match(str(text or ""))
+    return match.group(0) if match else ""
+
+
+def _with_attribution(prefix, text):
+    """把转述前缀接回改口后的句子（没有前缀时原样返回）。"""
+    if not prefix:
+        return text
+    return "%s%s" % (prefix, text)
+
+
+def _attribution_variants(prefix, variants):
+    """候选整句同样带上前缀，别让措辞选择阶段又把它丢掉。"""
+    if not prefix:
+        return list(variants)
+    return [_with_attribution(prefix, item) for item in variants]
+
+
 def _split_place_clause(clause, word):
     """地点词 -> (前缀, 去掉「上/里/这边」等后缀后的后续, 被去掉的方位后缀)。
 
@@ -416,6 +447,7 @@ def _whole_transit_sentence(sentence, ctx):
     if not _claimish(sentence, word):
         return None
     target = _place_target(activity, zone)
+    prefix = _attribution_prefix(sentence)
     if target == "家":
         variants = _unique(("已经到家了", "我刚到家", "在家呢", "这会儿在家呢",
                             "刚进家门", "已经在家了"))
@@ -425,7 +457,8 @@ def _whole_transit_sentence(sentence, ctx):
                             "刚到%s" % target, "在%s呢" % target))
     reason = "日程此刻在%s（zone=%s，整句是行程/到达说法）" % (
         str(activity.get("place") or target), zone or "?")
-    return variants[0], variants, reason
+    return (_with_attribution(prefix, variants[0]),
+            _attribution_variants(prefix, variants), reason)
 
 
 def _place_rule(clause, ctx):
@@ -442,6 +475,11 @@ def _place_rule(clause, ctx):
     if not _claimish(clause, word):
         return clause, []
     lead, tail, local = _split_place_clause(clause, word)
+    # 「他说我在商场呢」：前缀是转述的归因，改地点时先摘下来、改完再接回去，
+    # 否则「他说」会被整句改写吞掉，把别人的话变成她的自述。
+    prefix = _attribution_prefix(clause)
+    if prefix and lead.startswith(prefix):
+        lead = lead[len(prefix):]
     target = _place_target(activity, zone)
     reason = "日程此刻在%s（zone=%s，category=%s）" % (
         str(activity.get("place") or target), zone or "?",
@@ -451,9 +489,9 @@ def _place_rule(clause, ctx):
         if any(marker in tail for marker in _MOTION_DONE):
             return clause, []
         clean = lead
-        for prefix in _ORIGIN_PREFIXES:
-            if clean.endswith(prefix):
-                clean = clean[:-len(prefix)]
+        for origin in _ORIGIN_PREFIXES:
+            if clean.endswith(origin):
+                clean = clean[:-len(origin)]
                 break
         base = (clean + tail).strip("，,、 ")
         if not base or base == clause:
@@ -468,10 +506,10 @@ def _place_rule(clause, ctx):
             ("我这就" + short) if short else "",
             ("我先" + short) if short else "",
         ))
-        hits = _clause_hit("place", clause, base, reason)
+        hits = _clause_hit("place", clause, _with_attribution(prefix, base), reason)
         if hits:
-            hits[0]["variants"] = variants
-        return base, hits
+            hits[0]["variants"] = _attribution_variants(prefix, variants)
+        return _with_attribution(prefix, base), hits
     # 2) 「到了 X / 回到 X / 到 X」：后面只跟语气助词时按「到达」改整句；
     #    「等我到家再拍」这类「到+X+再/就…」是目的地，不是此刻所在，跳过。
     if lead.endswith(("到了", "回到", "到")):
@@ -484,10 +522,10 @@ def _place_rule(clause, ctx):
                             "%s已经到%s啦" % (core, target),
                             "%s在%s呢" % (core, target), "已经到%s了" % target,
                             "在%s呢" % target))
-        hits = _clause_hit("place", clause, base, reason)
+        hits = _clause_hit("place", clause, _with_attribution(prefix, base), reason)
         if hits:
-            hits[0]["variants"] = variants
-        return base, hits
+            hits[0]["variants"] = _attribution_variants(prefix, variants)
+        return _with_attribution(prefix, base), hits
     # 2b) 「赶着去公司」「往商场走」：去/往后面跟的是目的地，不是此刻在哪。
     #     按结构删地点词会拼出「赶着去」「往走」这种残句，直接放行（G02/G03）。
     if tail and lead.endswith(_DEST_PREFIXES):
@@ -529,6 +567,9 @@ def _place_rule(clause, ctx):
         safe = _place_empty_tail_variants("我" if "我" in clause else "", target)[0]
         variants = _unique((safe,) + tuple(variants))
         base = safe
+    if prefix:
+        variants = _attribution_variants(prefix, variants)
+        base = _with_attribution(prefix, base)
     hits = _clause_hit("place", clause, base, reason)
     if hits:
         hits[0]["variants"] = variants
@@ -895,6 +936,8 @@ def guard(text, ctx=None):
                 target = _place_target(activity, zone)
                 safe = _place_empty_tail_variants(
                     "我" if "我" in joined else "", target)[0]
+                # 整句收短时同样保留句首转述前缀（「他说…拎着购物袋」→「他说我在公司呢」）
+                safe = _with_attribution(_attribution_prefix(joined), safe)
                 violations.append({
                     "rule": "place", "sentence": joined, "replacement": safe,
                     "reason": "地点改写后仍残留地点专属词：%s" % "、".join(residual),

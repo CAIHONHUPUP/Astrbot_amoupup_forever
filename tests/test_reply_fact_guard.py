@@ -416,6 +416,67 @@ class PlaceGapTests(unittest.TestCase):
         self.assertIn("公司", fixed_mall)
 
 
+class AttributionTests(unittest.TestCase):
+    """转述前缀：地点改口不能把「他说/听说/我妈说」删掉（3a-2b B 的已知缺口）。
+
+    线上回退：「他说我在商场呢」被整句改成「我在公司呢」，删掉归因把别人的话
+    变成了她的自述。改口只换地点/动作，句首归因必须原样保留；地点矛盾仍要消除。
+    """
+
+    def test_reported_mall_claim_keeps_attribution(self):
+        fixed, violations = guard("他说我在商场呢。", ctx(activity=OFFICE))
+        self.assertEqual(fixed, "他说我在公司呢。")
+        self.assertNotIn("商场", fixed)
+        self.assertIn("他说", fixed)
+        self.assertEqual([item["rule"] for item in violations], ["place"])
+
+    def test_hearsay_claim_keeps_attribution(self):
+        fixed, _violations = guard("听说我在商场呢。", ctx(activity=OFFICE))
+        self.assertEqual(fixed, "听说我在公司呢。")
+        self.assertNotIn("商场", fixed)
+        self.assertIn("听说", fixed)
+
+    def test_second_hand_hearsay_claim_keeps_attribution(self):
+        fixed, _violations = guard("听他说我在商场呢。", ctx(activity=OFFICE))
+        self.assertEqual(fixed, "听他说我在公司呢。")
+        self.assertNotIn("商场", fixed)
+        self.assertIn("听他说", fixed)
+
+    def test_family_attribution_claim_keeps_attribution(self):
+        fixed, _violations = guard("我妈说我在商场呢。", ctx(activity=OFFICE))
+        self.assertEqual(fixed, "我妈说我在公司呢。")
+        self.assertNotIn("商场", fixed)
+        self.assertIn("我妈说", fixed)
+
+    def test_reported_claim_with_trailing_clause_keeps_both(self):
+        fixed, _violations = guard("他说我在商场呢，还没回。", ctx(activity=OFFICE))
+        self.assertEqual(fixed, "他说我在公司呢，还没回。")
+        self.assertNotIn("商场", fixed)
+        self.assertIn("他说", fixed)
+
+    def test_reported_arrival_claim_keeps_attribution(self):
+        # 到达句同样不能吞掉归因（改前输出「我到家啦」，归因丢失）
+        fixed, _violations = guard("他说我到了商场啦", ctx(activity=HOME))
+        self.assertNotIn("商场", fixed)
+        self.assertIn("家", fixed)
+        self.assertTrue(fixed.startswith("他说"), fixed)
+
+    def test_plain_mall_claim_still_rewritten(self):
+        # 对照 1：没有转述前缀的普通「我在商场呢」仍按此刻地点改口
+        fixed, violations = guard("我在商场呢。", ctx(activity=OFFICE))
+        self.assertEqual(fixed, "我在公司呢。")
+        self.assertNotIn("商场", fixed)
+        self.assertNotIn("他说", fixed)
+        self.assertEqual([item["rule"] for item in violations], ["place"])
+
+    def test_matching_attributed_claim_is_untouched(self):
+        # 对照 2：转述的内容本来就对（公司=此刻地点）时一个字都不动
+        text = "他说我在公司呢。"
+        fixed, violations = guard(text, ctx(activity=OFFICE))
+        self.assertEqual(fixed, text)
+        self.assertEqual(violations, [])
+
+
 class ReverseVerificationTests(unittest.TestCase):
     """反向验证：拆掉一条规则，对应的反例就不再被改写；装回去又变绿。"""
 
