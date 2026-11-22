@@ -1,17 +1,9 @@
 {
- "schema": "style_pool_v4",
+ "schema": "style_pool_v5",
  "meta": {
-  "version": "v4",
-  "curated_at": "2026-11-22 19:10",
-  "new_source": {
-   "amoupup_data_backup": {
-    "plugin": "我能永远记住你 (Astrbot_amoupup_data)",
-    "backups": 7,
-    "candidates_unique": 249,
-    "selected": 10,
-    "note": "当前 amo_data.db 只保留 11-19→22；更早 11-13→21 在 backups/amo_data-*.db 快照里"
-   }
-  },
+  "version": "v5",
+  "curated_at": "2026-11-22 19:25",
+  "qq_note": "当前 amo_data.db 的 QQ(aiocqhttp) 46 条全是 summary；raw QQ bot 行只在 backups 11-16/17/18（109/79/38 条），跨快照去重后 100 条候选，v5 选 7 条（3 条原有+4 条新增）",
   "priority": [
    "messages",
    "amoupup_data_backup",
@@ -21,48 +13,36 @@
    "imm_dataset",
    "persona_pack"
   ],
-  "memories_note": "memories 925 条均为第三人称摘要，0 入选；聊天历史已从 messages 与 backups 补"
+  "memories_note": "memories 925 条均为第三人称摘要，0 入选"
  },
  "counts_by_intent": {
-  "其他": 4,
-  "吃饭": 7,
+  "其他": 3,
+  "吃饭": 5,
   "地点": 4,
   "想他": 5,
-  "撒娇玩闹": 18,
+  "撒娇玩闹": 21,
   "日常状态": 5,
   "被关心": 1,
   "被夸": 1
  },
  "counts_by_source": {
-  "messages": 14,
-  "livingmemory_conversations": 10,
+  "messages": 11,
+  "livingmemory_conversations": 9,
   "imm_dataset": 4,
   "data_v4_platform_history": 5,
   "dump": 1,
   "persona_pack": 1,
-  "amoupup_data_backup": 10
+  "amoupup_data_backup": 14
+ },
+ "counts_by_platform": {
+  "lark": 7,
+  "aiocqhttp": 7
  },
  "fit_counts": {
-  "2": 33,
-  "1": 12
+  "2": 37,
+  "1": 8
  },
  "items": [
-  {
-   "id": "messages:2126",
-   "source": "messages",
-   "time": "2026-11-19 22:03:57",
-   "text": "老公，今天一整天都没啥事，闷得我有点发慌。",
-   "priority": 1,
-   "test_session": false,
-   "session_id": "",
-   "sa_jiao_fit": 1,
-   "curated": "kept",
-   "note": "",
-   "overlap": 0.0,
-   "score": 13.0,
-   "intent": "其他",
-   "why": "有具体细节"
-  },
   {
    "id": "messages:2154",
    "source": "messages",
@@ -188,38 +168,6 @@
    "sa_jiao_fit": 2,
    "overlap": 0.0,
    "score": 11.8,
-   "intent": "吃饭",
-   "why": "有语气词、有具体细节"
-  },
-  {
-   "id": "messages:2151",
-   "source": "messages",
-   "time": "2026-11-20 12:03:29",
-   "text": "刚泡上咖啡，同事讲了个冷笑话，我笑到现在停不下来 你在干嘛呢，吃饭没",
-   "priority": 1,
-   "test_session": false,
-   "session_id": "",
-   "sa_jiao_fit": 1,
-   "curated": "kept",
-   "note": "",
-   "overlap": 0.0,
-   "score": 11.0,
-   "intent": "吃饭",
-   "why": "有语气词、有半句停顿"
-  },
-  {
-   "id": "messages:2304",
-   "source": "messages",
-   "time": "2026-11-22 18:09:26",
-   "text": "你晚上吃的啥呀，说给我听听。",
-   "priority": 1,
-   "test_session": false,
-   "session_id": "",
-   "sa_jiao_fit": 1,
-   "curated": "kept",
-   "note": "说给我听听 是好奇式邀请、带问句和呀，非命令；保留但只标 1",
-   "overlap": 0.0,
-   "score": 12.0,
    "intent": "吃饭",
    "why": "有语气词、有具体细节"
   },
@@ -400,22 +348,6 @@
    "why": "短句口语、撒娇口吻"
   },
   {
-   "id": "lm:655:1",
-   "source": "livingmemory_conversations",
-   "time": "2026-11-05 20:03:37",
-   "text": "你抬头看看，我坐这儿呢",
-   "priority": 2,
-   "test_session": false,
-   "session_id": "lark:FriendMessage:ou_cec66ea605ad17f62632fb044bc5f6ac",
-   "sa_jiao_fit": 1,
-   "curated": "kept",
-   "note": "",
-   "overlap": 0.0,
-   "score": 12.4,
-   "intent": "撒娇玩闹",
-   "why": "有语气词、撒娇口吻"
-  },
-  {
    "id": "lm:705:0",
    "source": "livingmemory_conversations",
    "time": "2026-11-05 22:05:31",
@@ -509,6 +441,79 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "撒娇玩闹",
+   "why": "历史真实发言、撒娇口吻",
+   "platform": "lark"
+  },
+  {
+   "id": "amo_data-20261116-002926:qq:1150",
+   "source": "amoupup_data_backup",
+   "platform": "aiocqhttp",
+   "backup": "amo_data-20261116-002926",
+   "time": "2026-11-13 22:06:25",
+   "text": "那我真要闭眼啦，晚安，做个好梦。",
+   "priority": 1,
+   "test_session": false,
+   "session_id": "amo_data-20261116-002926",
+   "sa_jiao_fit": 2,
+   "curated": "kept",
+   "note": "记忆插件备份·QQ 私聊原始记录",
+   "overlap": 0.0,
+   "score": 14.0,
+   "intent": "撒娇玩闹",
+   "why": "历史真实发言、撒娇口吻"
+  },
+  {
+   "id": "amo_data-20261116-002926:qq:1160",
+   "source": "amoupup_data_backup",
+   "platform": "aiocqhttp",
+   "backup": "amo_data-20261116-002926",
+   "time": "2026-11-13 22:50:33",
+   "text": "这下真拍了，你看我眼睛都睁不开了。 满意了就去睡，啊。",
+   "priority": 1,
+   "test_session": false,
+   "session_id": "amo_data-20261116-002926",
+   "sa_jiao_fit": 2,
+   "curated": "kept",
+   "note": "记忆插件备份·QQ 私聊原始记录",
+   "overlap": 0.0,
+   "score": 14.0,
+   "intent": "撒娇玩闹",
+   "why": "历史真实发言、撒娇口吻"
+  },
+  {
+   "id": "amo_data-20261116-002926:qq:1162",
+   "source": "amoupup_data_backup",
+   "platform": "aiocqhttp",
+   "backup": "amo_data-20261116-002926",
+   "time": "2026-11-13 22:51:02",
+   "text": "嗯，这下真睡了啊，我也闭眼了，晚安老公。",
+   "priority": 1,
+   "test_session": false,
+   "session_id": "amo_data-20261116-002926",
+   "sa_jiao_fit": 2,
+   "curated": "kept",
+   "note": "记忆插件备份·QQ 私聊原始记录",
+   "overlap": 0.0,
+   "score": 14.0,
+   "intent": "撒娇玩闹",
+   "why": "历史真实发言、撒娇口吻"
+  },
+  {
+   "id": "amo_data-20261116-002926:qq:1208",
+   "source": "amoupup_data_backup",
+   "platform": "aiocqhttp",
+   "backup": "amo_data-20261116-002926",
+   "time": "2026-11-14 14:49:47",
+   "text": "嗯，瘫沙发上拍的，别嫌我脸圆。",
+   "priority": 1,
+   "test_session": false,
+   "session_id": "amo_data-20261116-002926",
+   "sa_jiao_fit": 2,
+   "curated": "kept",
+   "note": "记忆插件备份·QQ 私聊原始记录",
+   "overlap": 0.0,
+   "score": 14.0,
+   "intent": "撒娇玩闹",
    "why": "历史真实发言、撒娇口吻"
   },
   {
@@ -525,7 +530,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "撒娇玩闹",
-   "why": "历史真实发言、撒娇口吻"
+   "why": "历史真实发言、撒娇口吻",
+   "platform": "aiocqhttp"
   },
   {
    "id": "amo_data-20261116-002926:1295",
@@ -541,7 +547,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "撒娇玩闹",
-   "why": "历史真实发言、撒娇口吻"
+   "why": "历史真实发言、撒娇口吻",
+   "platform": "lark"
   },
   {
    "id": "amo_data-20261116-002926:1301",
@@ -557,7 +564,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "撒娇玩闹",
-   "why": "历史真实发言、撒娇口吻"
+   "why": "历史真实发言、撒娇口吻",
+   "platform": "lark"
   },
   {
    "id": "amo_data-20261116-002926:1346",
@@ -573,7 +581,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "撒娇玩闹",
-   "why": "历史真实发言、撒娇口吻"
+   "why": "历史真实发言、撒娇口吻",
+   "platform": "aiocqhttp"
   },
   {
    "id": "amo_data-20261116-002926:1403",
@@ -589,7 +598,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "撒娇玩闹",
-   "why": "历史真实发言、撒娇口吻"
+   "why": "历史真实发言、撒娇口吻",
+   "platform": "lark"
   },
   {
    "id": "v4:195:0",
@@ -637,7 +647,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "撒娇玩闹",
-   "why": "历史真实发言、撒娇口吻"
+   "why": "历史真实发言、撒娇口吻",
+   "platform": "lark"
   },
   {
    "id": "messages:2303",
@@ -669,7 +680,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "日常状态",
-   "why": "历史真实发言、生活感"
+   "why": "历史真实发言、生活感",
+   "platform": "aiocqhttp"
   },
   {
    "id": "amo_data-20261116-002926:1293",
@@ -685,7 +697,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "日常状态",
-   "why": "历史真实发言、生活感"
+   "why": "历史真实发言、生活感",
+   "platform": "lark"
   },
   {
    "id": "amo_data-20261116-002926:1471",
@@ -701,7 +714,8 @@
    "overlap": 0.0,
    "score": 14.0,
    "intent": "日常状态",
-   "why": "历史真实发言、生活感"
+   "why": "历史真实发言、生活感",
+   "platform": "lark"
   },
   {
    "id": "messages:2218",
