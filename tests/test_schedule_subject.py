@@ -154,7 +154,8 @@ class CommitGuardTests(unittest.TestCase):
                 sys.modules[name] = module
 
     def _commit(self, activity, source="social"):
-        item = {"start": "09:00", "end": "10:00", "activity": activity,
+        # 主语守卫与时长/地点无关：10 分钟短块，避免和 P1 内容政策（户外长发呆）互相干扰。
+        item = {"start": "09:00", "end": "09:10", "activity": activity,
                 "place": "商场", "zone": "mall", "category": "play"}
         self.plugin.state.commit_schedule_change(
             self.DAY, [item], old_items=[], source=source, reason="test")

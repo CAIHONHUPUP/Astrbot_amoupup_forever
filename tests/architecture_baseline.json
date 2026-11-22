@@ -1,1381 +1,1414 @@
 {
-  "__init__.py": [],
-  "amo_addressee_guard.py": [
-    "amo_names"
-  ],
-  "amo_anti_nag.py": [],
-  "amo_api.py": [
-    "amo_api_diary",
-    "amo_api_persona",
-    "amo_api_photo",
-    "amo_api_schedule",
-    "amo_api_trip",
-    "amo_api_wardrobe",
-    "amo_compat",
-    "amo_observability",
-    "amo_route_table",
-    "amo_schedule",
-    "amo_shared",
-    "amo_types",
-    "ecommerce_engine",
-    "observability",
-    "pose_library"
-  ],
-  "amo_api_diary.py": [
-    "amo_diary_audit",
-    "amo_diary_guard",
-    "amo_observability",
-    "amo_schedule",
-    "amo_shared",
-    "amo_state_diary",
-    "amo_types"
-  ],
-  "amo_api_persona.py": [
-    "amo_persona_pack",
-    "amo_persona_store"
-  ],
-  "amo_api_photo.py": [
-    "amo_shared",
-    "amo_types"
-  ],
-  "amo_api_schedule.py": [
-    "amo_fact_timeline",
-    "amo_human_state",
-    "amo_observability",
-    "amo_shared",
-    "amo_state_common",
-    "amo_state_snapshot",
-    "amo_timeline",
-    "amo_transition",
-    "amo_types",
-    "clock",
-    "schedule_engine"
-  ],
-  "amo_api_trip.py": [
-    "amo_observability",
-    "amo_shared",
-    "amo_trip",
-    "amo_types"
-  ],
-  "amo_api_wardrobe.py": [
-    "amo_shared",
-    "amo_types",
-    "outfit_refs",
-    "pose_library"
-  ],
-  "amo_bootstrap.py": [
-    "amo_api",
-    "amo_commands",
-    "amo_config",
-    "amo_db",
-    "amo_events",
-    "amo_feature_api",
-    "amo_handshake",
-    "amo_human_state",
-    "amo_hunger",
-    "amo_init",
-    "amo_kb",
-    "amo_lifecycle",
-    "amo_llm",
-    "amo_llm_service",
-    "amo_memory",
-    "amo_message",
-    "amo_observability",
-    "amo_proactive",
-    "amo_reply_gate",
-    "amo_routes",
-    "amo_runtime",
-    "amo_schedule",
-    "amo_shared",
-    "amo_social",
-    "amo_social_bridge",
-    "amo_travel",
-    "amo_usage",
-    "amo_wallet",
-    "clock",
-    "draw_engine",
-    "housing",
-    "micro_events",
-    "photo_engine",
-    "pose_library",
-    "social_learn_engine",
-    "wardrobe"
-  ],
-  "amo_city_index.py": [
-    "amo_observability"
-  ],
-  "amo_closet_image.py": [
-    "outfit_refs"
-  ],
-  "amo_commands.py": [
-    "amo_diary_audit",
-    "amo_household",
-    "amo_message",
-    "amo_observability",
-    "amo_persona_store",
-    "amo_scope",
-    "amo_shared",
-    "amo_state_snapshot",
-    "amo_trip",
-    "amo_trip_cost",
-    "amo_types",
-    "clock",
-    "schedule_change"
-  ],
-  "amo_companion_guard.py": [],
-  "amo_compat.py": [],
-  "amo_config.py": [
-    "amo_compat",
-    "amo_config_model",
-    "amo_observability",
-    "amo_shared",
-    "amo_types"
-  ],
-  "amo_config_model.py": [],
-  "amo_current_action.py": [
-    "amo_scene_ledger",
-    "amo_state_store",
-    "clock",
-    "photo_rules"
-  ],
-  "amo_date_context.py": [
-    "amo_date_session",
-    "amo_household",
-    "amo_prompt_registry",
-    "amo_scene_ledger",
-    "amo_state_store",
-    "clock"
-  ],
-  "amo_date_facts.py": [
-    "amo_date_session",
-    "amo_household",
-    "amo_numbers"
-  ],
-  "amo_date_session.py": [
-    "amo_numbers",
-    "amo_shared"
-  ],
-  "amo_db.py": [
-    "amo_compat",
-    "amo_db_schema",
-    "amo_diary_guard",
-    "amo_observability",
-    "amo_shared",
-    "amo_state_common"
-  ],
-  "amo_db_schema.py": [
-    "amo_shared",
-    "amo_timeline"
-  ],
-  "amo_diary_audit.py": [
-    "amo_location_rules",
-    "amo_observability",
-    "amo_schedule",
-    "amo_shared",
-    "amo_state_common"
-  ],
-  "amo_diary_guard.py": [
-    "amo_fact_timeline",
-    "amo_household",
-    "amo_immersion_guard",
-    "amo_numbers",
-    "amo_shared_config",
-    "clock",
-    "photo_scene",
-    "reply_fact_guard"
-  ],
-  "amo_episodic.py": [],
-  "amo_events.py": [],
-  "amo_fact_binder.py": [
-    "amo_current_action",
-    "amo_diary_guard",
-    "amo_fact_timeline",
-    "clock"
-  ],
-  "amo_fact_pool.py": [
-    "amo_diary_guard",
-    "amo_fact_timeline",
-    "amo_immersion_guard",
-    "amo_location_rules"
-  ],
-  "amo_fact_timeline.py": [
-    "amo_date_facts",
-    "amo_diary_guard",
-    "amo_fact_pool",
-    "amo_household",
-    "amo_location_rules",
-    "amo_numbers",
-    "amo_timeline",
-    "clock"
-  ],
-  "amo_feature_api.py": [
-    "amo_api_persona",
-    "amo_closet_image",
-    "amo_current_action",
-    "amo_date_session",
-    "amo_episodic",
-    "amo_food_event",
-    "amo_names",
-    "amo_persona_pack",
-    "amo_persona_store",
-    "amo_presence",
-    "amo_scene_ledger",
-    "amo_shared",
-    "amo_shared_time",
-    "amo_state_store",
-    "clock",
-    "outfit_refs"
-  ],
-  "amo_fileio.py": [],
-  "amo_food_audit.py": [],
-  "amo_food_cost.py": [
-    "amo_timeline",
-    "clock",
-    "domains",
-    "price_book"
-  ],
-  "amo_food_event.py": [
-    "amo_food_cost",
-    "clock"
-  ],
-  "amo_grounding_critic.py": [
-    "domains"
-  ],
-  "amo_group_guard.py": [
-    "clock"
-  ],
-  "amo_handshake.py": [
-    "amo_compat",
-    "amo_observability",
-    "amo_shared"
-  ],
-  "amo_household.py": [
-    "amo_current_action",
-    "amo_date_session",
-    "amo_person_ref",
-    "amo_shared",
-    "amo_shared_time",
-    "photo_rules"
-  ],
-  "amo_human_state.py": [
-    "amo_city_index",
-    "amo_current_action",
-    "amo_events",
-    "amo_household",
-    "amo_late_night",
-    "amo_observability",
-    "amo_shared",
-    "amo_sick_decision",
-    "amo_state_common",
-    "amo_state_date",
-    "amo_state_diary",
-    "amo_state_jit",
-    "amo_state_schedule",
-    "amo_state_store",
-    "amo_state_todo",
-    "day_types",
-    "photo_rules",
-    "schedule_subject",
-    "services"
-  ],
-  "amo_hunger.py": [
-    "amo_shared"
-  ],
-  "amo_idem.py": [],
-  "amo_image_common.py": [
-    "amo_compat",
-    "amo_observability",
-    "amo_place"
-  ],
-  "amo_immersion_guard.py": [
-    "amo_names",
-    "clock"
-  ],
-  "amo_init.py": [
-    "amo_db",
-    "amo_events",
-    "amo_jobs",
-    "amo_llm_service",
-    "amo_observability",
-    "amo_reply_gate",
-    "amo_shared",
-    "amo_wallet",
-    "clock",
-    "draw_engine",
-    "housing",
-    "micro_events",
-    "photo_engine",
-    "pose_library",
-    "social_learn_engine",
-    "wardrobe"
-  ],
-  "amo_jobs.py": [],
-  "amo_json_schema.py": [
-    "amo_fileio"
-  ],
-  "amo_kb.py": [
-    "amo_observability",
-    "amo_shared",
-    "amo_types"
-  ],
-  "amo_late_night.py": [
-    "amo_shared",
-    "clock"
-  ],
-  "amo_lifecycle.py": [
-    "amo_observability",
-    "amo_schedule_tools",
-    "amo_shared",
-    "amo_state_store",
-    "draw_engine",
-    "ecommerce_engine",
-    "housing",
-    "laundry_engine"
-  ],
-  "amo_llm.py": [
-    "amo_date_context",
-    "amo_fact_binder",
-    "amo_household",
-    "amo_immersion_guard",
-    "amo_message",
-    "amo_observability",
-    "amo_persona_guard",
-    "amo_persona_pack",
-    "amo_persona_store",
-    "amo_prompt_registry",
-    "amo_reply_pipeline",
-    "amo_shared",
-    "amo_state_snapshot",
-    "amo_types",
-    "amo_understanding",
-    "clock",
-    "date_state",
-    "group_scene",
-    "refusal",
-    "short_reply"
-  ],
-  "amo_llm_service.py": [
-    "amo_date_context",
-    "amo_grounding_critic",
-    "amo_household",
-    "amo_immersion_guard",
-    "amo_names",
-    "amo_observability",
-    "amo_persona_guard",
-    "amo_persona_store",
-    "amo_prompt_registry",
-    "amo_shared",
-    "amo_state_snapshot",
-    "amo_understanding",
-    "amo_voice_guard",
-    "done_action_guard",
-    "place_guard"
-  ],
-  "amo_location_rules.py": [],
-  "amo_marriage_guard.py": [],
-  "amo_media.py": [
-    "amo_image_common",
-    "amo_message",
-    "amo_observability",
-    "amo_presence",
-    "amo_scene_ledger",
-    "clock",
-    "domains",
-    "photo_share"
-  ],
-  "amo_memory.py": [
-    "amo_memory_bridge",
-    "amo_memory_context",
-    "amo_memory_data"
-  ],
-  "amo_memory_bridge.py": [
-    "amo_memory_ledger",
-    "amo_observability",
-    "amo_scene_ledger",
-    "amo_shared",
-    "amo_state_context",
-    "amo_state_snapshot",
-    "amo_types"
-  ],
-  "amo_memory_context.py": [
-    "amo_immersion_guard",
-    "amo_memory_ledger",
-    "amo_memory_rerank_mixin",
-    "amo_message",
-    "amo_observability",
-    "amo_shared",
-    "amo_types",
-    "clock"
-  ],
-  "amo_memory_data.py": [
-    "amo_observability",
-    "amo_shared",
-    "amo_types",
-    "errors",
-    "observability"
-  ],
-  "amo_memory_ledger.py": [],
-  "amo_memory_rerank.py": [],
-  "amo_memory_rerank_mixin.py": [
-    "amo_memory_rerank",
-    "amo_shared"
-  ],
-  "amo_message.py": [
-    "amo_addressee_guard",
-    "amo_anti_nag",
-    "amo_fact_binder",
-    "amo_names",
-    "amo_observability",
-    "amo_outbound",
-    "amo_outbound_guard",
-    "amo_persona_guard",
-    "amo_purchase_guard",
-    "amo_reply_pipeline",
-    "amo_scene_ledger",
-    "amo_shared",
-    "amo_state_consistency",
-    "amo_state_snapshot",
-    "amo_types",
-    "clock",
-    "place_guard"
-  ],
-  "amo_names.py": [],
-  "amo_numbers.py": [
-    "domains"
-  ],
-  "amo_observability.py": [],
-  "amo_outbound.py": [
-    "amo_addressee_guard",
-    "amo_message",
-    "amo_persona_guard",
-    "amo_presence",
-    "clock"
-  ],
-  "amo_outbound_guard.py": [],
-  "amo_person_ref.py": [],
-  "amo_persona_guard.py": [
-    "amo_addressee_guard",
-    "amo_anti_nag",
-    "amo_memory_ledger",
-    "amo_message",
-    "amo_names",
-    "amo_purchase_guard",
-    "amo_reply_pipeline",
-    "amo_shared_text",
-    "domains"
-  ],
-  "amo_persona_pack.py": [],
-  "amo_persona_store.py": [
-    "amo_persona_pack",
-    "clock"
-  ],
-  "amo_photo_intent.py": [],
-  "amo_place.py": [
-    "domains"
-  ],
-  "amo_ports.py": [],
-  "amo_presence.py": [
-    "amo_scene_ledger",
-    "clock",
-    "photo_rules",
-    "photo_scene"
-  ],
-  "amo_proactive.py": [
-    "amo_companion_guard",
-    "amo_date_session",
-    "amo_marriage_guard",
-    "amo_names",
-    "amo_observability",
-    "amo_outbound",
-    "amo_persona_store",
-    "amo_presence",
-    "amo_proactive_gate",
-    "amo_purchase_guard",
-    "amo_reply_pipeline",
-    "amo_rest",
-    "amo_scene_ledger",
-    "amo_share_ledger",
-    "amo_shared",
-    "amo_state_consistency",
-    "amo_state_snapshot",
-    "amo_types",
-    "amo_voice_guard",
-    "group_scene",
-    "infra",
-    "observability"
-  ],
-  "amo_proactive_gate.py": [],
-  "amo_prompt_registry.py": [
-    "amo_immersion_guard",
-    "amo_persona_guard",
-    "amo_transit"
-  ],
-  "amo_purchase_guard.py": [
-    "clock"
-  ],
-  "amo_question_guard.py": [
-    "domains"
-  ],
-  "amo_readiness.py": [
-    "amo_bootstrap",
-    "amo_compat",
-    "amo_image_common"
-  ],
-  "amo_repetition_guard.py": [
-    "domains"
-  ],
-  "amo_reply_gate.py": [
-    "amo_observability",
-    "amo_shared"
-  ],
-  "amo_reply_pipeline.py": [
-    "amo_anti_nag",
-    "amo_companion_guard",
-    "amo_date_context",
-    "amo_diary_guard",
-    "amo_grounding_critic",
-    "amo_immersion_guard",
-    "amo_marriage_guard",
-    "amo_message",
-    "amo_names",
-    "amo_observability",
-    "amo_persona_guard",
-    "amo_persona_store",
-    "amo_purchase_guard",
-    "amo_question_guard",
-    "amo_repetition_guard",
-    "amo_rewrite_safety",
-    "amo_role_guard",
-    "amo_share_ledger",
-    "amo_shared",
-    "amo_shared_text",
-    "amo_state_consistency",
-    "amo_tone_pick",
-    "amo_transit",
-    "amo_transition",
-    "amo_voice_guard",
-    "brushoff",
-    "date_state",
-    "domains",
-    "done_action_guard",
-    "group_scene",
-    "photo_view",
-    "refusal",
-    "reply_fact_guard",
-    "short_reply",
-    "tone_guard"
-  ],
-  "amo_rest.py": [
-    "clock"
-  ],
-  "amo_retention.py": [
-    "amo_shared",
-    "amo_state_store"
-  ],
-  "amo_rewrite_safety.py": [
-    "amo_persona_guard",
-    "amo_reply_pipeline",
-    "amo_state_consistency",
-    "amo_state_snapshot",
-    "clock",
-    "domains"
-  ],
-  "amo_role_guard.py": [],
-  "amo_route_table.py": [],
-  "amo_routes.py": [
-    "amo_observability",
-    "amo_shared"
-  ],
-  "amo_runtime.py": [
-    "amo_runtime_context",
-    "amo_runtime_reply",
-    "amo_runtime_tick",
-    "amo_shared"
-  ],
-  "amo_runtime_context.py": [
-    "amo_current_action",
-    "amo_date_context",
-    "amo_date_session",
-    "amo_episodic",
-    "amo_fact_binder",
-    "amo_household",
-    "amo_observability",
-    "amo_prompt_registry",
-    "amo_runtime_ports",
-    "amo_scene_ledger",
-    "amo_share_ledger",
-    "amo_shared",
-    "amo_state_snapshot",
-    "amo_state_store",
-    "amo_transition",
-    "amo_trip",
-    "date_state",
-    "ecommerce_engine",
-    "group_scene",
-    "laundry_engine",
-    "place_guard",
-    "wardrobe"
-  ],
-  "amo_runtime_ports.py": [
-    "amo_types"
-  ],
-  "amo_runtime_reply.py": [
-    "amo_date_context",
-    "amo_diary_guard",
-    "amo_media",
-    "amo_message",
-    "amo_observability",
-    "amo_reply_pipeline",
-    "amo_rewrite_safety",
-    "amo_runtime_ports",
-    "amo_share_ledger",
-    "amo_shared",
-    "amo_shared_text",
-    "amo_state_snapshot",
-    "amo_transit",
-    "amo_voice",
-    "domains"
-  ],
-  "amo_runtime_tick.py": [
-    "amo_diary_audit",
-    "amo_diary_guard",
-    "amo_observability",
-    "amo_retention",
-    "amo_runtime_ports",
-    "amo_shared",
-    "amo_transition",
-    "ecommerce_engine",
-    "home_refs",
-    "laundry_engine",
-    "observability",
-    "pose_library"
-  ],
-  "amo_scene_ledger.py": [
-    "amo_date_session",
-    "amo_observability",
-    "amo_state_snapshot",
-    "clock",
-    "photo_scene"
-  ],
-  "amo_schedule.py": [
-    "amo_diary_guard",
-    "amo_episodic",
-    "amo_fact_pool",
-    "amo_household",
-    "amo_human_state",
-    "amo_location_rules",
-    "amo_marriage_guard",
-    "amo_observability",
-    "amo_person_ref",
-    "amo_scope",
-    "amo_shared",
-    "amo_shared_time",
-    "amo_state_common",
-    "amo_state_diary",
-    "amo_state_snapshot",
-    "amo_timeline",
-    "amo_types",
-    "clock",
-    "diary_engine",
-    "schedule_change"
-  ],
-  "amo_schedule_blocks.py": [],
-  "amo_schedule_health.py": [
-    "domains"
-  ],
-  "amo_schedule_tools.py": [
-    "amo_shared",
-    "amo_trip"
-  ],
-  "amo_scope.py": [],
-  "amo_share_ledger.py": [
-    "clock"
-  ],
-  "amo_shared.py": [
-    "amo_shared_config",
-    "amo_shared_deps",
-    "amo_shared_text",
-    "amo_shared_time",
-    "amo_shared_usage"
-  ],
-  "amo_shared_activity.py": [
-    "amo_current_action",
-    "amo_observability",
-    "clock"
-  ],
-  "amo_shared_config.py": [
-    "amo_shared_deps",
-    "amo_trip",
-    "schedule_engine"
-  ],
-  "amo_shared_deps.py": [
-    "amo_numbers",
-    "amo_observability",
-    "attribution",
-    "brushoff",
-    "city_follow",
-    "clock",
-    "diary_engine",
-    "diary_lines",
-    "gift_engine",
-    "greet_route",
-    "heartflow_engine",
-    "memory_hooks",
-    "milestone",
-    "proactive_guard",
-    "relation_graph",
-    "relation_learn",
-    "relation_sediment",
-    "schedule_engine",
-    "segment_engine",
-    "time_recall",
-    "wander",
-    "weather_alert"
-  ],
-  "amo_shared_text.py": [
-    "amo_shared_deps"
-  ],
-  "amo_shared_time.py": [
-    "amo_shared_deps"
-  ],
-  "amo_shared_usage.py": [
-    "amo_shared_deps",
-    "amo_shared_time",
-    "amo_state_store"
-  ],
-  "amo_sick_decision.py": [
-    "amo_immersion_guard"
-  ],
-  "amo_social.py": [
-    "amo_observability",
-    "amo_rest",
-    "amo_shared",
-    "amo_types",
-    "clock",
-    "errors",
-    "observability"
-  ],
-  "amo_social_bridge.py": [
-    "amo_observability"
-  ],
-  "amo_state_common.py": [
-    "amo_human_state",
-    "amo_immersion_guard",
-    "amo_observability",
-    "amo_place",
-    "amo_scene_ledger",
-    "amo_shared",
-    "amo_timeline",
-    "photo_rules"
-  ],
-  "amo_state_consistency.py": [
-    "amo_addressee_guard",
-    "amo_message",
-    "amo_reply_pipeline",
-    "amo_scene_ledger",
-    "amo_share_ledger",
-    "domains"
-  ],
-  "amo_state_context.py": [
-    "amo_diary_guard",
-    "amo_state_snapshot"
-  ],
-  "amo_state_date.py": [
-    "amo_date_session",
-    "amo_observability",
-    "amo_shared",
-    "amo_state_common",
-    "amo_state_store",
-    "amo_types"
-  ],
-  "amo_state_diary.py": [
-    "amo_diary_guard",
-    "amo_fact_pool",
-    "amo_fact_timeline",
-    "amo_location_rules",
-    "amo_observability",
-    "amo_person_ref",
-    "amo_shared",
-    "amo_state_common",
-    "amo_timeline",
-    "amo_transit",
-    "amo_types",
-    "photo_rules"
-  ],
-  "amo_state_jit.py": [
-    "amo_date_session",
-    "amo_food_cost",
-    "amo_observability",
-    "amo_scene_ledger",
-    "amo_shared",
-    "amo_state_common",
-    "amo_state_store",
-    "amo_timeline",
-    "amo_trip",
-    "amo_types",
-    "schedule_engine"
-  ],
-  "amo_state_schedule.py": [
-    "amo_diary_guard",
-    "amo_events",
-    "amo_household",
-    "amo_observability",
-    "amo_person_ref",
-    "amo_scene_ledger",
-    "amo_schedule_health",
-    "amo_shared",
-    "amo_state_common",
-    "amo_timeline",
-    "amo_transit",
-    "amo_transition",
-    "amo_trip",
-    "amo_types",
-    "day_types",
-    "schedule_slots"
-  ],
-  "amo_state_snapshot.py": [
-    "amo_scene_ledger",
-    "amo_shared",
-    "clock",
-    "photo_scene"
-  ],
-  "amo_state_store.py": [
-    "clock"
-  ],
-  "amo_state_todo.py": [
-    "amo_food_cost",
-    "amo_observability",
-    "amo_shared",
-    "amo_state_common",
-    "amo_types",
-    "day_types"
-  ],
-  "amo_timeline.py": [
-    "amo_numbers",
-    "amo_observability",
-    "photo_rules"
-  ],
-  "amo_tone_pick.py": [
-    "amo_reply_pipeline",
-    "amo_shared",
-    "reply_fact_guard"
-  ],
-  "amo_transit.py": [
-    "amo_transition"
-  ],
-  "amo_transition.py": [
-    "amo_numbers",
-    "amo_place",
-    "amo_scene_ledger",
-    "amo_timeline",
-    "amo_trip",
-    "clock",
-    "schedule_slots"
-  ],
-  "amo_travel.py": [
-    "amo_city_index",
-    "amo_date_session",
-    "amo_observability",
-    "amo_shared",
-    "amo_types"
-  ],
-  "amo_trip.py": [
-    "amo_trip_cost",
-    "amo_trip_report",
-    "amo_trip_schedule",
-    "amo_trip_state"
-  ],
-  "amo_trip_cost.py": [
-    "amo_numbers",
-    "amo_shared",
-    "amo_trip_state",
-    "price_book"
-  ],
-  "amo_trip_report.py": [
-    "amo_trip_cost",
-    "amo_trip_schedule",
-    "amo_trip_state"
-  ],
-  "amo_trip_schedule.py": [
-    "amo_trip_cost",
-    "amo_trip_state",
-    "clock"
-  ],
-  "amo_trip_state.py": [
-    "amo_city_index",
-    "clock"
-  ],
-  "amo_tts_guard.py": [
-    "amo_voice",
-    "clock"
-  ],
-  "amo_types.py": [],
-  "amo_understanding.py": [],
-  "amo_usage.py": [
-    "amo_observability",
-    "amo_shared",
-    "amo_types",
-    "clock"
-  ],
-  "amo_voice.py": [],
-  "amo_voice_guard.py": [],
-  "amo_wallet.py": [
-    "clock"
-  ],
-  "attribution.py": [],
-  "brushoff.py": [
-    "domains"
-  ],
-  "city_follow.py": [
-    "amo_city_index",
-    "amo_observability"
-  ],
-  "clock.py": [
-    "amo_observability"
-  ],
-  "compat.py": [],
-  "date_state.py": [
-    "amo_scene_ledger",
-    "clock"
-  ],
-  "day_types.py": [
-    "domains"
-  ],
-  "diary_engine.py": [
-    "amo_immersion_guard",
-    "amo_location_rules",
-    "diary_lines",
-    "domains"
-  ],
-  "diary_lines.py": [
-    "domains"
-  ],
-  "domains/__init__.py": [],
-  "domains/diary/__init__.py": [],
-  "domains/diary/engine.py": [],
-  "domains/diary/lines.py": [],
-  "domains/finance/__init__.py": [],
-  "domains/finance/price_book.py": [
-    "clock"
-  ],
-  "domains/kernel/__init__.py": [],
-  "domains/kernel/numbers.py": [
-    "amo_observability"
-  ],
-  "domains/memory/__init__.py": [],
-  "domains/photo/__init__.py": [],
-  "domains/photo/cache.py": [],
-  "domains/photo/failure_text.py": [],
-  "domains/photo/room_ab.py": [],
-  "domains/photo/share_fallback.py": [],
-  "domains/photo/share_window.py": [],
-  "domains/photo/view.py": [],
-  "domains/reply/__init__.py": [],
-  "domains/reply/brushoff.py": [],
-  "domains/reply/frame.py": [],
-  "domains/reply/refusal.py": [],
-  "domains/reply/repetition_guard.py": [],
-  "domains/reply/status_text.py": [
-    "clock"
-  ],
-  "domains/reply/tone.py": [
-    "amo_observability"
-  ],
-  "domains/schedule/__init__.py": [],
-  "domains/schedule/day_segments.py": [],
-  "domains/schedule/day_types.py": [],
-  "domains/schedule/health.py": [
-    "clock"
-  ],
-  "domains/schedule/jit_plan.py": [],
-  "domains/schedule/place.py": [],
-  "domains/schedule/plan_text.py": [],
-  "domains/schedule/rest_segments.py": [],
-  "domains/schedule/scenic.py": [],
-  "domains/schedule/segments.py": [],
-  "domains/schedule/social_segments.py": [],
-  "domains/schedule/subject.py": [],
-  "domains/schedule/swim.py": [],
-  "done_action_guard.py": [],
-  "draw_engine.py": [
-    "amo_household",
-    "amo_image_common",
-    "amo_media",
-    "amo_message",
-    "amo_observability",
-    "amo_photo_intent",
-    "amo_shared",
-    "clock",
-    "observability",
-    "photo_plan",
-    "photo_prompt",
-    "photo_scene",
-    "photo_view",
-    "pose_library"
-  ],
-  "ecommerce_engine.py": [
-    "clock",
-    "housing",
-    "outfit_refs"
-  ],
-  "errors.py": [],
-  "gift_engine.py": [
-    "amo_fileio",
-    "amo_json_schema",
-    "amo_observability",
-    "clock",
-    "housing"
-  ],
-  "greet_route.py": [
-    "amo_observability"
-  ],
-  "group_scene.py": [
-    "amo_prompt_registry",
-    "clock"
-  ],
-  "heartflow_engine.py": [
-    "amo_group_guard",
-    "amo_observability",
-    "clock",
-    "heartflow_events",
-    "heartflow_model",
-    "heartflow_state",
-    "heartflow_text"
-  ],
-  "heartflow_events.py": [
-    "amo_group_guard",
-    "amo_observability",
-    "clock",
-    "heartflow_model",
-    "heartflow_typing"
-  ],
-  "heartflow_model.py": [
-    "amo_observability"
-  ],
-  "heartflow_state.py": [
-    "amo_group_guard",
-    "amo_observability",
-    "clock",
-    "heartflow_model",
-    "heartflow_typing"
-  ],
-  "heartflow_text.py": [
-    "amo_group_guard",
-    "amo_observability",
-    "clock",
-    "heartflow_model",
-    "heartflow_typing"
-  ],
-  "heartflow_typing.py": [
-    "amo_group_guard",
-    "heartflow_model"
-  ],
-  "home_refs.py": [
-    "amo_image_common",
-    "housing",
-    "outfit_refs"
-  ],
-  "housing.py": [
-    "amo_shared",
-    "clock"
-  ],
-  "infra/__init__.py": [],
-  "infra/config/__init__.py": [],
-  "laundry_engine.py": [
-    "clock"
-  ],
-  "main.py": [
-    "amo_bootstrap",
-    "amo_compat",
-    "amo_db_schema",
-    "amo_image_common",
-    "amo_jobs",
-    "amo_prompt_registry",
-    "amo_readiness",
-    "amo_runtime",
-    "amo_schedule_tools",
-    "amo_shared",
-    "amo_shared_activity",
-    "amo_tts_guard",
-    "clock",
-    "draw_engine",
-    "laundry_engine",
-    "observability",
-    "pose_library"
-  ],
-  "memory_hooks.py": [
-    "amo_compat",
-    "amo_observability",
-    "clock"
-  ],
-  "micro_events.py": [
-    "amo_fact_binder",
-    "amo_food_cost",
-    "amo_scene_ledger",
-    "amo_shared",
-    "amo_state_context",
-    "amo_state_snapshot",
-    "amo_state_store",
-    "clock"
-  ],
-  "milestone.py": [
-    "amo_immersion_guard"
-  ],
-  "models/__init__.py": [],
-  "models/database.py": [],
-  "models/schema.py": [
-    "clock"
-  ],
-  "observability.py": [],
-  "outfit_refs.py": [
-    "amo_image_common",
-    "wardrobe"
-  ],
-  "photo_data.py": [
-    "photo_room"
-  ],
-  "photo_engine.py": [
-    "amo_image_common",
-    "amo_media",
-    "amo_observability",
-    "amo_shared",
-    "clock",
-    "domains",
-    "outfit_refs",
-    "photo_data",
-    "photo_generate",
-    "photo_plan",
-    "photo_prompt",
-    "photo_scene",
-    "photo_share",
-    "photo_view",
-    "pose_library"
-  ],
-  "photo_generate.py": [
-    "amo_image_common",
-    "amo_observability",
-    "outfit_refs",
-    "photo_data",
-    "photo_plan",
-    "photo_view"
-  ],
-  "photo_plan.py": [
-    "photo_rules"
-  ],
-  "photo_prompt.py": [
-    "amo_fact_timeline",
-    "amo_image_common",
-    "amo_observability",
-    "amo_scene_ledger",
-    "amo_shared",
-    "clock",
-    "photo_data",
-    "photo_plan",
-    "photo_room",
-    "photo_scene",
-    "photo_view",
-    "pose_library"
-  ],
-  "photo_room.py": [
-    "housing"
-  ],
-  "photo_rules.py": [
-    "amo_place",
-    "infra",
-    "photo_plan"
-  ],
-  "photo_scene.py": [
-    "photo_rules"
-  ],
-  "photo_share.py": [
-    "amo_image_common",
-    "amo_media",
-    "amo_message",
-    "amo_observability",
-    "amo_presence",
-    "amo_scene_ledger",
-    "amo_shared",
-    "domains",
-    "infra",
-    "photo_plan",
-    "photo_prompt",
-    "photo_room",
-    "photo_scene",
-    "photo_view"
-  ],
-  "photo_view.py": [
-    "domains"
-  ],
-  "place_guard.py": [
-    "photo_scene"
-  ],
-  "pose_library.py": [
-    "amo_fileio",
-    "amo_image_common",
-    "clock",
-    "outfit_refs"
-  ],
-  "price_book.py": [
-    "domains"
-  ],
-  "proactive_guard.py": [
-    "amo_numbers",
-    "amo_observability",
-    "clock"
-  ],
-  "refusal.py": [
-    "domains"
-  ],
-  "relation_graph.py": [],
-  "relation_learn.py": [],
-  "relation_sediment.py": [],
-  "reply_fact_guard.py": [
-    "amo_memory_ledger",
-    "clock",
-    "photo_scene",
-    "place_guard"
-  ],
-  "schedule_banks.py": [],
-  "schedule_change.py": [
-    "amo_numbers",
-    "photo_rules",
-    "schedule_slots"
-  ],
-  "schedule_day_segments.py": [
-    "domains"
-  ],
-  "schedule_diary.py": [
-    "amo_diary_guard",
-    "amo_household",
-    "amo_immersion_guard",
-    "amo_location_rules",
-    "amo_person_ref",
-    "schedule_plan"
-  ],
-  "schedule_engine.py": [
-    "schedule_diary",
-    "schedule_plan",
-    "schedule_skeleton",
-    "schedule_slots"
-  ],
-  "schedule_holiday.py": [
-    "amo_observability"
-  ],
-  "schedule_plan.py": [
-    "amo_numbers",
-    "amo_observability",
-    "clock",
-    "domains",
-    "schedule_banks",
-    "schedule_day_segments",
-    "schedule_holiday",
-    "schedule_rest_segments",
-    "schedule_scenic",
-    "schedule_segments",
-    "schedule_social_segments",
-    "schedule_swim"
-  ],
-  "schedule_rest_segments.py": [
-    "domains"
-  ],
-  "schedule_scenic.py": [
-    "domains"
-  ],
-  "schedule_segments.py": [
-    "domains"
-  ],
-  "schedule_skeleton.py": [
-    "amo_schedule_blocks",
-    "schedule_plan"
-  ],
-  "schedule_slots.py": [
-    "schedule_plan"
-  ],
-  "schedule_social_segments.py": [
-    "domains"
-  ],
-  "schedule_subject.py": [
-    "domains"
-  ],
-  "schedule_swim.py": [
-    "domains"
-  ],
-  "segment_engine.py": [
-    "amo_message",
-    "amo_observability",
-    "amo_outbound",
-    "amo_persona_guard",
-    "amo_state_consistency"
-  ],
-  "services/__init__.py": [],
-  "services/health_engine.py": [
-    "clock"
-  ],
-  "services/life_state.py": [
-    "amo_current_action",
-    "amo_date_session",
-    "amo_fact_timeline",
-    "amo_media",
-    "amo_presence",
-    "clock",
-    "services"
-  ],
-  "services/metrics.py": [
-    "amo_media",
-    "clock"
-  ],
-  "short_reply.py": [
-    "amo_prompt_registry"
-  ],
-  "social_learn_engine.py": [
-    "amo_state_snapshot",
-    "clock"
-  ],
-  "time_recall.py": [],
-  "tone_guard.py": [
-    "amo_shared"
-  ],
-  "tools/check_mypy_baseline.py": [],
-  "tools/check_version.py": [],
-  "tools/cleanup_temp.py": [],
-  "tools/make_manifest.py": [],
-  "tools/mypy_check.py": [],
-  "tools/mypy_strict.py": [],
-  "tools/pack_release.py": [],
-  "tools/quality_gate.py": [
-    "amo_route_table"
-  ],
-  "tools/redact_prod_logs.py": [],
-  "tools/release_check.py": [],
-  "tools/restore_db_backup.py": [],
-  "tools/rollback.py": [],
-  "wander.py": [
-    "amo_observability"
-  ],
-  "wardrobe.py": [
-    "wardrobe_daily",
-    "wardrobe_data",
-    "wardrobe_queries",
-    "wardrobe_seed"
-  ],
-  "wardrobe_daily.py": [
-    "wardrobe_data",
-    "wardrobe_queries"
-  ],
-  "wardrobe_data.py": [
-    "amo_fileio",
-    "amo_observability",
-    "amo_shared",
-    "clock",
-    "outfit_refs"
-  ],
-  "wardrobe_queries.py": [
-    "outfit_refs",
-    "wardrobe_data"
-  ],
-  "wardrobe_seed.py": [
-    "amo_compat",
-    "wardrobe_data"
-  ],
-  "weather_alert.py": []
+ "__init__.py": [],
+ "amo_addressee_guard.py": [
+  "amo_names"
+ ],
+ "amo_anti_nag.py": [],
+ "amo_api.py": [
+  "amo_api_diary",
+  "amo_api_persona",
+  "amo_api_photo",
+  "amo_api_schedule",
+  "amo_api_trip",
+  "amo_api_wardrobe",
+  "amo_compat",
+  "amo_observability",
+  "amo_route_table",
+  "amo_schedule",
+  "amo_shared",
+  "amo_types",
+  "ecommerce_engine",
+  "observability",
+  "pose_library"
+ ],
+ "amo_api_diary.py": [
+  "amo_diary_audit",
+  "amo_diary_guard",
+  "amo_observability",
+  "amo_schedule",
+  "amo_shared",
+  "amo_state_diary",
+  "amo_types"
+ ],
+ "amo_api_persona.py": [
+  "amo_persona_pack",
+  "amo_persona_store"
+ ],
+ "amo_api_photo.py": [
+  "amo_shared",
+  "amo_types"
+ ],
+ "amo_api_schedule.py": [
+  "amo_fact_timeline",
+  "amo_human_state",
+  "amo_observability",
+  "amo_shared",
+  "amo_state_common",
+  "amo_state_snapshot",
+  "amo_timeline",
+  "amo_transition",
+  "amo_types",
+  "clock",
+  "schedule_engine"
+ ],
+ "amo_api_trip.py": [
+  "amo_observability",
+  "amo_shared",
+  "amo_trip",
+  "amo_types"
+ ],
+ "amo_api_wardrobe.py": [
+  "amo_shared",
+  "amo_types",
+  "outfit_refs",
+  "pose_library"
+ ],
+ "amo_bootstrap.py": [
+  "amo_api",
+  "amo_commands",
+  "amo_config",
+  "amo_db",
+  "amo_events",
+  "amo_feature_api",
+  "amo_handshake",
+  "amo_human_state",
+  "amo_hunger",
+  "amo_init",
+  "amo_kb",
+  "amo_lifecycle",
+  "amo_llm",
+  "amo_llm_service",
+  "amo_memory",
+  "amo_message",
+  "amo_observability",
+  "amo_proactive",
+  "amo_reply_gate",
+  "amo_routes",
+  "amo_runtime",
+  "amo_schedule",
+  "amo_shared",
+  "amo_social",
+  "amo_social_bridge",
+  "amo_travel",
+  "amo_usage",
+  "amo_wallet",
+  "clock",
+  "draw_engine",
+  "housing",
+  "micro_events",
+  "photo_engine",
+  "pose_library",
+  "social_learn_engine",
+  "wardrobe"
+ ],
+ "amo_city_index.py": [
+  "amo_observability"
+ ],
+ "amo_closet_image.py": [
+  "outfit_refs"
+ ],
+ "amo_commands.py": [
+  "amo_diary_audit",
+  "amo_household",
+  "amo_message",
+  "amo_observability",
+  "amo_persona_store",
+  "amo_scope",
+  "amo_shared",
+  "amo_state_snapshot",
+  "amo_trip",
+  "amo_trip_cost",
+  "amo_types",
+  "clock",
+  "schedule_change"
+ ],
+ "amo_companion_guard.py": [],
+ "amo_compat.py": [],
+ "amo_config.py": [
+  "amo_compat",
+  "amo_config_model",
+  "amo_observability",
+  "amo_shared",
+  "amo_types"
+ ],
+ "amo_config_model.py": [],
+ "amo_current_action.py": [
+  "amo_scene_ledger",
+  "amo_state_store",
+  "clock",
+  "photo_rules"
+ ],
+ "amo_date_context.py": [
+  "amo_date_session",
+  "amo_household",
+  "amo_prompt_registry",
+  "amo_scene_ledger",
+  "amo_state_store",
+  "clock"
+ ],
+ "amo_date_facts.py": [
+  "amo_date_session",
+  "amo_household",
+  "amo_numbers"
+ ],
+ "amo_date_session.py": [
+  "amo_numbers",
+  "amo_shared"
+ ],
+ "amo_db.py": [
+  "amo_compat",
+  "amo_db_schema",
+  "amo_diary_guard",
+  "amo_observability",
+  "amo_shared",
+  "amo_state_common"
+ ],
+ "amo_db_schema.py": [
+  "amo_shared",
+  "amo_timeline"
+ ],
+ "amo_diary_audit.py": [
+  "amo_location_rules",
+  "amo_observability",
+  "amo_schedule",
+  "amo_shared",
+  "amo_state_common"
+ ],
+ "amo_diary_guard.py": [
+  "amo_fact_timeline",
+  "amo_household",
+  "amo_immersion_guard",
+  "amo_numbers",
+  "amo_shared_config",
+  "clock",
+  "photo_scene",
+  "reply_fact_guard"
+ ],
+ "amo_episodic.py": [],
+ "amo_events.py": [],
+ "amo_fact_binder.py": [
+  "amo_current_action",
+  "amo_diary_guard",
+  "amo_fact_timeline",
+  "clock"
+ ],
+ "amo_fact_pool.py": [
+  "amo_diary_guard",
+  "amo_fact_timeline",
+  "amo_immersion_guard",
+  "amo_location_rules"
+ ],
+ "amo_fact_timeline.py": [
+  "amo_date_facts",
+  "amo_diary_guard",
+  "amo_fact_pool",
+  "amo_household",
+  "amo_location_rules",
+  "amo_numbers",
+  "amo_timeline",
+  "clock"
+ ],
+ "amo_feature_api.py": [
+  "amo_api_persona",
+  "amo_closet_image",
+  "amo_current_action",
+  "amo_date_session",
+  "amo_episodic",
+  "amo_food_event",
+  "amo_names",
+  "amo_persona_pack",
+  "amo_persona_store",
+  "amo_presence",
+  "amo_scene_ledger",
+  "amo_shared",
+  "amo_shared_time",
+  "amo_state_store",
+  "clock",
+  "outfit_refs"
+ ],
+ "amo_fileio.py": [],
+ "amo_food_audit.py": [],
+ "amo_food_cost.py": [
+  "amo_timeline",
+  "clock",
+  "domains",
+  "price_book"
+ ],
+ "amo_food_event.py": [
+  "amo_food_cost",
+  "clock"
+ ],
+ "amo_grounding_critic.py": [
+  "domains"
+ ],
+ "amo_group_guard.py": [
+  "clock"
+ ],
+ "amo_handshake.py": [
+  "amo_compat",
+  "amo_observability",
+  "amo_shared"
+ ],
+ "amo_household.py": [
+  "amo_current_action",
+  "amo_date_session",
+  "amo_person_ref",
+  "amo_shared",
+  "amo_shared_time",
+  "photo_rules"
+ ],
+ "amo_human_state.py": [
+  "amo_city_index",
+  "amo_current_action",
+  "amo_events",
+  "amo_household",
+  "amo_late_night",
+  "amo_observability",
+  "amo_shared",
+  "amo_sick_decision",
+  "amo_state_common",
+  "amo_state_date",
+  "amo_state_diary",
+  "amo_state_jit",
+  "amo_state_schedule",
+  "amo_state_store",
+  "amo_state_todo",
+  "day_types",
+  "photo_rules",
+  "schedule_subject",
+  "services"
+ ],
+ "amo_hunger.py": [
+  "amo_shared"
+ ],
+ "amo_idem.py": [],
+ "amo_image_common.py": [
+  "amo_compat",
+  "amo_observability",
+  "amo_place"
+ ],
+ "amo_immersion_guard.py": [
+  "amo_names",
+  "clock"
+ ],
+ "amo_init.py": [
+  "amo_db",
+  "amo_events",
+  "amo_jobs",
+  "amo_llm_service",
+  "amo_observability",
+  "amo_reply_gate",
+  "amo_shared",
+  "amo_wallet",
+  "clock",
+  "draw_engine",
+  "housing",
+  "micro_events",
+  "photo_engine",
+  "pose_library",
+  "social_learn_engine",
+  "wardrobe"
+ ],
+ "amo_jobs.py": [],
+ "amo_json_schema.py": [
+  "amo_fileio"
+ ],
+ "amo_kb.py": [
+  "amo_observability",
+  "amo_shared",
+  "amo_types"
+ ],
+ "amo_late_night.py": [
+  "amo_shared",
+  "clock"
+ ],
+ "amo_lifecycle.py": [
+  "amo_observability",
+  "amo_schedule_tools",
+  "amo_shared",
+  "amo_state_store",
+  "draw_engine",
+  "ecommerce_engine",
+  "housing",
+  "laundry_engine"
+ ],
+ "amo_llm.py": [
+  "amo_date_context",
+  "amo_fact_binder",
+  "amo_household",
+  "amo_immersion_guard",
+  "amo_message",
+  "amo_observability",
+  "amo_persona_guard",
+  "amo_persona_pack",
+  "amo_persona_store",
+  "amo_prompt_registry",
+  "amo_reply_pipeline",
+  "amo_shared",
+  "amo_state_snapshot",
+  "amo_types",
+  "amo_understanding",
+  "clock",
+  "date_state",
+  "group_scene",
+  "refusal",
+  "short_reply"
+ ],
+ "amo_llm_service.py": [
+  "amo_date_context",
+  "amo_grounding_critic",
+  "amo_household",
+  "amo_immersion_guard",
+  "amo_names",
+  "amo_observability",
+  "amo_persona_guard",
+  "amo_persona_store",
+  "amo_prompt_registry",
+  "amo_shared",
+  "amo_state_snapshot",
+  "amo_understanding",
+  "amo_voice_guard",
+  "done_action_guard",
+  "place_guard"
+ ],
+ "amo_location_rules.py": [],
+ "amo_marriage_guard.py": [],
+ "amo_media.py": [
+  "amo_image_common",
+  "amo_message",
+  "amo_observability",
+  "amo_presence",
+  "amo_scene_ledger",
+  "clock",
+  "domains",
+  "photo_share"
+ ],
+ "amo_memory.py": [
+  "amo_memory_bridge",
+  "amo_memory_context",
+  "amo_memory_data"
+ ],
+ "amo_memory_bridge.py": [
+  "amo_memory_ledger",
+  "amo_observability",
+  "amo_scene_ledger",
+  "amo_shared",
+  "amo_state_context",
+  "amo_state_snapshot",
+  "amo_types"
+ ],
+ "amo_memory_context.py": [
+  "amo_immersion_guard",
+  "amo_memory_ledger",
+  "amo_memory_rerank_mixin",
+  "amo_message",
+  "amo_observability",
+  "amo_shared",
+  "amo_types",
+  "clock"
+ ],
+ "amo_memory_data.py": [
+  "amo_observability",
+  "amo_shared",
+  "amo_types",
+  "errors",
+  "observability"
+ ],
+ "amo_memory_ledger.py": [],
+ "amo_memory_rerank.py": [],
+ "amo_memory_rerank_mixin.py": [
+  "amo_memory_rerank",
+  "amo_shared"
+ ],
+ "amo_message.py": [
+  "amo_addressee_guard",
+  "amo_anti_nag",
+  "amo_fact_binder",
+  "amo_names",
+  "amo_observability",
+  "amo_outbound",
+  "amo_outbound_guard",
+  "amo_persona_guard",
+  "amo_purchase_guard",
+  "amo_reply_pipeline",
+  "amo_scene_ledger",
+  "amo_shared",
+  "amo_state_consistency",
+  "amo_state_snapshot",
+  "amo_types",
+  "clock",
+  "place_guard"
+ ],
+ "amo_names.py": [],
+ "amo_numbers.py": [
+  "domains"
+ ],
+ "amo_observability.py": [],
+ "amo_outbound.py": [
+  "amo_addressee_guard",
+  "amo_message",
+  "amo_persona_guard",
+  "amo_presence",
+  "clock"
+ ],
+ "amo_outbound_guard.py": [],
+ "amo_person_ref.py": [],
+ "amo_persona_guard.py": [
+  "amo_addressee_guard",
+  "amo_anti_nag",
+  "amo_memory_ledger",
+  "amo_message",
+  "amo_names",
+  "amo_purchase_guard",
+  "amo_reply_pipeline",
+  "amo_shared_text",
+  "domains"
+ ],
+ "amo_persona_pack.py": [],
+ "amo_persona_store.py": [
+  "amo_persona_pack",
+  "clock"
+ ],
+ "amo_photo_intent.py": [],
+ "amo_place.py": [
+  "domains"
+ ],
+ "amo_ports.py": [],
+ "amo_presence.py": [
+  "amo_scene_ledger",
+  "clock",
+  "photo_rules",
+  "photo_scene"
+ ],
+ "amo_proactive.py": [
+  "amo_companion_guard",
+  "amo_date_session",
+  "amo_marriage_guard",
+  "amo_names",
+  "amo_observability",
+  "amo_outbound",
+  "amo_persona_store",
+  "amo_presence",
+  "amo_proactive_gate",
+  "amo_purchase_guard",
+  "amo_reply_pipeline",
+  "amo_rest",
+  "amo_scene_ledger",
+  "amo_share_ledger",
+  "amo_shared",
+  "amo_state_consistency",
+  "amo_state_snapshot",
+  "amo_types",
+  "amo_voice_guard",
+  "group_scene",
+  "infra",
+  "observability"
+ ],
+ "amo_proactive_gate.py": [],
+ "amo_prompt_registry.py": [
+  "amo_immersion_guard",
+  "amo_persona_guard",
+  "amo_transit"
+ ],
+ "amo_purchase_guard.py": [
+  "clock"
+ ],
+ "amo_question_guard.py": [
+  "domains"
+ ],
+ "amo_readiness.py": [
+  "amo_bootstrap",
+  "amo_compat",
+  "amo_image_common"
+ ],
+ "amo_repetition_guard.py": [
+  "domains"
+ ],
+ "amo_reply_gate.py": [
+  "amo_observability",
+  "amo_shared"
+ ],
+ "amo_reply_pipeline.py": [
+  "amo_anti_nag",
+  "amo_companion_guard",
+  "amo_date_context",
+  "amo_diary_guard",
+  "amo_grounding_critic",
+  "amo_immersion_guard",
+  "amo_marriage_guard",
+  "amo_message",
+  "amo_names",
+  "amo_observability",
+  "amo_persona_guard",
+  "amo_persona_store",
+  "amo_purchase_guard",
+  "amo_question_guard",
+  "amo_repetition_guard",
+  "amo_rewrite_safety",
+  "amo_role_guard",
+  "amo_share_ledger",
+  "amo_shared",
+  "amo_shared_text",
+  "amo_state_consistency",
+  "amo_tone_pick",
+  "amo_transit",
+  "amo_transition",
+  "amo_voice_guard",
+  "brushoff",
+  "date_state",
+  "domains",
+  "done_action_guard",
+  "group_scene",
+  "photo_view",
+  "refusal",
+  "reply_fact_guard",
+  "short_reply",
+  "tone_guard"
+ ],
+ "amo_rest.py": [
+  "clock"
+ ],
+ "amo_retention.py": [
+  "amo_shared",
+  "amo_state_store"
+ ],
+ "amo_rewrite_safety.py": [
+  "amo_persona_guard",
+  "amo_reply_pipeline",
+  "amo_state_consistency",
+  "amo_state_snapshot",
+  "clock",
+  "domains"
+ ],
+ "amo_role_guard.py": [],
+ "amo_route_table.py": [],
+ "amo_routes.py": [
+  "amo_observability",
+  "amo_shared"
+ ],
+ "amo_runtime.py": [
+  "amo_runtime_context",
+  "amo_runtime_reply",
+  "amo_runtime_tick",
+  "amo_shared"
+ ],
+ "amo_runtime_context.py": [
+  "amo_current_action",
+  "amo_date_context",
+  "amo_date_session",
+  "amo_episodic",
+  "amo_fact_binder",
+  "amo_household",
+  "amo_observability",
+  "amo_prompt_registry",
+  "amo_runtime_ports",
+  "amo_scene_ledger",
+  "amo_share_ledger",
+  "amo_shared",
+  "amo_state_snapshot",
+  "amo_state_store",
+  "amo_transition",
+  "amo_trip",
+  "date_state",
+  "ecommerce_engine",
+  "group_scene",
+  "laundry_engine",
+  "place_guard",
+  "wardrobe"
+ ],
+ "amo_runtime_ports.py": [
+  "amo_types"
+ ],
+ "amo_runtime_reply.py": [
+  "amo_date_context",
+  "amo_diary_guard",
+  "amo_media",
+  "amo_message",
+  "amo_observability",
+  "amo_reply_pipeline",
+  "amo_rewrite_safety",
+  "amo_runtime_ports",
+  "amo_share_ledger",
+  "amo_shared",
+  "amo_shared_text",
+  "amo_state_snapshot",
+  "amo_transit",
+  "amo_voice",
+  "domains"
+ ],
+ "amo_runtime_tick.py": [
+  "amo_diary_audit",
+  "amo_diary_guard",
+  "amo_observability",
+  "amo_retention",
+  "amo_runtime_ports",
+  "amo_shared",
+  "amo_transition",
+  "ecommerce_engine",
+  "home_refs",
+  "laundry_engine",
+  "observability",
+  "pose_library"
+ ],
+ "amo_scene_ledger.py": [
+  "amo_date_session",
+  "amo_observability",
+  "amo_state_snapshot",
+  "clock",
+  "photo_scene"
+ ],
+ "amo_schedule.py": [
+  "amo_diary_guard",
+  "amo_episodic",
+  "amo_fact_pool",
+  "amo_household",
+  "amo_human_state",
+  "amo_location_rules",
+  "amo_marriage_guard",
+  "amo_observability",
+  "amo_person_ref",
+  "amo_scope",
+  "amo_shared",
+  "amo_shared_time",
+  "amo_state_common",
+  "amo_state_diary",
+  "amo_state_snapshot",
+  "amo_timeline",
+  "amo_types",
+  "clock",
+  "diary_engine",
+  "schedule_change",
+  "schedule_content"
+ ],
+ "amo_schedule_blocks.py": [],
+ "amo_schedule_health.py": [
+  "domains"
+ ],
+ "amo_schedule_tools.py": [
+  "amo_shared",
+  "amo_trip"
+ ],
+ "amo_scope.py": [],
+ "amo_share_ledger.py": [
+  "clock"
+ ],
+ "amo_shared.py": [
+  "amo_shared_config",
+  "amo_shared_deps",
+  "amo_shared_text",
+  "amo_shared_time",
+  "amo_shared_usage"
+ ],
+ "amo_shared_activity.py": [
+  "amo_current_action",
+  "amo_observability",
+  "clock"
+ ],
+ "amo_shared_config.py": [
+  "amo_shared_deps",
+  "amo_trip",
+  "schedule_engine"
+ ],
+ "amo_shared_deps.py": [
+  "amo_numbers",
+  "amo_observability",
+  "attribution",
+  "brushoff",
+  "city_follow",
+  "clock",
+  "diary_engine",
+  "diary_lines",
+  "gift_engine",
+  "greet_route",
+  "heartflow_engine",
+  "memory_hooks",
+  "milestone",
+  "proactive_guard",
+  "relation_graph",
+  "relation_learn",
+  "relation_sediment",
+  "schedule_engine",
+  "segment_engine",
+  "time_recall",
+  "wander",
+  "weather_alert"
+ ],
+ "amo_shared_text.py": [
+  "amo_shared_deps"
+ ],
+ "amo_shared_time.py": [
+  "amo_shared_deps"
+ ],
+ "amo_shared_usage.py": [
+  "amo_shared_deps",
+  "amo_shared_time",
+  "amo_state_store"
+ ],
+ "amo_sick_decision.py": [
+  "amo_immersion_guard"
+ ],
+ "amo_social.py": [
+  "amo_observability",
+  "amo_rest",
+  "amo_shared",
+  "amo_types",
+  "clock",
+  "errors",
+  "observability"
+ ],
+ "amo_social_bridge.py": [
+  "amo_observability"
+ ],
+ "amo_state_common.py": [
+  "amo_human_state",
+  "amo_immersion_guard",
+  "amo_observability",
+  "amo_place",
+  "amo_scene_ledger",
+  "amo_shared",
+  "amo_timeline",
+  "photo_rules"
+ ],
+ "amo_state_consistency.py": [
+  "amo_addressee_guard",
+  "amo_message",
+  "amo_reply_pipeline",
+  "amo_scene_ledger",
+  "amo_share_ledger",
+  "domains"
+ ],
+ "amo_state_context.py": [
+  "amo_diary_guard",
+  "amo_state_snapshot"
+ ],
+ "amo_state_date.py": [
+  "amo_date_session",
+  "amo_observability",
+  "amo_shared",
+  "amo_state_common",
+  "amo_state_store",
+  "amo_types"
+ ],
+ "amo_state_diary.py": [
+  "amo_diary_guard",
+  "amo_fact_pool",
+  "amo_fact_timeline",
+  "amo_location_rules",
+  "amo_observability",
+  "amo_person_ref",
+  "amo_shared",
+  "amo_state_common",
+  "amo_timeline",
+  "amo_transit",
+  "amo_types",
+  "photo_rules"
+ ],
+ "amo_state_jit.py": [
+  "amo_date_session",
+  "amo_food_cost",
+  "amo_observability",
+  "amo_scene_ledger",
+  "amo_shared",
+  "amo_state_common",
+  "amo_state_store",
+  "amo_timeline",
+  "amo_trip",
+  "amo_types",
+  "schedule_engine"
+ ],
+ "amo_state_schedule.py": [
+  "amo_diary_guard",
+  "amo_events",
+  "amo_household",
+  "amo_observability",
+  "amo_person_ref",
+  "amo_scene_ledger",
+  "amo_schedule_health",
+  "amo_shared",
+  "amo_state_common",
+  "amo_timeline",
+  "amo_transit",
+  "amo_transition",
+  "amo_trip",
+  "amo_types",
+  "day_types",
+  "schedule_content",
+  "schedule_engine_v2",
+  "schedule_observer",
+  "schedule_slots",
+  "schedule_social_a1"
+ ],
+ "amo_state_snapshot.py": [
+  "amo_scene_ledger",
+  "amo_shared",
+  "clock",
+  "photo_scene"
+ ],
+ "amo_state_store.py": [
+  "clock"
+ ],
+ "amo_state_todo.py": [
+  "amo_food_cost",
+  "amo_observability",
+  "amo_shared",
+  "amo_state_common",
+  "amo_types",
+  "day_types"
+ ],
+ "amo_timeline.py": [
+  "amo_numbers",
+  "amo_observability",
+  "photo_rules"
+ ],
+ "amo_tone_pick.py": [
+  "amo_reply_pipeline",
+  "amo_shared",
+  "reply_fact_guard"
+ ],
+ "amo_transit.py": [
+  "amo_transition"
+ ],
+ "amo_transition.py": [
+  "amo_numbers",
+  "amo_place",
+  "amo_scene_ledger",
+  "amo_timeline",
+  "amo_trip",
+  "clock",
+  "schedule_slots"
+ ],
+ "amo_travel.py": [
+  "amo_city_index",
+  "amo_date_session",
+  "amo_observability",
+  "amo_shared",
+  "amo_types"
+ ],
+ "amo_trip.py": [
+  "amo_trip_cost",
+  "amo_trip_report",
+  "amo_trip_schedule",
+  "amo_trip_state"
+ ],
+ "amo_trip_cost.py": [
+  "amo_numbers",
+  "amo_shared",
+  "amo_trip_state",
+  "price_book"
+ ],
+ "amo_trip_report.py": [
+  "amo_trip_cost",
+  "amo_trip_schedule",
+  "amo_trip_state"
+ ],
+ "amo_trip_schedule.py": [
+  "amo_trip_cost",
+  "amo_trip_state",
+  "clock"
+ ],
+ "amo_trip_state.py": [
+  "amo_city_index",
+  "clock"
+ ],
+ "amo_tts_guard.py": [
+  "amo_voice",
+  "clock"
+ ],
+ "amo_types.py": [],
+ "amo_understanding.py": [],
+ "amo_usage.py": [
+  "amo_observability",
+  "amo_shared",
+  "amo_types",
+  "clock"
+ ],
+ "amo_voice.py": [],
+ "amo_voice_guard.py": [],
+ "amo_wallet.py": [
+  "clock"
+ ],
+ "attribution.py": [],
+ "brushoff.py": [
+  "domains"
+ ],
+ "city_follow.py": [
+  "amo_city_index",
+  "amo_observability"
+ ],
+ "clock.py": [
+  "amo_observability"
+ ],
+ "compat.py": [],
+ "date_state.py": [
+  "amo_scene_ledger",
+  "clock"
+ ],
+ "day_types.py": [
+  "domains"
+ ],
+ "diary_engine.py": [
+  "amo_immersion_guard",
+  "amo_location_rules",
+  "diary_lines",
+  "domains"
+ ],
+ "diary_lines.py": [
+  "domains"
+ ],
+ "domains/__init__.py": [],
+ "domains/diary/__init__.py": [],
+ "domains/diary/engine.py": [],
+ "domains/diary/lines.py": [],
+ "domains/finance/__init__.py": [],
+ "domains/finance/price_book.py": [
+  "clock"
+ ],
+ "domains/kernel/__init__.py": [],
+ "domains/kernel/numbers.py": [
+  "amo_observability"
+ ],
+ "domains/memory/__init__.py": [],
+ "domains/photo/__init__.py": [],
+ "domains/photo/cache.py": [],
+ "domains/photo/failure_text.py": [],
+ "domains/photo/room_ab.py": [],
+ "domains/photo/share_fallback.py": [],
+ "domains/photo/share_window.py": [],
+ "domains/photo/view.py": [],
+ "domains/reply/__init__.py": [],
+ "domains/reply/brushoff.py": [],
+ "domains/reply/frame.py": [],
+ "domains/reply/refusal.py": [],
+ "domains/reply/repetition_guard.py": [],
+ "domains/reply/status_text.py": [
+  "clock"
+ ],
+ "domains/reply/tone.py": [
+  "amo_observability"
+ ],
+ "domains/schedule/__init__.py": [],
+ "domains/schedule/day_segments.py": [],
+ "domains/schedule/day_types.py": [],
+ "domains/schedule/health.py": [
+  "clock"
+ ],
+ "domains/schedule/jit_plan.py": [],
+ "domains/schedule/place.py": [],
+ "domains/schedule/plan_text.py": [],
+ "domains/schedule/rest_segments.py": [],
+ "domains/schedule/scenic.py": [],
+ "domains/schedule/segments.py": [],
+ "domains/schedule/social_segments.py": [],
+ "domains/schedule/subject.py": [],
+ "domains/schedule/swim.py": [],
+ "done_action_guard.py": [],
+ "draw_engine.py": [
+  "amo_household",
+  "amo_image_common",
+  "amo_media",
+  "amo_message",
+  "amo_observability",
+  "amo_photo_intent",
+  "amo_shared",
+  "clock",
+  "observability",
+  "photo_plan",
+  "photo_prompt",
+  "photo_scene",
+  "photo_view",
+  "pose_library"
+ ],
+ "ecommerce_engine.py": [
+  "clock",
+  "housing",
+  "outfit_refs"
+ ],
+ "errors.py": [],
+ "gift_engine.py": [
+  "amo_fileio",
+  "amo_json_schema",
+  "amo_observability",
+  "clock",
+  "housing"
+ ],
+ "greet_route.py": [
+  "amo_observability"
+ ],
+ "group_scene.py": [
+  "amo_prompt_registry",
+  "clock"
+ ],
+ "heartflow_engine.py": [
+  "amo_group_guard",
+  "amo_observability",
+  "clock",
+  "heartflow_events",
+  "heartflow_model",
+  "heartflow_state",
+  "heartflow_text"
+ ],
+ "heartflow_events.py": [
+  "amo_group_guard",
+  "amo_observability",
+  "clock",
+  "heartflow_model",
+  "heartflow_typing"
+ ],
+ "heartflow_model.py": [
+  "amo_observability"
+ ],
+ "heartflow_state.py": [
+  "amo_group_guard",
+  "amo_observability",
+  "clock",
+  "heartflow_model",
+  "heartflow_typing"
+ ],
+ "heartflow_text.py": [
+  "amo_group_guard",
+  "amo_observability",
+  "clock",
+  "heartflow_model",
+  "heartflow_typing"
+ ],
+ "heartflow_typing.py": [
+  "amo_group_guard",
+  "heartflow_model"
+ ],
+ "home_refs.py": [
+  "amo_image_common",
+  "housing",
+  "outfit_refs"
+ ],
+ "housing.py": [
+  "amo_shared",
+  "clock"
+ ],
+ "infra/__init__.py": [],
+ "infra/config/__init__.py": [],
+ "laundry_engine.py": [
+  "clock"
+ ],
+ "main.py": [
+  "amo_bootstrap",
+  "amo_compat",
+  "amo_db_schema",
+  "amo_image_common",
+  "amo_jobs",
+  "amo_prompt_registry",
+  "amo_readiness",
+  "amo_runtime",
+  "amo_schedule_tools",
+  "amo_shared",
+  "amo_shared_activity",
+  "amo_tts_guard",
+  "clock",
+  "draw_engine",
+  "laundry_engine",
+  "observability",
+  "pose_library"
+ ],
+ "memory_hooks.py": [
+  "amo_compat",
+  "amo_observability",
+  "clock"
+ ],
+ "micro_events.py": [
+  "amo_fact_binder",
+  "amo_food_cost",
+  "amo_scene_ledger",
+  "amo_shared",
+  "amo_state_context",
+  "amo_state_snapshot",
+  "amo_state_store",
+  "clock"
+ ],
+ "milestone.py": [
+  "amo_immersion_guard"
+ ],
+ "models/__init__.py": [],
+ "models/database.py": [],
+ "models/schema.py": [
+  "clock"
+ ],
+ "observability.py": [],
+ "outfit_refs.py": [
+  "amo_image_common",
+  "wardrobe"
+ ],
+ "photo_data.py": [
+  "photo_room"
+ ],
+ "photo_engine.py": [
+  "amo_image_common",
+  "amo_media",
+  "amo_observability",
+  "amo_shared",
+  "clock",
+  "domains",
+  "outfit_refs",
+  "photo_data",
+  "photo_generate",
+  "photo_plan",
+  "photo_prompt",
+  "photo_scene",
+  "photo_share",
+  "photo_view",
+  "pose_library"
+ ],
+ "photo_generate.py": [
+  "amo_image_common",
+  "amo_observability",
+  "outfit_refs",
+  "photo_data",
+  "photo_plan",
+  "photo_view"
+ ],
+ "photo_plan.py": [
+  "photo_rules"
+ ],
+ "photo_prompt.py": [
+  "amo_fact_timeline",
+  "amo_image_common",
+  "amo_observability",
+  "amo_scene_ledger",
+  "amo_shared",
+  "clock",
+  "photo_data",
+  "photo_plan",
+  "photo_room",
+  "photo_scene",
+  "photo_view",
+  "pose_library"
+ ],
+ "photo_room.py": [
+  "housing"
+ ],
+ "photo_rules.py": [
+  "amo_place",
+  "infra",
+  "photo_plan"
+ ],
+ "photo_scene.py": [
+  "photo_rules"
+ ],
+ "photo_share.py": [
+  "amo_image_common",
+  "amo_media",
+  "amo_message",
+  "amo_observability",
+  "amo_presence",
+  "amo_scene_ledger",
+  "amo_shared",
+  "domains",
+  "infra",
+  "photo_plan",
+  "photo_prompt",
+  "photo_room",
+  "photo_scene",
+  "photo_view"
+ ],
+ "photo_view.py": [
+  "domains"
+ ],
+ "place_guard.py": [
+  "photo_scene"
+ ],
+ "pose_library.py": [
+  "amo_fileio",
+  "amo_image_common",
+  "clock",
+  "outfit_refs"
+ ],
+ "price_book.py": [
+  "domains"
+ ],
+ "proactive_guard.py": [
+  "amo_numbers",
+  "amo_observability",
+  "clock"
+ ],
+ "refusal.py": [
+  "domains"
+ ],
+ "relation_graph.py": [],
+ "relation_learn.py": [],
+ "relation_sediment.py": [],
+ "reply_fact_guard.py": [
+  "amo_memory_ledger",
+  "clock",
+  "photo_scene",
+  "place_guard"
+ ],
+ "schedule_banks.py": [],
+ "schedule_change.py": [
+  "amo_numbers",
+  "photo_rules",
+  "schedule_slots"
+ ],
+ "schedule_content.py": [
+  "schedule_engine_v2"
+ ],
+ "schedule_day_segments.py": [
+  "domains"
+ ],
+ "schedule_diary.py": [
+  "amo_diary_guard",
+  "amo_household",
+  "amo_immersion_guard",
+  "amo_location_rules",
+  "amo_person_ref",
+  "schedule_plan"
+ ],
+ "schedule_engine.py": [
+  "schedule_diary",
+  "schedule_plan",
+  "schedule_skeleton",
+  "schedule_slots"
+ ],
+ "schedule_engine_v2.py": [
+  "domains"
+ ],
+ "schedule_holiday.py": [
+  "amo_observability"
+ ],
+ "schedule_observer.py": [
+  "amo_observability",
+  "amo_place",
+  "amo_transition",
+  "schedule_content",
+  "schedule_engine_v2",
+  "schedule_social_a1"
+ ],
+ "schedule_plan.py": [
+  "amo_numbers",
+  "amo_observability",
+  "clock",
+  "domains",
+  "schedule_banks",
+  "schedule_day_segments",
+  "schedule_holiday",
+  "schedule_rest_segments",
+  "schedule_scenic",
+  "schedule_segments",
+  "schedule_social_segments",
+  "schedule_swim"
+ ],
+ "schedule_rest_segments.py": [
+  "domains"
+ ],
+ "schedule_scenic.py": [
+  "domains"
+ ],
+ "schedule_segments.py": [
+  "domains"
+ ],
+ "schedule_skeleton.py": [
+  "amo_schedule_blocks",
+  "schedule_plan"
+ ],
+ "schedule_slots.py": [
+  "schedule_plan"
+ ],
+ "schedule_social_a1.py": [
+  "amo_observability"
+ ],
+ "schedule_social_segments.py": [
+  "domains"
+ ],
+ "schedule_subject.py": [
+  "domains"
+ ],
+ "schedule_swim.py": [
+  "domains"
+ ],
+ "segment_engine.py": [
+  "amo_message",
+  "amo_observability",
+  "amo_outbound",
+  "amo_persona_guard",
+  "amo_state_consistency"
+ ],
+ "services/__init__.py": [],
+ "services/health_engine.py": [
+  "clock"
+ ],
+ "services/life_state.py": [
+  "amo_current_action",
+  "amo_date_session",
+  "amo_fact_timeline",
+  "amo_media",
+  "amo_presence",
+  "clock",
+  "services"
+ ],
+ "services/metrics.py": [
+  "amo_media",
+  "clock"
+ ],
+ "short_reply.py": [
+  "amo_prompt_registry"
+ ],
+ "social_learn_engine.py": [
+  "amo_state_snapshot",
+  "clock"
+ ],
+ "time_recall.py": [],
+ "tone_guard.py": [
+  "amo_shared"
+ ],
+ "tools/check_mypy_baseline.py": [],
+ "tools/check_version.py": [],
+ "tools/cleanup_temp.py": [],
+ "tools/make_manifest.py": [],
+ "tools/migrate_social.py": [
+  "clock",
+  "schedule_social_a1"
+ ],
+ "tools/mypy_check.py": [],
+ "tools/mypy_strict.py": [],
+ "tools/pack_release.py": [],
+ "tools/quality_gate.py": [
+  "amo_route_table"
+ ],
+ "tools/redact_prod_logs.py": [],
+ "tools/release_check.py": [],
+ "tools/restore_db_backup.py": [],
+ "tools/rollback.py": [],
+ "tools/rollback_drill.py": [
+  "schedule_observer"
+ ],
+ "tools/schedule_shadow.py": [
+  "schedule_engine_v2",
+  "schedule_observer"
+ ],
+ "wander.py": [
+  "amo_observability"
+ ],
+ "wardrobe.py": [
+  "wardrobe_daily",
+  "wardrobe_data",
+  "wardrobe_queries",
+  "wardrobe_seed"
+ ],
+ "wardrobe_daily.py": [
+  "wardrobe_data",
+  "wardrobe_queries"
+ ],
+ "wardrobe_data.py": [
+  "amo_fileio",
+  "amo_observability",
+  "amo_shared",
+  "clock",
+  "outfit_refs"
+ ],
+ "wardrobe_queries.py": [
+  "outfit_refs",
+  "wardrobe_data"
+ ],
+ "wardrobe_seed.py": [
+  "amo_compat",
+  "wardrobe_data"
+ ],
+ "weather_alert.py": []
 }
