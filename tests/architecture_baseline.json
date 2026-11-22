@@ -801,7 +801,8 @@
   "amo_timeline",
   "amo_transit",
   "amo_types",
-  "photo_rules"
+  "photo_rules",
+  "schedule_observer"
  ],
  "amo_state_jit.py": [
   "amo_date_session",
