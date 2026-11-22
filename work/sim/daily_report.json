@@ -358,7 +358,7 @@
    "sqlite": 0
   }
  },
- "generated_at": "2026-11-22 23:06:58",
+ "generated_at": "2026-11-22 23:22:53",
  "mode": "simulated_provider",
  "code_snapshot": {
   "amo_state_consistency.py": {
@@ -398,16 +398,16 @@
    "mtime": 1795318388
   },
   "domains/reply/tone.py": {
-   "sha256_16": "0ca3860aec8813c0",
-   "mtime": 1795276133
+   "sha256_16": "2aaa7a239021eb2a",
+   "mtime": 1795360913
   },
   "domains/reply/repetition_guard.py": {
    "sha256_16": "cf6e8a1f665bc4b8",
    "mtime": 1795326142
   }
  },
- "elapsed_sec": 7.09,
- "determinism_signature": "f5e9a9fd7d7f0df6",
+ "elapsed_sec": 6.62,
+ "determinism_signature": "d7822c347946d7e7",
  "samples": [],
  "root_causes": [
   "【已修复·问句意图覆盖】amo_question_guard._category 只认标准句式（几点回/在干嘛/吃了吗），「今晚回不回来」「到公司了吗」「你旁边有人吗」「你是不是在偷懒」认不出来 → 答非所问时兜不了底。本轮把这些口语问法归到同一意图，并加「第三人称作主语不算问她」（我同事摸鱼≠问她干嘛）。证据：failure probe_unanswered 31→0；context_checks.question_intent_coverage PASS。",
@@ -1375,7 +1375,7 @@
    },
    "meal_ok": true,
    "candidate": "有点发烧，头好晕。",
-   "sent": "就是有点累，头好晕。",
+   "sent": "有点提不起劲，头好晕。",
    "delivered": true,
    "cand_codes": [
     "health_conflict"
@@ -4051,7 +4051,7 @@
    "prev_snap": null,
    "meal_ok": false,
    "candidate": "有点发烧，头好晕。",
-   "sent": "就是有点累，头好晕。",
+   "sent": "头好晕。",
    "delivered": true,
    "cand_codes": [
     "health_conflict"
@@ -11504,7 +11504,7 @@
    },
    "meal_ok": false,
    "candidate": "嗓子有点疼，可能是感冒了。",
-   "sent": "嗓子有点疼，就是有点累。",
+   "sent": "嗓子有点疼，想早点窝着。",
    "delivered": true,
    "cand_codes": [
     "health_conflict"

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-11-22T23:07:13",
+    "generated_at": "2026-11-22T23:23:07",
     "plugin_root": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever",
     "sim_dir": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever\\work\\sim",
     "seed_base": 20261121,
@@ -929,15 +929,9 @@
       "changed": true,
       "diff": {
         "wal_mtime_ns": [
-          1795360022469860000,
-          1795360029456123300
-        ],
-        "rows": {
-          "kv": [
-            1165,
-            1166
-          ]
-        }
+          1795360964578308500,
+          1795360984047543900
+        ]
       }
     },
     "sqlite_connections": [
@@ -982,7 +976,7 @@
         "size": 1204224,
         "mtime_ns": 1795359879332252600,
         "wal_size": 4185952,
-        "wal_mtime_ns": 1795360022469860000,
+        "wal_mtime_ns": 1795360964578308500,
         "shm_size": 32768,
         "shm_mtime_ns": 1795335124359870200,
         "tables": 17,
@@ -990,9 +984,9 @@
           "block_diary": 290,
           "cleanup_audit": 19,
           "dialects": 185,
-          "kv": 1165,
+          "kv": 1166,
           "memories": 0,
-          "messages": 21,
+          "messages": 15,
           "proactive_log": 92,
           "profiles": 1,
           "relation_network": 1,
@@ -1086,7 +1080,7 @@
         "size": 1204224,
         "mtime_ns": 1795359879332252600,
         "wal_size": 4185952,
-        "wal_mtime_ns": 1795360022469860000,
+        "wal_mtime_ns": 1795360964578308500,
         "shm_size": 32768,
         "shm_mtime_ns": 1795335124359870200,
         "tables": 17,
@@ -1094,9 +1088,9 @@
           "block_diary": 290,
           "cleanup_audit": 19,
           "dialects": 185,
-          "kv": 1165,
+          "kv": 1166,
           "memories": 0,
-          "messages": 21,
+          "messages": 15,
           "proactive_log": 92,
           "profiles": 1,
           "relation_network": 1,
