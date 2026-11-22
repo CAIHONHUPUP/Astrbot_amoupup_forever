@@ -270,7 +270,9 @@ def _natural_clause(rule, prefix, middle, suffix, sentence, replacement,
     state = _tone_state(plugin)
     candidates = _tone_candidates(rule, prefix, middle, suffix, plugin, activity, variants)
     chosen = _pick_tone_variant(candidates, _tone_key(rule, middle, plugin, activity),
-                                state, seed, rotate_first=(rule == "health"))
+                                state, seed,
+                                rotate_first=(rule == "health"
+                                              and "不舒服" not in str(middle)))
     return chosen or replacement
 def _today_chat(plugin, moment):
     """今天是否已经聊过：读进程内最近回复时间；重启后首轮保守返回 False。"""

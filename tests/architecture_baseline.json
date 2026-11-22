@@ -437,6 +437,7 @@
   "amo_state_snapshot",
   "amo_types",
   "clock",
+  "domains",
   "place_guard"
  ],
  "amo_names.py": [],
