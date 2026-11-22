@@ -79,15 +79,29 @@ def _status_said(umo, now=None, count=3, seconds=None, turn=None):
         if count is not None and taken >= count:
             break
     return said
+#: 删句后剩下这些词开头，说明被删的是条件/前提，删了会只剩孤立结论。
+_ORPHAN_HEAD_RE = re.compile(r"^(再|就|才|也|还|然后|所以|但是|不过|而且|可|那)")
+
+
 def _drop_repeated_status(text, said):
-    """把「已经在前面说过的同一状态」整句删掉；返回 (新文本, 删掉的句子)。"""
+    """把「已经在前面说过的同一状态」整句删掉；返回 (新文本, 删掉的句子)。
+
+    1b-2：删句不能留下孤立的结论。线上「等你病好了，再谈收拾我这件事」——
+    「等你病好了」被当重复状态删掉，只剩「再谈…」接不上；这种情况保留原句。
+    """
     said = set(said or ())
     if not said:
         return str(text or ""), []
-    kept, dropped = [], []
-    for part in _SENTENCE_SPLIT_RE.split(str(text or "")):
+    parts: List[str] = _SENTENCE_SPLIT_RE.split(str(text or ""))
+    kept: List[str] = []
+    dropped: List[str] = []
+    for index, part in enumerate(parts):
         tokens = status_tokens(part)
         if tokens and all(name in said for name in tokens):
+            rest = ("".join(kept) + "".join(parts[index + 1:])).strip()
+            if rest and _ORPHAN_HEAD_RE.match(rest):
+                kept.append(part)
+                continue
             dropped.append(part.strip())
             continue
         kept.append(part)

@@ -461,7 +461,8 @@
     "amo_names",
     "amo_purchase_guard",
     "amo_reply_pipeline",
-    "amo_shared_text"
+    "amo_shared_text",
+    "domains"
   ],
   "amo_persona_pack.py": [],
   "amo_persona_store.py": [

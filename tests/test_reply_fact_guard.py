@@ -173,6 +173,15 @@ class RewriteTests(unittest.TestCase):
         self.assertIn("等会儿", fixed)
         self.assertEqual([item["rule"] for item in violations], ["meal"])
 
+    def test_care_question_is_not_her_health_claim(self):
+        # 线上 18:22：他发烧咳嗽，她问「咳嗽多久了…药吃了吗」被当成她生病，
+        # 换成「就是有点累？」。关心/追问句不能按她的健康声明改写。
+        for clause in ("咳嗽多久了", "药吃了吗？", "你咳成这样", "要不要去看医生"):
+            with self.subTest(clause=clause):
+                fixed, hits = reply_fact_guard._health_rule(clause, {"health": HEALTHY})
+                self.assertEqual(clause, fixed)
+                self.assertEqual([], hits)
+
     def test_fever_claim_while_healthy_is_softened(self):
         fixed, violations = guard("我还烧着呢", ctx(health=HEALTHY))
         self.assertNotIn("烧", fixed)

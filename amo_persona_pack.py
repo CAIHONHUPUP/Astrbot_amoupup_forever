@@ -20,6 +20,74 @@ PER_SCENE = 5
 
 
 _DEFAULT_CACHE: dict | None = None
+STYLE_PATH = os.path.join(PACK_DIR, "style_examples.json")
+_STYLE_CACHE: list | None = None
+
+#: 用户这句话的粗意图 -> 取哪组示例；只做关键词路由，不调模型。
+_STYLE_INTENTS = (
+    ("care", ("累", "困", "难受", "病", "发烧", "咳嗽", "疼", "不舒服", "睡了", "没睡")),
+    ("praise", ("好看", "漂亮", "可爱", "厉害", "棒", "喜欢你")),
+    ("miss", ("想你", "想我", "爱你", "抱", "亲")),
+    ("food", ("吃", "饭", "饿", "奶茶", "面", "火锅", "粥")),
+    ("place", ("在哪", "到家", "路上", "公司", "商场", "回家", "地铁", "店里")),
+    ("playful", ("撒娇", "哼", "不理你", "讨厌", "坏", "皮痒", "收拾你")),
+)
+
+
+def load_style_examples() -> list:
+    """撒娇版 few-shot 池（45 条，fit=2/1；只取语气，不逐字复用）。"""
+    global _STYLE_CACHE
+    if _STYLE_CACHE is None:
+        try:
+            with open(STYLE_PATH, encoding="utf-8") as handle:
+                data = json.load(handle)
+            rows = data.get("items") if isinstance(data, dict) else data
+            _STYLE_CACHE = [row for row in (rows or []) if isinstance(row, dict)
+                            and str(row.get("text") or "").strip()]
+        except (OSError, ValueError):
+            _STYLE_CACHE = []
+    return _STYLE_CACHE
+
+
+def style_intent(user_text: str) -> str:
+    body = str(user_text or "")
+    for name, words in _STYLE_INTENTS:
+        if any(word in body for word in words):
+            return name
+    return "daily"
+
+
+def style_samples(user_text: str, limit: int = 2) -> list:
+    """按意图取 2 条；确定性轮换，避免每轮都是同一对示例。"""
+    rows = load_style_examples()
+    if not rows:
+        return []
+    intent = style_intent(user_text)
+    seed = sum(ord(ch) for ch in str(user_text or "")) % 997
+    same = [row["text"] for row in rows if str(row.get("intent") or "") == intent]
+    other = [row["text"] for row in rows if str(row.get("intent") or "") in ("playful", "miss")]
+    picked = []
+    if same:
+        picked.append(same[seed % len(same)])
+    if other:
+        candidate = other[(seed + 1) % len(other)]
+        if candidate not in picked:
+            picked.append(candidate)
+    for row in rows:
+        if len(picked) >= limit:
+            break
+        text = str(row.get("text") or "")
+        if text and text not in picked:
+            picked.append(text)
+    return picked[:max(1, int(limit or 2))]
+
+
+def style_block(user_text: str, limit: int = 2) -> str:
+    samples = style_samples(user_text, limit=limit)
+    if not samples:
+        return ""
+    return "【她平时会这么说（只学语气，不要逐字复用）】\n" + "\n".join(
+        "- " + item for item in samples)
 
 
 def load_default() -> dict:

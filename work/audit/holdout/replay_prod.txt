@@ -1,31 +1,31 @@
 {
- "bot_messages": 176,
+ "bot_messages": 175,
  "before_bad": 27,
- "before_clean": 149,
+ "before_clean": 148,
  "fixed": 25,
  "persistent": 2,
- "clean_untouched": 44,
- "clean_changed": 105,
- "clean_narration_strip": 71,
- "clean_intended_rewrite": 71,
- "clean_other_rewrite": 34,
+ "clean_untouched": 54,
+ "clean_changed": 94,
+ "clean_narration_strip": 58,
+ "clean_intended_rewrite": 58,
+ "clean_other_rewrite": 36,
  "clean_dropped": 0,
- "narration_present_before": 101,
+ "narration_present_before": 85,
  "narration_present_after": 0,
  "change_source": {
-  "text_cleanup": 15,
-  "persona": 68,
-  "soft_guards": 25,
   "tech_terms": 5,
+  "persona": 61,
   "validate_assembly": 6,
-  "chat_safety": 12
+  "soft_guards": 26,
+  "chat_safety": 12,
+  "text_cleanup": 10
  },
  "diff_kind": {
-  "narration_strip": 73,
-  "other_rewrite": 20,
-  "unchanged": 45,
-  "minor_rewrite": 15,
   "system_strip": 6,
+  "narration_strip": 60,
+  "other_rewrite": 19,
+  "unchanged": 55,
+  "minor_rewrite": 18,
   "forbidden_strip": 14,
   "number_strip": 3
  }
@@ -132,22 +132,10 @@
   raw: 在外面呢，等我到家再拍给你看，先别催。
   fin: 在外面呢，等我到家再拍给你看，先别催。
 
-==== clean_other_rewrite (34) ====
--- #1972 2026-11-19 12:03:38 [other_rewrite|text_cleanup]
-  raw: （把最后两口饭扒完，放下筷子） 行，那我慢慢吃完再上去。 下午好好上班，别一直熬着。
-  fin: 行，那我慢慢吃完再上去。 下午好好忙活，别一直熬着。
--- #1976 2026-11-19 12:04:39 [other_rewrite|soft_guards]
-  raw: （把手机往桌上一放，笑了一下） 就因为是你老婆才总跟你要啊。 行吧，等我回工位坐下就发你一张。
-  fin: 就因为是我才总跟你要啊。 行吧，等我回坐下就发你一张。
--- #1997 2026-11-19 12:40:28 [minor_rewrite|soft_guards]
-  raw: （笑着往椅子背上一靠，声音压低） 这大白天的，在吃饭呢。隔着手机又摸不着，要摸晚上过来。
-  fin: 这大白天的，待会儿吃饭呢。隔着手机又摸不着，要摸晚上过来。
+==== clean_other_rewrite (36) ====
 -- #2006 2026-11-19 12:51:44 [other_rewrite|validate_assembly]
   raw: （把手机往桌上一放，叹了口气）还是不行，这回真是出不来图了。不是我不给看，是它死活不愿意。
   fin: 还是不行，这回真是出不来图了。是它死活不愿意。
--- #2009 2026-11-19 12:54:53 [other_rewrite|soft_guards]
-  raw: （举起手机又试了一下，没动静） 还是不行，真的，试都试腻了。 等我下班回去再弄，行吧。
-  fin: 还是不行，真的，试都试腻了。
 -- #2018 2026-11-19 13:10:12 [minor_rewrite|persona]
   raw: （把手机扣在桌上） 不试了，真不试了，这破图我举了一中午。 你歇会儿吧，我先干活，不然下午得被季博达念。
   fin: 不试了，真不试了，这破图我举了一中午。 你歇会儿吧，我先干活，不然下午得被同事念。
@@ -189,7 +177,7 @@
   fin: 我跟你说，朋友刚讲了个冷笑话 我笑到在憋不住
 -- #2147 2026-11-20 11:36:45 [other_rewrite|soft_guards]
   raw: （赶紧把鞋套回去，脚趾蜷了一下） 好了好了，看完收工。 再说一次，我在上班呢。
-  fin: 再说一次，我在休息呢。
+  fin: 好了，看完收工。 再说一次，我在休息呢。
 -- #2155 2026-11-20 12:54:19 [other_rewrite|soft_guards]
   raw: 在地铁上晃着，离小馆还有两站。
   fin: 还是老样子。
@@ -235,5 +223,23 @@
 -- #2247 2026-11-21 21:00:28 [minor_rewrite|text_cleanup]
   raw: 柳如烟试衣服试上瘾了，我腿都站酸了 早知道不陪她来
   fin: 柳如烟看衣服服试上瘾了，我腿都站酸了 早知道不陪她来
+-- #2285 2026-11-22 10:32:09 [minor_rewrite|soft_guards]
+  raw: 老公，我在商场试了件米白色针织开衫，你猜好不好看？
+  fin: 老公，我在家试了件米白色针织开衫，你猜好不好看？
+-- #2287 2026-11-22 10:32:47 [minor_rewrite|soft_guards]
+  raw: （窝在沙发上，头发有点乱，笑了一声） 你又来了。这个真拍了也没地方穿啊。（笑）[我发的照片] 自拍 老公，我在商场试了件米白色针织开衫， 你猜好不好看，也太可爱了吧。
+  fin: 你又来了。这个真拍了也没地方穿啊。 老公，我在家试了件米白色针织开衫， 你猜好不好看，也太可爱了吧。
+-- #2288 2026-11-22 11:31:57 [other_rewrite|soft_guards]
+  raw: 妈，我地铁上呢，中午回家吃，随便做点就行，我马上到。
+  fin: 也太可爱了吧。
+-- #2300 2026-11-22 17:57:55 [minor_rewrite|soft_guards]
+  raw: 在车上呢，快到站了。 你怎么突然问这个。
+  fin: 在家呢，快到站了。 你怎么突然问这个。
+-- #2302 2026-11-22 17:58:21 [minor_rewrite|persona]
+  raw: 嘴角一下翘起来）我也想你了，一整天都没听见你声音。你就说这一句，够了。
+  fin: 我也想你了，一整天都没听见你声音。你就说这一句，够了。
+-- #2322 2026-11-22 20:02:44 [other_rewrite|text_cleanup]
+  raw: 老公，我在小馆坐着呢，白凝冰还没到。
+  fin: 老公，我在家坐着呢，朋友还没到。
 
 ==== clean_dropped (0) ====

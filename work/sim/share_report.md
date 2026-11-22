@@ -29,7 +29,7 @@
    再过 amo_reply_pipeline.apply_chat_safety（线上聊天最后一道确定性守卫）；
 5. 用与守卫不共享实现的独立判据打分。
 
-本次跑的守卫代码指纹（sha256 前 16 位）：amo_reply_pipeline.py=a1ea1d2d89671760、amo_state_consistency.py=13ae05fd6070632a、amo_share_ledger.py=a943eb8aaa1ab961、amo_grounding_critic.py=e5e33bdc4f9d7cf0、amo_llm_service.py=396c465c040dd20d、amo_prompt_registry.py=2c109571c45a934d、reply_fact_guard.py=d815effdb346a27e、tone_guard.py=89659d29759a8239、amo_proactive.py=6ba14917599239eb、amo_question_guard.py=65c13d5bf7aff6cc
+本次跑的守卫代码指纹（sha256 前 16 位）：amo_reply_pipeline.py=9720b5c75c5b9f44、amo_state_consistency.py=13ae05fd6070632a、amo_share_ledger.py=a943eb8aaa1ab961、amo_grounding_critic.py=e5e33bdc4f9d7cf0、amo_llm_service.py=396c465c040dd20d、amo_prompt_registry.py=1e0a7dd47a253be7、reply_fact_guard.py=e345a588dd566c2c、tone_guard.py=89659d29759a8239、amo_proactive.py=6ba14917599239eb、amo_question_guard.py=65c13d5bf7aff6cc
 
 判据（命中即失败）：
 

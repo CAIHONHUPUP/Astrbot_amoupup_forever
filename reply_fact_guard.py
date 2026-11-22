@@ -175,6 +175,8 @@ _SICK_WORDS = ("还在发烧", "又发烧", "还在烧", "又烧", "发烧", "�
                "烧着", "还烧", "病着", "生病", "感冒", "拉肚子", "肠胃炎",
                "退烧", "刚退", "又该烧", "怕再烧", "怕着凉", "着凉", "发冷",
                "37度", "三十七度", "病还没好", "还没好利索", "好利索", "利索点")
+#: 关心/追问句的关键词：出现这些说明在问“他”的病情，不是她的健康声明。
+_CARE_QUESTION_RE = re.compile(r"(多久|怎么|吃药|看医生|要不要|疼不疼|好点没|严不严重)")
 _RECOVER_WORDS = ("我好了", "已经好了", "病好了", "退烧了", "痊愈了", "全好了",
                   "不难受了", "还没好", "没好")
 
@@ -681,6 +683,10 @@ def _health_rule(clause, ctx):
                     str(health.get("status") or "生病"),
                 )
                 return new, _clause_hit("health", clause, new, reason)
+        return clause, []
+    # 1b-2：问句/关心句是在问“他”的病情，不是她的健康声明，不能整句改写。
+    # 线上 18:22：「咳嗽多久了…药吃了吗」被当成她生病，换成「就是有点累？」。
+    if _CARE_QUESTION_RE.search(clause) or clause.rstrip().endswith(("？", "?")):
         return clause, []
     for word in _SICK_WORDS:
         if word not in clause:

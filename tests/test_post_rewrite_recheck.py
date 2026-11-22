@@ -125,8 +125,9 @@ class GuardOrderContractTests(unittest.TestCase):
         source = _source("amo_reply_pipeline.py")
         body = _body(source, "def apply_chat_safety(", "def apply_narrative_repetition(")
         self.assertIn("final_semantic_recheck(value, plugin, umo, user_text)", body)
-        for earlier in ("_prefer_answered_candidate(value, umo, user_text)",
-                        "value = fix_identity(sanitize_extreme(value))",
+        # 1b-1：三层候选优先已收敛；旧的裸还原层不得再出现（否则会和 recover 打架）。
+        self.assertNotIn("_prefer_answered_candidate", body)
+        for earlier in ("value = fix_identity(sanitize_extreme(value))",
                         "_purchase_guard(value, plugin)",
                         "_state_rewrite(value, plugin, _context",
                         "_question_answer("):

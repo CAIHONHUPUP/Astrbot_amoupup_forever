@@ -630,6 +630,20 @@ class LlmMixin(_MixinBase):
             _boundary = ACTION_OWNERSHIP_RULES
         system_parts.append(_boundary)
         system_parts.append(_prompts.URGE_DISCIPLINE_RULES)
+        if not group:
+            # 撒娇版放最后：越靠后的指令权重越高；示例只学语气。
+            system_parts.append(_prompts.render("llm.rule.style"))
+            try:
+                try:
+                    from .amo_persona_pack import style_block as _style_block
+                except ImportError:
+                    from amo_persona_pack import style_block as _style_block
+                _style_text = _style_block(str(text or ""))
+            except Exception as _amo_exc:  # cleanup: 示例池缺失不影响回复
+                logger.debug("[amo] style examples skipped: %s", _amo_exc)
+                _style_text = ""
+            if _style_text:
+                system_parts.append(_style_text)
         system = "\n\n".join(system_parts)
         return system
 

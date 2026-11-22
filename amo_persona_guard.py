@@ -94,6 +94,49 @@ def strip_action_narration(text):
     return "\n".join(lines).strip()
 
 
+_JUDGMENT_FINAL = re.compile(r"(够了|行了|就这样|随你|可以了|别说了)[。！!？?…]*$")
+#: 上位者评词：不要求出现在句尾，出现即算判词（线上「这就对了，乖」）。
+_JUDGMENT_PHRASES = ("这就对了", "听话")
+_PARTICLES = ("呀", "呢", "嘛", "啦", "吧", "哦", "嗯", "啊", "哈")
+_NATURALNESS_COUNTER: dict[str, int] = {}
+
+
+def naturalness_issues(text, intent=""):
+    """自然度检测（只判不改）：句尾判词 / 零语气词 / 固定模板句。
+
+    第一版只做埋点，不触发重写；N2 再决定是否条件重生成。
+    """
+    body = str(text or "").strip()
+    if not body:
+        return ["empty"]
+    issues = []
+    if _JUDGMENT_FINAL.search(body) or any(word in body for word in _JUDGMENT_PHRASES):
+        issues.append("judgment_final")
+    if not any(word in body for word in _PARTICLES):
+        issues.append("no_particle")
+    try:
+        try:
+            from .domains.reply import repetition_guard as _reg
+        except ImportError:
+            from domains.reply import repetition_guard as _reg
+        if _reg.is_fixed_rewrite(body):
+            issues.append("template")
+    except Exception:  # cleanup: 注册表不可用就只留前两项
+        pass
+    return issues
+
+
+def note_naturalness(text, intent=""):
+    codes = naturalness_issues(text, intent)
+    for code in codes:
+        _NATURALNESS_COUNTER[code] = _NATURALNESS_COUNTER.get(code, 0) + 1
+    return codes
+
+
+def naturalness_stats():
+    return dict(_NATURALNESS_COUNTER)
+
+
 def has_orphan_paren(text):
     """出站不变量：剥掉成对括号后还残留全角括号，就是被切开的残片。"""
     body = _PAREN.sub("", str(text or ""))
@@ -545,6 +588,7 @@ def guard_candidate(plugin, umo, text, user_text=""):
 __all__ = [
     "FORBIDDEN_PHRASES", "neutralize_forbidden", "strip_action_narration",
     "has_action_narration", "has_orphan_paren", "action_only", "action_ratio",
+    "naturalness_issues", "note_naturalness", "naturalness_stats",
     "self_recent_texts", "self_recent_block", "denial_of_self_issue",
     "emotion_first_issue", "issues", "safe_reply", "ground_names",
     "prepare_outbound", "sanitize_candidate", "guard_candidate",

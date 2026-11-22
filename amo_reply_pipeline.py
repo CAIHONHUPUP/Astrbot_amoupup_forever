@@ -1123,6 +1123,19 @@ def _answers_question(text, question):
     return False
 
 
+#: 删句后以这些词开头，说明前面被删掉的是前提/条件，只剩结论（线上：
+#: 「等你病好了，再谈收拾我这件事」→「再谈收拾我这件事」）。
+_ORPHAN_CONCLUSION_RE = re.compile(r"^(再(谈|说|聊|看|讲|试|想)|那就|这才|才能|才说)")
+
+
+def _has_orphan_conclusion(text):
+    for part in re.split(r"(?<=[。！？!?~～\n])", str(text or "")):
+        body = part.strip().lstrip("，,、 ")
+        if body and _ORPHAN_CONCLUSION_RE.match(body):
+            return True
+    return False
+
+
 def _keep_answer(original, fixed, question, dropped):
     """整句复读删句后答案被删没了，就保留原句：答到问题优先于「不复读」。
 
@@ -1131,6 +1144,8 @@ def _keep_answer(original, fixed, question, dropped):
     """
     if not dropped:
         return fixed
+    if _has_orphan_conclusion(fixed) and not _has_orphan_conclusion(original):
+        return original
     if _answers_question(fixed, question):
         return fixed
     if _answers_question(original, question):
@@ -1167,30 +1182,30 @@ def _answered_intent(original, user_text):
     return _answers_question(body, ask)
 
 
-def _prefer_answered_candidate(text, umo, user_text):
-    """单一优先级：本轮原始候选已答到点上，就不许被通用兜底句覆盖。
-
-    全链路只在 apply_chat_safety 这一次裁决：上游守卫（状态去重/地点对齐/问句补答）
-    仍可以改，但送进来的如果只是「还是老样子」「等下再说」这类兜底句，而原始候选
-    其实答到了他的问题，就以候选为准；候选没答到就保持兜底句（该改还得改）。
-    """
+# 1b-1（2026-11-22）：原 _prefer_answered_candidate 已删除。它在 apply_chat_safety 里
+# 裸还原整个候选，和 amo_rewrite_safety.recover（带兜底/多池门限）以及
+# final_semantic_recheck（带安全/事实约束）职责重叠；三层叠加会导致同一候选一轮
+# 被还原多次。现在只保留后两层：recover 负责“现行是兜底/多池”，final recheck 负责
+# “候选答到、改完答不到”，前者带安全改写、后者带事实约束。
+def _restore_partial_candidate(text, umo, user_text):
+    """候选被守卫删掉一段、只剩残句时还原（1b-1：并入单一出口，不再单开一层）。"""
     key = str(umo or "").strip()
-    if not key:
-        return text
     entry = _TURN_SOURCE.get(key)
     if not entry:
         return text
     turn, original = entry
     if turn != _ACTIVE_TURN.get(key):
         return text
-    if not _answered_intent(original, user_text):
+    original = str(original or "").strip()
+    if not original or not _answered_intent(original, user_text):
         return text
-    # 候选答到了，却被换成了通用兜底句，或被后续守卫删到答不上来：以候选为准。
-    # 「还答不答得到」用更严的 _answers_question 判（问句守卫的 doing 词表太松，
-    # 「在擦头发呢」这种删掉动词也算答到，会把被删坏的回复放过去）。
-    if _is_any_fallback(text) or not _answers_question(text, user_text):
-        return str(original)
-    return text
+    left = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(text or ""))
+    right = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", original)
+    if len(left) < 6 or left == right or left not in right:
+        return text
+    if _answers_question(text, user_text):
+        return text
+    return original
 
 
 def _turn_question(umo):
@@ -1500,7 +1515,6 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
     # 单一优先级（全链路只在这里裁决一次）：这一轮原始候选已经答到他的问题，
     # 先把候选恢复回来；后面的确定性改写都在候选上做，通用兜底句不许再盖掉它。
     # 候选没答到，就保持上游守卫给的结果（该改的照改）。
-    value = _prefer_answered_candidate(value, umo, user_text)
     try:
         try:
             from .amo_immersion_guard import fix_identity, sanitize_extreme
@@ -1604,6 +1618,17 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
     value = final_semantic_recheck(value, plugin, umo, user_text)
     # task-40：全链路跑完后，完整候选被固定兜底/多池拼装/语法破损覆盖时还原候选。
     value = recover_rewrite_damage(value, plugin, umo, user_text)
+    # 1b-1：候选被局部删除（只剩残句）的还原并入同一出口，保证「答到优先」。
+    value = _restore_partial_candidate(value, umo, user_text)
+    # 自然度埋点（只判不改）：句尾判词/零语气词/模板句，供 1a/N2 评估。
+    try:
+        try:
+            from .amo_persona_guard import note_naturalness as _note_nat
+        except ImportError:
+            from amo_persona_guard import note_naturalness as _note_nat
+        _note_nat(value)
+    except Exception as _amo_exc:  # cleanup: 埋点失败绝不影响发送
+        logger.debug("[amo] naturalness note failed: %s", _amo_exc)
     return value.strip() or str(text or "")
 
 
