@@ -562,7 +562,10 @@ def _stage_anti_nag(ctx):
             from .amo_anti_nag import rewrite as _anti_nag
         except ImportError:
             from amo_anti_nag import rewrite as _anti_nag
-        ctx.text = str(_anti_nag(ctx.text, str(ctx.user_text or "")) or ctx.text)
+        body = str(_anti_nag(ctx.text, str(ctx.user_text or "")) or "")
+        if not body:
+            return "anti_nag"  # 催问句删空：候选整条不安全，不许原样还原
+        ctx.text = body
     except Exception:  # cleanup: 反催问失败就保持
         pass
     return None

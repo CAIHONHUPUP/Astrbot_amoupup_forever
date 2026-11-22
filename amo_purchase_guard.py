@@ -13,7 +13,18 @@ _CLAIM = re.compile(r"(买了|买下|买回来|入手了|下单了|花了\s*\d+|
 #: 试穿/看中（还没买）
 _TRY = re.compile(r"(试了|试穿|看了看|看中|挺喜欢|很喜欢)")
 _PRICE = re.compile(r"[，,。！!\s]*花(?:了)?\s*\d+(?:\.\d+)?\s*元?")
-_FALLBACK = "我试了试，挺喜欢的，还没买。"
+#: 最小改口（task-3b C1）：只把已购动词改成「还没买」，不整句换成固定句。
+_CLAIM_FIX = {
+    "买回来了": "还没买回来", "买回来": "还没买回来",
+    "买下了": "还没买下", "买下": "还没买下",
+    "买了": "还没买", "入手了": "还没入手", "下单了": "还没下单",
+    "买": "还没买",
+}
+_CLAIM_VERB = re.compile("|".join(
+    sorted((re.escape(word) for word in _CLAIM_FIX), key=len, reverse=True)))
+_NOT_BOUGHT = "还没买"
+_EDGE_PUNCT = re.compile(r"^[，,。！!、；;：:\s]+")
+_HAS_WORD = re.compile(r"[\u4e00-\u9fff0-9A-Za-z]")
 #: 否定用法不是「已经买了」：不给你买了 / 还没买 / 别买了（task-40 回放 #2231）
 _NEGATED = re.compile(
     r"(?:不|没|还没|别|不用|不想|不打算|不准备)[^，。！？]{0,6}"
@@ -79,8 +90,8 @@ def _incidental_claim(body, parts):
     """买/花只是顺带一提（整条消息在讲奶茶/视频/别的），不是「这单我买了」的主句。
 
     task-40：回放 #2040 整条「公司下午茶又发奶茶了…上午自己还买了一杯…」被换成
-    「我试了试，挺喜欢的，还没买。」，内容全丢。只有「纯消费声明」（短句/带金额/
-    带单品名）才允许换成还没买的固定句；顺带一提的保留原文，账本问题交给消费对账。
+    一句和上下文无关的「试了还没买」，内容全丢。只有「纯消费声明」（短句/带金额/
+    带单品名）才允许改口；顺带一提的保留原文，账本问题交给消费对账。
     """
     filled = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(body or ""))
     if _amount(body) is not None:
@@ -90,8 +101,22 @@ def _incidental_claim(body, parts):
     return True
 
 
+def _minimal_claim_fix(sentence):
+    """一句里只改已购动词、删金额分句；改口后没内容可留就返回空串。"""
+    body = _PRICE.sub("", str(sentence or ""))
+    body = _CLAIM_VERB.sub(lambda match: _CLAIM_FIX[match.group(0)], body)
+    body = _EDGE_PUNCT.sub("", body).strip()
+    if not _HAS_WORD.search(body):
+        return ""
+    return body
+
+
 def rewrite(text, plugin):
-    """没消费记录：把「买了/花了」改成「试了还没买」；同一次购物只留一条。"""
+    """没消费记录：只做最小改口（改动词/删金额），不整句换成固定句。
+
+    宪法不变：没有账本记录就不许说「买了/花了 N 元」。但保留同一句里的其它内容，
+    例如「买了开衫，花了 649 元，超好看」→「还没买开衫，超好看」，而不是整条替换。
+    """
     body = str(text or "").strip()
     if not body or not _CLAIM.search(body):
         return body
@@ -103,16 +128,14 @@ def rewrite(text, plugin):
     if _incidental_claim(body, parts):
         return body
     out = []
-    replaced = False
     for sentence in parts:
-        if _CLAIM.search(sentence) or _TRY.search(sentence):
-            if replaced:
-                continue
-            out.append(_FALLBACK)
-            replaced = True
-        else:
-            out.append(sentence)
-    return "".join(out).strip() or _FALLBACK
+        if _CLAIM.search(sentence):
+            fixed = _minimal_claim_fix(sentence)
+            if fixed:
+                out.append(fixed)
+            continue
+        out.append(sentence)
+    return "".join(out).strip() or _NOT_BOUGHT
 
 
 def _keep_one_claim(parts):

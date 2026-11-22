@@ -105,7 +105,7 @@ GOLDEN_GENERATE = {
     "photo_promise": {"text": "刚刚想拍照，没拍成，先不折腾啦。",
                       "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
                                 "consumption"]},
-    "short_reply": {"text": "哇！谢谢老公！爱你！",
+    "short_reply": {"text": "谢谢",
                     "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
                               "consumption"]},
     "plain": {"text": "好呀，那晚上一起看剧。",

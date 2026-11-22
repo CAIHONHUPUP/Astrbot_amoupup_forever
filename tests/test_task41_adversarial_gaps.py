@@ -112,15 +112,6 @@ class ShortFollowupCriticTests(unittest.TestCase):
                             ("笑什么呢？", "就是刚才那个视频，猫卡纸箱里了。")):
             self.assertEqual([], critic.issues(user, reply), "%s -> %s" % (user, reply))
 
-    def test_safe_reply_continues_share(self):
-        line = critic.safe_reply("然后呢？")
-        self.assertIn("然后", line)
-        self.assertNotIn("你在干嘛", line)
-
-    def test_safe_reply_uses_history_topic(self):
-        line = critic.safe_reply("然后呢？", "我刚刷到一个橘猫视频，特别好笑。")
-        self.assertIn("视频", line)
-
     def test_is_short_followup_scope(self):
         for text in ("然后呢？", "哈哈哈哈", "笑什么", "嗯嗯", "在哪看到的？"):
             self.assertTrue(critic.is_short_followup(text), text)

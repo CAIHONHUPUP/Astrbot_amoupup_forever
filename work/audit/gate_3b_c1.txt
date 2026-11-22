@@ -1,0 +1,9 @@
+# 3b / C1 门禁与四件套（2026-11-23）
+
+范围：固定安全句类降级（项 5 purchase 最小改口、项 6 anti_nag 删空不发、项 10 short_reply 只留 is_curt）。
+项 2+7（persona/grounding safe_reply）**已回滚并延后**：删除后对抗集 share_continuation 39→36，
+「接不住分享」不再有兜底句；需要生成式替代（模型重生成/提示词层）后再删，见 1B3_STATUS。
+
+- 门禁 exit 0（901.1s）：6365 passed / 0 failed / 7 skipped / 264 subtests；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
+- 四件套与基线逐项一致：daily 614/614（probe 5 维 0、contradiction 0）、share 500/100%（damaged 0、persistent 0）、remind 240/240（leaked 0）、adversarial 39/39、回放 exit 0（persistent 2、旁白 0）
+- 删除固定句 11 句（purchase 1、anti_nag 1、short_reply 6 + 别名/死常量）

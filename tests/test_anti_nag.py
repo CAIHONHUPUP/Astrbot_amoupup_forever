@@ -17,9 +17,10 @@ class AntiNagTests(unittest.TestCase):
         out = rewrite("好呀。你那边忙完了没？", "我这边没那么快")
         self.assertEqual("好呀。", out)
 
-    def test_nag_only_reply_falls_back(self):
+    def test_nag_only_reply_returns_empty(self):
+        # task-3b C1：删空不再补体贴固定句；空串 = 本轮不发，交给出口。
         out = rewrite("你那边忙完了没？", "我这边还没好")
-        self.assertEqual("好，那你忙完跟我说一声。", out)
+        self.assertEqual("", out)
 
     def test_kept_when_he_did_not_say_busy(self):
         text = "你那边忙完了没？"

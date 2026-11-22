@@ -74,34 +74,27 @@ class CurtTests(unittest.TestCase):
         for text in ("今天好累啊", "在吗", "我开会了", "你去哪"):
             self.assertFalse(short_reply.is_curt(text), text)
 
-    def test_counter_varies_by_mood(self):
-        self.assertIn("别聊了", short_reply.counter_line(ANGRY))
-        self.assertIn("不理你", short_reply.counter_line(HAPPY))
-
 
 class GuardTests(unittest.TestCase):
-    def test_ok_becomes_persona_reply(self):
-        self.assertNotIn("好的", short_reply.guard("好的", HAPPY, "开会去了"))
+    """task-3b C1：短回复不再被固定句替换；客服词/敷衍交给 prompt + 生成期重试。"""
 
-    def test_received_becomes_persona_reply(self):
-        self.assertEqual(short_reply.guard("收到", HAPPY, "开会去了"), "好呀~")
+    def test_service_words_are_kept(self):
+        for text in ("好的", "收到", "谢谢", "没问题", "抱歉", "明白"):
+            self.assertEqual(short_reply.guard(text, HAPPY, "开会去了"), text)
 
-    def test_thanks_becomes_warm(self):
+    def test_thanks_is_not_replaced(self):
         text = short_reply.guard("谢谢", HAPPY, "给你转了点钱")
-        self.assertIn("哇", text)
-        self.assertIn("爱你", text)
-
-    def test_no_problem_becomes_lively(self):
-        self.assertEqual(short_reply.guard("没问题", HAPPY, "帮我个忙"), "没问题啦！")
+        self.assertEqual(text, "谢谢")
+        self.assertNotIn("爱你", text)
 
     def test_angry_keeps_short_cold(self):
         self.assertEqual(short_reply.guard("嗯。", ANGRY, "随便你"), "嗯。")
 
-    def test_curt_user_triggers_counter(self):
-        text = short_reply.guard("好", HAPPY, "嗯")
-        self.assertIn("不理你", text)
-        text = short_reply.guard("好", ANGRY, "哦")
-        self.assertIn("别聊了", text)
+    def test_curt_user_gets_no_counter_line(self):
+        for reply in ("好", "嗯。"):
+            out = short_reply.guard(reply, ANGRY, "哦")
+            self.assertEqual(out, reply)
+            self.assertNotIn("别聊了", out)
 
     def test_long_reply_untouched(self):
         long_text = "今天在公司忙了一天，回来路上还下雨了，鞋都湿了。"
@@ -112,6 +105,7 @@ class WiringTests(unittest.TestCase):
     def test_compose_reply_uses_short_reply(self):
         text = io.open(os.path.join(ROOT, "amo_llm.py"), encoding="utf-8").read()
         self.assertIn("short_reply.prompt_block", text)
+        # task-3b C1：guard 仍是 generate 阶段 A/B 的调用点，但已不再产出固定句
         self.assertIn("short_reply.guard", text)
         self.assertNotIn("不要用括号描述动作", text)
 

@@ -838,7 +838,7 @@ class LlmMixin(_MixinBase):
 
 
     async def _reply_postprocess(self, reply, ctx, event, text, snap, group):
-        """回复组装第三步：润色 + 各道守卫（日期/拒绝/短回复/地点/消费/群聊）。"""
+        """回复组装第三步：润色 + 各道守卫（日期/拒绝/地点/消费/群聊）。"""
         umo = ctx["umo"]; uid = ctx["uid"]; scene = ctx["scene"]
         owner_name = ctx["owner_name"]; name = ctx["name"]; relation = ctx["relation"]
         persona = ctx["persona"]; state_text = ctx["state_text"]; tone = ctx["tone"]
@@ -868,6 +868,8 @@ class LlmMixin(_MixinBase):
                         self.db.kv_set("refusal:last", {"ts": now_ts(), "reason": _reason})
                     except Exception as exc:
                         _note_swallowed("amo_llm.py.553", exc)
+            # task-3b C1：guard 已不再改写（保留调用是为了 generate 阶段的 A/B 轨迹与
+            # 后续清理点；客服词/敷衍交给 prompt 规则 + 生成期重试）。
             reply = short_reply.guard(reply, snap, text)
             # 2026-11-15：嘴里说的消费必须账上查得到，编出来的直接改写
             reply = self._guard_consumption(reply)

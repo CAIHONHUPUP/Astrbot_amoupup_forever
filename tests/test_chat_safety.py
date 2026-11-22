@@ -40,6 +40,11 @@ class ChatSafetyTests(unittest.TestCase):
         out = apply_chat_safety("好呀。你那边忙完了没？", FakePlugin(), user_text="我这边没那么快")
         self.assertNotIn("忙完了没", out)
 
+    def test_anti_nag_only_reply_is_not_resurrected(self):
+        # task-3b C1：删空 = 本轮不发；apply_chat_safety 末尾的原文兜底不许捞回。
+        out = apply_chat_safety("你那边忙完了没？", FakePlugin(), user_text="我这边还没好")
+        self.assertEqual("", out)
+
     def test_history_share_anchor(self):
         from types import SimpleNamespace
         plugin = FakePlugin()

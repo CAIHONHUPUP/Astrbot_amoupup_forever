@@ -67,6 +67,17 @@ class PurchaseGuardTests(unittest.TestCase):
         self.assertEqual(1, out.count("还没买"))
         self.assertNotIn("649", out)
 
+    def test_minimal_rewrite_keeps_rest_of_message(self):
+        # task-3b C1：只改动词/删金额，不再整句换成「我试了试，挺喜欢的」。
+        out = rewrite("我回来啦！今天买了米白色针织开衫，花了 649 元，穿上真的超好看！",
+                      FakePlugin(ledger=False))
+        self.assertIn("超好看", out)
+        self.assertNotIn("我试了试", out)
+
+    def test_price_only_claim_never_returns_empty(self):
+        # 消费守卫是 safety tier：改口后没内容也要说「还没买」，不许变空串。
+        self.assertEqual("还没买", rewrite("花了 649 元。", FakePlugin(ledger=False)))
+
 
 if __name__ == "__main__":
     unittest.main()

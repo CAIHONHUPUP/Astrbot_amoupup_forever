@@ -1547,6 +1547,10 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
         except ImportError:
             from amo_anti_nag import rewrite as _anti_nag
         value = _anti_nag(value, user_text)
+        if not str(value or "").strip():
+            # 催问句是整条：删空 = 本轮不发。绝不能让函数末尾的「原文兜底」
+            # 把催问句捞回来（task-3b C1 的空串哨兵契约）。
+            return ""
     except Exception as exc:
         logger.debug("[amo] chat_safety.anti_nag 失败: %s", exc)
     try:
