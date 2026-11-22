@@ -1532,13 +1532,9 @@ class ScheduleStateMixin(_MixinBase):
                                      old_items, new_items, extra={"scene_clamped": _scene_clamped})
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.scene_constraint.apply", _amo_exc)
-        try:
-            _jumps = place_continuity_problems(new_items)
-            if _jumps:
-                logger.warning("[amo] 日程地点不连续 %d 处（source=%s day=%s）：%s",
-                               len(_jumps), source or "-", day, "；".join(_jumps[:3]))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.continuity", _amo_exc)
+        # A1 清理（Batch A）：原来这里只 warning 的 place_continuity_problems 已并入
+        # 下面的 validate 闸——path_break 是 8 项指标之一，拒绝/计数都由它统一负责，
+        # 不再保留第二套“只喊不拦”的检查。
         # 零缺陷发布协议：落库前强制 validate，只拦「本次新引入」的缺陷（旧数据不回溯阻断）。
         try:
             try:
