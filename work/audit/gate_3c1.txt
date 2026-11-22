@@ -1,0 +1,10 @@
+# 3c 阶段 1 门禁与四件套（2026-11-23）
+
+改动：amo_persona_guard 禁语层升级为「整句重写 → 残片丢句 → 中性兜底」；
+非空输入永不返回空；sanitize_candidate 走低阶 rewrite（全丢仍返回空 + forbidden_phrase）。
+只改 amo_persona_guard.py 与 tests/test_persona_guard.py（+332/-15）。
+
+- 门禁 exit 0（900.1s）：6375 passed / 0 failed / 7 skipped / 282 subtests（+10 测试/+18 subtests）；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
+- 四件套与 3b1c 逐项一致：daily 614/614（probe 5 维 0、contradiction 0）、share 500/100%（damaged 0、persistent 0）、remind 240/240、adversarial 39/39、回放 exit 0（persistent 2、旁白 0）
+- test_immersion_acceptance 全绿：emotion_keep 0.9655（≥0.95）、空回复 0/906、复读 0、答非所问 0
+- 10 条对抗句全部非空、无残片、无「我我」、幂等；「你老婆我饿了」修成「我饿了。」（原「我我饿了」）

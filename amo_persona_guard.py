@@ -33,24 +33,209 @@ FORBIDDEN_PHRASES = (
 _DROP_SENTENCE = ("收到你后来", "收到你那句", "这有啥好笑的",
                   "我哪生气了", "别给我扣帽子")
 
-#: 第三人称自称 → 第一人称（基础人格：自称「我」）。
+#: 第三人称自称 → 「我」（保住谓语）；群体称呼 → 「你」（换「我」= 自我贬低，语义反了）。
 _SELF_THIRD = (("你美丽的老婆", "我"), ("你老婆", "我"), ("你们男人", "你"))
+_THIRD_REPLACE = dict(_SELF_THIRD)
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[。！？!?~～\n])")
+#: 分句符：命中词前面最后一个分句符之后是「分句首」= 主语位。
+_CLAUSE_CHARS = "，,、；;：:"
+#: 命中词前面只剩这些称呼时仍按主语位处理（「老公你美丽的老婆…」→「老公我…」）。
+_VOCATIVE_ONLY = re.compile(
+    r"^(?:老公啊|老公|你啊|喂|哎呀|哎|诶|哼|那个)[，,、\s]*$")
+#: 残片判据：只剩虚词开头 / 整句只剩代词 / 只剩定语结尾。
+_FRAGMENT_HEAD = re.compile(r"^(?:儿|了|的|们|着|而|嘛|吧|啊|呢|个)")
+_FRAGMENT_TAIL = re.compile(r"(?:的|地|得)$")
+_FRAGMENT_BODIES = frozenset(("我", "你", "我的", "你的", "我我", "我想我"))
+
+#: 禁语处理计数（进程内观测，不驱动逻辑；与 naturalness_stats 同款）。
+_FORBIDDEN_COUNTER: dict[str, int] = {}
 
 
-def _drop_bad_sentences(text):
-    parts = _SENTENCE_SPLIT.split(str(text or ""))
-    kept = [part for part in parts if not any(word in part for word in _DROP_SENTENCE)]
-    return "".join(kept).strip()
+def forbidden_hits(text):
+    """文本里命中的禁语词（顺序同 FORBIDDEN_PHRASES，同一个词只报一次）。"""
+    body = str(text or "")
+    return [word for word in FORBIDDEN_PHRASES if word in body]
 
 
-def neutralize_forbidden(text):
-    """删掉被明令禁止的句子/句式，第三人称自称改成「我」。"""
-    body = _drop_bad_sentences(text)
-    for old, new in _SELF_THIRD:
-        body = body.replace(old, new)
-    return body.strip()
+def _body_of(text):
+    return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(text or ""))
+
+
+def _looks_fragment(text):
+    """残片：整句只剩虚词/代词/定语，或还留着「我我」「我想我」。"""
+    body = str(text or "").strip()
+    if not body:
+        return True
+    core = _body_of(body)
+    if not core or core in _FRAGMENT_BODIES:
+        return True
+    if "我我" in body or "我想我" in body:
+        return True
+    if _FRAGMENT_HEAD.match(body):
+        return True
+    return bool(_FRAGMENT_TAIL.search(core))
+
+
+def _tail_clause(text, index):
+    """命中词前面、最后一个分句符之后的那段（空 = 分句首 = 主语位）。"""
+    head = str(text or "")[:index]
+    cut = max(head.rfind(char) for char in _CLAUSE_CHARS)
+    return head[cut + 1:]
+
+
+def _rewrite_word(sentence, word, replacement):
+    """按位置把一处第三人称自称/群体称呼改掉；改不干净返回 None（该句丢）。
+
+    T1 主语位（句首/分句首/称呼后）→ 直接换主语，保留谓语；
+    T2 非主语位（宾语/兼语/定语）→ 前面已有「我」就不能换（会拼出「我想我」），
+       且换完全句只能剩一个「我」才放行（「你别惹我生气」）；
+    其余 → 丢句。
+    """
+    for _step in range(8):
+        index = sentence.find(word)
+        if index < 0:
+            return sentence
+        prefix = sentence[:index]
+        tail = _tail_clause(sentence, index)
+        subject_position = (not prefix.strip() or not tail.strip()
+                            or bool(_VOCATIVE_ONLY.match(prefix)))
+        if not subject_position and "我" in prefix:
+            return None
+        fresh = prefix + replacement + sentence[index + len(word):]
+        if not subject_position and fresh.count("我") > 1:
+            return None
+        sentence = fresh
+    return None  # 同一个词命中太多：不再猜，整句丢
+
+
+def _rewrite_sentence(sentence):
+    """单句：命中词逐个位置判定重写，改不出干净句子就返回 ("", False)。"""
+    hits = [word for word, _new in _SELF_THIRD if word in sentence]
+    if not hits:
+        return sentence, False
+    body = sentence
+    for word in hits:
+        fresh = _rewrite_word(body, word, _THIRD_REPLACE[word])
+        if fresh is None:
+            return "", False
+        body = fresh
+    # 同位语自称「你老婆我饿了」→「我我饿了」→「我饿了」
+    body = re.sub(r"我(?=[，,、]?我)", "", body)
+    body = re.sub(r"^[，,、\s]+", "", body)
+    if any(word in body for word in _THIRD_REPLACE):
+        return "", False
+    if _looks_fragment(body):
+        return "", False
+    return body, True
+
+
+def _join_kept(parts):
+    """丢句后重拼：被删句两侧的空隙一起去掉，不留下多余空行。"""
+    out: list[str] = []
+    gap = False
+    for part in parts:
+        if not part.strip():
+            gap = bool(out)
+            continue
+        if out and gap:
+            out.append("\n")
+        gap = False
+        out.append(part)
+    return "".join(out).strip()
+
+
+def rewrite_forbidden(text):
+    """低阶禁语重写：整句重写 + 残片丢句，**不做中性兜底**（全丢返回空串）。
+
+    返回 (text, stats)。stats 键与 _FORBIDDEN_COUNTER 同口径（rewrite/drop_sentence）。
+    候选链专用：返回空串表示「候选不安全」，由 amo_rewrite_safety.recover 保持现行
+    文本 —— 这里绝不能返回中性句，否则会用更空的回复顶掉正常回复。
+    """
+    original = str(text or "")
+    stats = {"rewrite": 0, "drop_sentence": 0}
+    if not original.strip():
+        return "", stats
+    kept, changed = [], False
+    for part in _SENTENCE_SPLIT.split(original):
+        if not part.strip():
+            kept.append(part)  # 换行等纯空白：由 _join_kept 按位置还原
+            continue
+        if any(word in part for word in _DROP_SENTENCE):
+            stats["drop_sentence"] += 1
+            changed = True
+            continue
+        fresh, rewritten = _rewrite_sentence(part)
+        if not fresh.strip():
+            stats["drop_sentence"] += 1
+            changed = True
+            continue
+        if rewritten:
+            stats["rewrite"] += 1
+            changed = True
+        kept.append(fresh)
+    if not changed:
+        return original.strip(), stats
+    return _join_kept(kept), stats
+
+
+def _neutral_sentence(key=""):
+    """全句被禁语吃掉时的中性句：复用统一兜底注册表，不新建私有池。"""
+    line = ""
+    try:
+        try:
+            from .domains.reply import repetition_guard as _registry
+        except ImportError:
+            from domains.reply import repetition_guard as _registry
+        line = _registry.pick("short", "forbidden:" + str(key or ""), ())
+    except Exception:  # cleanup: 注册表不可用就退回字面量（兜底必须自带兜底）
+        line = ""
+    return str(line or "").strip() or "嗯，我在呢。"
+
+
+def _note_forbidden(stats, original, result):
+    """计数 + 命中日志（只在命中时写 INFO；线上极低频）。"""
+    for name in ("rewrite", "drop_sentence", "fallback"):
+        count = int(stats.get(name, 0) or 0)
+        if count:
+            _FORBIDDEN_COUNTER[name] = _FORBIDDEN_COUNTER.get(name, 0) + count
+    hits = forbidden_hits(original)
+    if hits:
+        if stats.get("fallback"):
+            action = "fallback"
+        elif not str(result or "").strip():
+            action = "drop"  # 候选链：全丢返回空，由 recover 保持现行文本
+        else:
+            action = "rewrite"
+        logger.info("[amo] 禁语处理 action=%s hits=%s text=%s",
+                    action, "、".join(hits), str(result or "")[:80])
+
+
+def forbidden_stats():
+    """禁语处理计数快照（进程内；观测用，不驱动逻辑）。"""
+    return dict(_FORBIDDEN_COUNTER)
+
+
+def reset_forbidden_stats():
+    """清空禁语计数（测试与回放用）。"""
+    _FORBIDDEN_COUNTER.clear()
+
+
+def neutralize_forbidden(text, key=""):
+    """出站禁语处理：整句重写 → 残片丢句 → 全丢给中性兜底。
+
+    硬不变量：**非空输入永不返回空串**（三条出站路径的空返回都会丢消息）；
+    空/空白输入仍返回空串（prepare_outbound 的 "empty" 分支依赖这一点）。
+    """
+    body = str(text or "")
+    if not body.strip():
+        return ""
+    fresh, stats = rewrite_forbidden(body)
+    if not fresh:
+        stats["fallback"] = 1
+        fresh = _neutral_sentence(key)
+    _note_forbidden(stats, body, fresh)
+    return fresh
 
 
 # ---------------------------------------------------------------------------
@@ -525,8 +710,19 @@ def _stage_system(ctx):
 
 
 def _stage_forbidden(ctx):
-    """S6 禁语：删句 + 第三人称自称改「我」。"""
-    ctx.text = neutralize_forbidden(ctx.text)
+    """S6 禁语：整句重写 → 残片丢句 →（仅出站）中性兜底。
+
+    出站走 neutralize_forbidden：非空输入恒非空，所以下面的 forbidden_phrase
+    正常不可达（测试钉住这条不变量，改坏时立刻变红）；
+    候选走低阶 rewrite_forbidden：全丢仍返回空串，交给 recover 保持现行文本
+    —— 候选链拿中性句会顶掉正常回复。
+    """
+    original = ctx.text
+    if ctx.profile == "candidate":
+        ctx.text, stats = rewrite_forbidden(original)
+        _note_forbidden(stats, original, ctx.text)
+    else:
+        ctx.text = neutralize_forbidden(original)
     if not ctx.text:
         return "forbidden_phrase"
     return None
@@ -718,7 +914,8 @@ def guard_candidate(plugin, umo, text, user_text=""):
 
 
 __all__ = [
-    "FORBIDDEN_PHRASES", "neutralize_forbidden", "strip_action_narration",
+    "FORBIDDEN_PHRASES", "forbidden_hits", "rewrite_forbidden", "neutralize_forbidden",
+    "forbidden_stats", "reset_forbidden_stats", "strip_action_narration",
     "has_action_narration", "has_orphan_paren", "action_only", "action_ratio",
     "naturalness_issues", "note_naturalness", "naturalness_stats",
     "self_recent_texts", "self_recent_block", "denial_of_self_issue",

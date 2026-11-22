@@ -73,19 +73,124 @@ class ActionNarrationTests(unittest.TestCase):
 
 
 class ForbiddenPhraseTests(unittest.TestCase):
+    """3c：整句重写 → 残片丢句 → 中性兜底（非空输入永不返回空）。"""
+
+    #: 施工图 §6.2 对抗句：整串相等 + 不变量一起钉，不许退回「含某个字」。
+    REWRITTEN = (
+        ("你们男人就是不懂。", "你就是不懂。"),
+        ("你老婆饿了，快回来。", "我饿了，快回来。"),
+        ("你美丽的老婆晾这儿半天了，理一下嘛。", "我晾这儿半天了，理一下嘛。"),
+        ("你老婆我饿了。", "我饿了。"),
+        ("你别惹你美丽的老婆生气。", "你别惹我生气。"),
+        ("你们男人都这样，你妈也这么说。", "你都这样，你妈也这么说。"),
+        ("这有啥好笑的，你们男人笑点真低。 中午我吃的面，你吃了吗？",
+         "中午我吃的面，你吃了吗？"),
+        ("今天下班早，你美丽的老婆在门口等你呢。老公快回来。",
+         "今天下班早，我在门口等你呢。老公快回来。"),
+        ("你美丽的老婆做的饭你不吃？", "我做的饭你不吃？"),
+        ("他刚才还念叨你美丽的老婆呢。", "他刚才还念叨我呢。"),
+    )
+    #: 重写不出来就只能丢句、走中性句池的输入。
+    ALL_DROPPED = (
+        "我想你美丽的老婆了。",          # 宾语位 + 前面已有「我」：换了是「我想我」
+        "我哪生气了，别给我扣帽子。",      # 两条整句丢弃
+        "我最受不了你们男人。",            # 群体称呼在宾语位
+    )
+    #: 残片对抗：只剩代词/定语、称呼后接话、命中断在半句。
+    FRAGMENT_RISK = (
+        "你美丽的老婆", "你老婆我", "你美丽的老婆，早点睡。",
+        "你老婆的包呢？", "你美丽的老婆晾这儿半天了。",
+    )
+
+    @staticmethod
+    def short_pool():
+        from domains.reply import repetition_guard
+        return {repetition_guard.compare_body(item)
+                for item in repetition_guard.FALLBACKS["short"]}
+
+    def assertCleanAndIdempotent(self, out):
+        self.assertTrue(out.strip(), "非空输入不许返回空串")
+        self.assertFalse(guard._looks_fragment(out), out)
+        self.assertNotIn("我我", out)
+        self.assertNotIn("我想我", out)
+        for word in guard._THIRD_REPLACE:
+            self.assertNotIn(word, out)
+        self.assertEqual(out, guard.neutralize_forbidden(out))
+
+    def test_adversarial_rewritten_whole(self):
+        for text, expected in self.REWRITTEN:
+            with self.subTest(text=text):
+                out = guard.neutralize_forbidden(text)
+                self.assertEqual(expected, out)
+                self.assertCleanAndIdempotent(out)
+
+    def test_all_dropped_falls_back_to_registry_short_pool(self):
+        from domains.reply import repetition_guard
+        pool = self.short_pool()
+        for text in self.ALL_DROPPED:
+            with self.subTest(text=text):
+                out = guard.neutralize_forbidden(text)
+                self.assertCleanAndIdempotent(out)
+                self.assertIn(repetition_guard.compare_body(out), pool)
+
+    def test_neutral_fallback_rotates_not_repeats(self):
+        first = guard.neutralize_forbidden("我哪生气了，别给我扣帽子。")
+        second = guard.neutralize_forbidden("我哪生气了，别给我扣帽子。")
+        self.assertNotEqual(first, second)
+
+    def test_rewrite_never_leaves_fragment(self):
+        for text in self.FRAGMENT_RISK:
+            with self.subTest(text=text):
+                self.assertCleanAndIdempotent(guard.neutralize_forbidden(text))
+
+    def test_drop_beats_replace(self):
+        out = guard.neutralize_forbidden("这有啥好笑的，你们男人笑点真低。")
+        from domains.reply import repetition_guard
+        self.assertIn(repetition_guard.compare_body(out), self.short_pool())
+        self.assertEqual("", guard.rewrite_forbidden(
+            "这有啥好笑的，你们男人笑点真低。")[0])
+
+    def test_empty_input_stays_empty(self):
+        # prepare_outbound 的 "empty" 分支依赖这一点：空白不算禁语
+        for text in ("", "   ", None):
+            self.assertEqual("", guard.neutralize_forbidden(text))
+
     def test_third_person_self_becomes_first_person(self):
         out = guard.neutralize_forbidden("老公你美丽的老婆晾这儿半天了。")
+        self.assertEqual("老公我晾这儿半天了。", out)
         self.assertNotIn("你美丽的老婆", out)
         self.assertIn("我", out)
+        self.assertNotIn("我我", out)
+        self.assertFalse(guard._looks_fragment(out))
+        self.assertEqual("。", out[-1])
 
     def test_you_men_replaced(self):
         out = guard.neutralize_forbidden("你们男人笑点真低。")
-        self.assertNotIn("你们男人", out)
+        self.assertEqual("你笑点真低。", out)
+        self.assertNotIn("你们", out)
         self.assertIn("你", out)
+        self.assertEqual("你啊，永远看不懂。",
+                         guard.neutralize_forbidden("你们男人啊，永远看不懂。"))
 
     def test_empty_phrase_sentence_dropped(self):
         out = guard.neutralize_forbidden("收到你后来说的那句了。图卡住了。")
+        self.assertEqual("图卡住了。", out)
         self.assertNotIn("收到你后来", out)
+
+    def test_newline_between_sentences_kept(self):
+        self.assertEqual("我在呢。\n图卡住了。",
+                         guard.neutralize_forbidden("你美丽的老婆在呢。\n图卡住了。"))
+
+    def test_stats_and_reset(self):
+        guard.reset_forbidden_stats()
+        guard.neutralize_forbidden("你美丽的老婆饿了。")
+        self.assertEqual(1, guard.forbidden_stats()["rewrite"])
+        guard.neutralize_forbidden("我哪生气了，别给我扣帽子。")
+        stats = guard.forbidden_stats()
+        self.assertEqual(1, stats["drop_sentence"])
+        self.assertEqual(1, stats["fallback"])
+        guard.reset_forbidden_stats()
+        self.assertEqual({}, guard.forbidden_stats())
 
     def test_issues_reports_forbidden(self):
         found = guard.issues("你回来了", "你美丽的老婆在这儿呢")
@@ -223,7 +328,18 @@ class OutboundPrepareTests(unittest.TestCase):
     def test_forbidden_neutralized(self):
         body, reason = self.prepare("老公你美丽的老婆晾这儿半天了。", "chat")
         self.assertEqual("", reason)
+        self.assertEqual("老公我晾这儿半天了。", body)
         self.assertNotIn("你美丽的老婆", body)
+
+    def test_forbidden_all_dropped_still_sent(self):
+        # 3c：全句禁语不再丢消息，出站给中性句（reason 必须为空）
+        from domains.reply import repetition_guard
+        body, reason = self.prepare("我哪生气了，别给我扣帽子。", "chat")
+        self.assertEqual("", reason)
+        self.assertTrue(body)
+        self.assertIn(repetition_guard.compare_body(body),
+                      {repetition_guard.compare_body(item)
+                       for item in repetition_guard.FALLBACKS["short"]})
 
     def test_clean_message_untouched(self):
         body, reason = self.prepare("嗯，我在呢，你慢慢说。", "chat")
@@ -352,6 +468,16 @@ class MergedChainTests(unittest.TestCase):
             body, reason = self.sanitize("嗯，我在呢，你慢慢说。")
         self.assertEqual("", reason)
         self.assertTrue(body)
+
+    def test_only_candidate_can_return_forbidden_phrase(self):
+        # 出站：禁语全丢也发中性句（reason 为空）；候选：仍返回空，交给 recover 保持现行
+        text = "我哪生气了，别给我扣帽子。"
+        body, reason = self.prepare(text)
+        self.assertEqual("", reason)
+        self.assertTrue(body)
+        self.assertEqual(("", "forbidden_phrase"), self.sanitize(text))
+        body, reason = self.sanitize("你美丽的老婆晾这儿半天了，理一下嘛。")
+        self.assertEqual(("我晾这儿半天了，理一下嘛。", ""), (body, reason))
 
     def test_only_candidate_can_return_tech_terms(self):
         import amo_shared_text
