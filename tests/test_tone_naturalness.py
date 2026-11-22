@@ -196,6 +196,16 @@ def test_rotation_is_deterministic_for_same_seed():
     assert run() == run()
 
 
+def test_health_first_variant_rotates_by_seed():
+    """3c：health 池第一次就按种子散开，不再永远先出「就是有点累」。"""
+    pool = pipeline.TONE_POOLS["health"]["default"]
+    outs = {pipeline._pick_tone_variant(pool, "health|%d" % seed, {}, "seed-%d" % seed,
+                                        rotate_first=True)
+            for seed in range(12)}
+    assert len(outs) > 1, outs
+    assert pipeline._pick_tone_variant(pool, "health|fixed", {}, "seed") == pool[0]
+
+
 def test_mood_and_relation_select_different_groups():
     sweet = _plugin(relation="恋人")
     plain = _plugin()

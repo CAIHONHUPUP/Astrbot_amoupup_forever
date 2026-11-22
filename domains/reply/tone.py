@@ -153,15 +153,19 @@ def _tone_state(plugin):
             _note_swallowed("reply.tone._tone_state", exc)
             return _TONE_FALLBACK
     return state
-def _pick_tone_variant(pool, key, state, seed):
-    """种子轮换：第一次用旧固定句，之后从下一条起换，绝不连续重复。"""
+def _pick_tone_variant(pool, key, state, seed, rotate_first=False):
+    """种子轮换：默认第一次用旧固定句；health 等池可 rotate_first 首次就按种子散开。"""
     variants = [str(item) for item in (pool or ()) if str(item or "").strip()]
     if not variants:
         return ""
     name = str(key)
     record = state.get(name)
     if not isinstance(record, int) or not (0 <= record < len(variants)):
-        index = 0
+        if rotate_first and len(variants) > 1:
+            digest = hashlib.sha1(str(seed or "").encode("utf-8")).hexdigest()[:8]
+            index = int(digest, 16) % len(variants)
+        else:
+            index = 0
     elif record == 0 and len(variants) > 1:
         digest = hashlib.sha1(str(seed or "").encode("utf-8")).hexdigest()[:8]
         index = 1 + int(digest, 16) % (len(variants) - 1)
@@ -266,7 +270,7 @@ def _natural_clause(rule, prefix, middle, suffix, sentence, replacement,
     state = _tone_state(plugin)
     candidates = _tone_candidates(rule, prefix, middle, suffix, plugin, activity, variants)
     chosen = _pick_tone_variant(candidates, _tone_key(rule, middle, plugin, activity),
-                                state, seed)
+                                state, seed, rotate_first=(rule == "health"))
     return chosen or replacement
 def _today_chat(plugin, moment):
     """今天是否已经聊过：读进程内最近回复时间；重启后首轮保守返回 False。"""
