@@ -57,7 +57,8 @@ CODE_MD5 = {
     # 2026-11-22 task-30：_dynamic_context 的 snap 改读 snapshot_with_scene（场景账本唯一源）
     "_dynamic_context": "998260f562709582a1312e18b5946c05",
     # 2026-11-22 task-23：on_decorating_result 每轮补记外部 generate_selfie 媒体回执
-    "on_decorating_result": "41c9d5c92bf0f56f725a979d0a2af9d5",
+    # 2026-11-23 3c-2：apply_chat_safety 之后多一处 await regenerate_forbidden（默认关）
+    "on_decorating_result": "c064d54b628429c612f901bfd11c2aac",
     "_tick": "ac96fb9f0472533cfc38feb32d6a078e",
     "_maybe_daily_digest": "4acb3ce8497d6574eaed72b676066486",
     "warm_up": "511847b73896b66a6b03cb204c5832da",
@@ -66,7 +67,7 @@ CODE_MD5 = {
 FINGERPRINTS = {
     "on_message": "6da8d75162f656678fc8120b2a2dbee0",
     "_dynamic_context": "d080b5c312edaec7515e14c733698643",
-    "on_decorating_result": "6fb5640a03ab7ddf2f30a055d0fea034",
+    "on_decorating_result": "01ecf26f7a7a3ac7644dc4d33c4a5a6a",
     "_tick": "ea8ccbb018f28d852b20e7ef4c6f1644",
     "_maybe_daily_digest": "ee8626b0b24ac01c304112f7456abe22",
     "warm_up": "2e1a8372ae7b979ccade341cacff8811",

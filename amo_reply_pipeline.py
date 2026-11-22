@@ -66,6 +66,7 @@ apply_fact_guard 兜一次（send 阶段保留 zone 黑名单）。
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import hashlib
 import inspect
@@ -1760,6 +1761,105 @@ def apply_segment_repeat_guard(text, plugin=None, umo=""):
 
 def _send_status_dedup(text, ctx):
     return apply_segment_dedup(text, ctx.plugin, ctx.umo)
+
+
+# ---------------------------------------------------------------------------
+# 3c 阶段 2：禁语命中时的一次模型重生成（模块常量开关，默认关闭，不新增配置键）
+#
+# 接在 chat 出口的 apply_chat_safety 之后（amo_runtime_reply.on_decorating_result）：
+# 命中才调一次 chat_raw（8s 超时），失败/超时/仍脏一律返回原文（fail-open），
+# 之后照旧走出站层的确定性重写/丢句/兜底。开关关 = 零模型调用、行为零变化。
+# ---------------------------------------------------------------------------
+
+#: 总开关：False = 绝不调模型（阶段 1 的确定性行为原样保留）。
+FORBIDDEN_REGEN_ENABLED = False
+#: 重生成超时（秒）：命中才调，最长等这么久，超时保持原文。
+FORBIDDEN_REGEN_TIMEOUT = 8.0
+#: 重生成的系统提示：只要一句她会说的话，不要解释。
+_FORBIDDEN_REGEN_SYSTEM = "你就是这个角色本人，只输出一句她会说的话，不要解释。"
+#: 计数（进程内观测，不驱动逻辑）：ok=采用新句 / fail=异常超时或仍脏 / skip=命中但没调。
+_FORBIDDEN_REGEN_COUNTER: Dict[str, int] = {}
+
+
+def _bump_regen(name):
+    _FORBIDDEN_REGEN_COUNTER[name] = _FORBIDDEN_REGEN_COUNTER.get(name, 0) + 1
+
+
+def forbidden_regen_stats():
+    """禁语重生成计数快照（进程内；观测用，不驱动逻辑）。"""
+    return dict(_FORBIDDEN_REGEN_COUNTER)
+
+
+def reset_forbidden_regen_stats():
+    """清空重生成计数（测试与回放用）。"""
+    _FORBIDDEN_REGEN_COUNTER.clear()
+
+
+def _regen_prompt(hits, body, user_text=""):
+    """重生成指令：保留原意与情绪、不用禁语、不要第三人称自称，只输出一句。"""
+    context = ""
+    if str(user_text or "").strip():
+        context = "他刚说的是：%s\n" % str(user_text or "").strip()[:100]
+    return ("上一版这句话里有不能说的说法（%s）。\n上一版：%s\n%s"
+            "请保留原意和情绪，用第一人称「我」重说这一句：不要用上面的说法，"
+            "不要第三人称自称（如「你美丽的老婆」「你老婆」），"
+            "直接对他说，只输出一句话，不要解释。"
+            % ("、".join(hits), str(body or "")[:200], context))
+
+
+async def regenerate_forbidden(text, plugin, umo="", user_text=""):
+    """禁语命中时让模型重写一次；失败/超时/仍脏保持原文（绝不弄丢回复）。
+
+    开关关（FORBIDDEN_REGEN_ENABLED=False）、空文本、无命中、没有可用 LLM 时
+    都不调模型、原样返回 —— 默认关 = 行为零变化、零模型调用。
+    采用的新句同样过 neutralize_forbidden（确定性层兜最后一次）。
+    """
+    body = str(text or "")
+    if not body.strip():
+        return body
+    try:
+        try:
+            from .amo_persona_guard import forbidden_hits, neutralize_forbidden
+        except ImportError:
+            from amo_persona_guard import forbidden_hits, neutralize_forbidden
+    except Exception as _amo_exc:  # cleanup: 守卫不可用就不重生成，保持原文
+        _note_swallowed("amo_reply_pipeline.regenerate_forbidden.import", _amo_exc)
+        return body
+    hits = forbidden_hits(body)
+    if not hits:
+        return body
+    llm = getattr(plugin, "llm", None)
+    if (not FORBIDDEN_REGEN_ENABLED or llm is None
+            or not callable(getattr(llm, "chat_raw", None))):
+        _bump_regen("skip")
+        return body
+    try:
+        fresh = await asyncio.wait_for(
+            llm.chat_raw(str(umo or ""), _FORBIDDEN_REGEN_SYSTEM,
+                         _regen_prompt(hits, body, user_text)),
+            timeout=FORBIDDEN_REGEN_TIMEOUT)
+    except Exception as _amo_exc:  # cleanup: 超时/模型异常保持确定性结果
+        _bump_regen("fail")
+        _note_swallowed("amo_reply_pipeline.regenerate_forbidden", _amo_exc)
+        return body
+    fresh = str(fresh or "").strip()
+    # 模型又把禁语说回来（或什么都没说）：不采用，原文交给后面确定性层兜。
+    if not fresh or forbidden_hits(fresh):
+        _bump_regen("fail")
+        return body
+    try:
+        cleaned = str(neutralize_forbidden(fresh) or "").strip()
+    except Exception as _amo_exc:  # cleanup: 确定性层异常就保持原文
+        _bump_regen("fail")
+        _note_swallowed("amo_reply_pipeline.regenerate_forbidden.clean", _amo_exc)
+        return body
+    if not cleaned or forbidden_hits(cleaned):
+        _bump_regen("fail")
+        return body
+    _bump_regen("ok")
+    logger.info("[amo] 禁语重生成 ok hits=%s text=%s",
+                "、".join(hits), cleaned[:80])
+    return cleaned
 
 
 # ---------------------------------------------------------------------------

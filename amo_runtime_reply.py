@@ -200,6 +200,14 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     getattr(event, "message_str", ""), history_text=_history)
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime_reply.chat_safety", _amo_exc)
+            # 3c 阶段 2：禁语命中时让模型重生成一句（默认关闭 = 零模型调用，
+            # 行为与阶段 1 的确定性收口完全一致）；失败/超时保持上面的结果。
+            try:
+                text = await _reply_pipeline.regenerate_forbidden(
+                    text, self, event.unified_msg_origin,
+                    getattr(event, "message_str", ""))
+            except Exception as _amo_exc:  # cleanup: 重生成失败不影响发送
+                _note_swallowed("amo_runtime_reply.forbidden_regen", _amo_exc)
             # task-26：聊天里不许出现「服务器/报错/超时/权限/面板/接口/异常/重试」
             # 这类后台话术；删掉命中分句，整条都命中就换成角色化短句。
             try:

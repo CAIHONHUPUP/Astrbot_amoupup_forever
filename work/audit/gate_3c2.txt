@@ -1,0 +1,9 @@
+# 3c 阶段 2 门禁与四件套（2026-11-23）
+
+改动：禁语命中时的「一次模型重生成」路径（amo_reply_pipeline.regenerate_forbidden +
+amo_runtime_reply 一处 await），**默认关闭**（FORBIDDEN_REGEN_ENABLED=False），不新增配置键。
+
+- 门禁 exit 0（905.1s）：6404 passed / 0 failed / 7 skipped / 282 subtests（+14 新测试）；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
+- 四件套与 group 逐项一致（默认关，零行为变化）：daily 614/614、share 500/100%（damaged 0、persistent 0）、remind 240/240、adversarial 39/39、回放 exit 0
+- 默认关证据：spy 断言真实 on_decorating_result 路径 0 次模型调用、发送文本逐字不变
+- 开启路径（测试内 monkeypatch）：成功=改写且无禁语；异常/超时/空返回/仍含禁语=原文；计数 ok/fail/skip
