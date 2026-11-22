@@ -53,16 +53,16 @@
 
 ## 5. 门禁 / 四件套 / 真模型
 
-- 全量门禁：见第 6 节（最终一次）。
-- 四件套：daily 50/50 组、614/614 轮，residual 0、guard_introduced 0；share 500/500，damaged 0、persistent 0；39 对抗全过；184 回放 exit 0；remind 239/240（1 条 `proactive_repeated` 误杀，与日程无关，记 P1）。
-- 真模型：deepseek-chat 探针 status=ok。
+- 全量门禁（最终）：**6361 passed / 7 skipped / 264 subtests passed**，strict mypy **0 errors**，pyflakes clean，silent except 0，schema/compile/routes/unittest 全过（`work/audit/gate_20261122_final2.txt`，GATE_EXIT=0）。
+- 四件套（最终）：daily **50/50 组、614/614 轮**，residual 0、guard_introduced 0；share **500/500**，damaged 0、persistent 0；remind **240/240**（clean 120/120，defect 0 泄漏）；39 对抗全过；184 回放 exit 0。
+- 真模型：deepseek-chat 探针 status=ok（`work/sim/real_llm_layer.json`）。
 
 ## 6. P0 / P1 / P2
 
 ### P0（阻断项）
 | 项 | 结果 |
 |---|---|
-| 全量门禁 | 待填 |
+| 全量门禁 | **6361 passed / 0 failed / mypy 0**（GATE_EXIT=0） |
 | 8 项指标连续 3 天全 0 | 通过（9 天） |
 | 迁移逐块核对 | 通过（5 天 6 块，关系不变） |
 | 回滚演练 | 通过（旧版本读/写新库） |
