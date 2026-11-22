@@ -398,6 +398,16 @@ def _fresh_question(umo, user_text=""):
     return str(user_text or "").strip()
 
 
+def _current_is_fallback(text, guard_mod):
+    """现行文本是否只是固定兜底句（不是正常候选）。"""
+    try:
+        pools = getattr(guard_mod, "FALLBACKS", {}) or {}
+        wanted = {_norm(item) for pool in pools.values() for item in (pool or ())}
+        return _norm(text) in wanted
+    except Exception:  # cleanup: registry 不可用时保守判定
+        return False
+
+
 def recover(plugin, umo, current, sanitize, guard=None, source="chat",
             allow_shrink=True, user_text=""):
     """候选优先出口：现行文本被改坏时，用安全改写过的候选顶回去。
@@ -413,6 +423,12 @@ def recover(plugin, umo, current, sanitize, guard=None, source="chat",
     if not candidate:
         return current
     if _norm(candidate) == _norm(current):
+        return current
+    # 只在「现行文本确实是固定兜底/多池拼装」时还原候选。
+    # 完整候选本身即使与场景冲突，也应交给场景守卫改写，不能靠候选优先顶回去
+    # （崩溃前 task-40 第一版把所有损坏都还原，daily holdout 从 50/50 掉到 27-44）。
+    guard_mod = _guard()
+    if not _current_is_fallback(current, guard_mod) and not guard_mod.is_multi_pool(current):
         return current
     try:
         safe, safe_reason = sanitize(candidate)
