@@ -1,0 +1,9 @@
+# 群聊称呼修复 门禁与四件套（2026-11-23）
+
+改动：amo_addressee_guard 增加群聊判定（umo 含 ":GroupMessage:"）。群聊命中被禁称呼时
+只删掉首句称呼与逗号（「朋友们，晚安。」→「晚安。」），不再改写成「老公」；私聊行为不变；
+群聊角色反转/敬语仍按原逻辑丢弃。+79/-10，新增 GroupChatTests 7 条。
+
+- 门禁 exit 0（903.1s）：6390 passed / 0 failed / 7 skipped / 282 subtests；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
+- 四件套与 attrib 逐项一致：daily 614/614、share 500/100%（damaged 0、persistent 0）、remind 240/240、adversarial 39/39、回放 exit 0（persistent 2、旁白 0）
+- 关闭已知缺口：群聊「朋友们，晚安→老公，晚安」串台（3a-2 施工图 A1-A2）

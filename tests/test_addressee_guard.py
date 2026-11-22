@@ -153,6 +153,57 @@ class PureGuardTests(unittest.TestCase):
         self.assertEqual("addressee_role_reversal:妈", reason)
 
 
+class GroupChatTests(unittest.TestCase):
+    """群聊 umo：首句称呼只删不改，绝不把群聊串成对老公说的私聊。"""
+
+    GROUP_UMO = "aiocqhttp:GroupMessage:123456"
+    PRIVATE_UMO = "aiocqhttp:FriendMessage:123456"
+
+    def test_group_friends_goodnight_strips_vocative(self):
+        body, reason = guard.enforce(None, self.GROUP_UMO, "朋友们，晚安。", source="chat")
+        self.assertEqual("晚安。", body)
+        self.assertEqual("addressee_group_vocative:朋友们", reason)
+
+    def test_group_roster_name_strips_vocative(self):
+        body, reason = guard.enforce(
+            None, self.GROUP_UMO, "柳如烟，你也在群里啊。", source="chat")
+        self.assertEqual("你也在群里啊。", body)
+        self.assertEqual("addressee_group_vocative:柳如烟", reason)
+
+    def test_group_at_name_strips_vocative(self):
+        body, reason = guard.enforce(
+            None, self.GROUP_UMO, "@柳如烟，你也在群里啊。", source="chat")
+        self.assertEqual("你也在群里啊。", body)
+        self.assertEqual("addressee_group_vocative:柳如烟", reason)
+
+    def test_group_vocative_only_dropped(self):
+        body, reason = guard.enforce(None, self.GROUP_UMO, "朋友们，", source="chat")
+        self.assertEqual("", body)
+        self.assertEqual("addressee_group_vocative:朋友们", reason)
+
+    def test_group_role_reversal_still_dropped(self):
+        body, reason = guard.enforce(
+            None, self.GROUP_UMO, "妈，我地铁上呢，中午回家吃，马上到。", source="chat")
+        self.assertEqual("", body)
+        self.assertEqual("addressee_role_reversal:妈", reason)
+
+    def test_group_honorific_still_dropped(self):
+        body, reason = guard.enforce(
+            None, self.GROUP_UMO, "婆婆，我周末过去看您。", source="chat")
+        self.assertEqual("", body)
+        self.assertEqual("addressee_honorific:婆婆", reason)
+
+    def test_private_same_inputs_still_rewritten_to_husband(self):
+        for text, expected, reason in (
+            ("朋友们，晚安。", "老公，晚安。", "addressee_rewrite:朋友们->老公"),
+            ("柳如烟，你也在群里啊。", "老公，你也在群里啊。",
+             "addressee_rewrite:柳如烟->老公"),
+        ):
+            body, got = guard.enforce(None, self.PRIVATE_UMO, text, source="chat")
+            self.assertEqual(expected, body)
+            self.assertEqual(reason, got)
+
+
 class PersonaGuardWiringTests(unittest.TestCase):
     def test_prepare_outbound_drops_real_sample(self):
         plugin = _Plugin([_owner_profile()])

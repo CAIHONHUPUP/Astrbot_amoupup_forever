@@ -14,11 +14,14 @@
     kv 证据：external_push_ts:social=1795318312.505433、mood_applied:social_event:妈妈...
     proactive_log 不记录外部 request_push，所以查不到；延迟回复是 4-18 分钟，也对不上。
 
-本模块只干两件事，是出站最后一层兜底（生成层另有收件人锁 prompt）：
+本模块只干三件事，是出站最后一层兜底（生成层另有收件人锁 prompt）：
 1. 首句称呼白名单：只允许老公 / 你 / 名字（profile 里的名字/昵称）；
    妈/爸/婆婆/阿姨/朋友/同事…… 以及名单外 NPC 名字都不许当收件人；
 2. 命中禁称呼且句子里是「用户第一人称自述」（我马上到 / 我回家吃 / 我在地铁上……）
-   => 判定角色反转，整条丢弃；否则只把首句称呼改回老公/名字后继续发。
+   => 判定角色反转，整条丢弃；
+3. 不是角色反转时：私聊只把首句称呼改回老公/名字后继续发；群聊（umo 含
+   ":GroupMessage:"，群里这句话不是对老公说的）只删掉首句称呼连同逗号，
+   保留剩余句子，删空才丢弃，绝不改写成「老公」。
 
 一条规则只在这里实现：persona_guard / outbound / message / state 都只调用本模块，
 不许再各自写局部正则。所有判定不碰网络、不碰数据库，异常一律 fail-open（宁可少拦，
@@ -70,17 +73,62 @@ _REWRITE_DEFAULT = "老公"
 #: （task-41 holdout A9）。这类不是「只错称呼」，按角色反转整条丢弃。
 _HONORIFIC = re.compile(r"您")
 
+#: 群聊 umo 标记（如 aiocqhttp:GroupMessage:123）：群里的首句称呼不是对老公说的。
+_GROUP_UMO_MARK = ":GroupMessage:"
+#: 群聊 @ 点名：@柳如烟，/ @柳如烟<空格>。只在群聊分支启用，私聊行为不变。
+_VOCATIVE_AT = re.compile(r"^\s*@\s*([\u4e00-\u9fffA-Za-z]{1,6})(?:\s*[，,]\s*|\s+)")
 
-def _first_vocative(text):
+
+def is_group_chat(umo):
+    """umo 是否群聊（含 ":GroupMessage:"）；空/异常一律当私聊。"""
+    try:
+        return _GROUP_UMO_MARK in str(umo or "")
+    except Exception:
+        return False
+
+
+def _vocative_patterns(allow_at=False):
+    return (_VOCATIVE_AT, _VOCATIVE) if allow_at else (_VOCATIVE,)
+
+
+def _first_vocative(text, allow_at=False):
     """返回首句称呼 match（跳过行首动作旁白）；没有称呼返回 None。"""
     body = str(text or "")
-    match = _VOCATIVE.match(body)
-    if match:
-        return match
+    patterns = _vocative_patterns(allow_at)
+    for pattern in patterns:
+        match = pattern.match(body)
+        if match:
+            return match
     stripped = _LEAD_PAREN.sub("", body, count=1)
     if stripped != body:
-        return _VOCATIVE.match(stripped)
+        for pattern in patterns:
+            match = pattern.match(stripped)
+            if match:
+                return match
     return None
+
+
+def _vocative_lead(body, allow_at=False):
+    """首句称呼前可保留的动作旁白长度（直接命中返回 0）。"""
+    for pattern in _vocative_patterns(allow_at):
+        if pattern.match(body):
+            return 0
+    stripped = _LEAD_PAREN.sub("", body, count=1)
+    if stripped != body:
+        for pattern in _vocative_patterns(allow_at):
+            if pattern.match(stripped):
+                return len(body) - len(stripped)
+    return 0
+
+
+def strip_vocative(text, allow_at=False):
+    """删掉首句称呼连同其后的逗号，保留剩余句子与行首动作旁白。"""
+    body = str(text or "")
+    match = _first_vocative(body, allow_at=allow_at)
+    if match is None:
+        return body
+    lead = _vocative_lead(body, allow_at=allow_at)
+    return body[:lead] + body[lead + match.end():]
 
 
 def _split_owner_names(value):
@@ -174,17 +222,20 @@ def rewrite_vocative(text, addr="老公"):
     return body[: start] + str(addr) + body[end:]
 
 
-def apply(text, owner=(), others=(), rewrite_addr=""):
+def apply(text, owner=(), others=(), rewrite_addr="", group=False):
     """纯函数守卫：返回 (text, reason)。
 
     reason 为空 = 放行；返回空文本 + reason = 丢弃；返回新文本 + reason = 已改写。
     reason 里带称呼词，便于日志/outbound_log 记录来源与原因。
+
+    group=False 是私聊旧行为：禁称呼改写为老公；group=True 是群聊：只删首句称呼，
+    绝不改写成「老公」，删完为空才丢弃。角色反转/敬语两条判定在两种模式下都先执行。
     """
     body = str(text or "").strip()
     if not body:
         return body, ""
     try:
-        match = _first_vocative(body)
+        match = _first_vocative(body, allow_at=bool(group))
         if match is None:
             return body, ""
         word = str(match.group(1) or "").strip()
@@ -196,6 +247,13 @@ def apply(text, owner=(), others=(), rewrite_addr=""):
             # 改写必须连敬语一起自洽；「您/您们」说明收件人本来就是长辈，改称呼不成立。
             # 这里选择整条丢弃（task-41：改写要连「您」一起改或直接拒）。
             return "", "addressee_honorific:%s" % word
+        if group:
+            # 群聊里「朋友们，晚安」是对全群说的，不能串成「老公，晚安」；删掉称呼即可。
+            fixed = strip_vocative(body, allow_at=True).strip()
+            reason = "addressee_group_vocative:%s" % word
+            if not fixed:
+                return "", reason
+            return fixed, reason
         target = str(rewrite_addr or "").strip()
         if not target:
             owners = set(owner or ())
@@ -218,6 +276,7 @@ def enforce(plugin, umo, text, source="", profile=None, rewrite_addr=""):
         owner=owner_names(plugin, umo, profile),
         others=other_names(),
         rewrite_addr=rewrite_addr,
+        group=is_group_chat(umo),
     )
     if reason:
         try:
@@ -234,5 +293,5 @@ def enforce(plugin, umo, text, source="", profile=None, rewrite_addr=""):
 __all__ = [
     "ALLOWED_ADDRESSES", "BANNED_ADDRESSES", "owner_names_from_profile",
     "owner_names", "other_names", "is_banned_address", "is_user_perspective",
-    "rewrite_vocative", "apply", "enforce",
+    "is_group_chat", "strip_vocative", "rewrite_vocative", "apply", "enforce",
 ]
