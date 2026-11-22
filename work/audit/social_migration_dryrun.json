@@ -1,0 +1,108 @@
+{
+ "db": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever\\work\\audit\\_scratch\\migrate_copy.db",
+ "today": "2026-11-22",
+ "apply": false,
+ "days": [
+  {
+   "day": "2026-11-15",
+   "changes": [
+    {
+     "start": "20:00",
+     "end": "20:27",
+     "before": "和闺蜜火锅",
+     "after": "自己吃饭、刷手机",
+     "people": [],
+     "source": ""
+    }
+   ],
+   "backup": false,
+   "problems": [],
+   "migrated": false,
+   "version": 0,
+   "diaries_stale": 0
+  },
+  {
+   "day": "2026-11-18",
+   "changes": [
+    {
+     "start": "19:00",
+     "end": "20:00",
+     "before": "沈幼微问你老家修房的事",
+     "after": "一个人待着",
+     "people": [
+      "沈幼微"
+     ],
+     "source": "jit"
+    }
+   ],
+   "backup": false,
+   "problems": [],
+   "migrated": false,
+   "version": 0,
+   "diaries_stale": 0
+  },
+  {
+   "day": "2026-11-20",
+   "changes": [
+    {
+     "start": "19:09",
+     "end": "20:00",
+     "before": "柳如烟下班吃火锅",
+     "after": "自己吃饭、刷手机",
+     "people": [
+      "柳如烟"
+     ],
+     "source": ""
+    },
+    {
+     "start": "20:39",
+     "end": "20:40",
+     "before": "和闺蜜吃饭",
+     "after": "自己吃饭、刷手机",
+     "people": [],
+     "source": ""
+    }
+   ],
+   "backup": false,
+   "problems": [],
+   "migrated": false,
+   "version": 0,
+   "diaries_stale": 0
+  },
+  {
+   "day": "2026-11-21",
+   "changes": [
+    {
+     "start": "12:00",
+     "end": "13:30",
+     "before": "妈妈中午回家吃饭",
+     "after": "自己吃饭、刷手机",
+     "people": [
+      "妈妈"
+     ],
+     "source": ""
+    },
+    {
+     "start": "14:00",
+     "end": "17:00",
+     "before": "柳如烟下午逛商场买冬衣",
+     "after": "一个人逛逛",
+     "people": [
+      "柳如烟"
+     ],
+     "source": ""
+    }
+   ],
+   "backup": false,
+   "problems": [],
+   "migrated": false,
+   "version": 0,
+   "diaries_stale": 0
+  }
+ ],
+ "todos": [],
+ "problems": [],
+ "purged_backups": 0,
+ "relation_unchanged": true,
+ "ok": true
+}
