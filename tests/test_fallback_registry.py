@@ -92,6 +92,17 @@ class RegistryShapeTests(unittest.TestCase):
                     self.assertNotIn(pool + " = [", source)
 
 
+class ActionFallbackTests(unittest.TestCase):
+    def test_action_fallback_comes_from_registry(self):
+        import amo_message
+        cases = (("（耳朵有点热）", "action.shy"), ("（笑）", "action.laugh"),
+                 ("（把手机放下）", "action.default"))
+        for text, key in cases:
+            out = amo_message.action_only_fallback(text)
+            line = out.splitlines()[-1]
+            self.assertIn(line, registry.FALLBACKS[key], (text, out))
+
+
 class CallerParityTests(unittest.TestCase):
     def test_question_answer_still_uses_one_registry_sentence(self):
         for key, act, question, render, expected in QUESTION_CASES:

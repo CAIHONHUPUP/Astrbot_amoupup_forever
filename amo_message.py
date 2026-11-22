@@ -257,22 +257,28 @@ def is_action_only(text):
     return bool(parts) and all(_ACTION_SEGMENT.match(part) for part in parts)
 
 
-_ACTION_FALLBACK = {
-    "shy": ("……你少来。", "别盯着看啦。", "……干嘛呀。", "你这个人真是的。"),
-    "laugh": ("行了行了，别闹。", "哈哈，你呀。", "笑死我了。"),
-    "default": ("……嗯。", "你接着说。", "我在听呢。", "然后呢？"),
-}
+#: 3a：动作-only 兜底统一走 domains/reply/repetition_guard.FALLBACKS（数据只有一份）。
+_ACTION_INTENTS = (("action.shy", ("耳朵", "脸红", "烫", "害羞", "扣", "低头")),
+                   ("action.laugh", ("笑",)),
+                   ("action.default", ()))
 
 
 def action_only_fallback(text, user_text=""):
     """动作-only 时补一句人话；保留原动作，不整段丢。"""
     body = str(text or "").strip()
-    if any(word in body for word in ("耳朵", "脸红", "烫", "害羞", "扣", "低头")):
-        pool = _ACTION_FALLBACK["shy"]
-    elif "笑" in body:
-        pool = _ACTION_FALLBACK["laugh"]
-    else:
-        pool = _ACTION_FALLBACK["default"]
+    intent = "action.default"
+    for name, words in _ACTION_INTENTS:
+        if words and any(word in body for word in words):
+            intent = name
+            break
+    try:
+        try:
+            from .domains.reply.repetition_guard import fallback_pool as _pool
+        except ImportError:
+            from domains.reply.repetition_guard import fallback_pool as _pool
+        pool = _pool(intent) or ("……嗯。",)
+    except Exception:
+        pool = ("……嗯。",)
     line = random.choice(pool)
     return (body + "\n" + line).strip() if body else line
 
