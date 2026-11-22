@@ -33,6 +33,7 @@ import amo_location_rules as loc  # noqa: E402
 import amo_shared  # noqa: E402
 import amo_transition as tr  # noqa: E402
 import amo_trip as trip  # noqa: E402
+import schedule_engine_v2 as _engine  # noqa: E402
 from amo_schedule import ScheduleMixin  # noqa: E402
 from amo_wallet import Wallet  # noqa: E402
 from schedule_engine import ScheduleEngine  # noqa: E402
@@ -117,46 +118,47 @@ def place_violations(rows):
     return bad
 
 
-def check_repair(day):
+def check_derived_transit(day):
+    """跨地点过渡只在读侧派生（阶段 0：写侧 insert/repair 已删）：
+    库里只有事件，派生视图有且仅有 1 条正确方向的过渡。"""
     bad = []
-    now = at(day, 23, 59)
     normal = [
         {"start": "13:41", "end": "15:41", "place": "医院", "zone": "hospital",
          "activity": "看诊"},
         {"start": "15:41", "end": "16:30", "place": "家", "zone": "home",
          "activity": "瘫着"},
     ]
-    repaired, inserted = tr.repair_cross_place_blocks(None, day, normal, now=now)
-    if len(inserted) != 1 or inserted[0].get("transit_kind") != "return":
-        bad.append("repair_normal_inserted=%d" % len(inserted))
-    bad.extend(timeline_violations(repaired))
-    bad.extend(place_violations(repaired))
-    again, inserted_again = tr.repair_cross_place_blocks(None, day, repaired, now=now)
-    if inserted_again:
-        bad.append("repair_not_idempotent=%d" % len(inserted_again))
+    view, _defects = _engine.safe_view(normal, day=day, now_min=23 * 60 + 59)
+    returns = [row for row in view if row.get("transit_kind") == "return"]
+    if len(returns) != 1:
+        bad.append("derived_normal_returns=%d" % len(returns))
+    elif returns[0].get("end") != "15:41":
+        bad.append("derived_normal_end=%s" % returns[0].get("end"))
+    bad.extend(timeline_violations(view))
+    bad.extend(place_violations(view))
     late = [
         {"start": "21:00", "end": "23:30", "place": "医院", "zone": "hospital",
          "activity": "看诊"},
         {"start": "23:30", "end": "24:00", "place": "家", "zone": "home",
          "activity": "瘫着"},
     ]
-    late_rows, late_inserted = tr.repair_cross_place_blocks(None, day, late, now=now)
-    if len(late_inserted) > 1:
-        bad.append("repair_late_duplicates=%d" % len(late_inserted))
-    bad.extend(timeline_violations(late_rows))
-    bad.extend(place_violations(late_rows))
-    late_again, late_again_inserted = tr.repair_cross_place_blocks(
-        None, day, late_rows, now=now)
-    if late_again_inserted:
-        bad.append("repair_late_not_idempotent=%d" % len(late_again_inserted))
+    late_view, _defects = _engine.safe_view(late, day=day, now_min=23 * 60 + 59)
+    late_returns = [row for row in late_view if row.get("transit_kind") == "return"]
+    if len(late_returns) != 1:
+        bad.append("derived_late_returns=%d" % len(late_returns))
+    bad.extend(timeline_violations(late_view))
+    bad.extend(place_violations(late_view))
     tight = [
         {"start": "23:50", "end": "23:57", "place": "公司", "zone": "office",
          "activity": "加班"},
         {"start": "23:57", "end": "24:00", "place": "家", "zone": "home",
          "activity": "瘫着"},
     ]
-    tight_rows, _tight_inserted = tr.insert_transit_blocks(day, tight, old_items=[], now=now)
-    bad.extend(timeline_violations(tight_rows))
+    tight_view, _defects = _engine.safe_view(tight, day=day, now_min=23 * 60 + 59)
+    derived_tight = [row for row in tight_view
+                     if row.get("derived") and row.get("zone") == "road"]
+    if len(derived_tight) > 1:
+        bad.append("derived_tight_too_many=%d" % len(derived_tight))
     return bad
 
 
@@ -407,7 +409,7 @@ def run(day=DEFAULT_DAY, city="东莞", with_trip=False):
     ctx, rows = build_day(plugin, state, day)
     checks.append(("timeline.adjacency", timeline_violations(rows)))
     checks.append(("place.physics", place_violations(rows)))
-    checks.append(("place.repair", check_repair(day)))
+    checks.append(("place.derived", check_derived_transit(day)))
     checks.append(("chat.now", check_chat(plugin, state, rows, day)))
     checks.append(("diary.small", check_small_diary(state, ctx, rows)))
     checks.append(("diary.daily", check_daily_diary()))

@@ -55,6 +55,7 @@ import amo_trip as trip  # noqa: E402
 import photo_rules  # noqa: E402
 from amo_wallet import Wallet  # noqa: E402
 from schedule_engine import ScheduleEngine  # noqa: E402
+import schedule_engine_v2 as _engine  # noqa: E402
 import work.preview_day as preview  # noqa: E402
 import work.simulate_day as sim  # noqa: E402
 import work.simulate_24h as sim24  # noqa: E402
@@ -289,6 +290,36 @@ def _clock(cx, hour=None, minute=0):
     return sim.at(cx["day"], cx["hour"] if hour is None else hour, minute)
 
 
+def _free_window(plugin, state, day, begin, end):
+    """把 [begin, end) 从落库行里腾空。
+
+    A1 后库里只有事件：正在跑的过渡（tr.start/current）与到达块仍会以
+    source=transit 落库，但 commit 的重叠闸会把压在已有事件块上的新行整条丢掉。
+    需要「此刻真在路上」的场景（road_guard）先把窗口让出来，过渡块才写得进去。
+    """
+    begin_min = begin.hour * 60 + begin.minute
+    end_min = end.hour * 60 + end.minute
+    rows = rows_of(plugin, state, day)
+    keep = []
+    for row in rows:
+        span = sim.span(row) or (0, 0)
+        if not (span[0] < end_min and span[1] > begin_min):
+            keep.append(row)
+            continue
+        if span[0] < begin_min:
+            cut = dict(row)
+            cut["end"] = _clock_text(begin_min)
+            keep.append(cut)
+        if span[1] > end_min:
+            cut = dict(row)
+            cut["start"] = _clock_text(end_min)
+            keep.append(cut)
+    if keep != rows:
+        plugin.state.commit_schedule_change(day, keep, old_items=rows,
+                                            source="audit_window", reason="为过渡腾窗口")
+    return keep
+
+
 def _pre_diary(plugin, day, row, text):
     """给旧块预置一条 valid 小日记，模拟“之前已经生成过”。"""
     span = sim.span(row) or (0, 0)
@@ -311,13 +342,10 @@ def _stale_or_gone(plugin, day, old_row, rows_after):
 
 
 def repair_day(plugin, state, day):
-    """跨地点切换补路上块（生产 repair），保证时间轴 0 重叠/无碎片。"""
+    """跨地点过渡由读侧派生（阶段 0：写侧 repair 已删）；返回派生过渡条数。"""
     rows = rows_of(plugin, state, day)
-    repaired, inserted = tr.repair_cross_place_blocks(plugin, day, rows, now=at(day, 22, 50))
-    if inserted:
-        plugin.state.commit_schedule_change(day, repaired, old_items=rows,
-                                            source="audit_repair", reason="跨地点补路上块")
-    return inserted
+    view, _defects = _engine.safe_view(rows, day=day)
+    return [row for row in view if row.get("derived") and row.get("transit_kind")]
 
 
 def _new_block_clean(plugin, day, rows_after, old_bids, checks, label):
@@ -368,10 +396,16 @@ def _after_change_common(plugin, state, day, rows_before, checks, label, now, so
 
 
 def sc_arrive_home(cx):
-    """1) 进行中的块里说「我到家了/到楼下了」→ 过渡截断 + 到达块。"""
+    """1) 进行中的块里说「我到家了/到楼下了」→ 过渡截断 + 到达块。
+
+    A1：库里只存事件，过渡与到达块（source=transit）必须落在空档里才不会被
+    commit 的重叠闸丢掉；所以先按本场景需要的区间腾窗口，再起过渡。
+    """
     plugin, state, day, hour, checks = cx["plugin"], cx["state"], cx["day"], cx["hour"], cx["checks"]
     clear_transition(plugin)
     base = _clock(cx) - dt.timedelta(minutes=45)
+    _free_window(plugin, state, day, base,
+                 _clock(cx, minute=30) + dt.timedelta(minutes=5))
     sim24.set_clock(base)
     data = tr.start(plugin, "commute", to_place="家", minutes=40, now=base)
     if not data:
@@ -432,6 +466,9 @@ def sc_go_work(cx):
     if here and sim.place_category(here[0]) not in ("home",):
         ok(checks, "work.skip", "此刻不在家(%s)，跳过上班场景" % sim.place_category(here[0]))
         return
+    # A1：过渡/到达块（source=transit）要落进空档，否则会被 commit 的重叠闸丢掉，
+    # 「含路上」就无从验证了。
+    _free_window(plugin, state, day, now, now + dt.timedelta(minutes=45))
     started = tr.maybe_start_from_text(plugin, "你去上班吧", now=now, source="bot")
     tr.current(plugin, now=now)
     finish_transition(plugin, now + dt.timedelta(minutes=30))
@@ -937,13 +974,8 @@ def smooth_day(plugin, state, day):
 
 
 def transit_pass(plugin, state, day):
-    """跨地点相邻块补路上块（生产 insert_transit_blocks）。"""
-    rows = rows_of(plugin, state, day)
-    padded, extra = tr.insert_transit_blocks(day, rows, old_items=[], now=at(day, 22, 50))
-    if extra:
-        plugin.state.commit_schedule_change(day, padded, old_items=rows,
-                                            source="audit_transit", reason="跨地点补路上块")
-    return padded
+    """跨地点过渡由读侧派生（阶段 0：写侧 insert 已删），不再落库。"""
+    return rows_of(plugin, state, day)
 
 
 def stabilize_day(plugin, state, day):
@@ -983,13 +1015,15 @@ def inject_cross_place(plugin, state, day, rng, checks, diag):
         home = {"start": "%02d:30" % (hour + 1), "end": "%02d:00" % (hour + 2),
                 "activity": "回家瘫着", "place": "家", "zone": "home",
                 "category": "rest", "source": "audit_inject"}
-        # 先在隔离的两块上跑生产 repair（确定性），窗口按 repair 后的真实终点算
-        pair, inserted = tr.repair_cross_place_blocks(plugin, day, [away, home],
-                                                      now=at(day, 23, 59))
-        if len(inserted) != 1 or str(inserted[0].get("transit_kind") or "") != "return":
-            fail(checks, "inject.no_transit", "%s inserted=%d" % (place, len(inserted)))
+        # 阶段 0：过渡只在读侧派生。先在隔离的两块上取派生结果（确定性），
+        # 注入窗口按派生视图的真实终点算；库里只写这两条事件。
+        pair = [away, home]
+        pair_view, _pair_defects = _engine.safe_view(pair, day=day, now_min=23 * 60 + 59)
+        returns = [row for row in pair_view if row.get("transit_kind") == "return"]
+        if len(returns) != 1:
+            fail(checks, "inject.no_transit", "%s returns=%d" % (place, len(returns)))
             continue
-        end_min = max((sim.span(row) or (0, 0))[1] for row in pair)
+        end_min = max((sim.span(row) or (0, 0))[1] for row in pair_view)
         rows = rows_of(plugin, state, day)
         keep = []
         for row in rows:
@@ -1006,28 +1040,26 @@ def inject_cross_place(plugin, state, day, rng, checks, diag):
                 cut = dict(row)
                 cut["start"] = _clock_text(end_min)
                 keep.append(cut)
-        repaired = sorted(keep + pair, key=lambda row: (sim.span(row) or (0, 0))[0])
-        length = (sim.span(inserted[0]) or (0, 0))[1] - (sim.span(inserted[0]) or (0, 0))[0]
+        injected = sorted(keep + pair, key=lambda row: (sim.span(row) or (0, 0))[0])
+        transit_span = sim.span(returns[0]) or (0, 0)
+        length = transit_span[1] - transit_span[0]
         if not (10 <= length <= 40):
             fail(checks, "inject.transit_len", "%s %dmin" % (place, length))
-        road = [row for row in repaired if str(row.get("zone") or "") == "road"]
-        if not road:
-            fail(checks, "inject.no_road", place)
-        home_rows = [row for row in repaired if str(row.get("place") or "") == "家"
-                     and (sim.span(row) or (0, 0))[0] >= span_min]
-        if not home_rows:
-            fail(checks, "inject.no_home", place)
-        elif inserted[0].get("end") != home_rows[0].get("start"):
-            fail(checks, "inject.home_shift", "%s %s != %s" % (
-                place, inserted[0].get("end"), home_rows[0].get("start")))
-        again, again_inserted = tr.repair_cross_place_blocks(
-            plugin, day, pair, now=at(day, 23, 59))
-        if again_inserted:
-            fail(checks, "inject.not_idempotent", "%s %d" % (place, len(again_inserted)))
-        plugin.state.commit_schedule_change(day, repaired, old_items=rows,
+        plugin.state.commit_schedule_change(day, injected, old_items=rows,
                                             source="audit_inject", reason="跨地点注入 %s" % place)
         stabilize_day(plugin, state, day)
         rows_now = rows_of(plugin, state, day)
+        view_now, _view_defects = _engine.safe_view(rows_now, day=day)
+        road = [row for row in view_now if str(row.get("zone") or "") == "road"]
+        if not road:
+            fail(checks, "inject.no_road", place)
+        home_rows = [row for row in view_now if str(row.get("place") or "") == "家"
+                     and (sim.span(row) or (0, 0))[0] >= span_min]
+        if not home_rows:
+            fail(checks, "inject.no_home", place)
+        again_view, _again_defects = _engine.safe_view(rows_now, day=day)
+        if _engine.timeline_text(view_now) != _engine.timeline_text(again_view):
+            fail(checks, "inject.not_idempotent", place)
         bad = timeline(rows_now)
         if bad:
             fail(checks, "inject.timeline", "%s %s" % (place, "; ".join(bad[:3])))

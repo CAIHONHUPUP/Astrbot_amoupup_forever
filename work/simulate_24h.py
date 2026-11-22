@@ -35,6 +35,7 @@ import photo_rules  # noqa: E402
 import photo_scene  # noqa: E402
 from amo_wallet import Wallet  # noqa: E402
 from schedule_engine import ScheduleEngine  # noqa: E402
+import schedule_engine_v2 as _engine  # noqa: E402
 import work.simulate_day as sim  # noqa: E402
 
 DAY0 = "2026-11-16"
@@ -247,20 +248,21 @@ def check_returns():
             {"start": "15:41", "end": "16:30", "place": "家", "zone": "home",
              "activity": "回家瘫着"},
         ]
-        repaired, inserted = tr.repair_cross_place_blocks(
-            None, DAY0, rows, now=at(DAY0, 23, 59))
+        # 阶段 0：过渡只在读侧派生（写侧 repair 已删），这里验证派生结果。
+        view, _defects = _engine.safe_view(rows, day=DAY0, now_min=23 * 60 + 59)
         checked += 1
-        if len(inserted) != 1 or str(inserted[0].get("transit_kind") or "") != "return":
-            bad.append("%s return inserted=%d" % (place, len(inserted)))
+        returns = [row for row in view if row.get("transit_kind") == "return"]
+        if len(returns) != 1:
+            bad.append("%s return derived=%d" % (place, len(returns)))
             continue
-        length = (sim.span(inserted[0]) or (0, 0))[1] - (sim.span(inserted[0]) or (0, 0))[0]
+        length = (sim.span(returns[0]) or (0, 0))[1] - (sim.span(returns[0]) or (0, 0))[0]
         if not (10 <= length <= 40):
             bad.append("%s return minutes=%d" % (place, length))
-        home = [row for row in repaired if row.get("place") == "家"]
-        if not home or home[0].get("start") != inserted[0].get("end"):
-            bad.append("%s home not shifted" % place)
-        bad.extend("%s timeline %s" % (place, item) for item in sim.timeline_violations(repaired)[:2])
-        bad.extend("%s place %s" % (place, item) for item in sim.place_violations(repaired)[:2])
+        home = [row for row in view if row.get("place") == "家"]
+        if not home or home[0].get("start") != returns[0].get("end"):
+            bad.append("%s home not aligned" % place)
+        bad.extend("%s timeline %s" % (place, item) for item in sim.timeline_violations(view)[:2])
+        bad.extend("%s place %s" % (place, item) for item in sim.place_violations(view)[:2])
     return {"violations": bad, "checked": checked}
 
 

@@ -26,8 +26,8 @@ ROOT_CAUSES = {
         "domains/schedule/place.py:46-47 normalize_place 把任何 zone=restaurant 的 place "
         "折叠成「楼下小馆」：商场餐厅/景区餐馆/外地小吃街全变家附近小馆"),
     "R2_transit_insert_tail_drop": (
-        "amo_transition.py:1220-1278 insert_transit_blocks + :1181-1205 _push_after："
-        "插通勤块后把后块整体顺延，越过 24:00 的块被直接丢弃（丢睡眠/收尾，尾部悬空）"),
+        "amo_transition.py 旧 insert_transit_blocks/_push_after（阶段 0 已整块删除）："
+        "当年插通勤块后把后块整体顺延，越过 24:00 的块被直接丢弃（丢睡眠/收尾，尾部悬空）"),
     "R3_transit_before_normalize": (
         "amo_state_schedule.py:768-788 先插通勤块，:1294 才跑 _normalize_schedule_items "
         "（含 :1498 _enforce_zone_activity）：后置改写会作废刚插好的过渡块"),
@@ -35,8 +35,9 @@ ROOT_CAUSES = {
         "amo_state_schedule.py:1516-1528 _enforce_zone_activity：18:00 之后的 office 块被整块"
         "折成 place=家/category=rest「在家休息」，且不补通勤块 → 办公室瞬间回家"),
     "R5_continuity_checker_blind": (
-        "amo_state_schedule.py:317-368 place_continuity_problems 的 _area() 取「·」前段"
-        "（通常是城市名）当大区域，且 place 含「楼下」直接放行 → 同城跨地点几乎从不报警"),
+        "amo_state_schedule.py 旧 place_continuity_problems（阶段 0 已删除）的 _area() 取「·」前段"
+        "（通常是城市名）当大区域，且 place 含「楼下」直接放行 → 同城跨地点几乎从不报警；"
+        "现由 validate 的 path_break 指标接管"),
     "R6_category_word_rewrite": (
         "amo_state_schedule.py:1488-1492/1529-1536 _enforce_zone_activity 的 category 词表："
         "通勤块文案没有通勤词就被改成「在路上赶路」，丢失「到楼下便利店买早餐」这类细节"),

@@ -1000,7 +1000,6 @@
  "domains/schedule/rest_segments.py": [],
  "domains/schedule/scenic.py": [],
  "domains/schedule/segments.py": [],
- "domains/schedule/social_segments.py": [],
  "domains/schedule/subject.py": [],
  "domains/schedule/swim.py": [],
  "done_action_guard.py": [],
@@ -1293,7 +1292,6 @@
   "schedule_rest_segments",
   "schedule_scenic",
   "schedule_segments",
-  "schedule_social_segments",
   "schedule_swim"
  ],
  "schedule_rest_segments.py": [
@@ -1314,9 +1312,6 @@
  ],
  "schedule_social_a1.py": [
   "amo_observability"
- ],
- "schedule_social_segments.py": [
-  "domains"
  ],
  "schedule_subject.py": [
   "domains"

@@ -22,6 +22,7 @@ astrbot_stub.install()
 
 import amo_transition as tr  # noqa: E402
 import amo_trip as trip  # noqa: E402
+import schedule_engine_v2 as engine  # noqa: E402
 from amo_human_state import HumanState  # noqa: E402
 from amo_state_common import minutes_now, today_str  # noqa: E402
 from fixtures import FixedClock, today_at  # noqa: E402
@@ -555,7 +556,7 @@ class TransitBlockTests(unittest.TestCase):
         self.assertEqual(tr.guard_terminal(plugin, text), text)
 
 
-# ---------- 收尾：读/加载时修复既有跨地点瞬移 ----------
+# ---------- 收尾：过渡改为读侧派生，库内事件不被改写 ----------
 
 
 class RepairTransitTests(unittest.TestCase):
@@ -570,58 +571,56 @@ class RepairTransitTests(unittest.TestCase):
                  "activity": "从医院回来，在沙发上瘫着",
                  "place": "家", "category": "rest"}]
 
-    def test_repair_existing_hospital_pair(self):
+    def _view(self, rows):
+        return self.state._schedule_view_items(DAY, rows)
+
+    def test_read_derives_hospital_return_without_writing(self):
         rows = self._bad_pair()
         _seed(self.state, rows)
-        inserted = self.state._repair_transit_blocks(DAY)
-        self.assertEqual(len(inserted), 1, inserted)
-        persisted = self.state.schedule[DAY]
-        self.assertEqual(len(persisted), 3, persisted)
-        transit = [row for row in persisted
-                   if row.get("source") == "transit_block"][0]
-        self.assertEqual(transit["start"], "15:41")
-        duration = _minute(transit["end"]) - _minute(transit["start"])
-        self.assertTrue(15 <= duration <= 40, duration)
-        home = [row for row in persisted if row.get("place") == "家"][0]
-        self.assertEqual(home["start"], transit["end"], "家块必须顺延到路上块之后")
-        self.assertEqual(_minute(home["end"]) - _minute(home["start"]), 19,
-                         "顺延要保留原时长")
-        self.assertTrue(_no_overlap(persisted), persisted)
+        view = self._view(rows)
+        returns = [row for row in view if row.get("transit_kind") == "return"]
+        self.assertEqual(len(returns), 1, view)
+        self.assertEqual(returns[0]["end"], "15:41", returns)
+        duration = _minute(returns[0]["end"]) - _minute(returns[0]["start"])
+        self.assertTrue(10 <= duration <= 40, duration)
+        home = [row for row in view if row.get("place") == "家"][0]
+        self.assertEqual((home["start"], home["end"]), ("15:41", "16:00"),
+                         "家块时间原样（19 分钟）")
+        self.assertTrue(_no_overlap(view), view)
+        self.assertEqual(self.plugin.db.saves, 0, "读路径不许写库")
 
-    def test_repair_is_idempotent(self):
+    def test_derived_view_is_idempotent_and_read_is_pure(self):
         _seed(self.state, self._bad_pair())
-        self.state._repair_transit_blocks(DAY)
-        saves = self.plugin.db.saves
-        count = len(self.state.schedule[DAY])
-        again = self.state._repair_transit_blocks(DAY)
-        self.assertEqual(again, [])
-        self.assertEqual(self.plugin.db.saves, saves, "第二次不能重复写库")
-        self.assertEqual(len(self.state.schedule[DAY]), count)
+        first = self._view(self.state.schedule[DAY])
+        second = self._view(self.state.schedule[DAY])
+        self.assertEqual(engine.timeline_text(first), engine.timeline_text(second))
+        self.assertEqual(len(self.plugin.db.get_schedule(DAY)), 2)
+        self.assertEqual(self.plugin.db.saves, 0, "第二次也不能写库")
 
-    def test_repair_skips_home_internal(self):
+    def test_home_internal_move_has_no_derived_road(self):
         rows = [{"start": "13:00", "end": "14:00", "activity": "在客厅追剧",
                  "place": "客厅", "category": "rest"},
                 {"start": "14:00", "end": "15:00", "activity": "回卧室躺着",
                  "place": "卧室", "category": "rest"}]
         _seed(self.state, rows)
-        inserted = self.state._repair_transit_blocks(DAY)
-        self.assertEqual(inserted, [])
-        self.assertEqual(self.plugin.db.saves, 0)
+        view = self._view(rows)
+        self.assertFalse([row for row in view
+                          if row.get("derived") and row.get("zone") == "road"], view)
         self.assertEqual(self.state.schedule[DAY], rows)
+        self.assertEqual(self.plugin.db.saves, 0)
 
-    def test_repair_shifts_following_blocks(self):
+    def test_derived_return_does_not_shift_events(self):
         rows = self._bad_pair() + [
             {"start": "16:00", "end": "17:00", "activity": "在家休息",
              "place": "家", "category": "rest"}]
         _seed(self.state, rows)
-        self.state._repair_transit_blocks(DAY)
+        view = self._view(rows)
         persisted = self.state.schedule[DAY]
-        self.assertEqual(len(persisted), 4, persisted)
-        self.assertTrue(_no_overlap(persisted), persisted)
-        ordered = sorted(persisted, key=lambda row: _minute(row.get("start")))
-        self.assertEqual([row["start"] for row in ordered],
-                         [row["start"] for row in ordered])
-        durations = [_minute(row["end"]) - _minute(row["start"]) for row in ordered]
+        self.assertEqual([row["start"] for row in persisted], ["13:41", "15:41", "16:00"])
+        spans = [(_minute(row["start"]), _minute(row["end"])) for row in view]
+        self.assertTrue(all(left[1] == right[0] for left, right in zip(spans, spans[1:])),
+                        view)
+        durations = [_minute(row["end"]) - _minute(row["start"]) for row in persisted]
         self.assertIn(19, durations)
         self.assertIn(60, durations)
 
@@ -640,24 +639,16 @@ class RepairTransitTests(unittest.TestCase):
             len([row for row in view if row.get("derived")
                  and row.get("transit_kind") == "return"]), 1)
 
-    def test_repair_keeps_future_day_untouched(self):
-        tomorrow = _day(1)
-        rows = self._bad_pair()
-        self.state.schedule[tomorrow] = copy.deepcopy(rows)
-        self.plugin.db.schedules[tomorrow] = copy.deepcopy(rows)
-        self.plugin.db.saves = 0
-        self.assertEqual(self.state._repair_transit_blocks(tomorrow), [])
-        self.assertEqual(self.plugin.db.schedules[tomorrow], rows)
-        self.assertEqual(self.plugin.db.saves, 0)
-
-    def test_repaired_transit_drives_current_activity_and_guard(self):
+    def test_derived_transit_drives_current_activity_and_guard(self):
         frozen = FixedClock(today_at(13, 30))
         frozen.start()
         self.addCleanup(frozen.stop)
         now_min = minutes_now()
         start = tr._minute_text(max(0, now_min - 70))
         prev_end = tr._minute_text(max(0, now_min - 10))
-        next_end = tr._minute_text(min(24 * 60, now_min + 10))
+        # 家块必须留出够长的空档（+40）：否则覆盖此刻的家块优先级更高，
+        # 派生的「在路上」永远轮不到 current_activity。
+        next_end = tr._minute_text(min(24 * 60, now_min + 40))
         self.plugin.db.kv["current_action"] = {
             "action": "在医院排队看诊", "place": "医院", "zone": "hospital",
             "category": "health", "at": 1, "until": 10 ** 12, "hour": 13,
@@ -665,10 +656,9 @@ class RepairTransitTests(unittest.TestCase):
         _seed(self.state, [
             {"start": start, "end": prev_end, "activity": "在医院排队看诊",
              "place": "医院", "category": "health", "happened": True},
-            {"start": prev_end, "end": next_end,
+            {"start": next_end, "end": tr._minute_text(min(24 * 60, now_min + 70)),
              "activity": "从医院回来，在沙发上瘫着",
              "place": "家", "category": "rest"}])
-        self.state._repair_transit_blocks(DAY)
         current = self.state.current_activity()
         self.assertEqual(current.get("place"), "路上")
         self.assertEqual(current.get("zone"), "road")

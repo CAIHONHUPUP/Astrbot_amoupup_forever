@@ -182,24 +182,20 @@ class ScheduleApiTests(unittest.TestCase):
     def test_get_reuses_one_schedule_read_and_never_writes(self):
         state = self.plugin.state
         blocks = {"n": 0}
-        repair = {"n": 0}
         settle = {"n": 0}
         orig_blocks = amo_timeline.Timeline.blocks
-        orig_repair = state._repair_transit_blocks
         orig_settle = state.settle_date_end
         amo_timeline.Timeline.blocks = _count(blocks, "n", orig_blocks)
-        state._repair_transit_blocks = _count(repair, "n", orig_repair)
         state.settle_date_end = _count(settle, "n", orig_settle)
         try:
             result = asyncio.run(self.plugin.api_schedule())
         finally:
             amo_timeline.Timeline.blocks = orig_blocks
-            state._repair_transit_blocks = orig_repair
             state.settle_date_end = orig_settle
         self.assertEqual(result["code"], 0)
         # items 读一次 + current_activity 内部读一次；树复用 items 不再读（旧实现 +1）
         self.assertEqual(blocks["n"], 2, "建树不许再读一份全日程")
-        self.assertEqual(repair["n"], 0, "GET 不许跑修复扫描")
+        self.assertFalse(hasattr(state, "_repair_transit_blocks"), "A1: 修复扫描已删")
         self.assertEqual(settle["n"], 0, "GET 不许跑约会收尾写")
         self.assertTrue(result["data"]["items"])
         self.assertTrue(result["data"]["tree"])
@@ -235,24 +231,20 @@ class ScheduleTreePureReadTests(unittest.TestCase):
 
     def test_read_is_pure_and_maintenance_repairs(self):
         state = self.state
-        repair = {"n": 0}
         settle = {"n": 0}
-        orig_repair = state._repair_transit_blocks
         orig_settle = state.settle_date_end
-        state._repair_transit_blocks = _count(repair, "n", orig_repair)
         state.settle_date_end = _count(settle, "n", orig_settle)
         try:
             state.schedule_tree(self.trip_tests.DAY)
-            self.assertEqual(repair["n"], 0)
+            self.assertFalse(hasattr(state, "_repair_transit_blocks"), "A1: 修复扫描已删")
             self.assertEqual(settle["n"], 0)
             self.assertEqual(self.plugin.db.saves, 0)
             self.assertEqual(len(self.plugin.db.get_schedule(self.trip_tests.DAY)), 2)
             state.maintain_schedule_day(self.trip_tests.DAY)
             # A1：维护任务不再补 transit 行（读侧派生），只做约会收尾结算。
-            self.assertEqual(repair["n"], 0)
+            self.assertFalse(hasattr(state, "_repair_transit_blocks"), "A1: 维护也不修 transit")
             self.assertEqual(settle["n"], 1)
         finally:
-            state._repair_transit_blocks = orig_repair
             state.settle_date_end = orig_settle
         persisted = self.plugin.db.get_schedule(self.trip_tests.DAY)
         self.assertEqual(len(persisted), 2, persisted)

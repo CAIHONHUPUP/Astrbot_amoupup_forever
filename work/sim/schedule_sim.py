@@ -10,7 +10,8 @@
 3. 状态：work/sim_lib 的 FakeDB（:memory:）/FakePlugin + 内存 Wallet，全部在临时目录，
    结束 shutil.rmtree + sim_lib.cleanup_temp_root()，打印 TEMP_CLEAN；
 4. 生成/落库走生产真实入口（ScheduleEngine.build_context/build_skeleton ->
-   HumanState.commit_schedule_change -> _repair_transit_blocks），不复制生成规则；
+   HumanState.commit_schedule_change），过渡由 schedule_engine_v2.safe_view 读侧派生，
+   不复制生成规则；
 5. 跑前/跑后对生产库做 sha256+size+mtime 指纹；主库/数据主库必须一致（WAL 由在跑的
    AstrBot 进程持续写，单独记录并注明外部写入，不是本进程所为）。
 
@@ -315,12 +316,9 @@ def generate_day(plugin, state, day, seed, profile, mood, force_day_type=None,
         result = state.commit_schedule_change(day, [dict(row) for row in raw],
                                               old_items=before, source="ensure",
                                               reason="schedule_sim")
+        # 阶段 0：写侧 _repair_transit_blocks 已整块删除，过渡只在读侧派生（safe_view）；
+        # 这里恒为 0，保留字段只为报告结构不变。
         repair_inserted = 0
-        try:
-            inserted = state._repair_transit_blocks(day)
-            repair_inserted = len(inserted or [])
-        except Exception:  # cleanup: 仿真容错
-            repair_inserted = -1
         rows = rows_of(state, day)
         stored = [dict(row) for row in (state.db.get_schedule(day) or [])]
     return {"ctx": ctx, "meta": meta, "weather": weather, "raw": raw, "rows": rows,
@@ -890,7 +888,8 @@ def write_markdown(report):
     lines.append("- 生成时间：%s" % report["meta"]["generated_at"])
     lines.append("- 插件：Astrbot_amoupup_forever（只读测试；未改生产代码、未写生产库）")
     lines.append("- 生成入口：ScheduleEngine.build_context/build_skeleton -> "
-                 "HumanState.commit_schedule_change(source=ensure) -> _repair_transit_blocks")
+                 "HumanState.commit_schedule_change(source=ensure)；过渡由 "
+                 "schedule_engine_v2.safe_view 读侧派生")
     lines.append("- 时钟：clock.freeze()（每天 00:00/22:00/23:00）；库：sim_lib FakeDB(:memory:)；"
                  "生成过程不调 LLM")
     lines.append("")

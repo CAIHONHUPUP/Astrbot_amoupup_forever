@@ -388,64 +388,6 @@ def restore_appointments(old_items, new_items, source=""):
     return merged, restored
 
 
-#: 需要"下楼/走路/坐车"才能过去的区域组合
-_TRAVEL_ZONES = ("home", "office", "restaurant", "mall", "scenic", "hospital", "street")
-
-
-def place_continuity_problems(items):
-    """相邻块地点跳变、中间却没有路上块 → 瞬移（2026-11-21）。
-
-    「楼下小馆」这种同楼内的走动不算：地点前缀相同或含"楼下"时放行。
-    """
-    rows = [dict(row) for row in (items or []) if isinstance(row, dict)]
-    rows.sort(key=lambda row: str(row.get("start") or ""))
-
-    def _zone(row):
-        zone = str(row.get("zone") or "")
-        if zone:
-            return zone
-        place = str(row.get("place") or "")
-        return "home" if any(w in place for w in ("家", "卧室", "客厅", "沙发")) else ""
-
-    def _area(place):
-        """地点归属的大区域：按「·」取前缀，同一栋楼/同一个商圈算一处。"""
-        text = str(place or "").strip()
-        return text.split("·")[0] if "·" in text else text
-
-    def _same_area(a_place, b_place):
-        a, b = str(a_place or ""), str(b_place or "")
-        if not a or not b:
-            return False
-        if a == b or a in b or b in a:
-            return True
-        return bool(_area(a)) and _area(a) == _area(b)
-
-    problems = []
-    for prev, row in zip(rows, rows[1:]):
-        if str(prev.get("end") or "") != str(row.get("start") or ""):
-            continue
-        a_zone, b_zone = _zone(prev), _zone(row)
-        if not a_zone or not b_zone or a_zone == b_zone:
-            continue
-        if a_zone in ("road", "transit") or b_zone in ("road", "transit"):
-            continue
-        if a_zone.startswith("home") and b_zone.startswith("home"):
-            continue
-        a_place, b_place = str(prev.get("place") or ""), str(row.get("place") or "")
-        if "楼下" in b_place or "楼下" in a_place:
-            continue
-        if _same_area(a_place, b_place):
-            continue   # 写字楼 ↔ 写字楼附近、商场 ↔ 商场·餐厅：同一区域，不用通勤块
-        if a_zone not in _TRAVEL_ZONES and not a_zone.startswith("home"):
-            continue
-        if b_zone not in _TRAVEL_ZONES and not b_zone.startswith("home"):
-            continue
-        problems.append("%s %s→%s（%s→%s）" % (str(prev.get("end") or ""),
-                                              a_place or a_zone, b_place or b_zone,
-                                              prev.get("activity"), row.get("activity")))
-    return problems
-
-
 #: 重生成去抖：同一天 30 秒内被多个功能触发时只落库一次（2026-11-21）
 SCHEDULE_REGEN_DEBOUNCE_SECONDS = 30
 
@@ -873,9 +815,9 @@ class ScheduleStateMixin(_MixinBase):
                             len(_self_trimmed))
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.commit.self_overlap", _amo_exc)
-        # A1 清理（Batch B）：过渡不再写进库。旧引擎在这里调 insert_transit_blocks 补
-        # transit_block 行，再由 refresh/repair 改文案，是「刚出家…回家」的温床；
-        # 现在由 schedule_engine_v2.safe_view 在读侧按前后事件现算，库内只存事件。
+        # A1 清理（Batch B）/ 阶段 0：旧写侧过渡符号（补 transit_block 行 + 归一化后
+        # 改文案的 refresh/repair）已整块删除；过渡改由 schedule_engine_v2.safe_view
+        # 在读侧按前后事件现算，库内只存事件。
         # T1：落库前统一收口路上块（脚本自带的活动腿）的 activity/vehicle/transit。
         new_items = self._sync_transit_items(new_items)
         with self._schedule_commit_lock:
@@ -935,106 +877,6 @@ class ScheduleStateMixin(_MixinBase):
             _note_swallowed("amo_state_schedule._trip_change_guard", _amo_exc)
             return {}
 
-    def _mark_transit_action(self, rows):
-        """通勤块覆盖当前分钟时，把 current_action 也切到「在路上」，聊天不再说目的地。
-
-        2026-11-22 task-25：请假/出差硬约束下「road」不是允许 zone，绝不把
-        current_action 切成通勤（否则病假在家聊天却说在地铁上）。
-        """
-        try:
-            try:
-                from .amo_scene_ledger import constraints as _constraints
-            except ImportError:
-                from amo_scene_ledger import constraints as _constraints
-            _allowed = (_constraints(self, today_str()) or {}).get("allowed_zones")
-            if _allowed is not None and "road" not in _allowed:
-                logger.info("[amo] 硬约束下不切通勤 current_action（allowed_zones=%s）",
-                            sorted(_allowed))
-                return
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.mark_transit.constraint", _amo_exc)
-        now_min = minutes_now()
-        for row in rows or []:
-            if not isinstance(row, dict):
-                continue
-            try:
-                begin = parse_hhmm(row.get("start"))
-                finish = parse_hhmm(row.get("end"))
-            except Exception as _amo_exc:
-                _note_swallowed("amo_state_schedule._mark_transit_action.parse", _amo_exc)
-                continue
-            if not (begin <= now_min < finish):
-                continue
-            try:
-                stamp = now_ts()
-                self.db.kv_set("current_action", {
-                    "action": row.get("activity"), "place": row.get("place") or "路上",
-                    "zone": "road", "category": "commute",
-                    "at": stamp, "until": stamp + max(60, (finish - now_min) * 60),
-                    "hour": begin // 60, "source": "transit_block",
-                })
-            except Exception as _amo_exc:
-                _note_swallowed("amo_state_schedule._mark_transit_action.write", _amo_exc)
-            return
-
-    def _repair_transit_blocks(self, day):
-        """读/加载时修复历史「跨地点瞬移」：按日程版本只修一次，不每次读都写库。"""
-        day = str(day or today_str())
-        if day != today_str():
-            return []
-        try:
-            version = str(self.db.schedule_version(day))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.transit_repair.version", _amo_exc)
-            version = "0"
-        flag = "transit_repair:" + day
-        try:
-            if str(self.db.kv_get(flag, "")) == version:
-                return []
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.transit_repair.flag", _amo_exc)
-        try:
-            rows = list(self.schedule.get(day) or self.db.get_schedule(day) or [])
-        except Exception:
-            rows = []
-        try:
-            try:
-                from .amo_transition import repair_cross_place_blocks as _repair
-                from .amo_transition import _has_blocking_overlap as _overlaps
-            except ImportError:
-                from amo_transition import repair_cross_place_blocks as _repair
-                from amo_transition import _has_blocking_overlap as _overlaps
-            repaired, inserted = _repair(getattr(self, "p", None) or self, day, rows)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.transit_repair.compute", _amo_exc)
-            return []
-        if not inserted:
-            try:
-                self.db.kv_set(flag, version)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_state_schedule.transit_repair.mark", _amo_exc)
-            return []
-        if _overlaps(repaired):
-            logger.error("[amo] 通勤块修复后仍有重叠，放弃写入 day=%s", day)
-            return []
-        try:
-            result = self.commit_schedule_change(
-                day, repaired, old_items=rows, source="transit_repair",
-                reason="修复跨地点瞬移")
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.transit_repair.commit", _amo_exc)
-            return []
-        try:
-            new_version = str((result or {}).get("version") or version)
-            self.db.kv_set(flag, new_version)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.transit_repair.mark_after", _amo_exc)
-        try:
-            self._mark_transit_action(inserted)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.transit_repair.mark_action", _amo_exc)
-        logger.info("[amo] 修复历史跨地点瞬移：补通勤块 %d 条（day=%s）", len(inserted), day)
-        return inserted
 
     def reconcile_health_schedule(self, day=None, now=None):
         """状态一致性巡检：健康已恢复但日程还挂着病假 → 物理删除那几条。"""
@@ -1509,9 +1351,9 @@ class ScheduleStateMixin(_MixinBase):
                                      old_items, new_items, extra={"scene_clamped": _scene_clamped})
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.scene_constraint.apply", _amo_exc)
-        # A1 清理（Batch A）：原来这里只 warning 的 place_continuity_problems 已并入
-        # 下面的 validate 闸——path_break 是 8 项指标之一，拒绝/计数都由它统一负责，
-        # 不再保留第二套“只喊不拦”的检查。
+        # A1 清理（Batch A）/ 阶段 0：旧的“只 warning 不拦”地点连续性检查函数已删除，
+        # 由下面的 validate 闸接管——path_break 是 8 项指标之一，拒绝/计数都由它统一负责，
+        # 不再保留第二套检查。
         # 零缺陷发布协议：落库前强制 validate，只拦「本次新引入」的缺陷（旧数据不回溯阻断）。
         try:
             try:
@@ -2532,8 +2374,8 @@ class ScheduleStateMixin(_MixinBase):
         JIT 盲盒模式：今天只展示已经发生的时段和正在进行的这一小时，
         未来不预生成、不占位；未来日期整张表留空，等到了那天再由 Tick 写入。
 
-        P2-6：读接口纯读——不再在这里跑 _repair_transit_blocks / settle_date_end；
-        修复拆到显式维护任务 maintain_schedule_day（后台 tick / 生成日历时调用）。
+        P2-6：读接口纯读——不再在这里跑历史修复 / settle_date_end；
+        收尾结算拆到显式维护任务 maintain_schedule_day（后台 tick / 生成日历时调用）。
         P2-1：items 可由调用方传入（面板 GET 已读过一份），避免二次全日程读。
         """
         day = str(day or today_str())
@@ -2610,12 +2452,13 @@ class ScheduleStateMixin(_MixinBase):
         return self.schedule_tree(day, items=items)
 
     def maintain_schedule_day(self, day=None):
-        """显式维护（后台 tick / 生成日历）：历史瞬移修复 + 约会收尾截断。
+        """显式维护（后台 tick / 生成日历）：只做约会收尾截断。
 
-        读接口（schedule_tree / 面板 GET）不再触发这两个写操作；维护失败只记日志。
+        读接口（schedule_tree / 面板 GET）不再触发写操作；维护失败只记日志。
         """
         day = str(day or today_str())
-        # A1 清理（Batch B）：历史 transit 行不再读写侧修复；过渡由 safe_view 派生。
+        # A1 清理（Batch B）/ 阶段 0：历史 transit 修复函数已删除，读侧也不再修；
+        # 过渡由 safe_view 派生，这里只结算约会收尾。
         try:
             self.settle_date_end(day)
         except Exception as _amo_exc:
@@ -2781,7 +2624,7 @@ class ScheduleStateMixin(_MixinBase):
         """每天只生成一次主干；同一日期加锁，避免并发生成两份。"""
         async with self._schedule_gen_lock(today_str()):
             result = await self._ensure_schedule_locked(umo, force=force)
-            # A1 清理（Batch B）：不再在读/生成路径修历史 transit 行；读侧派生已覆盖。
+            # A1 清理（Batch B）/ 阶段 0：读/生成路径不修历史 transit 行；读侧派生已覆盖。
             return result
 
     async def _ensure_schedule_locked(self, umo, force=False):

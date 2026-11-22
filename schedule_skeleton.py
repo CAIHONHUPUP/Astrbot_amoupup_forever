@@ -616,7 +616,7 @@ class ScheduleSkeletonMixin:
         # A1（2026-11-22 用户决策）：休息日不再自动生成「朋友聚餐」社交块。
         # 以前这里必然发一个 friend_dinner 事件，把 19:00-21:00 写成「和朋友吃饭」，
         # 关系数据与日程耦合。现在休息日只走普通休息骨架，朋友只由聊天/约会会话
-        # 手动出现；friend_dinner_segments 仍保留给显式事件（旧数据迁移/测试）。
+        # 手动出现；旧的「朋友聚餐」骨架函数已在阶段 0 删除。
         return None
 
     def _is_long_holiday(self, meta):

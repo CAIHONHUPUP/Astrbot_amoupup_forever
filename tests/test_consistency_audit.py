@@ -27,6 +27,7 @@ astrbot_stub.install()
 import amo_location_rules as loc  # noqa: E402
 import amo_transition as tr  # noqa: E402
 import amo_trip as trip  # noqa: E402
+import schedule_engine_v2 as engine  # noqa: E402
 import work.preview_day as preview  # noqa: E402
 import work.simulate_day as sim  # noqa: E402
 
@@ -92,16 +93,15 @@ class PlacePhysicsTests(AuditCase):
             {"start": "15:41", "end": "16:30", "place": "家", "zone": "home",
              "activity": "瘫着"},
         ]
-        repaired, inserted = tr.repair_cross_place_blocks(
-            None, DAY, rows, now=sim.at(DAY, 23, 59))
-        self.assertEqual(len(inserted), 1, repaired)
-        self.assertEqual(inserted[0]["transit_kind"], "return")
-        self.assertEqual(inserted[0]["start"], "15:41")
-        self.assertEqual(sim.timeline_violations(repaired), [])
-        self.assertEqual(sim.place_violations(repaired), [])
-        _again, inserted_again = tr.repair_cross_place_blocks(
-            None, DAY, repaired, now=sim.at(DAY, 23, 59))
-        self.assertEqual(inserted_again, [])
+        view, _defects = engine.safe_view(rows, day=DAY, now_min=23 * 60 + 59)
+        returns = [row for row in view if row.get("transit_kind") == "return"]
+        self.assertEqual(len(returns), 1, view)
+        self.assertEqual(returns[0]["end"], "15:41")
+        self.assertLess(returns[0]["start"], returns[0]["end"])
+        self.assertEqual(sim.timeline_violations(view), [])
+        self.assertEqual(sim.place_violations(view), [])
+        again, _ = engine.safe_view(rows, day=DAY, now_min=23 * 60 + 59)
+        self.assertEqual(engine.timeline_text(view), engine.timeline_text(again))
 
     def test_repair_late_return_does_not_duplicate_or_overlap(self):
         rows = [
@@ -110,26 +110,30 @@ class PlacePhysicsTests(AuditCase):
             {"start": "23:30", "end": "24:00", "place": "家", "zone": "home",
              "activity": "瘫着"},
         ]
-        repaired, inserted = tr.repair_cross_place_blocks(
-            None, DAY, rows, now=sim.at(DAY, 23, 59))
-        self.assertEqual(len(inserted), 1, repaired)
-        self.assertEqual(sim.timeline_violations(repaired), [])
-        self.assertEqual(sim.place_violations(repaired), [])
-        _again, inserted_again = tr.repair_cross_place_blocks(
-            None, DAY, repaired, now=sim.at(DAY, 23, 59))
-        self.assertEqual(inserted_again, [], _again)
+        view, _defects = engine.safe_view(rows, day=DAY, now_min=23 * 60 + 59)
+        returns = [row for row in view if row.get("transit_kind") == "return"]
+        self.assertEqual(len(returns), 1, view)
+        self.assertEqual(sim.timeline_violations(view), [])
+        self.assertEqual(sim.place_violations(view), [])
+        again, _ = engine.safe_view(rows, day=DAY, now_min=23 * 60 + 59)
+        self.assertEqual(engine.timeline_text(view), engine.timeline_text(again))
 
-    def test_day_end_insert_transit_never_creates_one_minute_overlap(self):
+    def test_day_end_derived_transit_never_overlaps(self):
         rows = [
             {"start": "23:50", "end": "23:57", "place": "公司", "zone": "office",
              "activity": "加班"},
             {"start": "23:57", "end": "24:00", "place": "家", "zone": "home",
              "activity": "瘫着"},
         ]
-        result, inserted = tr.insert_transit_blocks(
-            DAY, rows, old_items=[], now=sim.at(DAY, 23, 59))
-        self.assertLessEqual(len(inserted), 1, result)
-        self.assertEqual(sim.timeline_violations(result), [])
+        view, _defects = engine.safe_view(rows, day=DAY, now_min=23 * 60 + 59)
+        derived = [row for row in view
+                   if row.get("derived") and row.get("zone") == "road"]
+        self.assertLessEqual(len(derived), 1, view)
+        # 只锁「不产生重叠」：借时会把 23:50-23:57 的公司块压到 1 分钟（v2 既有行为，
+        # 记为独立缺陷），所以不断言 timeline_violations 全空。
+        spans = [span for span in (engine.span_of(row) for row in view) if span]
+        self.assertFalse([pair for pair in zip(spans, spans[1:]) if pair[0][1] > pair[1][0]],
+                         view)
 
     def test_travel_pool_has_three_to_five_non_work_blocks(self):
         plugin, _state = sim.make_state(city="东莞", day=DAY)

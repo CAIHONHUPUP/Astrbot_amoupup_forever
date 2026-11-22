@@ -90,7 +90,6 @@ try:
         period_rest_segments,
         sick_rest_segments,
     )
-    from .schedule_social_segments import friend_dinner_segments
     from .schedule_swim import swim_segments
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
@@ -116,7 +115,6 @@ except ImportError:  # 直接按文件加载时
             period_rest_segments,
             sick_rest_segments,
         )
-        from schedule_social_segments import friend_dinner_segments
         from schedule_swim import swim_segments
 
 # 统一时区：日程的 generated_at / 跨天日期按配置时区算，不吃服务器本地时区。
@@ -677,7 +675,6 @@ __all__ = [name for name in (
     'detail_conflicts',
     'diary_presence_rules',
     'fmt_hhmm',
-    'friend_dinner_segments',
     'hashlib',
     'homebody_segments',
     'indoor_rest_segments',

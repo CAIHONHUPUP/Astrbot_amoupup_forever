@@ -3,7 +3,8 @@
 
 2026-11-17：schedule_engine.py 按职责拆成「数据/纯函数 + 3 个 mixin」，本文件锁住四件事：
 
-1. 旧 import 路径不变：schedule_engine 里原来的名字全部还在（门面 re-export）；
+1. 旧 import 路径不变：schedule_engine 里原来的名字全部还在（门面 re-export），
+   阶段 0 明确删除的 friend_dinner_segments 除外；
 2. 方法源码逐字节等价：每个方法 / 模块级函数的 sha256 与拆分前的快照一致；
 3. 行为逐字节等价：纯函数的输入输出与拆分前的快照（tests/golden_split.json）一致；
 4. 依赖单向：子模块不 import 门面；新文件都在 1500 行以内、没有裸 except: pass。
@@ -129,6 +130,8 @@ class ByteEquivalenceTests(unittest.TestCase):
         # 2026-11-22：A1 决策，_pick_event 休息日不再自动发 friend_dinner 社交事件；
         # 随后删除 _friend_dinner_segments 分支（build_skeleton/_rest_segments 源码变化），
         # 哈希按新源码更新（行为变更：日程不再自动生成社交块）。
+        # 2026-11-23（阶段 0）：_pick_event 尾部注释改写（friend_dinner_segments 已删），
+        # 只有注释变化、行为零变化，哈希按新源码更新。
         changed = [(name, _source_hash(getattr(schedule_engine.ScheduleEngine, name)), want)
                    for name, want in METHOD_HASHES.items()
                    if _source_hash(getattr(schedule_engine.ScheduleEngine, name)) != want]

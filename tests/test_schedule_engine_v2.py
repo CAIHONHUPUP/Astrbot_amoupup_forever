@@ -71,6 +71,20 @@ class TransitDerivationTests(unittest.TestCase):
         self.assertEqual(idle[0]["activity"], "在家待着")
         self.assertEqual(engine.count_defects(defects)[engine.METRIC_PATH_BREAK], 0)
 
+    def test_office_to_home_derives_one_return(self):
+        """公司吃完午饭直接回家（阶段 0：旧 place_continuity 检查已删，锁派生视图）。"""
+        rows = [
+            _block("11:00", "12:00", "在公司吃午饭", "公司", "office", category="work"),
+            _block("12:00", "13:00", "在家休息", "家", "home", category="rest"),
+        ]
+        view, defects = engine.safe_view(rows, day="2026-11-22")
+        returns = [row for row in view if row.get("transit_kind") == "return"]
+        self.assertEqual(len(returns), 1, view)
+        self.assertEqual(returns[0]["end"], "12:00")
+        start, end = engine.span_of(returns[0])
+        self.assertTrue(10 <= end - start <= 40, returns)
+        self.assertEqual(engine.count_defects(defects)[engine.METRIC_PATH_BREAK], 0)
+
     def test_short_cross_place_gap_counts_path_break(self):
         rows = [
             # 上一块只剩 2 分钟，借不出最短 10 分钟路程 → 真断裂。

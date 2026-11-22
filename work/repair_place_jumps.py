@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
-"""修复「地点瞬移」：相邻两块换地方、中间却没有路上块（2026-11-21 用户要求）。
+"""⚠️ 已退役（阶段 0，2026-11-23）：过渡改由 schedule_engine_v2 读侧派生，禁止再往库里写路上块。
 
-做法（保守、不挪后面的块）：
+保留本脚本只为「只读诊断」：相邻两块换地方、中间却没有路上块（2026-11-21 用户要求）。
+--apply 会直接拒绝退出（退化为预览），因为写侧 repair 已删除、A1 规定过渡不落库。
+
+原做法（保守、不挪后面的块）：
 - 从前一块的**尾部**切出 travel 分钟做路上块（前块剩余必须 >= 5 分钟）；
 - 后一块起点不动，所以不会连锁推移；
 - 「楼下/同一栋楼」的走动不算瞬移，跳过；
@@ -23,7 +26,7 @@ import sqlite3
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from amo_state_schedule import place_continuity_problems  # noqa: E402
+import schedule_engine_v2 as _engine  # noqa: E402
 
 TRAVEL_MINUTES = 20
 MIN_LEFT = 5
@@ -51,8 +54,7 @@ def _fix(rows):
         prev, cur = rows[index - 1], rows[index]
         if str(prev.get("end") or "") != str(cur.get("start") or ""):
             continue
-        before = place_continuity_problems([prev, cur])
-        if not before:
+        if not _engine.count_defects(_engine.validate([prev, cur]))[_engine.METRIC_PATH_BREAK]:
             continue
         prev_end = _m(prev.get("end"))
         prev_start = _m(prev.get("start"))
@@ -76,6 +78,9 @@ def main(argv):
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--day", default="")
     args = parser.parse_args(argv)
+    if args.apply:
+        print("已退役（阶段 0）：过渡由 schedule_engine_v2 读侧派生，禁止再往库里写路上块。")
+        return 2
     conn = sqlite3.connect(args.db, timeout=10)
     conn.row_factory = sqlite3.Row
     today = dt.date.today().isoformat()

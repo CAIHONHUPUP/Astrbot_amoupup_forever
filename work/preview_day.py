@@ -92,6 +92,40 @@ def _is_date_block(row):
     return category == 'social' and ('老公' in activity or '约会' in activity)
 
 
+def _derived_transit_spans(rows, day=None):
+    """A1：过渡只在读侧派生。返回派生视图里过渡块的 (start, end) 分钟区间。
+
+    只用它判定「这对相邻外出块之间是不是已经有过渡」，不参与任何元数据/文本审查。
+    """
+    try:
+        import schedule_engine_v2 as engine
+        view, _defects = engine.safe_view(rows, day=str(day or ''))
+    except Exception:
+        return []
+    spans = []
+    for row in view or []:
+        if not (row.get('derived') and row.get('transit_kind')):
+            continue
+        span = engine.span_of(row)
+        if span:
+            spans.append(span)
+    return spans
+
+
+def _has_derived_transit(spans, prev_end, next_start):
+    """这对相邻块之间是否已有派生过渡（贴上一块结尾 / 对齐下一块起点 / 跨住空档）。"""
+    if prev_end is None:
+        return False
+    for begin, finish in spans:
+        if finish == prev_end or begin == prev_end:
+            return True
+        if next_start is not None and (begin == next_start or finish == next_start):
+            return True
+        if next_start is not None and begin <= prev_end and finish >= next_start:
+            return True
+    return False
+
+
 def _date_end_min(rows):
     """当天约会结束的那一分钟（最后一个约会块的结束时间）。"""
     ends = [m(row.get('end')) for row in rows if _is_date_block(row)]
@@ -114,6 +148,7 @@ def review(rows, day=None, now=None):
             if i + 1 < len(rows):
                 ns = m(rows[i + 1].get('start'))
                 if ns is not None and ns < e: hard.append(('overlap', r))
+    derived = _derived_transit_spans(rows, day)
     for i in range(len(rows) - 1):
         a, b = rows[i], rows[i + 1]
         pa, pb = str(a.get('place') or ''), str(b.get('place') or '')
@@ -122,6 +157,9 @@ def review(rows, day=None, now=None):
         if _is_home(pa) and _is_out(pb):
             warn.append(('missing_outbound', a))
         elif _is_out(pa) and _is_out(pb) and pa != pb:
+            # A1：库里不再存路上块，过渡由读侧派生——该空档已有派生过渡就不算瞬移。
+            if _has_derived_transit(derived, m(a.get('end')), m(b.get('start'))):
+                continue
             hard.append(('no_transit', a))
     for r in rows:
         text = str(r.get('_diary') or '')

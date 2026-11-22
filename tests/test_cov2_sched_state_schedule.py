@@ -105,9 +105,6 @@ class Host(sched.ScheduleStateMixin):
     def settle_date_end(self, day):
         self.settled.append(day)
 
-    def _repair_transit_blocks(self, day):
-        self.settled.append("repair:" + str(day))
-
     def _commit_schedule_change_locked(self, day, items, old_items=None, source="", reason="", **kw):
         self.commits.append((day, [dict(row) for row in items], source))
         self.schedule[day] = [dict(row) for row in items]
@@ -469,9 +466,6 @@ class SaveAddTests(Base):
         # A1：维护任务只做约会收尾结算，不再修 transit 行。
         self.assertEqual(self.host.settled, [self.day])
         class Boom:
-            def _repair_transit_blocks(self, day):
-                raise RuntimeError("x")
-
             def settle_date_end(self, day):
                 raise RuntimeError("y")
         host = Boom()

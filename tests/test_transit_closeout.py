@@ -27,9 +27,9 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
-import amo_transition  # noqa: E402
 import schedule_change  # noqa: E402
 import schedule_engine as se  # noqa: E402
+import schedule_engine_v2 as engine  # noqa: E402
 from amo_state_common import today_str  # noqa: E402
 from amo_state_schedule import ScheduleStateMixin  # noqa: E402
 from schedule_plan import _diary_material_lines  # noqa: E402
@@ -133,28 +133,6 @@ class CommitCloseoutTests(unittest.TestCase):
         self.assertEqual(row["transit"], "drive")
 
 
-class InsertTransitCloseoutTests(unittest.TestCase):
-    def test_insert_transit_blocks_syncs_all_rows(self):
-        rows = [
-            {"start": "08:00", "end": "09:00", "activity": "在家收拾", "place": "家",
-             "zone": "home", "category": "rest"},
-            {"start": "09:00", "end": "10:00", "activity": "在医院排队看诊", "place": "医院",
-             "zone": "hospital", "category": "health"},
-            {"start": "10:00", "end": "10:30", "activity": "开车回去", "place": "路上",
-             "zone": "road", "category": "commute", "vehicle": "地铁", "transit": "subway"},
-        ]
-        out, inserted = amo_transition.insert_transit_blocks(DAY, rows)
-        self.assertEqual(len(inserted), 1, out)
-        block = inserted[0]
-        self.assertEqual(block["transit"], "subway", block)
-        self.assertEqual(block["transit_kind"], "outbound", block)
-        self.assertIn("坐地铁", block["activity"])
-        self.assertNotIn("开地铁", block["activity"])
-        road = [row for row in out if row.get("activity") == "开车回去"][0]
-        self.assertEqual(road["vehicle"], "开车", "文案说开车，vehicle=地铁 必须被纠正")
-        self.assertEqual(road["transit"], "drive")
-
-
 class TransitFieldSyncTests(unittest.TestCase):
     def test_text_wins_and_transit_code_follows(self):
         rows = [{"zone": "road", "source": "transit_block", "start": "09:00",
@@ -228,8 +206,10 @@ class PlanDiaryWordingTests(unittest.TestCase):
 
 class TransitRowTests(unittest.TestCase):
     def test_transit_field_is_mode_and_kind_is_separate(self):
-        row = amo_transition._transit_row(
-            DAY, 9 * 60, 20, {"place": "家"}, {"place": "医院"}, 0)
+        # 阶段 0：写侧 _transit_row 已删，同一口径由 v2 派生行保证。
+        row = engine._transit_row(
+            9 * 60, 9 * 60 + 20, {"place": "家"},
+            {"place": "医院", "transit": "subway", "vehicle": "地铁"}, 20)
         self.assertEqual(row["transit"], "subway")
         self.assertEqual(row["transit_kind"], "outbound")
         self.assertIn("坐地铁", row["activity"])

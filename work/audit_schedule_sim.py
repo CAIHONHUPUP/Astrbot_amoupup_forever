@@ -3,7 +3,7 @@
 
 检查项：
 - 重叠 / 空档 / <5 分钟短块；
-- 地点跳变（同一栋楼/同一商圈、楼下走动不算）；
+- 路径断裂（path_break 指标：跨地点但借不出最短路程）；
 - 活动文案与 zone 冲突（在公司却写在家、在家却写工位）；
 - 相邻同内容块（整点碎片，重构目标）。
 
@@ -26,7 +26,7 @@ import sim_lib  # noqa: E402
 sim_lib.install_stub()
 
 import work.schedule_7day as s7  # noqa: E402
-import amo_state_schedule as sched  # noqa: E402
+import schedule_engine_v2 as _engine  # noqa: E402
 
 FIELDS = s7.FIELDS
 HOME_WORDS = ("家", "客厅", "沙发", "卧室", "被窝", "厨房", "床")
@@ -60,7 +60,9 @@ def audit_day(blocks):
         start, end = _m(row["start"]), _m(row["end"])
         if start is not None and end is not None and 0 < end - start < 5:
             short += 1
-    jumps = sched.place_continuity_problems(rows)
+    # 阶段 0：旧 place_continuity_problems 已删，改用 8 项指标里的 path_break。
+    path_break = _engine.count_defects(_engine.validate(rows))[_engine.METRIC_PATH_BREAK]
+    jumps = ["path_break"] * path_break
     zone_bad = []
     for row in rows:
         activity = str(row.get("activity") or "")
