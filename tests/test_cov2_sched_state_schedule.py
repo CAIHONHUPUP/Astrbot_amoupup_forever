@@ -464,9 +464,10 @@ class SaveAddTests(Base):
             self.assertEqual(self.host.reconcile_health_schedule(self.day), 0)
         self.assertEqual(self.host.commits, [])
 
-    def test_maintain_schedule_day_calls_both(self):
+    def test_maintain_schedule_day_settles_only(self):
         self.assertTrue(self.host.maintain_schedule_day(self.day))
-        self.assertEqual(self.host.settled, ["repair:" + self.day, self.day])
+        # A1：维护任务只做约会收尾结算，不再修 transit 行。
+        self.assertEqual(self.host.settled, [self.day])
         class Boom:
             def _repair_transit_blocks(self, day):
                 raise RuntimeError("x")

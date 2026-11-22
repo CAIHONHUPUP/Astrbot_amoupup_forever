@@ -42,7 +42,8 @@ class TransitDerivationTests(unittest.TestCase):
         self.assertEqual(len(returns), 1)
         self.assertIn("从公司回家", returns[0]["activity"])
         self.assertNotIn("刚出家", returns[0]["activity"])
-        self.assertEqual(returns[0]["end"], "17:20")
+        self.assertEqual(returns[0]["start"], "16:40")
+        self.assertLessEqual(returns[0]["end"], "17:20")
         self.assertEqual(engine.count_defects(defects)[engine.METRIC_PATH_BREAK], 0)
 
     def test_outbound_from_home_text(self):
@@ -54,9 +55,9 @@ class TransitDerivationTests(unittest.TestCase):
         out = [row for row in view if row.get("transit_kind") == "outbound"]
         self.assertEqual(len(out), 1)
         self.assertIn("出门去公司", out[0]["activity"])
-        # 过渡落脚在下一块开始前（早到几分钟就在路上等），不挪动真实事件。
-        self.assertGreaterEqual(out[0]["start"], "09:00")
-        self.assertEqual(out[0]["end"], "09:40")
+        # 活动一结束就出发（过渡贴上一块），早到的时间由空档填充，不挪动事件原始时间。
+        self.assertEqual(out[0]["start"], "09:00")
+        self.assertLessEqual(out[0]["end"], "09:40")
 
     def test_same_place_gap_gets_idle_not_transit(self):
         rows = [
@@ -72,7 +73,8 @@ class TransitDerivationTests(unittest.TestCase):
 
     def test_short_cross_place_gap_counts_path_break(self):
         rows = [
-            _block("10:00", "11:00", "在公司", "公司", "office"),
+            # 上一块只剩 2 分钟，借不出最短 10 分钟路程 → 真断裂。
+            _block("10:58", "11:00", "在公司", "公司", "office"),
             _block("11:03", "12:00", "在家", "家", "home"),
         ]
         view, defects = engine.safe_view(rows, day="2026-11-24")

@@ -533,13 +533,14 @@ class EnsureLockedTests(Base):
         out = self.run_async(self.host._ensure_schedule_locked("u", force=True))
         self.assertEqual(len(out), 1)
 
-    def test_ensure_schedule_calls_repair(self):
+    def test_ensure_schedule_does_not_repair(self):
         calls = []
         self.host._ensure_schedule_locked = self._locked
         self.host._repair_transit_blocks = lambda day: calls.append(day)
         out = self.run_async(self.host.ensure_schedule("u"))
         self.assertEqual(out, [{"ok": True}])
-        self.assertEqual(calls, [self.today])
+        # A1：生成/读路径不再修历史 transit 行；过渡由 safe_view 派生。
+        self.assertEqual(calls, [])
 
     async def _locked(self, umo, force=False):
         return [{"ok": True}]

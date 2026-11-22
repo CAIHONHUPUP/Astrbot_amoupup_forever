@@ -61,7 +61,9 @@ class TimelineAuditTests(AuditCase):
 
     def test_transit_blocks_are_ten_to_forty_minutes(self):
         _plugin, _state, _ctx, rows = self.committed_day()
-        transit = [row for row in rows if row.get("source") == "transit_block"]
+        # A1：过渡不落库，读侧派生；断言用户可见的过渡时长仍是 10-40 分钟。
+        view = _state._schedule_view_items(DAY, rows)
+        transit = [row for row in view if row.get("transit_kind")]
         self.assertTrue(transit)
         for row in transit:
             length = sim.span(row)[1] - sim.span(row)[0]
@@ -79,7 +81,9 @@ class TimelineAuditTests(AuditCase):
 class PlacePhysicsTests(AuditCase):
     def test_committed_day_place_switches_go_through_road(self):
         _plugin, _state, _ctx, rows = self.committed_day()
-        self.assertEqual(sim.place_violations(rows), [])
+        # 落库只有事件；跨地点切换的“路上”由读侧派生，物理检查看派生视图。
+        view = _state._schedule_view_items(DAY, rows)
+        self.assertEqual(sim.place_violations(view), [])
 
     def test_repair_normal_hospital_return_has_one_leg(self):
         rows = [

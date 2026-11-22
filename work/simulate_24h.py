@@ -499,7 +499,8 @@ def _trip_common(bad):
         bad.append("day1 00 phase=%s" % pre.get("phase"))
     if sim.timeline_violations(rows_of(plugin, state, DAY0)):
         bad.append("outbound timeline")
-    if sim.place_violations(rows_of(plugin, state, DAY0)):
+    # A1：过渡不落库，物理检查看派生视图。
+    if sim.place_violations(state._schedule_view_items(DAY0, rows_of(plugin, state, DAY0))):
         bad.append("outbound place physics")
     return plugin, state, started["trip"], raw, outbound_ts, outbound_minutes
 
@@ -602,8 +603,9 @@ def _check_day1_pool(bad, plugin, state, day1):
                 if hour >= 22 and sim.place_category(row) in ("mall", "office", "restaurant"):
                     bad.append("day1 hour %02d late %s" % (hour, row.get("place")))
     day1_rows = rows_of(plugin, state, day1)
-    bad.extend("day1 timeline %s" % item for item in sim.timeline_violations(day1_rows)[:3])
-    bad.extend("day1 place %s" % item for item in sim.place_violations(day1_rows)[:3])
+    day1_view = state._schedule_view_items(day1, day1_rows)
+    bad.extend("day1 timeline %s" % item for item in sim.timeline_violations(day1_view)[:3])
+    bad.extend("day1 place %s" % item for item in sim.place_violations(day1_view)[:3])
     return future_idems
 
 
@@ -657,7 +659,8 @@ def _check_day2_pool(bad, plugin, state, day2):
         set_clock(at(day2, hour, 0))
         state.jit_tick(at(day2, hour, 0))
     day2_rows = rows_of(plugin, state, day2)
-    bad.extend("day2 place %s" % item for item in sim.place_violations(day2_rows)[:3])
+    day2_view = state._schedule_view_items(day2, day2_rows)
+    bad.extend("day2 place %s" % item for item in sim.place_violations(day2_view)[:3])
 
 
 def _check_settle_due(bad, plugin, day1):
@@ -697,7 +700,7 @@ def _check_return_split(bad, plugin, state, day1, day2, day3):
     if not (180 <= total_return <= 300):
         bad.append("return total=%d" % total_return)
     bad.extend("return timeline %s" % item for item in sim.timeline_violations(
-        rows_of(plugin, state, day2))[:3])
+        state._schedule_view_items(day2, rows_of(plugin, state, day2)))[:3])
     return return_day, return_rows, total_return, rest_expected, done_expected
 
 

@@ -82,6 +82,30 @@ def view_rows(
         return view, defects
 
 
+def transit_at(
+    rows: Sequence[Mapping[str, Any]] | None,
+    day: str,
+    now_min: int,
+) -> dict[str, Any] | None:
+    """此刻是否正在一段「派生过渡」上（聊天/当前动作用，不填未知空档）。"""
+    try:
+        view, _defects = engine.safe_view(
+            rows, day=str(day or ""), now_min=int(now_min),
+            zone_mapper=zone_mapper(), minutes_of=transit_minutes_of(),
+            fill_idle=False,
+        )
+    except Exception as exc:
+        _note("schedule_observer.transit_at", exc)
+        return None
+    for row in view:
+        if not row.get("derived") or str(row.get("zone") or "") != "road":
+            continue
+        span = engine.span_of(row)
+        if span and span[0] <= int(now_min) < span[1]:
+            return row
+    return None
+
+
 def forbidden_names(db: Any) -> list[str]:
     """旧社交人名：npc 名单 + 迁移归档里出现过的同席人（A1 后日程里不许再有）。"""
     names: list[str] = []

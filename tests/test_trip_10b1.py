@@ -440,10 +440,15 @@ class TransitBlockTests(unittest.TestCase):
         self._commit(old, new)
         rows = self.state.schedule[DAY]
         self.assertTrue(_no_overlap(rows), rows)
-        transit = [row for row in rows if row.get("source") == "transit_block"]
-        self.assertEqual(len(transit), 1, rows)
+        # A1：过渡不再落库，改由读侧 safe_view 按前后事件派生；断言同一份用户可见保证。
+        view = self.state._schedule_view_items(DAY, rows)
+        transit = [row for row in view
+                   if row.get("derived") and row.get("transit_kind") == "return"]
+        self.assertEqual(len(transit), 1, view)
         block = transit[0]
-        self.assertEqual(block["start"], "15:43")
+        # 新契约：事件时间不动，过渡向后对齐到下一块开始（提前出发）。
+        self.assertEqual(block["end"], "15:43")
+        self.assertLess(block["start"], block["end"])
         self.assertEqual(block["place"], "路上")
         self.assertEqual(block["zone"], "road")
         duration = _minute(block["end"]) - _minute(block["start"])
@@ -469,7 +474,9 @@ class TransitBlockTests(unittest.TestCase):
         self._commit([], rows)
         persisted = self.state.schedule[DAY]
         self.assertEqual(len(persisted), 2, persisted)
-        self.assertFalse(any(row.get("source") == "transit_block" for row in persisted))
+        view = self.state._schedule_view_items(DAY, persisted)
+        self.assertFalse(any(row.get("derived") and str(row.get("zone")) == "road"
+                             for row in view), view)
 
     def test_transit_duration_uses_stable_seed(self):
         first = tr.transit_minutes(DAY, 15 * 60 + 43, "医院", "家")
@@ -487,8 +494,9 @@ class TransitBlockTests(unittest.TestCase):
         self.assertFalse(result.get("changed"))
         rows = self.plugin.db.get_schedule(DAY)
         self.assertEqual(len(rows), count)
-        self.assertEqual(len([row for row in rows
-                              if row.get("source") == "transit_block"]), 1)
+        view = self.state._schedule_view_items(DAY, rows)
+        self.assertEqual(len([row for row in view if row.get("derived")
+                              and row.get("transit_kind") == "return"]), 1)
 
     def test_current_activity_reads_transit_step(self):
         # 用例按「此刻 ± 分钟」造窗口：0 点刚过时 max(0, now-70) 会塌成同一分钟，
@@ -507,7 +515,10 @@ class TransitBlockTests(unittest.TestCase):
         }
         old = [{"start": start, "end": prev_end, "activity": "在医院排队看诊",
                 "place": "医院", "category": "health", "happened": True}]
-        new = old + [{"start": prev_end, "end": next_end,
+        # 新契约：库内事件时间不动；这里造一段真实空档（13:20→14:10），
+        # 过渡由读侧派生 13:20-13:48，13:30 才应该显示“在路上”。
+        new = old + [{"start": next_end,
+                      "end": tr._minute_text(min(24 * 60, now_min + 70)),
                       "activity": "从医院回来，在沙发上瘫着",
                       "place": "家", "category": "rest"}]
         self._commit(old, new)
@@ -622,9 +633,12 @@ class RepairTransitTests(unittest.TestCase):
         self.assertEqual(len(self.plugin.db.get_schedule(DAY)), 2)
         self.state.maintain_schedule_day(DAY)
         persisted = self.plugin.db.get_schedule(DAY)
-        self.assertEqual(len(persisted), 3, persisted)
+        # A1：维护任务不再往库里补 transit 行；读侧派生负责“路上”。
+        self.assertEqual(len(persisted), 2, persisted)
+        view = self.state._schedule_view_items(DAY, persisted)
         self.assertEqual(
-            len([row for row in persisted if row.get("source") == "transit_block"]), 1)
+            len([row for row in view if row.get("derived")
+                 and row.get("transit_kind") == "return"]), 1)
 
     def test_repair_keeps_future_day_untouched(self):
         tomorrow = _day(1)

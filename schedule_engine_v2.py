@@ -372,6 +372,7 @@ def derive_transitions(
     *,
     day: str = "",
     minutes_of: Callable[[str, int, str, str], int] | None = None,
+    fill_idle: bool = True,
 ) -> tuple[list[dict[str, Any]], list[Defect]]:
     """事件时间线 → 带派生过渡的展示时间线；每个空档都会被过渡或「待着」填满。
 
@@ -391,6 +392,7 @@ def derive_transitions(
             defects.append(_defect(METRIC_ILLEGAL, "派生输入块非法", index=index))
             continue
         rows.append(event)
+        current = event
         if index + 1 >= len(ordered):
             continue
         nxt = ordered[index + 1]
@@ -398,34 +400,51 @@ def derive_transitions(
         if next_span is None:
             continue
         gap = next_span[0] - span[1]
-        if gap <= 0:
+        if gap < 0:  # 重叠已在上游压直；负空档不再派生
             continue
         if _needs_transit(event, nxt):
             from_place = str(event.get("place") or "")
             to_place = str(nxt.get("place") or "")
-            need = _stable_minutes(day, span[1], from_place, to_place)
+            # 用“下一块开始分钟”当锚点：它不随派生缩短上一块而变化，保证幂等。
+            need = _stable_minutes(day, next_span[0], from_place, to_place)
             if callable(minutes_of):
                 try:
-                    need = int(minutes_of(day, span[1], from_place, to_place) or 0)
+                    need = int(minutes_of(day, next_span[0], from_place, to_place) or 0)
                 except Exception:
-                    need = _stable_minutes(day, span[1], from_place, to_place)
+                    need = _stable_minutes(day, next_span[0], from_place, to_place)
             need = max(TRANSIT_MIN_MINUTES, min(TRANSIT_MAX_MINUTES, need))
-            if gap < TRANSIT_MIN_MINUTES:
-                # 连一段最短的路都放不下：物理上不可能，记路径断裂并整段降级。
-                defects.append(_defect(
-                    METRIC_PATH_BREAK,
-                    "%s→%s 只有 %d 分钟，放不下最短 %d 分钟路程" % (
-                        from_place, to_place, gap, TRANSIT_MIN_MINUTES),
-                    index=index, start=_hm(span[1])))
-                rows.append(_transit_row(span[1], next_span[0], event, nxt, gap))
+            if gap >= need:
+                # 空档够：活动一结束就出发（过渡贴着上一块），早到的时间算等待/闲逛。
+                start = span[1]
+                rows.append(_transit_row(start, start + need, event, nxt, need))
+                if start + need < next_span[0] and fill_idle:
+                    # 已经到目的地后的等待：地点用目的地，否则会出现“家(pending)→餐厅”的假跳转。
+                    rows.append(_idle_row(start + need, next_span[0], nxt, nxt))
             else:
-                # 路程比空档长时按空档压缩（不再移动真实事件），过渡吃掉整段空档。
-                ride_minutes = min(need, gap)
-                start = next_span[0] - ride_minutes
-                rows.append(_transit_row(start, next_span[0], event, nxt, ride_minutes))
-                if start > span[1]:
-                    rows.append(_idle_row(span[1], start, event, event))
-        else:
+                # 空档不够（含 0 空档）：从上一块结尾借时间——只改展示，不改库。
+                # 事件本身的时间不动，过渡向后对齐到下一块的开始，符合“提前出发”。
+                start = next_span[0] - need
+                if start <= span[0]:
+                    # 上一块不够借：至少压缩出 1 分钟“在路上”，绝不瞬移；同时记断裂。
+                    start = max(span[0] + 1, next_span[0] - need)
+                if start < next_span[0]:
+                    current["end"] = _hm(start)
+                    rows.append(_transit_row(start, next_span[0], event, nxt,
+                                             next_span[0] - start))
+                    if next_span[0] - start < TRANSIT_MIN_MINUTES:
+                        defects.append(_defect(
+                            METRIC_PATH_BREAK,
+                            "%s→%s 只能借出 %d 分钟（不足 %d）" % (
+                                from_place, to_place, next_span[0] - start,
+                                TRANSIT_MIN_MINUTES),
+                            index=index, start=_hm(start)))
+                else:
+                    defects.append(_defect(
+                        METRIC_PATH_BREAK,
+                        "%s→%s 只有 %d 分钟，且上一块不够借出 %d 分钟路程" % (
+                            from_place, to_place, gap, need),
+                        index=index, start=_hm(span[1])))
+        elif fill_idle and next_span[0] > span[1]:
             rows.append(_idle_row(span[1], next_span[0], event, nxt))
     rows.sort(key=lambda item: span_of(item) or (0, 0))
     return rows, defects
@@ -497,12 +516,14 @@ def validate(
             from_place = str(prev.get("place") or "")
             to_place = str(cur.get("place") or "")
             if gap < TRANSIT_MIN_MINUTES:
-                # 跨地点却几乎没有空档：物理上到不了，记路径断裂。
-                defects.append(_defect(
-                    METRIC_PATH_BREAK,
-                    "跨地点 %s→%s 只有 %d 分钟，放不下最短 %d 分钟路程" % (
-                        from_place, to_place, gap, TRANSIT_MIN_MINUTES),
-                    index=index, start=_hm(prev_span[1])))
+                # 跨地点却几乎没有空档：能从上一块借出时间就不算断裂（展示层会缩短上一块）。
+                need = _stable_minutes(day, cur_span[0], from_place, to_place)
+                if cur_span[0] - need <= prev_span[0]:
+                    defects.append(_defect(
+                        METRIC_PATH_BREAK,
+                        "跨地点 %s→%s 只有 %d 分钟，且上一块不够借出 %d 分钟路程" % (
+                            from_place, to_place, gap, need),
+                        index=index, start=_hm(prev_span[1])))
     return defects
 
 
@@ -524,6 +545,7 @@ def safe_view(
     zone_mapper: Callable[[str], str] | None = None,
     minutes_of: Callable[[str, int, str, str], int] | None = None,
     derive: bool = True,
+    fill_idle: bool = True,
 ) -> tuple[list[dict[str, Any]], list[Defect]]:
     """读侧唯一安全视图：坏块降级、重叠压直、过渡全派生。
 
@@ -575,7 +597,8 @@ def safe_view(
         cursor = finish
     if not derive:
         return fixed, defects
-    derived, derive_defects = derive_transitions(fixed, day=day, minutes_of=minutes_of)
+    derived, derive_defects = derive_transitions(
+        fixed, day=day, minutes_of=minutes_of, fill_idle=fill_idle)
     defects.extend(derive_defects)
     # 当前时段标记：只给展示层用，不改数据。
     if now_min is not None:

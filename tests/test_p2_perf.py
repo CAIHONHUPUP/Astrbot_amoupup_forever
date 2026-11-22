@@ -248,13 +248,14 @@ class ScheduleTreePureReadTests(unittest.TestCase):
             self.assertEqual(self.plugin.db.saves, 0)
             self.assertEqual(len(self.plugin.db.get_schedule(self.trip_tests.DAY)), 2)
             state.maintain_schedule_day(self.trip_tests.DAY)
-            self.assertEqual(repair["n"], 1)
+            # A1：维护任务不再补 transit 行（读侧派生），只做约会收尾结算。
+            self.assertEqual(repair["n"], 0)
             self.assertEqual(settle["n"], 1)
         finally:
             state._repair_transit_blocks = orig_repair
             state.settle_date_end = orig_settle
         persisted = self.plugin.db.get_schedule(self.trip_tests.DAY)
-        self.assertEqual(len(persisted), 3, persisted)
+        self.assertEqual(len(persisted), 2, persisted)
 
 
 # ---------------- 3) /status 两个路由只算一次 ----------------

@@ -1089,6 +1089,18 @@ class DiaryStateMixin(_MixinBase):
         if chosen:
             return chosen, reason
 
+        # A1：库里只存事件，跨地点空档的“在路上”由 schedule_engine_v2 现算。
+        # 过渡状态机优先之前先看派生过渡，保证聊天不会在通勤空档里说已在目的地。
+        try:
+            try:
+                from . import schedule_observer as _obs_transit
+            except ImportError:
+                import schedule_observer as _obs_transit
+            _derived = _obs_transit.transit_at(items, today_str(), current)
+            if _derived:
+                return _derived, "derived_transit"
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_diary.current_activity.derived_transit", _amo_exc)
         # 第四轮防穿帮：过渡状态优先于日程——还没到就不许出现目的地（医院/公司…）
         try:
             try:

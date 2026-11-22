@@ -873,26 +873,10 @@ class ScheduleStateMixin(_MixinBase):
                             len(_self_trimmed))
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.commit.self_overlap", _amo_exc)
-        # 第十轮 B1：跨地点切换补一段独立通勤块，别再 5 分钟瞬移回家。
-        # 2026-11-21：保持白名单——放宽到所有来源会把 finance 的 10 分钟覆盖块
-        # 顺延走（test_finance_overlay 立刻红），地点连续性交给守卫+修复脚本。
-        if day_text == today_str() and str(source or "") in self._TRANSIT_SOURCES:
-            try:
-                try:
-                    from .amo_transition import insert_transit_blocks as _insert_transit
-                except ImportError:
-                    from amo_transition import insert_transit_blocks as _insert_transit
-                _old_for_transit = old_items if old_items is not None else (
-                    self.schedule.get(day_text) or self.db.get_schedule(day_text) or [])
-                new_items, _transit_rows = _insert_transit(
-                    day_text, new_items, old_items=_old_for_transit)
-                if _transit_rows:
-                    logger.info("[amo] 跨地点切换补通勤块 %d 条（day=%s source=%s）",
-                                len(_transit_rows), day_text, source or "-")
-                    self._mark_transit_action(_transit_rows)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_state_schedule.commit.transit_blocks", _amo_exc)
-        # T1：落库前统一收口路上块的 activity/vehicle/transit（锁外纯内存计算）。
+        # A1 清理（Batch B）：过渡不再写进库。旧引擎在这里调 insert_transit_blocks 补
+        # transit_block 行，再由 refresh/repair 改文案，是「刚出家…回家」的温床；
+        # 现在由 schedule_engine_v2.safe_view 在读侧按前后事件现算，库内只存事件。
+        # T1：落库前统一收口路上块（脚本自带的活动腿）的 activity/vehicle/transit。
         new_items = self._sync_transit_items(new_items)
         with self._schedule_commit_lock:
             try:
@@ -1337,13 +1321,6 @@ class ScheduleStateMixin(_MixinBase):
     _TRIP_GUARD_SOURCES = ("chat", "command", "manual", "llm_tool")
     #: 跨午夜长途第二程（trip_leg）允许写第二天日程：已经出发的事实，不是剧透。
     _FUTURE_OK_SOURCES = frozenset({"trip_leg"})
-    #: 只有这些来源的当天写入才自动补跨地点通勤块（测试/过渡引擎自己写步骤的不参与）。
-    _TRANSIT_SOURCES = frozenset({
-        "jit", "ensure", "ensure_regen", "chat", "command", "manual", "llm_tool",
-        "self_offwork", "date", "social", "wander", "activity",
-        "travel_overlay", "travel_follow_start", "travel_return",
-    })
-
     #: 只有这些来源生成的活动做主语校验；用户明确改的日程（chat/command/manual）按他说的来。
     ACTIVITY_GUARD_SOURCES = (
         "jit", "ensure", "ensure_regen", "social", "auto", "life", "wander", "generated",
@@ -1763,16 +1740,8 @@ class ScheduleStateMixin(_MixinBase):
             ]
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.commit_schedule_change.place", _amo_exc)
-        try:
-            # R9：地点归一化之后，用最终的前后块 place 刷新通勤块文案（「离开X，坐地铁去Y」）。
-            # 必须放在 place 归一之后、zone 总闸之前，文案里才是用户真正看到的地名。
-            try:
-                from .amo_transition import refresh_transit_texts as _refresh_transit
-            except ImportError:
-                from amo_transition import refresh_transit_texts as _refresh_transit
-            new_items = _refresh_transit(new_items)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.normalize.transit_text", _amo_exc)
+        # A1 清理（Batch B）：不再对库内的 transit_block 行重写文案；旧行由读侧丢弃，
+        # 过渡文案在派生时按最终地点现算，避免“改地点/改文案”分两次提交造成漂移。
         try:
             new_items = self._guard_activity_subjects(new_items, source, day)
         except Exception as _amo_exc:
@@ -2646,12 +2615,7 @@ class ScheduleStateMixin(_MixinBase):
         读接口（schedule_tree / 面板 GET）不再触发这两个写操作；维护失败只记日志。
         """
         day = str(day or today_str())
-        try:
-            repair = getattr(self, "_repair_transit_blocks", None)
-            if callable(repair):
-                repair(day)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_state_schedule.maintain.transit_repair", _amo_exc)
+        # A1 清理（Batch B）：历史 transit 行不再读写侧修复；过渡由 safe_view 派生。
         try:
             self.settle_date_end(day)
         except Exception as _amo_exc:
@@ -2817,12 +2781,7 @@ class ScheduleStateMixin(_MixinBase):
         """每天只生成一次主干；同一日期加锁，避免并发生成两份。"""
         async with self._schedule_gen_lock(today_str()):
             result = await self._ensure_schedule_locked(umo, force=force)
-            try:
-                repair = getattr(self, "_repair_transit_blocks", None)
-                if callable(repair):
-                    repair(today_str())
-            except Exception as _amo_exc:
-                _note_swallowed("amo_state_schedule.ensure_schedule.transit_repair", _amo_exc)
+            # A1 清理（Batch B）：不再在读/生成路径修历史 transit 行；读侧派生已覆盖。
             return result
 
     async def _ensure_schedule_locked(self, umo, force=False):
