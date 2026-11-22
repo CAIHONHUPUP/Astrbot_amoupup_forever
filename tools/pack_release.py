@@ -40,17 +40,27 @@ PRIVATE_IMAGE_FILES = (
 
 
 def _is_private_asset(rel):
-    """发布包里必须排除的私有图片：三视图、姿势/穿搭参考图。"""
+    """发布包里必须排除的私有图片：三视图、姿势/穿搭参考图（含 work 下的快照副本）。"""
     rel = str(rel or "").replace(os.sep, "/").lstrip("./")
     if rel in PRIVATE_IMAGE_FILES:
         return True
     if not rel.lower().endswith(PRIVATE_IMAGE_SUFFIX):
         return False
-    return any(rel.startswith(prefix) for prefix in PRIVATE_IMAGE_DIRS)
+    parts = rel.split("/")
+    return any(name in parts for name in ("templates", "outfit_refs", "photo_cache"))
+
+
+#: 任何发布包都不许带的敏感文件：本机配置（可能含 key）与模型探针凭据。
+SENSITIVE_NAMES = frozenset({"cmd_config.json", "provider.env", ".env"})
+
+
+def _is_sensitive(rel):
+    rel = str(rel or "").replace(os.sep, "/").lstrip("./")
+    return os.path.basename(rel) in SENSITIVE_NAMES or rel.endswith(".env")
 
 
 SOURCE_SKIP_DIRS = {".git", "__pycache__", "dist", ".pytest_cache", ".mypy_cache",
-                    "_test_tmp", ".test-tmp"}
+                    "_test_tmp", ".test-tmp", "_scratch"}
 
 
 def project_name():
@@ -74,7 +84,7 @@ def _walk(skip_dirs, skip_files):
                 continue
             path = os.path.join(base, name)
             rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
-            if _is_private_asset(rel):
+            if _is_private_asset(rel) or _is_sensitive(rel):
                 continue
             yield rel, path
 

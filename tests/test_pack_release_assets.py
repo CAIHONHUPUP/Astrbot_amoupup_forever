@@ -32,6 +32,19 @@ class PrivateAssetTests(unittest.TestCase):
         for rel in ("logo.png", "amo_message.py", "templates/readme.txt"):
             with self.subTest(rel=rel):
                 self.assertFalse(pack._is_private_asset(rel))
+        # work 下的快照副本也必须被识别（源码包曾经把它带出去）
+        self.assertTrue(pack._is_private_asset(
+            "work/audit/_scratch/repo_pin/templates/amo_persona_front.png"))
+
+    def test_sensitive_config_excluded(self):
+        pack = _pack()
+        for rel in ("data/cmd_config.json", "tests/data/cmd_config.json",
+                    "work/sim/provider.env", "x/.env"):
+            with self.subTest(rel=rel):
+                self.assertTrue(pack._is_sensitive(rel))
+        for rel in ("amo_message.py", "logo.png", "metadata.yaml"):
+            with self.subTest(rel=rel):
+                self.assertFalse(pack._is_sensitive(rel))
 
     def test_walk_excludes_private_assets(self):
         pack = _pack()
