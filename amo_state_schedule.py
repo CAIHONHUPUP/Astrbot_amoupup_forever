@@ -793,6 +793,26 @@ class ScheduleStateMixin(_MixinBase):
                     "[amo] 丢弃空/倒置时段的日程行 day=%s start=%s end=%s activity=%s",
                     day_text, start_text, end_text, str(row.get("activity") or ""))
         new_items = kept_items
+        # A1（2026-11-22）：自动生成来源不许写社交块进来（朋友只手动/聊天出现）。
+        # 人/约会/外部写入不受限；被剥掉的块记日志与审计，便于灰度期核对。
+        _social_stripped = []
+        try:
+            from .schedule_social_a1 import strip_auto_social as _strip_social
+        except ImportError:
+            from schedule_social_a1 import strip_auto_social as _strip_social
+        try:
+            new_items, _social_stripped = _strip_social(new_items, source)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.commit.social_strip", _amo_exc)
+        if _social_stripped:
+            logger.info("[amo] A1：剥掉自动生成的社交块 %d 条（source=%s day=%s）",
+                        len(_social_stripped), source or "-", day_text)
+            try:
+                self._audit_schedule(day_text, source, "A1 剥离自动社交块", 0, [],
+                                     old_items, new_items,
+                                     extra={"social_stripped": _social_stripped})
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.audit.social_strip", _amo_exc)
         try:  # 社交块把同席 NPC 写进 people，日记/照片不必再从文字猜
             _npc = self.db.kv_get("npc_summary", {}) or {}
             for _row in new_items:

@@ -613,14 +613,11 @@ class ScheduleSkeletonMixin:
                 return trip
             # 用户明确要求 18:00 下班，不再生成工作日加班事件
             return None
-        # 休息日：只保留朋友聚餐，不生成临时加班。
-        return {
-            "kind": "friend_dinner",
-            "title": "朋友聚餐",
-            "note": "下午朋友突然发消息，说好久没见了，晚上一起吃饭",
-            "effects": {"开心": 14, "依恋": 8, "兴奋": 6, "疲惫": -4},
-            "soothe": True,
-        }
+        # A1（2026-11-22 用户决策）：休息日不再自动生成「朋友聚餐」社交块。
+        # 以前这里必然发一个 friend_dinner 事件，把 19:00-21:00 写成「和朋友吃饭」，
+        # 关系数据与日程耦合。现在休息日只走普通休息骨架，朋友只由聊天/约会会话
+        # 手动出现；friend_dinner_segments 仍保留给显式事件（旧数据迁移/测试）。
+        return None
 
     def _is_long_holiday(self, meta):
         return is_long_holiday(self.p, meta)
