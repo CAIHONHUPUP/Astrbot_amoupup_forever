@@ -742,6 +742,12 @@ class ScheduleStateMixin(_MixinBase):
         """
         day_text = str(day or "")
         _src = str(source or "")
+        # 并发丢更新检测：记住进入时的版本，拿锁后再比一次。中间被别人改过 = 本次
+        # 预处理基于旧快照，记 lost_update（8 项指标之一），灰度门禁据此停切。
+        try:
+            _entry_version = int(self.db.schedule_version(day_text) or 0)
+        except Exception:
+            _entry_version = None
         if day_text == today_str() and generation_should_yield(self.db, day_text, _src):
             logger.info("[amo] 生成写入让行：%d 秒内有人手动改过日程（source=%s）",
                         HUMAN_EDIT_GRACE_SECONDS, _src)
@@ -892,6 +898,7 @@ class ScheduleStateMixin(_MixinBase):
             result = self._commit_schedule_change_locked(
                 day, new_items, old_items=old_items, source=source,
                 reason=reason, invalidate_from=invalidate_from,
+                entry_version=_entry_version,
             )
         if _src in HUMAN_SOURCES:
             # 记下"人刚改过"的时间，自动重生成在静默期内让行（2026-11-21）
@@ -1452,9 +1459,29 @@ class ScheduleStateMixin(_MixinBase):
         return kept, clamped
 
     def _commit_schedule_change_locked(self, day, new_items, old_items=None, source="",
-                                       reason="", invalidate_from=None):
+                                       reason="", invalidate_from=None,
+                                       entry_version=None):
         """commit_schedule_change 的锁内实现。"""
         day = str(day)
+        # 并发丢更新：进锁时版本已变 = 有人在我们预处理期间写入过（8 项指标之一）。
+        if entry_version is not None:
+            try:
+                _now_version = int(self.db.schedule_version(day) or 0)
+            except Exception:
+                _now_version = entry_version
+            if _now_version != int(entry_version):
+                logger.warning("[amo] 日程并发丢更新：day=%s 进入=%s 现在=%s source=%s",
+                               day, entry_version, _now_version, source or "-")
+                try:
+                    try:
+                        from . import schedule_observer as _obs_lost
+                    except ImportError:
+                        import schedule_observer as _obs_lost
+                    _obs_lost.record_metrics(
+                        self.db, day, {_obs_lost.engine.METRIC_LOST_UPDATE: 1},
+                        source="lost_update")
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_state_schedule.metrics.lost_update", _amo_exc)
         if old_items is None:
             old_items = list(self.schedule.get(day) or [])
         old_items = list(old_items or [])
@@ -1646,6 +1673,17 @@ class ScheduleStateMixin(_MixinBase):
         except Exception as _amo_exc:
             saved = False
             _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
+            # 写异常也是 8 项指标之一：落库失败必须被灰度门禁看见。
+            try:
+                try:
+                    from . import schedule_observer as _obs_write
+                except ImportError:
+                    import schedule_observer as _obs_write
+                _obs_write.record_metrics(
+                    self.db, day, {_obs_write.engine.METRIC_WRITE_ERROR: 1},
+                    source="write_error")
+            except Exception as _amo_exc2:
+                _note_swallowed("amo_state_schedule.metrics.write_error", _amo_exc2)
         # P0（2026-11-22）：块日记按 event_id diff 精确失效 + 清孤儿。
         # 放在落库之后、发布事件之前：事件订阅者只再负责旧整点表和取消任务。
         try:
