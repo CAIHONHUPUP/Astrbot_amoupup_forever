@@ -28,3 +28,5 @@ work/audit/_scratch/**/templates/*.png
 # 本机配置（可能含 key），不入库
 data/cmd_config.json
 tests/data/cmd_config.json
+# 本地打包输出
+dist/
