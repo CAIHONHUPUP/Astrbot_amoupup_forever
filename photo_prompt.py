@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import random
+import re
 
 from astrbot.api import logger
 
@@ -126,6 +127,229 @@ except ImportError:  # 直接按文件加载时
         )
 
 
+try:  # 2026-11-22 task-17：照片单 zone / 否定词由 scene_ledger 统一判定
+    from .amo_scene_ledger import (
+        detect_zones,
+        sanitize_prompt_zone,
+        strip_negated,
+        verify_photo_prompt,
+    )
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_scene_ledger import (
+            detect_zones,
+            sanitize_prompt_zone,
+            strip_negated,
+            verify_photo_prompt,
+        )
+
+
+#: 床/沙发类场景词：判定前先摘掉否定用法（“不是沙发、不是床”不能命中）。
+#: 注意「沙发」不算床：客厅沙发照不能追加“躺在床上盖被”那句（2026-11-22 P0）。
+BED_WORDS = ("床", "被窝", "床上", "盖被")
+#: 只有卧室/酒店才允许“躺在床上盖被子”这类句子。
+BED_SCENE_ZONES = ("home_bed", "hotel")
+#: 床句特征（用来在发送前断言：非卧室 prompt 里不许出现）。
+BED_SENTENCE_HINTS = ("盖着被子", "躺在床上", "躺在床上，盖着被子")
+#: 家里 zone → 房间（浴室不能写客厅家具、客厅不能写床）。
+HOME_ROOM_ZONE = {
+    "home_bed": "bedroom", "home_sofa": "living", "home_meal": "living",
+    "home_desk": "living", "home_generic": "living", "home": "living",
+    "home_bath": "bath", "home_kitchen": "kitchen",
+}
+#: 每个房间只允许出现的家具/陈设词（其它房间的词出现 = 场景打架）。
+ROOM_FURNITURE_WORDS = {
+    "bedroom": ("卧室", "床铺", "被子", "枕头", "床头"),
+    "living": ("客厅", "沙发", "茶几", "抱枕"),
+    "bath": ("卫生间", "浴室", "洗手台", "镜子", "毛巾", "瓷砖"),
+    "kitchen": ("厨房", "灶台", "橱柜", "冰箱"),
+}
+
+
+def _bed_like(where, act, zone=""):
+    """是不是床场景：plan.zone 说了算；文本判定先摘否定再找床/被窝（2026-11-22 修）。
+
+    客厅沙发、酒店床、卧室床是三种不同场景：
+    - home_bed / hotel → 是床场景；
+    - 其它 home_*（客厅/浴室/厨房/餐厅/书桌）→ 不是，绝不能再追加盖被句；
+    - 没有 zone 时才退回文本判定（且“沙发”不算床）。
+    """
+    zone = str(zone or "")
+    if zone in BED_SCENE_ZONES:
+        return True
+    if zone.startswith("home"):
+        return False
+    text = strip_negated("%s %s" % (where or "", act or ""), BED_WORDS)
+    return any(word in text for word in BED_WORDS)
+
+
+def _drop_clauses(text, words):
+    """按分句删掉含指定词（非否定用法）的分句；返回 (新文本, 命中词)。"""
+    clauses = _CLAUSE_RE.split(str(text or ""))
+    kept, hits = [], []
+    for clause in clauses:
+        body = strip_negated(clause, words)
+        found = [word for word in words if word in body]
+        if not found:
+            kept.append(clause)
+            continue
+        for word in found:
+            if word not in hits:
+                hits.append(word)
+    return "".join(kept).strip(), hits
+
+
+_CLAUSE_RE = re.compile(r"(?<=[，,。！!？?；;\n])")
+
+
+def _drop_bed_hint(text, zone=""):
+    """非床场景去掉“躺在床上/盖着被子”片段（状态提示/床句都可能带进来）。"""
+    body = str(text or "")
+    if not body or str(zone or "") in BED_SCENE_ZONES:
+        return body
+    fixed, _hits = _drop_clauses(body, BED_SENTENCE_HINTS)
+    return fixed or ""
+
+
+def verify_photo_media_prompt(prompt, plan=None, pose=None, zone="", place=""):
+    """发送前断言一个 prompt 只有一个 zone、床句/家具/姿势都和这个 zone 对得上。
+
+    返回 {ok, reasons, zones, zone}；reasons 非空时调用方不许发图（宁可发失败话术）。
+    """
+    zone_key = str(zone or getattr(plan, "zone", "") or "")
+    place_text = str(place or getattr(plan, "place", "") or getattr(plan, "where", "") or "")
+    normalized = ""
+    reasons = []
+    try:
+        try:
+            from .amo_scene_ledger import normalize_zone as _normalize
+        except ImportError:
+            from amo_scene_ledger import normalize_zone as _normalize
+        normalized = _normalize(zone_key, place_text)
+    except Exception:
+        normalized = zone_key
+    check = {"ok": True, "zones": [], "extra_zones": []}
+    try:
+        check = verify_photo_prompt(prompt, {"zone": normalized or zone_key, "place": place_text})
+    except Exception as _amo_exc:
+        _note_swallowed("photo_prompt.verify_photo_media_prompt.zone", _amo_exc)
+    if not check.get("ok"):
+        reasons.append("multi_zone:" + ",".join(str(item) for item in check.get("extra_zones") or []))
+    bed_hits = [word for word in BED_SENTENCE_HINTS if word in str(prompt or "")]
+    if bed_hits and zone_key not in BED_SCENE_ZONES:
+        reasons.append("bed_sentence_in_%s" % (zone_key or "unknown"))
+    room = HOME_ROOM_ZONE.get(zone_key)
+    if room:
+        for other_room, words in ROOM_FURNITURE_WORDS.items():
+            if other_room == room:
+                continue
+            # 否定用法不算（"没有床铺/不是沙发"是守卫句，不是场景在客厅）。
+            body = strip_negated(str(prompt or ""), words)
+            hits = [word for word in words if word in body]
+            if hits:
+                reasons.append("room_%s_in_%s:%s" % (other_room, room, "/".join(hits)))
+    try:
+        try:
+            from .pose_library import pose_room as _pose_room
+        except ImportError:
+            from pose_library import pose_room as _pose_room
+        pose_room = _pose_room(pose) if pose else ""
+    except Exception:
+        pose_room = ""
+    if pose_room and pose_room != "any" and room and pose_room != room:
+        reasons.append("pose_room_%s_in_%s" % (pose_room, room))
+    return {"ok": not reasons, "reasons": reasons,
+            "zones": list(check.get("zones") or []), "zone": normalized or zone_key}
+
+
+def enforce_photo_media_prompt(prompt, plan=None, pose=None, activity=None):
+    """自动照片发送前的最后一道：先清洗（单 zone/床句/错房间家具），再断言。
+
+    返回 (prompt, ok, reasons)。ok=False 时调用方必须放弃这次发送。
+    """
+    zone = str(getattr(plan, "zone", "") or "")
+    if not zone:
+        return prompt, True, []
+    fixed = str(prompt or "")
+    place = str(getattr(plan, "place", "") or getattr(plan, "where", "") or "")
+    try:
+        try:
+            from .amo_scene_ledger import normalize_zone as _normalize
+            from .amo_scene_ledger import sanitize_prompt_zone as _sanitize
+        except ImportError:
+            from amo_scene_ledger import normalize_zone as _normalize
+            from amo_scene_ledger import sanitize_prompt_zone as _sanitize
+        normalized = _normalize(zone, place)
+        if normalized and normalized != "unknown":
+            fixed = _sanitize(fixed, normalized)
+    except Exception as _amo_exc:
+        _note_swallowed("photo_prompt.enforce_photo_media_prompt.zone", _amo_exc)
+    if zone not in BED_SCENE_ZONES:
+        fixed = _drop_bed_hint(fixed, zone)
+    room = HOME_ROOM_ZONE.get(zone)
+    if room:
+        banned = [word for other_room, words in ROOM_FURNITURE_WORDS.items()
+                  if other_room != room for word in words]
+        fixed, _hits = _drop_clauses(fixed, banned)
+        fixed = fixed or str(prompt or "")
+    check = verify_photo_media_prompt(fixed, plan, pose=pose, zone=zone, place=place)
+    return fixed, bool(check.get("ok")), list(check.get("reasons") or [])
+
+
+def _primary_zone(where, plan):
+    """照片的权威 zone：prompt 地点只有一个来源，避免小馆画面配家里家具。"""
+    detected = detect_zones(str(where or ""))
+    if len(detected) == 1:
+        return sorted(detected)[0]
+    zone = str(getattr(plan, "zone", "") or "")
+    if zone.startswith("home"):
+        return "home"
+    if zone:
+        try:
+            from .amo_scene_ledger import normalize_zone as _normalize
+        except ImportError:
+            from amo_scene_ledger import normalize_zone as _normalize
+        return _normalize(zone, str(where or ""))
+    return ""
+
+
+def _reconcile_where(where, plan, activity):
+    """地点和计划 zone 打架时，让 where 服从计划 zone（计划来自日程，优先级更高）。"""
+    detected = detect_zones(str(where or ""))
+    zone = str(getattr(plan, "zone", "") or "")
+    primary = "home" if zone.startswith("home") else zone
+    if not primary or not detected:
+        return where
+    if len(detected) == 1 and primary not in detected:
+        # 计划在家但 where 写成小馆/商场：照片按计划的家来，别两套场景混在一条 prompt
+        if primary == "home":
+            if zone == "home_bed":
+                return "家里的卧室，床铺、被子和床头的小灯"
+            if zone == "home_sofa":
+                return "家里的客厅，沙发、抱枕和茶几"
+            return "家里的客厅，沙发、抱枕和茶几"
+        fallback = scene_for(activity) if activity else ""
+        return fallback or where
+    return where
+
+
+def _finalize_prompt_zone(prompt, where, plan, activity=None):
+    """一条照片 prompt 只允许一个 zone；返回 (prompt, primary_zone)。"""
+    primary = _primary_zone(where, plan)
+    if not primary:
+        return prompt, ""
+    fixed = sanitize_prompt_zone(prompt, primary)
+    try:
+        check = verify_photo_prompt(fixed, {"zone": primary, "place": str(where or "")})
+        if not check.get("ok"):
+            logger.warning("[PHOTO] prompt 场景仍不唯一 %s：%s",
+                           check.get("extra_zones"), str(fixed)[:120])
+            fixed = sanitize_prompt_zone(fixed, primary)
+    except Exception as _amo_exc:
+        _note_swallowed("photo_prompt.verify_photo_prompt", _amo_exc)
+    return fixed, primary
+
+
 def _day_view_event(plugin):
     """此刻正在进行的那条事实（build_day_view 合并了块日记/账本）。
 
@@ -165,13 +389,35 @@ def feet_hide_line(pose_text, bed=False):
     return "脚部自然收好或完整入镜，不要给脚部特写；脚趾不要变形、不要多趾。"
 
 
+def _pose_fits_zone(pose, zone):
+    """姿势和场景房间对不对得上（公共场合/浴室不许套床姿）。"""
+    if not pose:
+        return True
+    try:
+        try:
+            from .pose_library import pose_fits_zone as _fits
+        except ImportError:
+            from pose_library import pose_fits_zone as _fits
+        return bool(_fits(pose, zone))
+    except Exception:
+        return True
+
+
 def _pick_foot_pose(library):
-    """拍脚时只从拍脚姿势里挑一个；没有就返回 None 走原逻辑。"""
+    """拍脚时只从「拍脚专用白名单」里挑一个；没有就返回 None 走原逻辑。"""
     try:
         try:
             from .pose_library import foot_poses
         except ImportError:
             from pose_library import foot_poses
+        getter = getattr(library, "allowed_foot_poses", None) if library is not None else None
+        if callable(getter):
+            try:
+                items = list(getter() or [])
+            except Exception:
+                items = []
+            if items:
+                return random.choice(items)
         items = foot_poses(library.poses() if library is not None else [])
     except Exception:
         return None
@@ -356,7 +602,8 @@ class PhotoPromptMixin:
             if getattr(plan, "room_ref", ""):
                 try:
                     housing = getattr(self.plugin, "housing", None)
-                    room = home_room_for_plan(plan, activity) or "living"
+                    room = (HOME_ROOM_ZONE.get(str(plan.zone))
+                            or home_room_for_plan(plan, activity) or "living")
                     room_line = room_scene_line(housing, room) if housing is not None else ""
                     if room_line:
                         extras.append(room_line)
@@ -365,7 +612,10 @@ class PhotoPromptMixin:
                     _note_swallowed("photo_engine.PhotoEngine._prompt_for.room", _amo_exc)
         extras.extend([SCENERY_ONLY, VIEW_POV])
         prompt = "，".join(part for part in extras if part).strip("，")
+        prompt, _primary = _finalize_prompt_zone(prompt, where, plan, activity)
         if plan is not None:
+            if _primary:
+                plan.debug["primary_zone"] = _primary
             _log_photo_debug(self, activity, plan, prompt)
         return prompt
 
@@ -453,19 +703,30 @@ class PhotoPromptMixin:
                 plan = None
         # 地点跟着日程走：在家=家里的客厅/卧室，逛街=商场，旅游=景区（带景点名）
         where = str(scene or "").strip() or scene_for(activity, kind) or (plan.scene if plan else "")
+        where = _reconcile_where(where, plan, activity)
         if plan is not None:
             plan.where = where
             plan.debug["shot"] = "selfie"
         act = str(activity.get("activity") or "")
+        zone = str(getattr(plan, "zone", "") or "")
         # 姿势：只能由场景规则决定（居家才允许用姿势库）
         library = getattr(getattr(self, "plugin", None), "pose", None)
         # 拍脚/拍腿：只能用拍脚专用姿势，避免随机到床姿把脚裁掉或拍畸形
         _feet_text = " ".join([act, str(kind or ""), where])
         if any(word in _feet_text for word in _FOOT_INTENT) and library is not None:
             _foot = _pick_foot_pose(library)
-            if _foot is not None:
+            if _foot is not None and _pose_fits_zone(_foot, zone):
                 pose = _foot
                 pose_text = pose_line(_foot)
+        # 姿势和房间对不上（公共场合/浴室抽到床姿）→ 丢掉姿势，退回场景规则姿势
+        if pose is not None and zone and not _pose_fits_zone(pose, zone):
+            logger.info("[PHOTO] 姿势「%s」不适合 %s，换场景规则姿势",
+                        str((pose or {}).get("name") or "?"), zone)
+            pose = None
+            pose_text = ""
+            if plan is not None and getattr(plan, "pose_ready", False):
+                pose = plan.pose if _pose_fits_zone(plan.pose, zone) else None
+                pose_text = plan.pose_line if pose is not None else ""
         if not pose_text:
             if pose is not None:
                 pose_text = pose_line(pose)
@@ -510,9 +771,8 @@ class PhotoPromptMixin:
             camera_line = ("手机本体和摄像头不要入镜，不要出现手机背面或镜头对着画面；"
                            "姿态自然放松，不要夸张摆拍")
         where_line = "在%s，背景要能看出这个地方、不要换成别的场景" % (where or "不指定具体地点")
-        zone = str(getattr(plan, "zone", "") or "")
-        bed = zone in ("home_bed", "home_sofa") or any(
-            word in (where + act) for word in ("床", "被窝", "沙发"))
+        # 2026-11-22：否定词先摘掉（“不是沙发、不是床”不能判成床场景）
+        bed = _bed_like(where, act, zone)
         if hasattr(self, "_selfie_outfit_text"):
             outfit_text = self._selfie_outfit_text(zone if zone else ("home_bed" if bed else ""))
         else:
@@ -526,7 +786,10 @@ class PhotoPromptMixin:
             if _hide:
                 extras.append(_hide)
         if bed:
-            extras.append("她正躺在/坐在床上或沙发上，盖着被子；画面里绝对不要出现鞋")
+            if zone == "hotel":
+                extras.append("她坐在酒店床边，姿态放松；画面里绝对不要出现鞋")
+            else:
+                extras.append("她正躺在床上，盖着被子；画面里绝对不要出现鞋")
         elif safe:
             pass
         else:
@@ -545,7 +808,8 @@ class PhotoPromptMixin:
             try:
                 housing = getattr(self.plugin, "housing", None)
                 if housing is not None and str(plan.zone).startswith("home"):
-                    room = home_room_for_plan(plan, activity) or "living"
+                    # 房间由 plan.zone 说了算：浴室照不能追加客厅家具（2026-11-22 P0）。
+                    room = HOME_ROOM_ZONE.get(str(plan.zone)) or home_room_for_plan(plan, activity) or "living"
                     room_line = housing.room_scene_line(room)
                     if room_line:
                         extras.append(room_line)
@@ -561,6 +825,8 @@ class PhotoPromptMixin:
         if not safe:
             try:
                 state_line = sanitize_selfie_prompt(selfie_state_hint(self, activity, plan))
+                # 状态提示里的“躺在床上盖被”只属于卧室/酒店；客厅/浴室/外面删掉。
+                state_line = _drop_bed_hint(state_line, zone)
             except Exception:
                 state_line = ""
         if safe:
@@ -577,12 +843,24 @@ class PhotoPromptMixin:
             prompt = "自拍，手机前置摄像头日常自拍，" + "，".join(
                 part for part in safe_parts if part)
         else:
-            extras.extend([VIEW_SELFIE, state_line, SELFIE_FRAMING, SELFIE_STYLE])
-            prompt = "自拍，第一人称自拍，举着手机自拍，穿着%s，衣服就这一套、不要换成别的，%s，生活感" % (
-                outfit_text, "，".join(part for part in extras if part)
-            )
+            # 虚空相机姿势（双手/躺/背对）不能再说“举着手机自拍”：人设和镜头打架。
+            # 两种视角各自保持一致：手机前置自拍 / 第三人称抓拍（不出现手机）。
+            if _camera == "void":
+                framing = ("第三人称抓拍构图：人物全身入镜，从头到脚完整，人物占画面主要位置；"
+                           "画面里不出现手机、不出现拿手机的手；背景轻微虚化，真实生活照")
+                prompt = "生活照，第三人称抓拍，不是自拍，穿着%s，衣服就这一套、不要换成别的，%s，%s，生活感" % (
+                    outfit_text, "，".join(part for part in extras if part), framing
+                )
+            else:
+                extras.extend([VIEW_SELFIE, state_line, SELFIE_FRAMING, SELFIE_STYLE])
+                prompt = "自拍，第一人称自拍，举着手机自拍，穿着%s，衣服就这一套、不要换成别的，%s，生活感" % (
+                    outfit_text, "，".join(part for part in extras if part)
+                )
         prompt = sanitize_selfie_prompt(prompt, safe=safe)
+        prompt, _primary = _finalize_prompt_zone(prompt, where, plan, activity)
         if plan is not None:
+            if _primary:
+                plan.debug["primary_zone"] = _primary
             _log_photo_debug(self, activity, plan, prompt, pose_text)
         return prompt
 

@@ -74,6 +74,12 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         import amo_repetition_guard as _repeat_guard  # type: ignore
 
+try:  # 统一兜底注册表（task-18）：兜底句唯一来源
+    from .domains.reply import repetition_guard as _fallbacks
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from domains.reply import repetition_guard as _fallbacks
+
 try:  # B 方案选择器：模块只做异步选择，候选/轮换仍在本文件
     from . import amo_tone_pick as _tone_pick
 except ImportError:  # 直接按文件加载时
@@ -370,8 +376,7 @@ def _send_transit(text, ctx):
 def _model_leak_deflection(plugin=None, umo=""):
     """挑一句最近没说过的挡话；全说过就按轮换用下一条。"""
     used = set(_repeat_guard.recent_reference(plugin, umo, DEDUP_WINDOW))
-    return _repeat_guard.pick_variant("leak:" + str(umo or ""),
-                                      _repeat_guard.MODEL_LEAK_DEFLECTIONS, used)
+    return _fallbacks.pick("leak", "leak:" + str(umo or ""), used)
 
 
 def _send_model_leak(text, ctx):
@@ -682,6 +687,12 @@ def fact_guard_context(plugin, activity=None, now=None):
         logger.debug("[reply_guard] 事实视图读取失败: %s", exc)
     if not context.get("activity") and not (view or {}).get("events"):
         # 只有视图完全没有事实（老库/极简 fake）才退回日程快照；真实路径只读视图
+        context["activity"] = _current_activity(plugin)
+    # 视图有事件、但 now 落在两个日程块之间的空档（例如早上第一块 09:00 之前）时
+    # 也没有 current：同样补位，否则事实守卫拿着空 activity 空转，动作矛盾会漏到
+    # 出站（task-36 G46/t1）。补位只读 state.current_activity（和 prompt 快照同一个
+    # 「此刻」），不读账本、不改事实。
+    if not context.get("activity"):
         context["activity"] = _current_activity(plugin)
     # 约会/旅游只读 kv，不走 amo_date_session.load / amo_trip.load：
     # 那两个会自动迁移/收尾（会落库），守卫在发送前不该有副作用。
@@ -1023,9 +1034,6 @@ def tone_guard_prompt_rule():
 PROACTIVE_STATUS_SECONDS = 30 * 60
 FOOD_QUESTION_RE = re.compile(
     r"(吃啥|吃什么|吃点什么|吃的什么|午饭|中午吃|晚饭|晚上吃|吃了没|吃了吗|吃饭了没)")
-#: 状态去重删空时，这些说明句子里有明确答案（时间/地点/吃饭/是否），保留原句
-_ANSWER_CUE_RE = re.compile(
-    r"\d{1,2}[:：]\d{2}|在家|在公司|在路|到了|到家|不在|没有|吃饭|吃完饭|好的|是的")
 #: 他问的答案类型 -> 回复里什么算答到了（整句复读删句时用来保留答案）
 _ANSWER_RULES = (
     (FOOD_QUESTION_RE, re.compile(r"吃|饭|面|粥|外卖|饿|饱")),
@@ -1034,7 +1042,8 @@ _ANSWER_RULES = (
                 r"在医院|在健身房|在学校|这边|到了|到家|出门|外面|地铁|公交|车上|"
                 r"家|公司|商场|餐厅|医院")),
     (re.compile(r"几点|什么时候|多久|回不回来"),
-     re.compile(r"\d|马上|快了|晚点|一会儿|下班|到家|回去")),
+     re.compile(r"\d|马上|快了|晚点|一会儿|下班|到家|回去"
+                r"|在家|已经在家|这就回|接着回|这就来")),
     (re.compile(r"干嘛|做什么|忙什么|干什么|偷懒"),
      re.compile(r"上班|加班|开会|睡|休息|吃|做饭|逛|追剧|看|写|改|收拾|玩|练|"
                 r"健身|刷|忙|瘫|窝|躺|做")),
@@ -1043,6 +1052,13 @@ _ANSWER_RULES = (
 )
 #: 本轮他问的话：(轮次, 原话)；分段/发送去重靠它判断整句复读有没有把答案删掉
 _TURN_USER_TEXT: Dict[str, Any] = {}
+#: 本轮「原始候选」：(轮次, 进入去重层时的回复)。
+#: 只给 apply_chat_safety 最后一道守卫用：候选已经答到点上，就不许被通用兜底句覆盖。
+_TURN_SOURCE: Dict[str, Any] = {}
+#: 通用兜底句：她这一轮其实没答上来时用的占位话。整条回复归一化后等于其中一句，就算兜底。
+#: 「候选优先于兜底」是数据发出的单一优先级，不再让各守卫各写一份「保留原句」补丁。
+#: 句子本身只在 domains.reply.repetition_guard.FALLBACKS["generic"] 一处维护。
+_GENERIC_BODIES = _fallbacks.generic_bodies()
 #: 每个会话最近发出去的状态（跨轮去重依据；只在内存，重启后靠 _recent 兜底）
 #: 当前这一轮回复的批次号（分段去重只在同一轮内生效，避免误删跨轮正常消息）
 
@@ -1053,8 +1069,11 @@ def reset_repetition_memory(umo=""):
     _repeat_guard.reset(umo)
     if umo:
         _TURN_USER_TEXT.pop(str(umo), None)
+        _TURN_SOURCE.pop(str(umo), None)
     else:
         _TURN_USER_TEXT.clear()
+        _TURN_SOURCE.clear()
+    reset_semantic_recheck_stats()
 
 
 
@@ -1119,6 +1138,61 @@ def _keep_answer(original, fixed, question, dropped):
     return fixed
 
 
+def _is_generic_fallback(text):
+    """整条回复是不是通用兜底句（归一化后等于注册表 FALLBACKS["generic"] 里的一句）。"""
+    body = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(text or ""))
+    return bool(body) and body in _GENERIC_BODIES
+
+
+def _answered_intent(original, user_text):
+    """原始候选有没有答到他这一句问的意图（先按问句守卫的答案词表，再按通用答案规则）。"""
+    body = str(original or "")
+    ask = str(user_text or "")
+    if not body.strip() or not ask.strip():
+        return False
+    try:
+        from .amo_question_guard import _answered as _q_answered
+        from .amo_question_guard import _category as _q_category
+    except ImportError:
+        from amo_question_guard import _answered as _q_answered
+        from amo_question_guard import _category as _q_category
+    try:
+        category = _q_category(ask)
+        if category and _q_answered(category, body):
+            return True
+    except Exception as exc:  # cleanup: 判不出来就退回通用答案规则
+        logger.debug("[amo] chat_safety.intent 失败: %s", exc)
+    # 问句守卫的答案词表偏窄（when 类只认「到家/路上/马上/…」），判不出来时
+    # 仍按通用答案规则再看一遍，别把「其实答到了」的候选判成没答到。
+    return _answers_question(body, ask)
+
+
+def _prefer_answered_candidate(text, umo, user_text):
+    """单一优先级：本轮原始候选已答到点上，就不许被通用兜底句覆盖。
+
+    全链路只在 apply_chat_safety 这一次裁决：上游守卫（状态去重/地点对齐/问句补答）
+    仍可以改，但送进来的如果只是「还是老样子」「等下再说」这类兜底句，而原始候选
+    其实答到了他的问题，就以候选为准；候选没答到就保持兜底句（该改还得改）。
+    """
+    key = str(umo or "").strip()
+    if not key:
+        return text
+    entry = _TURN_SOURCE.get(key)
+    if not entry:
+        return text
+    turn, original = entry
+    if turn != _ACTIVE_TURN.get(key):
+        return text
+    if not _answered_intent(original, user_text):
+        return text
+    # 候选答到了，却被换成了通用兜底句，或被后续守卫删到答不上来：以候选为准。
+    # 「还答不答得到」用更严的 _answers_question 判（问句守卫的 doing 词表太松，
+    # 「在擦头发呢」这种删掉动词也算答到，会把被删坏的回复放过去）。
+    if _is_any_fallback(text) or not _answers_question(text, user_text):
+        return str(original)
+    return text
+
+
 def _turn_question(umo):
     """这一轮他问的话；跨轮/跨段的旧问题不再参与保留答案判断。"""
     key = str(umo or "").strip()
@@ -1127,6 +1201,214 @@ def _turn_question(umo):
         return ""
     turn, question = entry
     return str(question or "") if turn == _ACTIVE_TURN.get(key) else ""
+
+
+# ---------------------------------------------------------------------------
+# 唯一后置语义复检（task-29，2026-11-22）
+#
+# 现场（审计 chat_coherence.md 3.2/3.4）：唯一会判「有没有回答他最后一句」的
+# grounding_critic 在 polish 里（生成期），而 _align_arrival / _align_swim_where /
+# state_consistency.rewrite / question_guard.answer 都在它之后整句删除/替换；
+# 换完之后没有任何一层再问「这还是不是对他那句话的回答」，于是真实模型层把
+# 「记得呀，那天你穿白衬衫…」换成「我还在路上呢，快到了。」这类通用句。
+#
+# 这里给所有会整句删除/替换的守卫加同一个收口：改完再判一次（判据在
+# amo_grounding_critic.post_rewrite_recheck），原候选答到、改完答不到 → 保留候选。
+# 各守卫不再各写一份「保留原句」白名单。
+# ---------------------------------------------------------------------------
+
+#: 后置语义复检埋点（验收口径「守卫改写后语义复检失败 = 0」看这里）：
+#: calls=过闸且确实动了文本的次数，restored=还原候选次数，blocked=因安全/事实拒绝还原次数。
+_RECHECK_STATS: Dict[str, int] = {"calls": 0, "restored": 0, "blocked": 0}
+#: 现行文本是事实守卫产物时的识别词：消费守卫把「买了」改成「还没买」，
+#: 这种事实改写优先于语义还原（不能为了答上问题就把假消费还原回来）。
+_SAFETY_REPLY_HINTS = ("还没买",)
+
+
+def reset_semantic_recheck_stats():
+    """清空后置语义复检埋点（验收 harness 每轮独立统计用）。"""
+    for key in _RECHECK_STATS:
+        _RECHECK_STATS[key] = 0
+
+
+def semantic_recheck_stats():
+    """后置语义复检指标：calls / restored / blocked。"""
+    return dict(_RECHECK_STATS)
+
+
+def _is_any_fallback(text):
+    """整条回复是不是某句通用兜底（通用/状态复读/短句池，不只 generic 一池）。"""
+    try:
+        try:
+            from .amo_grounding_critic import is_fallback as _shared_fallback
+        except ImportError:
+            from amo_grounding_critic import is_fallback as _shared_fallback
+        return bool(_shared_fallback(text))
+    except Exception as exc:  # cleanup: 判不出来就退回通用池
+        logger.debug("[amo] chat_safety.fallback 失败: %s", exc)
+        return _is_generic_fallback(text)
+
+
+def _turn_candidate(umo):
+    """本轮进入去重层时的原始候选；只认本轮（跨轮候选不许盖这一轮）。"""
+    key = str(umo or "").strip()
+    entry = _TURN_SOURCE.get(key)
+    if not entry:
+        return ""
+    turn, original = entry
+    if turn != _ACTIVE_TURN.get(key):
+        return ""
+    return str(original or "")
+
+
+def _media_clean(text):
+    """出站前剥掉媒体占位符（候选里可能带 [我发的照片]，永远不许进人话）。"""
+    body = str(text or "")
+    try:
+        try:
+            from .amo_message import strip_media_markers as _strip_media
+        except ImportError:
+            from amo_message import strip_media_markers as _strip_media
+        return str(_strip_media(body) or "").strip()
+    except Exception as exc:  # cleanup: 剥不掉就按原文，validate 层还会再剥一次
+        logger.debug("[amo] 候选还原剥离媒体标记失败: %s", exc)
+        return body.strip()
+
+
+def _restore_candidate(original, plugin=None):
+    """要回候选前的出站卫生：媒体标记剥离 + 消费事实守卫重跑。
+
+    「候选优先于语义」不等于「候选优先于事实」：没记账却说买了 N 元的候选，
+    还原前先过一遍消费守卫，别为了答上问题把假消费发出去。
+    """
+    body = _media_clean(original)
+    try:
+        try:
+            from .amo_purchase_guard import rewrite as _purchase_guard
+        except ImportError:
+            from amo_purchase_guard import rewrite as _purchase_guard
+        body = str(_purchase_guard(body, plugin) or body).strip()
+    except Exception as exc:  # cleanup: 消费守卫失败就不额外改
+        logger.debug("[amo] 候选还原消费守卫失败: %s", exc)
+    return body
+
+
+def _unsafe_candidate(candidate):
+    """候选本身带模型自曝/后台泄漏/防御话术时不许还原（安全优先于语义）。"""
+    body = str(candidate or "")
+    if not body.strip():
+        return True
+    try:
+        try:
+            from .amo_shared_text import (looks_like_ai_admission,
+                                          looks_like_defensive_reply)
+        except ImportError:
+            from amo_shared_text import (looks_like_ai_admission,
+                                         looks_like_defensive_reply)
+        if looks_like_ai_admission(body) or looks_like_defensive_reply(body):
+            return True
+    except Exception as exc:  # cleanup: 安全判据不可用就只用模型泄漏判据
+        logger.debug("[amo] 候选安全判据失败: %s", exc)
+    try:
+        return bool(looks_like_model_leak(body))
+    except Exception:  # cleanup: 判不出来不阻断
+        return False
+
+
+def _protected_current(text):
+    """现行文本是安全挡话/消费事实守卫的产物时，不许被候选覆盖。"""
+    body = str(text or "").strip()
+    if not body:
+        return False
+    if any(hint in body for hint in _SAFETY_REPLY_HINTS):
+        return True
+    try:
+        try:
+            from .amo_grounding_critic import is_blocking_fallback as _blocking
+        except ImportError:
+            from amo_grounding_critic import is_blocking_fallback as _blocking
+        return bool(_blocking(body))
+    except Exception:  # cleanup: 判据不可用就不额外拦
+        return False
+
+
+def _recheck_once(original, text, user_text):
+    """跑一次纯判定（不做出站卫生），返回判完的文本。"""
+    try:
+        try:
+            from .amo_grounding_critic import post_rewrite_recheck as _recheck
+        except ImportError:
+            from amo_grounding_critic import post_rewrite_recheck as _recheck
+        return str(_recheck(
+            original, text, user_text,
+            answered=lambda body: _answered_intent(body, user_text)))
+    except Exception as exc:  # cleanup: 复检失败就保持改写结果（不能把回复弄丢）
+        logger.debug("[amo] 后置语义复检失败: %s", exc)
+        return str(text or "")
+
+
+def final_semantic_recheck(text, plugin=None, umo="", user_text="", original=None):
+    """唯一后置语义复检：会整句删除/替换的守卫跑完后统一过这一道（task-29）。
+
+    调用点（顺序即真实装饰链）：
+    - apply_narrative_repetition：整句/状态去重之后；
+    - apply_chat_safety：收口，覆盖其前的 _align_arrival/_align_swim_where 和其中
+      的 state_consistency.rewrite / question_guard.answer；
+    - amo_state_consistency.rewrite / validate_reply_assembly：自身出口再保一道。
+
+    判定在 amo_grounding_critic.post_rewrite_recheck：原候选答到他这一句、改完后
+    答不到（或整条只剩通用兜底句）→ 保留候选。这里只负责取本轮候选 + 出站卫生：
+    媒体占位符剥离、消费事实守卫重跑、模型自曝/后台泄漏/安全挡话不还原。
+    """
+    candidate = str(original or "") if original is not None else _turn_candidate(umo)
+    if not candidate.strip():
+        return text
+    current = str(text or "")
+    # 本轮他真正问的那句以登记表为准：send 阶段传进来的 user_text 可能已经过期
+    # （扫近聊取到的是更早的 user 行），用它复检会把「其实答到了」的回复判成没答到
+    # （task-36 G09/t5：「忙什么呢」被记成上一轮的「路上堵死了」）。
+    question = _turn_question(umo) or str(user_text or "")
+    fixed = _recheck_once(candidate, current, question)
+    if fixed == current:
+        return fixed
+    _RECHECK_STATS["calls"] += 1
+    if _protected_current(current):
+        _RECHECK_STATS["blocked"] += 1
+        logger.info("[amo] 后置复检拒绝还原（安全挡话/事实守卫）: %s", current[:40])
+        return text
+    safe = _restore_candidate(candidate, plugin)
+    if _unsafe_candidate(safe):
+        _RECHECK_STATS["blocked"] += 1
+        logger.info("[amo] 后置复检拒绝还原（候选不安全）: %s", safe[:40])
+        return text
+    if safe != candidate:
+        retry = _recheck_once(safe, current, question)
+        if retry == current:
+            _RECHECK_STATS["blocked"] += 1
+            return text
+        fixed = retry
+    _RECHECK_STATS["restored"] += 1
+    logger.info("[amo] 改写后语义复检：还原候选 %s -> %s", current[:40], fixed[:40])
+    return fixed
+
+
+def complete_deleted_answer(text, plugin=None, umo="", user_text="", candidate=""):
+    """整句删除/替换后出口补答：他这一问的答案被删掉/只剩兜底时补回来。
+
+    问句守卫是「答到点上」的唯一实现（含状态兜底模板）；删句层（分段去重/场景剥离）
+    不该为了补答再复制一份模板，统一从这里进。candidate 传删句前的正文：它答到了
+    就把答案原样要回来（答案优先于不复读），没答到才用状态模板补一句。
+    """
+    try:
+        try:
+            from .amo_question_guard import answer as _question_answer
+        except ImportError:
+            from amo_question_guard import answer as _question_answer
+        return _question_answer(_turn_question(umo) or str(user_text or ""), plugin,
+                                text, candidate=str(candidate or ""))
+    except Exception as exc:  # cleanup: 补答失败保持删句结果，绝不影响出站
+        logger.debug("[amo] 出口问句补答失败: %s", exc)
+        return text
 
 
 def _answer_food_first(text, plugin, user_text, now=None):
@@ -1154,12 +1436,48 @@ def _answer_food_first(text, plugin, user_text, now=None):
     return answer + "。" + body
 
 
+def recover_rewrite_damage(current, plugin, umo="", user_text=""):
+    """候选优先出口（task-40）：完整候选被固定兜底/多池拼装/语法破损覆盖时还原。
+
+    判定与安全改写在 amo_rewrite_safety + amo_persona_guard.sanitize_candidate；
+    只有存在本轮候选（装饰链入口登记）且他这一轮确实有输入时才生效，主动消息
+    没有 user_text 不会走到这里。
+    """
+    if not str(user_text or "").strip():
+        return current
+    try:
+        try:
+            from .amo_rewrite_safety import recover as _recover
+            from .amo_persona_guard import guard_candidate as _guard_candidate
+            from .amo_persona_guard import sanitize_candidate as _sanitize
+        except ImportError:
+            from amo_rewrite_safety import recover as _recover
+            from amo_persona_guard import guard_candidate as _guard_candidate
+            from amo_persona_guard import sanitize_candidate as _sanitize
+    except Exception as exc:  # cleanup: 候选优先层不可用就保持现行文本
+        logger.debug("[amo] 候选优先层不可用: %s", exc)
+        return current
+    try:
+        return _recover(
+            plugin, umo, current,
+            lambda value: _sanitize(plugin, umo, value, str(user_text or "")),
+            guard=lambda value: _guard_candidate(plugin, umo, value, str(user_text or "")),
+            source="chat", user_text=str(user_text or ""))
+    except Exception as exc:  # cleanup: 还原失败绝不把回复弄丢
+        logger.debug("[amo] 候选优先还原失败: %s", exc)
+        return current
+
+
 def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
     """聊天回复的「最后一道确定性守卫」（2026-11-21 审计：聊天不走 send 阶段）。
 
     只跑确定性改写，不调模型：极端/暴力词 → 身份 → 人名 → 消费 → 反催问。
     """
     value = str(text or "")
+    # 本轮他真正问的那句以登记表为准（apply_narrative_repetition 已登记）：调用方
+    # 传进来的 user_text 在 send/复检路径上可能是上一轮的旧问句，用它补答会把这一轮
+    # 改成上一轮的答案（task-36 回归：send 阶段扫近聊取到更早的 user 行）。
+    user_text = _turn_question(umo) or str(user_text or "")
     if not value.strip():
         try:
             try:
@@ -1179,6 +1497,10 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
             _mark_reacted(plugin)
     except Exception as exc:
         logger.debug("[amo] chat_safety.share_reacted 失败: %s", exc)
+    # 单一优先级（全链路只在这里裁决一次）：这一轮原始候选已经答到他的问题，
+    # 先把候选恢复回来；后面的确定性改写都在候选上做，通用兜底句不许再盖掉它。
+    # 候选没答到，就保持上游守卫给的结果（该改的照改）。
+    value = _prefer_answered_candidate(value, umo, user_text)
     try:
         try:
             from .amo_immersion_guard import fix_identity, sanitize_extreme
@@ -1250,7 +1572,7 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
         except ImportError:
             from amo_state_consistency import rewrite as _state_rewrite
         _context = (str(user_text or "") + "\n" + str(history_text or "")).strip()
-        value = _state_rewrite(value, plugin, _context)
+        value = _state_rewrite(value, plugin, _context, umo=str(umo or ""))
         try:
             try:
                 from .amo_role_guard import rewrite as _role_rewrite
@@ -1266,9 +1588,22 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
             from .amo_question_guard import answer as _question_answer
         except ImportError:
             from amo_question_guard import answer as _question_answer
-        value = _question_answer(str(user_text or ""), plugin, value)
+        # 问句模板是「整条替换」：本轮候选已经答到这类问题（严格判据/通用答案
+        # 规则任一命中）时，模板不许顶上去——当前文本答不到就交给出口的语义复检
+        # 还原候选，而不是先用状态模板把候选盖掉。
+        _candidate = _media_clean(_turn_candidate(umo))
+        _candidate_answers = bool(_candidate) and _answered_intent(_candidate, user_text)
+        if not _candidate_answers:
+            value = _question_answer(
+                str(user_text or ""), plugin, value, candidate=_candidate)
     except Exception as exc:
         logger.debug("[amo] chat_safety.question 失败: %s", exc)
+    # 唯一后置语义复检（task-29）收口：上面所有整句删除/替换（含其前的
+    # _align_arrival/_align_swim_where、其中的 state_consistency.rewrite 与
+    # question_guard.answer）都跑完了，再判一次「还答不答得上他这一句」。
+    value = final_semantic_recheck(value, plugin, umo, user_text)
+    # task-40：全链路跑完后，完整候选被固定兜底/多池拼装/语法破损覆盖时还原候选。
+    value = recover_rewrite_damage(value, plugin, umo, user_text)
     return value.strip() or str(text or "")
 
 
@@ -1284,6 +1619,9 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
         return value
     turn = begin_status_turn(umo)
     _TURN_USER_TEXT[str(umo or "").strip()] = (turn, str(user_text or ""))
+    # 记下「进入去重层时的原始候选」：后面去重/地点/问句守卫都可能把整条换成
+    # 通用兜底句，唯一优先级在 apply_chat_safety 里裁决（候选答到点上就还原）。
+    _TURN_SOURCE[str(umo or "").strip()] = (turn, value)
     value = _answer_food_first(value, plugin, user_text, now)
     if FOOD_QUESTION_RE.search(str(user_text or "")):
         value = _limit_status_sentences(value, 1)
@@ -1292,8 +1630,9 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
         said.update(status_tokens(line))
     fixed, dropped = _drop_repeated_status(value, said)
     if dropped and not fixed.strip():
-        # 有明确答案（时间/地点/吃饭/是否）时保留原回答；纯状态重复才用短句
-        fixed = value if _ANSWER_CUE_RE.search(value) else "还是老样子。"
+        # 纯状态重复先压成短句；这句能不能盖掉候选，只由 apply_chat_safety 的
+        # 单一优先级裁决（候选答到点上就还原候选），这里不再各判一次答案。
+        fixed = _fallbacks.sentence("status_repeat")
     # 整句级复读：和最近 3-5 条 bot 消息相同/≥0.9 相似的句子直接删；整条重复换短句。
     # 但删句不能把对他的回答一起删掉（「刚吃完饭，好撑。你呢？」不能只剩「你呢？」）。
     before_dedup = fixed or value
@@ -1317,7 +1656,9 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
                 fixed = _guarded
     except Exception as _amo_exc:
         logger.debug("[dedup] 完成动作一致性检查失败: %s", _amo_exc)
-    return fixed or value
+    # 整句/状态去重是「整句删除」守卫：删完再判一次「还答不答得上他这一句」，
+    # 答不上就把本轮候选要回来（答案优先于不复读，且不许被「还是老样子」覆盖）。
+    return final_semantic_recheck(fixed or value, plugin, umo, user_text, original=value)
 
 
 def apply_proactive_dedup(text, plugin, umo="", now=None):

@@ -17,10 +17,10 @@ import os
 import random  # 测试会 patch main.random（群聊回复概率）
 
 try:  # Phase 17：结构化健康快照（只读、降级不抛；读库细节在 observability）
-    from .observability import plugin_health
+    from .observability import install_log_redaction, plugin_health
 except ImportError:  # 按文件直接加载（离线单测）
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        from observability import plugin_health
+        from observability import install_log_redaction, plugin_health
 
 try:  # Phase 17：统一时钟（源码守护禁止生产代码裸调 time.time）
     from .clock import now_ts as _obs_now_ts
@@ -114,6 +114,12 @@ def feature_api_hash():
 class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, SocialMixin, TravelMixin, RuntimeMixin, KbMixin, UsageMixin, ApiMixin, ScheduleMixin, ProactiveMixin, LlmMixin, WebRouteMixin, HandshakeMixin, InitMixin, LifecycleMixin, ReadinessMixin, Star):
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context)
+        # 日志脱敏（task-26）：先装进程级 filter，再跑任何会打日志的初始化。
+        # 覆盖 forever / watch / data / photo 的 logger（handler 级 + 之后新加的）。
+        try:
+            install_log_redaction()
+        except Exception as _amo_exc:
+            _note_swallowed("main.HumanCorePlugin.__init__.log_redaction", _amo_exc)
         self._init_basic(config)
         self._init_engines()
         self._init_runtime()
@@ -150,7 +156,16 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             return True
         return any(prefix and text.startswith(prefix) for prefix in self._command_prefixes())
 
-    _on_astrbot_loaded_hook = getattr(filter, "on_astrbot_loaded", None)
+    # 2026-11-22 task-24：这里以前直接 getattr(filter, ...)，但 main.py 从未 import
+    # AstrBot 的 filter，`filter` 解析成 Python 内建函数 → hook 恒为 None，
+    # on_astrbot_loaded 整段（TTS 动作过滤接管、send_photo/buy_appliance 工具注册、
+    # 姿势参考图补齐）从未执行（生产日志「TTS 动作过滤已接管」0 次）。
+    # 现在取 amo_shared 导出的真 filter；包模式 / 平铺模式两种 import 都覆盖。
+    try:
+        from .amo_shared import filter as _amo_filter
+    except ImportError:  # 按文件直接加载（离线单测）
+        from amo_shared import filter as _amo_filter
+    _on_astrbot_loaded_hook = getattr(_amo_filter, "on_astrbot_loaded", None)
 
     if _on_astrbot_loaded_hook is not None:
         @_on_astrbot_loaded_hook()
@@ -214,6 +229,30 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             from . import amo_db_schema as _schema
         except ImportError:  # 按文件直接加载
             import amo_db_schema as _schema
+        # task-27：只读状态/指标契约版本（消费者据此选择新路径或降级，字段只增不改）
+        # 动态导入（不写 from .services import ...）：契约模块缺失/旧安装都不能
+        # 让 protocol_info 抛异常，也避免给架构棘轮新增顶层 import 边。
+        import importlib as _importlib
+        contracts = {}
+        package = str(__package__ or "")
+        for key in ("life_state", "metrics"):
+            descriptor = {}
+            module = None
+            for module_name in (("." + "services." + key) if package else (),
+                                "services." + key, key):
+                try:
+                    module = _importlib.import_module(module_name,
+                                                      package or None)
+                    break
+                except Exception:
+                    module = None
+            try:
+                if module is not None:
+                    descriptor = module.contract_descriptor()
+            except Exception:  # 契约模块坏了不影响老协议
+                descriptor = {}
+            contracts[key] = {"contract": descriptor.get("contract", ""),
+                              "version": descriptor.get("version", 0)}
         return {
             "plugin": "Astrbot_amoupup_forever",
             "protocol": PROTOCOL_NAME,
@@ -221,6 +260,7 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
             "api_hash": feature_api_hash(),
             "schema_version": int(getattr(_schema, "LATEST_VERSION", 0) or 0),
             "version": PLUGIN_VERSION,
+            "contracts": contracts,
         }
 
     def _obs_health(self):

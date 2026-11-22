@@ -1,0 +1,10 @@
+daily 20261121 groups 50/50 (100.0%) turns 614/614 (100.00%) res 0 gi 0 ctrl 0 snap=pinned
+daily 20261201 groups 47/50 (94.0%) turns 594/597 (99.50%) res 3 gi 0 ctrl 0 snap=pinned
+daily 20261202 groups 48/50 (96.0%) turns 602/604 (99.67%) res 2 gi 0 ctrl 0 snap=pinned
+daily 20261203 groups 46/50 (92.0%) turns 594/598 (99.33%) res 4 gi 0 ctrl 0 snap=pinned
+share 20261121 groups 50/50 final 100.0% raw 54.0% fixed 230 damaged 0
+share 20261201 groups 50/50 final 100.0% raw 55.2% fixed 224 damaged 0
+share 20261202 groups 50/50 final 100.0% raw 58.0% fixed 210 damaged 0
+share 20261203 groups 50/50 final 100.0% raw 56.2% fixed 219 damaged 0
+report bytes 30243 lines 315
+holdout dir files 70

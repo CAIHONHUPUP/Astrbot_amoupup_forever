@@ -490,34 +490,20 @@ class DiaryStateMixin(_MixinBase):
     async def _diary_facts(self, day, start, end):
         """事实池窗口 = 块窗口：跨小时块也只喂这一块的素材；取不到就空列表。
 
-        F1：再叠一层 amo_fact_timeline.build_day_view 的块日记——事实池本身不写
-        块日记，两份拼起来才是这一块的素材；视图读失败不影响事实池那部分。
+        2026-11-22 P0：块日记不再作为事实回流。以前这里会叠一层 day_view_facts
+        （把当天已经生成的块日记正文当素材），上一块/孤儿块的错误就会被下一块
+        继承——「日程在家、日记写逛街」正是这么滚出来的。文风/情绪衔接只保留
+        上一块正文（prev_diary，作为 context 不是 fact）。
         """
-        facts = []
         try:
             try:
                 from .amo_fact_pool import build_fact_pool
             except ImportError:  # 直接按文件加载时
                 from amo_fact_pool import build_fact_pool
             pool = await build_fact_pool(self.p, day, slot_start=start, slot_end=end)
-            facts = list(pool.get("facts") or [])
+            return list(pool.get("facts") or [])
         except Exception:
-            facts = []
-        try:
-            try:
-                from .amo_fact_timeline import day_view_facts
-            except ImportError:  # 直接按文件加载时
-                from amo_fact_timeline import day_view_facts
-            window = None
-            try:
-                window = (int(str(start)[:2]) * 60 + int(str(start)[3:5] or 0),
-                          int(str(end)[:2]) * 60 + int(str(end)[3:5] or 0))
-            except (TypeError, ValueError):
-                window = None
-            facts += day_view_facts(self.p, day, window=window)
-        except Exception as exc:
-            logger.debug("[amo] 块日记素材读取失败: %r", exc)
-        return facts
+            return []
 
     def _diary_block_record(self, day, bid):
         """块日记的原始行（status/version 判定用），取不到就 None。"""

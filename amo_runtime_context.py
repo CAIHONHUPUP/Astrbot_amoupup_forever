@@ -34,17 +34,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+        AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+            AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+                AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
             )
 
 
@@ -93,6 +93,19 @@ def health_recovered_line(status, decision):
             "记忆里早上的低烧/37 度是几小时前的旧状态，现在不发烧了。"
             "他问就说「好了，就是还有点乏」，不要再说自己发烧、刚退烧、怕再烧、怕着凉、鼻子堵、38 度这些。"
             "他要是想看你换泳装/比基尼：你在家、已经好了，就逗他一句然后答应，不要拿生病/怕着凉推掉。")
+
+
+def _state_now_text(snap=None):
+    """当前时刻的唯一日期标签：优先用 snapshot["datetime_text"]（含星期）。
+
+    聊天里说「现在」时不能自己拼星期（跨天/跨时区会错），快照缺字段时按同一格式
+    用 amo_shared_time.weekday_cn 补，保证和日记/提醒/快照是同一套星期来源。
+    """
+    text = str((snap or {}).get("datetime_text") or "").strip()
+    if text:
+        return text
+    now = _now()
+    return "%s 星期%s %s" % (now.strftime("%Y-%m-%d"), weekday_cn(now), now.strftime("%H:%M"))
 
 
 def _money_approx(cents):
@@ -316,8 +329,21 @@ class RuntimeContextMixin(RuntimeMixinBase):
                 # 只要会话不在进行中，这种「同框」措辞一律改写成日常事实，绝不再注入。
                 if any(word in line for word in
                        ("就在你身边", "就在你面前", "你们现在在一起", "正在")):
-                    line = ("今天你们之前约会过，但已经结束了；现在你在家，他不在你身边，"
-                            "你们只能手机聊天。")
+                    # task-30：改写成「已经结束」的日常事实时，地点从场景账本取，
+                    # 不能像以前那样硬说「现在你在家」（人可能在医院/公司/路上）。
+                    _where = ""
+                    try:
+                        try:
+                            from .amo_scene_ledger import scene_at as _scene_at
+                        except ImportError:
+                            from amo_scene_ledger import scene_at as _scene_at
+                        _scene = _scene_at(self) or {}
+                        _where = str(_scene.get("place") or "")
+                    except Exception as _amo_exc2:
+                        _note_swallowed("amo_runtime._date_fact_line.scene", _amo_exc2)
+                        _where = ""
+                    line = ("今天你们之前约会过，但已经结束了；现在你在%s，他不在你身边，"
+                            "你们只能手机聊天。" % (_where or "自己的地方"))
                     try:
                         self.db.kv_set("date_fact", dict(data, line=line))
                     except Exception as _amo_exc:
@@ -370,7 +396,11 @@ class RuntimeContextMixin(RuntimeMixinBase):
             wander_text = await self._maybe_wander(event, uid, profile)
         except Exception as exc:
             logger.debug("[amo] 旅游意愿失败: %s" % exc)
-        snap = self.state.snapshot()
+        try:  # task-30：此刻地点/动作唯一读场景账本（含请假/出差硬约束）
+            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        except ImportError:
+            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        snap = _snap_with_scene(self)
         _, memory_text = await self._recall(uid, event.message_str or "", event)
         self_name, self_uid, self_qq_nick, self_display = await self._self_identity(event)
         alias = str(profile.get("alias") or "").strip()
@@ -480,13 +510,18 @@ class RuntimeContextMixin(RuntimeMixinBase):
             category = str(activity.get("category") or "")
             text = str(activity.get("activity") or "")
             if category in ("meal", "play", "shopping") or any(w in text for w in ("吃午饭", "吃饭", "逛街", "商场")):
+                # task-28 P0-3：聊天 prompt 里不再注入精确到分的余额。
+                # 线上实测模型会原样抄「卡里还有 4072」；这里只给大概数，
+                # 由 set_schedule_cost 自己定价，数字不对用户报账。
                 try:
-                    cash = int(self.wallet.balance()) / 100.0
+                    cash_cents = int(self.wallet.balance())
                 except Exception:
-                    cash = 0.0
-                return ("【消费工具】现在是消费时段，余额 %.2f 元，物价系数 1.0；"
+                    cash_cents = 0
+                return ("【消费工具】现在是消费时段，余额大概%s，物价系数 1.0；"
                         "请调用 set_schedule_cost(cost_cents, reason) 自主定价，"
-                        "可以吃泡面/自己煮面给 0，不要由代码替她定价。" % cash)
+                        "可以吃泡面/自己煮面给 0，不要由代码替她定价；"
+                        "也不要把精确余额、价格、等待分钟报给他。"
+                        % _money_approx(cash_cents))
         except Exception:
             return ""
         return ""
@@ -1048,7 +1083,26 @@ class RuntimeContextMixin(RuntimeMixinBase):
         try:
             _date_mood = self.db.kv_get("date_mood_line", {}) or {}
             if isinstance(_date_mood, dict) and _date_mood.get("line") and float(_date_mood.get("until") or 0) > now_ts():
-                parts.append("【约会】" + str(_date_mood.get("line")))
+                # 2026-11-22 task-17：约会心情只在“确实在约会/场景未知”时注入；
+                # 日程明确且没在一起时，两天前的“他忘了你们的约会”不能继续污染聊天。
+                _line_text = str(_date_mood.get("line") or "")
+                _allow = True
+                try:
+                    try:
+                        from .amo_scene_ledger import QUALITY_UNKNOWN as _QU, QUALITY_WEAK as _QW, scene_at as _scene_at, scene_guard as _scene_guard
+                    except ImportError:
+                        from amo_scene_ledger import QUALITY_UNKNOWN as _QU, QUALITY_WEAK as _QW, scene_at as _scene_at, scene_guard as _scene_guard
+                    _scene = _scene_at(self)
+                    _quality = str(_scene.get("quality") or "")
+                    if "约会" in _line_text and _quality not in (_QU, _QW, "") \
+                            and not bool(_scene.get("together")):
+                        _allow = False
+                    if _allow:
+                        _line_text = _scene_guard(_line_text, _scene, self).get("text") or ""
+                except Exception as _amo_exc2:
+                    _note_swallowed("amo_runtime.date_mood_line.scene", _amo_exc2)
+                if _allow and _line_text:
+                    parts.append("【约会】" + _line_text)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.date", _amo_exc)
         try:
@@ -1070,7 +1124,7 @@ class RuntimeContextMixin(RuntimeMixinBase):
                          "「待会儿」≈半小时内；他没说「明天」就定今天。"
                          "定明天/后天之前先想一下她那个时段是不是要上班/看病，撞上了就自然说换个时间。"
                          "回复里只能用「今晚/明天傍晚/马上」这类口语说时间，"
-                         "严禁输出 11-16 18:27 这种系统格式。" % _now().strftime("%Y-%m-%d %H:%M"))
+                         "严禁输出 11-16 18:27 这种系统格式。" % _state_now_text(c.get("snap")))
         except Exception as exc:
             _note_swallowed("amo_runtime.py.817", exc)
         try:
@@ -1123,7 +1177,35 @@ class RuntimeContextMixin(RuntimeMixinBase):
         try:
             _shop = self.db.kv_get("shopping_prompt", {}) or {}
             if isinstance(_shop, dict) and _shop.get("line") and float(_shop.get("until") or 0) > now_ts():
-                parts.append("【购物】" + str(_shop.get("line")))
+                # 2026-11-22 task-17：线下逛街事实只在商场/街/景区/路上注入；
+                # 在家时 09:00 那条“你正在商场试开衫”不能进聊天 prompt。
+                _shop_text = str(_shop.get("line") or "")
+                _allow_shop = True
+                try:
+                    try:
+                        from .amo_scene_ledger import QUALITY_UNKNOWN as _QU2, QUALITY_WEAK as _QW2, scene_at as _scene_at2, scene_guard as _scene_guard2
+                    except ImportError:
+                        from amo_scene_ledger import QUALITY_UNKNOWN as _QU2, QUALITY_WEAK as _QW2, scene_at as _scene_at2, scene_guard as _scene_guard2
+                    _shop_scene = _scene_at2(self)
+                    _shop_quality = str(_shop_scene.get("quality") or "")
+                    _shop_zone = str(_shop_scene.get("zone") or "")
+                    # task-30：消费方校验 scene_id——记录属于另一个场景实例（同一天两次逛商场/日程已切走）
+                    # 时，这条旧逛街事实不能再进聊天 prompt。
+                    _shop_record_id = str(_shop.get("scene_id") or "")
+                    _shop_scene_id = str(_shop_scene.get("event_id") or "")
+                    if _shop_record_id and _shop_scene_id and _shop_record_id != _shop_scene_id:
+                        _allow_shop = False
+                    _offline_shop = any(word in _shop_text for word in
+                                        ("商场", "逛街", "试衣", "试穿", "专柜", "试了", "试开衫"))
+                    if _offline_shop and _shop_quality not in (_QU2, _QW2, "") \
+                            and _shop_zone not in ("mall", "street", "scenic", "road"):
+                        _allow_shop = False
+                    if _allow_shop:
+                        _shop_text = _scene_guard2(_shop_text, _shop_scene, self).get("text") or ""
+                except Exception as _amo_exc2:
+                    _note_swallowed("amo_runtime.shopping_prompt.scene", _amo_exc2)
+                if _allow_shop and _shop_text:
+                    parts.append("【购物】" + _shop_text)
             try:
                 _arrival = self.db.kv_get("shop_arrival", None)
                 if isinstance(_arrival, dict) and _arrival.get("items"):

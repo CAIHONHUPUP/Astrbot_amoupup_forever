@@ -4,6 +4,10 @@
 每个 A/B 用例左边是新 owner（amo_numbers / amo_place / amo_idem），右边是**逐字
 拷贝自重构前源码**的冻结实现；输入矩阵覆盖空值、坏值、边界（24:00 / 1440 /
 None / 负数 / 一位小时 / 带秒）。要求逐字节一致，不允许"差不多"。
+
+例外：normalize_place 自 2026-11-22 起是**有意改变**（schedule_report R1/R14：
+餐厅保留原始商场/景区地点、未知 zone 不回落「家」），不再与旧实现逐字节等价；
+PlaceABTests 改为锁「该变的必须变、不该变的不能变」，其余函数仍要求逐字节一致。
 """
 from __future__ import annotations
 
@@ -283,12 +287,63 @@ class MoneyABTests(unittest.TestCase):
 
 
 class PlaceABTests(unittest.TestCase):
-    def test_normalize_place_matches_legacy(self):
-        for place in PLACES:
-            for zone in ZONES:
-                self.assertEqual(amo_place.normalize_place(place, zone),
-                                 old_normalize_place(place, zone),
+    """地点归一 2026-11-22 起**不再**逐字节等价旧实现（schedule_report R1/R14）。
+
+    old_normalize_place 保留为历史快照：只用来验证「该变的必须变、不该变的不能变」。
+    规则：原始 place 的商场/景区/酒店/路上语义必须保留；未知 zone 不许回落「家」；
+    只有 zone=home 或白名单/别名才归一到「家」。
+    """
+
+    #: R1：旧实现把这些餐厅地点一律折叠成「楼下小馆」。
+    R1_RESTAURANT_CASES = (
+        ("东莞·商场·餐厅", "restaurant"),
+        ("西安·景区·餐馆", "restaurant"),
+        ("成都·外地小吃街", "restaurant"),
+    )
+    #: R14：旧实现把这些未枚举 zone 的块回落成「家」。
+    R14_PLACES = ("东莞·游乐园", "东莞·水上乐园", "东莞·体育馆")
+    R14_ZONES = ("playground", "street", "gym", "cinema", "unknown", "")
+
+    def test_home_aliases_still_fold_to_home(self):
+        for place in ("他桌面上", "电脑里", "家里", "家中", "出租屋", "小窝", "房间"):
+            for zone in ("", "home", "office", "restaurant", "playground"):
+                self.assertEqual(amo_place.normalize_place(place, zone), "家",
                                  "place=%r zone=%r" % (place, zone))
+
+    def test_restaurant_keeps_original_place(self):
+        for place, zone in self.R1_RESTAURANT_CASES:
+            self.assertNotEqual(old_normalize_place(place, zone), place,
+                                "历史快照应能证明旧实现确实折叠过")
+            self.assertEqual(amo_place.normalize_place(place, zone), place,
+                             "zone=restaurant 不许再把 %r 折叠成楼下小馆" % place)
+
+    def test_unknown_zone_does_not_fall_back_home(self):
+        for zone in self.R14_ZONES:
+            for place in self.R14_PLACES:
+                self.assertNotEqual(old_normalize_place(place, zone), place,
+                                    "历史快照应能证明旧实现确实回落过家")
+                self.assertEqual(amo_place.normalize_place(place, zone), place,
+                                 "zone=%r 的块必须保留原始地点 %r" % (zone, place))
+            self.assertNotEqual(amo_place.normalize_place("", zone), "家",
+                                "未知 zone（%r）没有 place 时也不许回落成家" % zone)
+
+    def test_known_zones_keep_place_and_use_neutral_fallback(self):
+        cases = (
+            ("东莞·商场", "mall", "东莞·商场"),
+            ("东莞·写字楼", "office", "公司"),  # office 旧口径保持折叠
+            ("东莞·酒店", "hotel", "东莞·酒店"),
+            ("东莞·景区", "scenic", "东莞·景区"),
+            ("", "hotel", "酒店房间"),
+            ("", "scenic", "景区"),
+            ("", "restaurant", "餐厅"),
+            ("", "station", "车站"),
+            ("", "playground", "游乐园"),
+            ("", "road", "路上"),
+            ("", "home", "家"),
+        )
+        for place, zone, expected in cases:
+            self.assertEqual(amo_place.normalize_place(place, zone), expected,
+                             "place=%r zone=%r" % (place, zone))
 
     def test_clean_place_matches_legacy(self):
         _pairs(amo_place.clean_place, old_clean_place, PLACES)
@@ -298,11 +353,13 @@ class PlaceABTests(unittest.TestCase):
         for place in PLACES:
             self.assertEqual(amo_place.zone_for_place(place), photo_rules.zone_for_place(place))
 
-    def test_place_text_is_unchanged_for_user_visible_samples(self):
-        samples = [("他桌面上", ""), ("电脑里", ""), ("在公交上", "road"), ("东莞的写字楼", "") ]
-        for place, zone in samples:
-            self.assertEqual(amo_place.normalize_place(place, zone),
-                             old_normalize_place(place, zone))
+    def test_user_visible_place_samples(self):
+        # 别名/桌面投影仍洗成「家」；zone=road 仍归一到交通方式。
+        self.assertEqual(amo_place.normalize_place("他桌面上", ""), "家")
+        self.assertEqual(amo_place.normalize_place("电脑里", ""), "家")
+        self.assertEqual(amo_place.normalize_place("在公交上", "road"), "地铁")
+        # 2026-11-22 有意改变：没有 zone 的真实地点保留原文，不再回落「家」。
+        self.assertEqual(amo_place.normalize_place("东莞的写字楼", ""), "东莞的写字楼")
 
 
 class IdemTests(unittest.TestCase):

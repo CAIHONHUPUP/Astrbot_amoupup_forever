@@ -1,5 +1,8 @@
 {
   "__init__.py": [],
+  "amo_addressee_guard.py": [
+    "amo_names"
+  ],
   "amo_anti_nag.py": [],
   "amo_api.py": [
     "amo_api_diary",
@@ -41,6 +44,7 @@
     "amo_observability",
     "amo_shared",
     "amo_state_common",
+    "amo_state_snapshot",
     "amo_timeline",
     "amo_transition",
     "amo_types",
@@ -106,10 +110,12 @@
   "amo_commands.py": [
     "amo_diary_audit",
     "amo_household",
+    "amo_message",
     "amo_observability",
     "amo_persona_store",
     "amo_scope",
     "amo_shared",
+    "amo_state_snapshot",
     "amo_trip",
     "amo_trip_cost",
     "amo_types",
@@ -127,6 +133,7 @@
   ],
   "amo_config_model.py": [],
   "amo_current_action.py": [
+    "amo_scene_ledger",
     "amo_state_store",
     "clock",
     "photo_rules"
@@ -135,6 +142,7 @@
     "amo_date_session",
     "amo_household",
     "amo_prompt_registry",
+    "amo_scene_ledger",
     "amo_state_store",
     "clock"
   ],
@@ -210,6 +218,8 @@
     "amo_names",
     "amo_persona_pack",
     "amo_persona_store",
+    "amo_presence",
+    "amo_scene_ledger",
     "amo_shared",
     "amo_shared_time",
     "amo_state_store",
@@ -228,7 +238,9 @@
     "amo_food_cost",
     "clock"
   ],
-  "amo_grounding_critic.py": [],
+  "amo_grounding_critic.py": [
+    "domains"
+  ],
   "amo_group_guard.py": [
     "clock"
   ],
@@ -327,6 +339,7 @@
     "amo_immersion_guard",
     "amo_message",
     "amo_observability",
+    "amo_persona_guard",
     "amo_persona_pack",
     "amo_persona_store",
     "amo_prompt_registry",
@@ -348,7 +361,9 @@
     "amo_immersion_guard",
     "amo_names",
     "amo_observability",
+    "amo_persona_guard",
     "amo_persona_store",
+    "amo_prompt_registry",
     "amo_shared",
     "amo_state_snapshot",
     "amo_understanding",
@@ -358,13 +373,25 @@
   ],
   "amo_location_rules.py": [],
   "amo_marriage_guard.py": [],
+  "amo_media.py": [
+    "amo_image_common",
+    "amo_message",
+    "amo_observability",
+    "amo_presence",
+    "amo_scene_ledger",
+    "clock",
+    "domains",
+    "photo_share"
+  ],
   "amo_memory.py": [
     "amo_memory_bridge",
     "amo_memory_context",
     "amo_memory_data"
   ],
   "amo_memory_bridge.py": [
+    "amo_memory_ledger",
     "amo_observability",
+    "amo_scene_ledger",
     "amo_shared",
     "amo_state_context",
     "amo_state_snapshot",
@@ -372,7 +399,9 @@
   ],
   "amo_memory_context.py": [
     "amo_immersion_guard",
+    "amo_memory_ledger",
     "amo_memory_rerank_mixin",
+    "amo_message",
     "amo_observability",
     "amo_shared",
     "amo_types",
@@ -385,19 +414,26 @@
     "errors",
     "observability"
   ],
+  "amo_memory_ledger.py": [],
   "amo_memory_rerank.py": [],
   "amo_memory_rerank_mixin.py": [
     "amo_memory_rerank",
     "amo_shared"
   ],
   "amo_message.py": [
+    "amo_addressee_guard",
     "amo_anti_nag",
     "amo_fact_binder",
     "amo_names",
     "amo_observability",
+    "amo_outbound",
+    "amo_outbound_guard",
+    "amo_persona_guard",
     "amo_purchase_guard",
     "amo_reply_pipeline",
+    "amo_scene_ledger",
     "amo_shared",
+    "amo_state_consistency",
     "amo_state_snapshot",
     "amo_types",
     "clock",
@@ -408,8 +444,21 @@
     "domains"
   ],
   "amo_observability.py": [],
-  "amo_part_dedupe.py": [],
+  "amo_outbound.py": [
+    "amo_addressee_guard",
+    "amo_message",
+    "amo_persona_guard",
+    "amo_presence",
+    "clock"
+  ],
+  "amo_outbound_guard.py": [],
   "amo_person_ref.py": [],
+  "amo_persona_guard.py": [
+    "amo_addressee_guard",
+    "amo_memory_ledger",
+    "amo_message",
+    "amo_names"
+  ],
   "amo_persona_pack.py": [],
   "amo_persona_store.py": [
     "amo_persona_pack",
@@ -420,20 +469,30 @@
     "domains"
   ],
   "amo_ports.py": [],
+  "amo_presence.py": [
+    "amo_scene_ledger",
+    "clock",
+    "photo_rules",
+    "photo_scene"
+  ],
   "amo_proactive.py": [
     "amo_companion_guard",
     "amo_date_session",
     "amo_marriage_guard",
+    "amo_names",
     "amo_observability",
-    "amo_part_dedupe",
+    "amo_outbound",
     "amo_persona_store",
+    "amo_presence",
     "amo_proactive_gate",
     "amo_purchase_guard",
     "amo_reply_pipeline",
     "amo_rest",
+    "amo_scene_ledger",
     "amo_share_ledger",
     "amo_shared",
     "amo_state_consistency",
+    "amo_state_snapshot",
     "amo_types",
     "amo_voice_guard",
     "group_scene",
@@ -443,12 +502,15 @@
   "amo_proactive_gate.py": [],
   "amo_prompt_registry.py": [
     "amo_immersion_guard",
+    "amo_persona_guard",
     "amo_transit"
   ],
   "amo_purchase_guard.py": [
     "clock"
   ],
-  "amo_question_guard.py": [],
+  "amo_question_guard.py": [
+    "domains"
+  ],
   "amo_readiness.py": [
     "amo_bootstrap",
     "amo_compat",
@@ -466,8 +528,10 @@
     "amo_companion_guard",
     "amo_date_context",
     "amo_diary_guard",
+    "amo_grounding_critic",
     "amo_immersion_guard",
     "amo_marriage_guard",
+    "amo_message",
     "amo_names",
     "amo_observability",
     "amo_persona_store",
@@ -477,6 +541,7 @@
     "amo_role_guard",
     "amo_share_ledger",
     "amo_shared",
+    "amo_shared_text",
     "amo_state_consistency",
     "amo_tone_pick",
     "amo_transit",
@@ -522,8 +587,10 @@
     "amo_observability",
     "amo_prompt_registry",
     "amo_runtime_ports",
+    "amo_scene_ledger",
     "amo_share_ledger",
     "amo_shared",
+    "amo_state_snapshot",
     "amo_state_store",
     "amo_transition",
     "amo_trip",
@@ -540,6 +607,7 @@
   "amo_runtime_reply.py": [
     "amo_date_context",
     "amo_diary_guard",
+    "amo_media",
     "amo_message",
     "amo_observability",
     "amo_reply_pipeline",
@@ -547,8 +615,10 @@
     "amo_share_ledger",
     "amo_shared",
     "amo_shared_text",
+    "amo_state_snapshot",
     "amo_transit",
-    "amo_voice"
+    "amo_voice",
+    "domains"
   ],
   "amo_runtime_tick.py": [
     "amo_diary_audit",
@@ -564,6 +634,13 @@
     "observability",
     "pose_library"
   ],
+  "amo_scene_ledger.py": [
+    "amo_date_session",
+    "amo_observability",
+    "amo_state_snapshot",
+    "clock",
+    "photo_scene"
+  ],
   "amo_schedule.py": [
     "amo_diary_guard",
     "amo_episodic",
@@ -576,8 +653,10 @@
     "amo_person_ref",
     "amo_scope",
     "amo_shared",
+    "amo_shared_time",
     "amo_state_common",
     "amo_state_diary",
+    "amo_state_snapshot",
     "amo_timeline",
     "amo_types",
     "clock",
@@ -668,11 +747,18 @@
     "amo_immersion_guard",
     "amo_observability",
     "amo_place",
+    "amo_scene_ledger",
     "amo_shared",
     "amo_timeline",
     "photo_rules"
   ],
-  "amo_state_consistency.py": [],
+  "amo_state_consistency.py": [
+    "amo_addressee_guard",
+    "amo_message",
+    "amo_reply_pipeline",
+    "amo_share_ledger",
+    "domains"
+  ],
   "amo_state_context.py": [
     "amo_diary_guard",
     "amo_state_snapshot"
@@ -701,7 +787,9 @@
   ],
   "amo_state_jit.py": [
     "amo_date_session",
+    "amo_food_cost",
     "amo_observability",
+    "amo_scene_ledger",
     "amo_shared",
     "amo_state_common",
     "amo_state_store",
@@ -716,6 +804,7 @@
     "amo_household",
     "amo_observability",
     "amo_person_ref",
+    "amo_scene_ledger",
     "amo_schedule_health",
     "amo_shared",
     "amo_state_common",
@@ -728,6 +817,7 @@
     "schedule_slots"
   ],
   "amo_state_snapshot.py": [
+    "amo_scene_ledger",
     "amo_shared",
     "clock",
     "photo_scene"
@@ -736,6 +826,7 @@
     "clock"
   ],
   "amo_state_todo.py": [
+    "amo_food_cost",
     "amo_observability",
     "amo_shared",
     "amo_state_common",
@@ -758,6 +849,7 @@
   "amo_transition.py": [
     "amo_numbers",
     "amo_place",
+    "amo_scene_ledger",
     "amo_timeline",
     "amo_trip",
     "clock",
@@ -797,7 +889,8 @@
     "clock"
   ],
   "amo_tts_guard.py": [
-    "amo_voice"
+    "amo_voice",
+    "clock"
   ],
   "amo_types.py": [],
   "amo_understanding.py": [],
@@ -825,6 +918,7 @@
   ],
   "compat.py": [],
   "date_state.py": [
+    "amo_scene_ledger",
     "clock"
   ],
   "day_types.py": [
@@ -889,12 +983,15 @@
   "draw_engine.py": [
     "amo_household",
     "amo_image_common",
+    "amo_media",
+    "amo_message",
     "amo_observability",
     "amo_photo_intent",
     "amo_shared",
     "clock",
     "observability",
     "photo_plan",
+    "photo_prompt",
     "photo_scene",
     "photo_view",
     "pose_library"
@@ -980,6 +1077,7 @@
     "amo_readiness",
     "amo_runtime",
     "amo_schedule_tools",
+    "amo_shared",
     "amo_shared_activity",
     "amo_tts_guard",
     "clock",
@@ -996,6 +1094,7 @@
   "micro_events.py": [
     "amo_fact_binder",
     "amo_food_cost",
+    "amo_scene_ledger",
     "amo_shared",
     "amo_state_context",
     "amo_state_snapshot",
@@ -1020,6 +1119,7 @@
   ],
   "photo_engine.py": [
     "amo_image_common",
+    "amo_media",
     "amo_observability",
     "amo_shared",
     "clock",
@@ -1049,6 +1149,7 @@
     "amo_fact_timeline",
     "amo_image_common",
     "amo_observability",
+    "amo_scene_ledger",
     "amo_shared",
     "clock",
     "photo_data",
@@ -1071,11 +1172,16 @@
   ],
   "photo_share.py": [
     "amo_image_common",
+    "amo_media",
+    "amo_message",
     "amo_observability",
+    "amo_presence",
+    "amo_scene_ledger",
     "amo_shared",
     "domains",
     "infra",
     "photo_plan",
+    "photo_prompt",
     "photo_room",
     "photo_scene",
     "photo_view"
@@ -1178,16 +1284,33 @@
   ],
   "segment_engine.py": [
     "amo_message",
-    "amo_observability"
+    "amo_observability",
+    "amo_outbound",
+    "amo_persona_guard",
+    "amo_state_consistency"
   ],
   "services/__init__.py": [],
   "services/health_engine.py": [
+    "clock"
+  ],
+  "services/life_state.py": [
+    "amo_current_action",
+    "amo_date_session",
+    "amo_fact_timeline",
+    "amo_media",
+    "amo_presence",
+    "clock",
+    "services"
+  ],
+  "services/metrics.py": [
+    "amo_media",
     "clock"
   ],
   "short_reply.py": [
     "amo_prompt_registry"
   ],
   "social_learn_engine.py": [
+    "amo_state_snapshot",
     "clock"
   ],
   "time_recall.py": [],
@@ -1204,6 +1327,7 @@
   "tools/quality_gate.py": [
     "amo_route_table"
   ],
+  "tools/redact_prod_logs.py": [],
   "tools/release_check.py": [],
   "tools/restore_db_backup.py": [],
   "tools/rollback.py": [],

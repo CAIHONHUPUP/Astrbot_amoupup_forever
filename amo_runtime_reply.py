@@ -7,6 +7,18 @@ import asyncio
 import re
 import inspect
 
+
+def _fallback_text(intent):
+    """统一兜底注册表；导入失败返回空串，调用点保留原兜底。"""
+    try:
+        try:
+            from .domains.reply.repetition_guard import sentence as _sentence
+        except ImportError:
+            from domains.reply.repetition_guard import sentence as _sentence
+        return str(_sentence(intent) or "")
+    except Exception:
+        return ""
+
 try:  # 三个 mixin 的共同类型底座（运行期=object，沿用拆分前的 MRO 语义）
     from .amo_runtime_ports import RuntimeMixinBase
 except ImportError:  # 直接按文件加载时
@@ -26,17 +38,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+        AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+            AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+                AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
             )
 
 
@@ -103,11 +115,23 @@ class RuntimeReplyMixin(RuntimeMixinBase):
     async def on_decorating_result(self, event: AstrMessageEvent):
         try:
             await self._ensure_ready()
+            # 2026-11-22 task-23：模型直接调外部 generate_selfie 时它自己发图，
+            # 插件看不到发送动作；每轮回复前按它写的证据补记媒体账本（占 cap + 写 memory）。
+            try:
+                try:
+                    from . import amo_media as _media
+                except ImportError:
+                    import amo_media as _media
+                _media.reconcile_external(self, str(getattr(event, "unified_msg_origin", "") or ""))
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.on_decorating_result.media_receipt", _amo_exc)
             result = event.get_result()
             if not result or not result.chain:
                 return
             try:
                 if not result.is_llm_result():
+                    # task-26：命令返回也是出站文本，同样过技术词黑名单。
+                    self._sanitize_command_result(result)
                     return
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
@@ -176,6 +200,14 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     getattr(event, "message_str", ""), history_text=_history)
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime_reply.chat_safety", _amo_exc)
+            # task-26：聊天里不许出现「服务器/报错/超时/权限/面板/接口/异常/重试」
+            # 这类后台话术；删掉命中分句，整条都命中就换成角色化短句。
+            try:
+                text = strip_tech_terms(text, source="chat")
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime_reply.tech_terms", _amo_exc)
+            if not str(text or "").strip():
+                return
             try:
                 try:
                     from .amo_share_ledger import note as _share_note
@@ -217,8 +249,43 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         except Exception as exc:
             logger.debug("[amo] 结果装饰失败: %s" % exc)
 
+    def _sanitize_command_result(self, result):
+        """命令返回也要过人话出口（task-26）：命中技术词的行删掉，全命中就不发。
+
+        命令文案里偶尔混进「报错/超时/权限/面板」这类后台词，模型会照抄；
+        这里在发出去之前统一收口，删除命中行；整条都不可说时直接清空 chain。
+        """
+        plain_cls = getattr(Comp, "Plain", None)
+        chain = list(getattr(result, "chain", []) or [])
+        if plain_cls is None or not chain:
+            return result
+        kept = []
+        for comp in chain:
+            if isinstance(comp, plain_cls):
+                value = strip_tech_terms(getattr(comp, "text", ""), source="command")
+                if not value:
+                    continue
+                try:
+                    comp.text = value
+                except Exception:  # pragma: no cover - 组件字段不可写时重建
+                    comp = plain_cls(value)
+            kept.append(comp)
+        result.chain = kept
+        return result
+
     def _deco_soft_guards(self, event, text):
         """发出去之前的软护栏：私聊下班同步、地点纠正、归属串了只告警不拦。"""
+        # task-40：记下「进入装饰链前的原始候选」，出口做候选优先还原时用
+        # （完整候选被固定兜底/多池拼装/语法破损覆盖时顶回去）。
+        try:
+            try:
+                from .amo_rewrite_safety import remember_candidate
+            except ImportError:
+                from amo_rewrite_safety import remember_candidate
+            remember_candidate(
+                self, str(getattr(event, "unified_msg_origin", "") or ""), text)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime_reply.rewrite_safety.remember", _amo_exc)
         try:
             if event.is_private_chat():
                 self._maybe_own_offwork_sync(text)
@@ -312,7 +379,11 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             except Exception as _amo_exc:  # cleanup: B 失败保留 A
                 _note_swallowed("amo_runtime_reply._deco_polish_native.tone_pick", _amo_exc)
         if self.cfg_bool("polish_native", False):
-            snap = self.state.snapshot()
+            try:  # task-30：此刻地点/动作唯一读场景账本（含请假/出差硬约束）
+                from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+            except ImportError:
+                from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+            snap = _snap_with_scene(self)
             native_profile = self.db.get_profile(self._canonical_uid(event)) or {}
             native_relation = str(native_profile.get("relation") or "普通")
             native_name = str(native_profile.get("alias") or native_profile.get("name") or "对方")
@@ -362,18 +433,17 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     r"外套脱了|回来啦|回来了|回去啦|进门了|到家咯)")
         if on_road and _re.search(
                 r"(到了|到啦|刚到家|到家了|到家|刚进门|进家门|进屋|鞋都换了|换好鞋|换上拖鞋|外套脱了)", body):
+            _phrase = _fallback_text("align.arrival_road") or "我还在路上呢，快到了"
             body = _re.sub(r"[^。！？\n]*(?:到了|到啦|刚到家|到家了|到家|刚进门|进家门|进屋|"
                            r"鞋都换了|换好鞋|换上拖鞋|外套脱了)[^。！？\n]*",
-                           "我还在路上呢，快到了", body)
-            # 多句都命中时只留一句，别复读
-            _phrase = "我还在路上呢，快到了"
+                           _phrase, body)
             if body.count(_phrase) > 1:
                 _head, _rest = body.split(_phrase, 1)
                 body = _head + _phrase + _rest.replace(_phrase, "")
         elif not home and _re.search(_arrival, body) and not _re.search(r"从[^。！？\n]{0,10}回来", body):
             # 不在家却说「我回来啦」：改成还在外面（线上实例：先回来啦、后在外面）
             body = _re.sub(r"[^。！？\n]*" + _arrival + r"[^。！？\n]*",
-                           "我还在外面呢，晚点就回去", body)
+                           _fallback_text("align.arrival_outside") or "我还在外面呢，晚点就回去", body)
         body = _re.sub(r"(车|路|家|床|桌|椅|站)上上", r"\1上", body)
         return body
 
@@ -404,7 +474,7 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         if home:
             return body
         if any(w in body for w in ("行", "好", "可以", "就一张", "换", "拍")):
-            return "在外面呢，等我到家再拍给你看，先别催。"
+            return _fallback_text("align.swim_outside") or "在外面呢，等我到家再拍给你看，先别催。"
         return body
 
     async def _deco_text_cleanup(self, event, text):

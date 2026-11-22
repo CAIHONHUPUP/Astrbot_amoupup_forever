@@ -104,9 +104,11 @@ def _session_window(sess):
         return None
     start = _float(sess.get("start_ts"))
     end = _float(sess.get("end_ts"))
+    # 2026-11-22 task-25：约会事实带 scene_id（会话本身就是一个场景实例）。
     return {"start": _clock(start) if start else "", "end": _clock(end) if end else "",
             "activity": line[:40], "place": str(sess.get("place") or ""),
-            "source": "session", "ended": False}
+            "source": "session", "ended": False,
+            "scene_id": "date_session:%d" % int(start) if start else ""}
 
 
 def date_windows(plugin, day):
@@ -131,6 +133,7 @@ def date_windows(plugin, day):
             "place": str(item.get("place") or ""),
             "source": "schedule",
             "ended": False,
+            "scene_id": str(item.get("event_id") or item.get("id") or ""),
         })
     sess = _ds.load(plugin)
     live_window = _session_window(sess)
@@ -163,6 +166,7 @@ def date_windows(plugin, day):
         windows.append({
             "start": "", "end": "", "activity": (activity or "约会")[:40],
             "place": "", "source": "kv", "ended": True,
+            "scene_id": "date_kv:%s" % day_text,
         })
     if windows and _same_day(closed, day_text):
         end_clock = _clock(closed)
@@ -246,6 +250,7 @@ def date_presence_facts(plugin, day, hour_slot=None, slot=None):
             "type": "物理场景",
             "detail": _presence_detail(window, hour_scope),
             "together": True,
+            "scene_id": str(window.get("scene_id") or ""),
         })
     if scope is None:
         sess_home = _ds.home(plugin) or {}
@@ -268,6 +273,7 @@ def date_presence_facts(plugin, day, hour_slot=None, slot=None):
                 "type": "物理场景",
                 "detail": _detail,
                 "together": False,
+                "scene_id": str(sess_home.get("scene_id") or "date_home:%s" % _day_text(day)),
             })
     return facts
 
@@ -292,12 +298,15 @@ def transfer_context(plugin, day, ts, delta_cents, reason=""):
             end = begin + 60
         if not (begin <= minute <= end + 15):
             continue
+        _scene_id = str(window.get("scene_id") or "")
         if delta > 0:
             return {"type": "约会转账",
                     "detail": ("在面对面约会时，老公转了 %.2f 元给你买单（他人就在你旁边，"
-                               "不是隔着手机转账）" % (delta / 100.0))}
+                               "不是隔着手机转账）" % (delta / 100.0)),
+                    "scene_id": _scene_id}
         return {"type": "约会消费",
                 "detail": ("约会时你们一起花了 %.2f 元（%s%s，他就在你旁边）"
                            % (-delta / 100.0, str(reason or "消费"),
-                              ("·" + window["activity"]) if window.get("activity") else ""))}
+                              ("·" + window["activity"]) if window.get("activity") else "")),
+                "scene_id": _scene_id}
     return None

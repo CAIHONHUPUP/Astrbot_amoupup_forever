@@ -1,0 +1,61 @@
+== 生产代码里参与行为的样例句候选（守卫/规则模块）==
+amo_diary_guard.py                :641   code       突然想起他以前叮嘱过我的话，心里软了一下。
+amo_diary_guard.py                :646   container  也不知道他这会儿在忙什么，忽然有点想他。
+amo_diary_guard.py                :647   container  脑子里闪过以前他说过的话，自己笑了笑。
+amo_diary_guard.py                :648   container  有些话他以前说过，我一直记着。
+amo_diary_guard.py                :649   container  想起以前他关心我的样子，鼻子有点酸。
+amo_diary_guard.py                :650   container  忽然有点想他，也不知道他忙不忙。
+amo_diary_guard.py                :651   container  他以前总念叨我要照顾好自己，我没忘。
+amo_diary_guard.py                :1082  regex      (忙到[^，。！？；;]{0,4}点)才(?=[走下班离回家出收])
+amo_diary_guard.py                :1084  regex      (熬到[^，。！？；;]{0,4}点)才(?=[走下班离回家出收])
+amo_diary_guard.py                :1095  regex      花了(?:多少|不少|很多|点|[0-9一二三四五六七八九十百千]+)[^，。！？；]{0,4}钱
+amo_diary_guard.py                :1098  regex      心疼[^，。！？；]{0,6}钱
+amo_diary_guard.py                :828   regex      [，,。！？]?\s*(?:突然)?好想老公.*$
+amo_diary_guard.py                :868   code       在微信上跟%s聊了几句，心里稍微踏实了点。
+amo_diary_guard.py                :870   code       一个人待着，突然好想%s。
+amo_immersion_guard.py            :51    code       哼，你等着，看我怎么罚你。
+amo_immersion_guard.py            :269   code       刚刚想拍照，没拍成，先不折腾啦。
+amo_immersion_guard.py            :183   code       【地点锁定】你此刻在%s，这一小时只能写这个地方；不许写别的地点（比如在家躺着、在商场逛街），冲突时以这里为准。
+amo_immersion_guard.py            :98    code       你认识的人只有：[%s]。严禁凭空捏造任何其他名字，不要提任何名单外的朋友、同事、亲戚、路人。
+amo_marriage_guard.py             :30    regex      [^。！？\n]*前男友[^。！？\n]*[。！？]?
+amo_marriage_guard.py             :37    code       工作上的事，下班再说。
+amo_memory_ledger.py              :73    regex      (?<=[\u4e00-\u9fff])([上下里外中前后边面])\1(?=[，。！？、；：\s了的地]|$)
+amo_persona_guard.py              :223   code       我记混了，你再说一遍？
+amo_persona_guard.py              :288   code       刚才走神了一下，你再说一遍？
+amo_persona_guard.py              :220   code       我在呢，先别急，慢慢跟我说。
+amo_persona_guard.py              :222   code       我刚说过的呀，就是刚才跟你提的那个，你别逗我。
+amo_persona_pack.py               :107   container  【动作】不写动作旁白、不写括号动作；只用说出口的话表达情绪（基础人格唯一真源）。
+amo_purchase_guard.py             :16    code       我试了试，挺喜欢的，还没买。
+amo_purchase_guard.py             :15    regex      [，,。！!\s]*花(?:了)?\s*\d+(?:\.\d+)?\s*元?
+amo_purchase_guard.py             :25    regex      (?:买了|买下|入手了|这件|这条|这个|那件|那条)([^，。！？\s]{2,12})
+amo_role_guard.py                 :13    regex      ^[哈嘿]{2,}[，,。！!\s]*
+amo_role_guard.py                 :26    code       换谁都得气，关键处卡住太难受了。
+amo_role_guard.py                 :24    regex      换谁都得气，关键处卡住太难受了。
+amo_shared_text.py                :618   code       唔…这个先不说了，陪我聊点别的嘛。
+amo_shared_text.py                :619   code       这张没拍好，等我重拍，好不好？
+amo_state_consistency.py          :51    regex      [^。！？\n]*(?:笑什么|笑啥)[^。！？\n]*[。！？]?
+amo_state_consistency.py          :120   regex      (?:就是|这是|那是)[^，。！？\n]{0,8}(?:视频|图片|照片|图)
+amo_state_consistency.py          :140   regex      刚才那个([^，。！？\n]{1,12}?)(?:还有后续|的事|的视频|的图)
+amo_state_consistency.py          :499   regex      [?？]|什么|啥|哪|怎么|然后|后来|接着|好看|真的假的
+amo_state_consistency.py          :527   code       哈哈哈，%s，笑死我了。
+amo_state_consistency.py          :682   code       我还在路上呢，快到了。
+amo_state_consistency.py          :531   code       %s，也太可爱了吧。
+domains\reply\repetition_guard.py :67    code       我还在路上呢，快到了。
+domains\reply\repetition_guard.py :70    code       我还在路上呢，快到了。
+domains\reply\repetition_guard.py :73    code       我在{place}呢。
+domains\reply\repetition_guard.py :74    code       我在{doing}。
+domains\reply\repetition_guard.py :75    code       和{who}在一起呢。
+domains\reply\repetition_guard.py :78    code       我还在{place}，{end}回去。
+domains\reply\repetition_guard.py :89    code       在外面呢，等我到家再拍给你看，先别催。
+domains\reply\repetition_guard.py :94    code       忙了一天，是有点乏。
+place_guard.py                    :195   code       (?=[呢啊呀了，,。！!？?\s]|$)
+place_guard.py                    :194   code       (^|[，,。！!？?\s])在(?P<w>
+proactive_guard.py                :188   code       发一条晚安，提一句太晚了/早点睡，带上称呼，1 句，亲昵自然。
+proactive_guard.py                :242   code       ”和你说过的话太像了，这次必须换一个话题。
+proactive_guard.py                :190   code       发早安，问一句还没起来吗/醒了没，带上爱称，1 句。
+proactive_guard.py                :192   code       1 句，自然。
+proactive_guard.py                :203   code       照这些事实说，别编别的日程，别提已经取消或改期的安排，1 句，自然。
+proactive_guard.py                :206   code       具体的时间、地点或安排，也别编日程；1 句自然的话。
+proactive_guard.py                :215   code       吃了没，顺便聊两句。
+proactive_guard.py                :221   code       说一声，1 句，自然。
+proactive_guard.py                :229   code       ，想主动发一条消息。

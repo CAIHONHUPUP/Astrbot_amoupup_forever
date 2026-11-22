@@ -545,10 +545,15 @@ class ActivityCoverageTests(unittest.TestCase):
             self.assertIn("路上", fixed, text)
             self.assertEqual([item["rule"] for item in violations], ["activity"], text)
 
-    def test_work_edge_claim_while_sleeping_is_left_alone(self):
-        # 睡觉/休息时「刚开完会」可能是刚发生的事；硬改成「刚在睡觉」会改坏时间语义
-        for text in ("刚开完会，脑子还是懵的。", "还在改方案，烦死了。"):
-            self.assertEqual(guard(text, ctx(activity=SLEEP))[0], text, text)
+    def test_work_edge_claim_while_sleeping_is_split(self):
+        # 睡觉/休息时「刚开完会」可能是刚发生的事（近过去），保留原文；
+        # 进行式的「还在改方案」说的是此刻，仍按当前状态改口（task-36：checker 把
+        # 它算成动作矛盾，sleep 下也要改）。
+        self.assertEqual(guard("刚开完会，脑子还是懵的。", ctx(activity=SLEEP))[0],
+                         "刚开完会，脑子还是懵的。")
+        fixed, violations = guard("还在改方案，烦死了。", ctx(activity=SLEEP))
+        self.assertNotIn("改方案", fixed)
+        self.assertEqual([item["rule"] for item in violations], ["activity"])
 
     def test_work_edge_claim_at_mall_uses_current_activity(self):
         fixed, _violations = guard("还在改方案，烦死了。", ctx(activity=MALL))

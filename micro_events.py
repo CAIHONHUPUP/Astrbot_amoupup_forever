@@ -568,25 +568,25 @@ class MicroEventEngine:
             logger.info("[amo] 生病期间禁止宵夜，跳过事件消费：%s", event.get("key"))
             return False
         try:
-            item = _food_cost.event_item(event) if food else ""
-            if food and _food_cost.night_quiet(now):
-                # 夜间允许宵夜，但扣款前必须先在日程里落下对应块：扣款必有块，有块才允许扣。
-                if not _food_cost.ensure_food_block(
-                        self.p, item or "宵夜", now, str(event.get("text") or "")):
-                    logger.warning("[amo] 夜间餐饮补不上日程块，拒绝扣款：%s",
-                                   item or event.get("key"))
-                    return False
             if food:
-                if _food_cost.recent_duplicate(self.p.wallet, item, now=now):
-                    logger.warning("[amo] 10 分钟内重复餐饮已拦截：%s", item)
-                    return False
-                cost = _food_cost.price_for(item) or cost
+                # 餐饮扣费唯一入口：餐次实例 meal:<day>:<slot> 负责「一天最多四顿、
+                # 同一餐次 45 分钟一笔、价目表金额、扣款必有块」。这里只做扣费，
+                # 不写场景/日程块（场景写者另有入口），避免同一次吃饭被多处切块。
+                item = _food_cost.event_item(event) or "餐饮"
+                amount = None
+                if not _food_cost.price_for(item):
+                    amount = cost  # 价目表没有这个 item：用事件自带的固定金额兜底
+                result = _food_cost.pay_food(
+                    self.p, item, str(event.get("text") or "生活小事"),
+                    source="micro", now=now, amount=amount)
+                return bool(result.get("charged"))
             if int(self.p.wallet.balance()) < cost:
                 return False
-            # 餐饮幂等键带来源 + 10 分钟桶：17:30/17:31 落同一个键，17:41 是新的一顿。
-            idem = (_food_cost.food_idem("micro", item, now) if food
-                    else "micro:%s:%s" % (self._today(now), event["key"]))
-            paid = self.p.wallet.debit(cost, str(event.get("text") or "生活小事"), idem)
+            idem = "micro:%s:%s" % (self._today(now), event["key"])
+            paid = self.p.wallet.debit(cost, str(event.get("text") or "生活小事"), idem,
+                                       category="其他", sub_category="日常",
+                                       item_name=str(event.get("key") or ""),
+                                       trigger_reason=str(event.get("text") or ""))
             return bool(paid)
         except Exception:
             return False
@@ -643,15 +643,36 @@ class MicroEventEngine:
             from amo_state_store import for_plugin as _state_store_for
         _state_store_for(self.p).set_ttl("micro_event:action", data, 0,
                                          until=float(until or 0))
+        # task-30：微型事件的场景也受账本硬约束（请假/出差日不许写成商场/公司）。
+        # place/zone 由事件显式给出（例如逛商场），没给按家；真正的落库校验在
+        # amo_current_action.set_action -> scene_ledger.write 里统一做。
+        place = str((extra or {}).get("place") or "家")
+        zone = str((extra or {}).get("zone") or "home")
+        category = str((extra or {}).get("category") or "life")
         try:
             self.p.set_current_action(str(action or ""), float(until or 0),
-                                      place="家", zone="home", category="life")
+                                      place=place, zone=zone, category=category)
         except Exception:
+            # 老宿主没有 set_current_action：兜底也不绕过场景源，先过 scene_ledger.write。
             try:
-                self.p.db.kv_set("current_action", {"action": str(action or ""),
-                                                      "until": float(until or 0),
-                                                      "place": "家", "zone": "home",
-                                                      "category": "life"})
+                try:
+                    from .amo_scene_ledger import write as _scene_write
+                except ImportError:
+                    from amo_scene_ledger import write as _scene_write
+                written = _scene_write(
+                    self.p, {"activity": str(action or ""), "place": place,
+                             "zone": zone, "category": category},
+                    source="micro_event", reason=str(key or ""))
+                record = written.get("record") if isinstance(written, dict) else {}
+                if written.get("ok") and isinstance(record, dict) and record:
+                    self.p.db.kv_set("current_action", {
+                        "action": str(record.get("activity") or action or ""),
+                        "until": float(until or 0),
+                        "place": str(record.get("place") or place),
+                        "zone": str(record.get("zone") or zone),
+                        "category": str(record.get("category") or category),
+                        "scene_id": str(record.get("event_id") or ""),
+                        "source": "micro_event"})
             except Exception as exc:
                 logger.debug("[amo] optional step failed: %r", exc)
 
@@ -724,6 +745,8 @@ class MicroEventEngine:
                                              "ts": now.timestamp()})
         elif key == "mall_shopping":
             action, until = "正在商场逛街", now.timestamp() + 5400
+            # 事件本身把人带到商场：current_action 的地点不能还写「家」。
+            extra.update({"place": "商场", "zone": "mall"})
         elif key == "drama":
             action, until = "正在追剧", now.timestamp() + 3600
         elif key == "shower":

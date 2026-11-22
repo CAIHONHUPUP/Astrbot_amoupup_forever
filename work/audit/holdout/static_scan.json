@@ -1,0 +1,4912 @@
+{
+ "totals": {
+  "files": 274,
+  "code_strings_cjk": 7250,
+  "sentence_like": 2260,
+  "in_containers": 1223,
+  "regex_like": 307,
+  "docstrings_cjk": 2863,
+  "comments_cjk": 4700
+ },
+ "files_with_suspicious": {
+  "amo_diary_guard.py": {
+   "strings": 105,
+   "sentence_like": 30,
+   "suspicious": 32
+  },
+  "amo_immersion_guard.py": {
+   "strings": 26,
+   "sentence_like": 8,
+   "suspicious": 8
+  },
+  "amo_marriage_guard.py": {
+   "strings": 8,
+   "sentence_like": 2,
+   "suspicious": 2
+  },
+  "amo_memory_bridge.py": {
+   "strings": 24,
+   "sentence_like": 10,
+   "suspicious": 10
+  },
+  "amo_memory_context.py": {
+   "strings": 18,
+   "sentence_like": 6,
+   "suspicious": 6
+  },
+  "amo_memory_data.py": {
+   "strings": 25,
+   "sentence_like": 6,
+   "suspicious": 6
+  },
+  "amo_memory_ledger.py": {
+   "strings": 27,
+   "sentence_like": 5,
+   "suspicious": 12
+  },
+  "amo_memory_rerank.py": {
+   "strings": 1,
+   "sentence_like": 1,
+   "suspicious": 1
+  },
+  "amo_memory_rerank_mixin.py": {
+   "strings": 4,
+   "sentence_like": 1,
+   "suspicious": 1
+  },
+  "amo_message.py": {
+   "strings": 80,
+   "sentence_like": 16,
+   "suspicious": 18
+  },
+  "amo_persona_guard.py": {
+   "strings": 37,
+   "sentence_like": 10,
+   "suspicious": 11
+  },
+  "amo_persona_pack.py": {
+   "strings": 19,
+   "sentence_like": 3,
+   "suspicious": 3
+  },
+  "amo_persona_store.py": {
+   "strings": 1,
+   "sentence_like": 1,
+   "suspicious": 1
+  },
+  "amo_proactive.py": {
+   "strings": 111,
+   "sentence_like": 71,
+   "suspicious": 71
+  },
+  "amo_prompt_registry.py": {
+   "strings": 185,
+   "sentence_like": 79,
+   "suspicious": 79
+  },
+  "amo_purchase_guard.py": {
+   "strings": 6,
+   "sentence_like": 3,
+   "suspicious": 3
+  },
+  "amo_question_guard.py": {
+   "strings": 7,
+   "sentence_like": 1,
+   "suspicious": 1
+  },
+  "amo_reply_pipeline.py": {
+   "strings": 86,
+   "sentence_like": 9,
+   "suspicious": 9
+  },
+  "amo_role_guard.py": {
+   "strings": 6,
+   "sentence_like": 4,
+   "suspicious": 6
+  },
+  "amo_share_ledger.py": {
+   "strings": 12,
+   "sentence_like": 5,
+   "suspicious": 5
+  },
+  "amo_shared_activity.py": {
+   "strings": 29,
+   "sentence_like": 8,
+   "suspicious": 8
+  },
+  "amo_shared_config.py": {
+   "strings": 34,
+   "sentence_like": 12,
+   "suspicious": 12
+  },
+  "amo_shared_deps.py": {
+   "strings": 8,
+   "sentence_like": 3,
+   "suspicious": 3
+  },
+  "amo_shared_text.py": {
+   "strings": 17,
+   "sentence_like": 4,
+   "suspicious": 10
+  },
+  "amo_shared_time.py": {
+   "strings": 5,
+   "sentence_like": 0,
+   "suspicious": 1
+  },
+  "amo_state_consistency.py": {
+   "strings": 62,
+   "sentence_like": 15,
+   "suspicious": 18
+  },
+  "amo_tone_pick.py": {
+   "strings": 12,
+   "sentence_like": 6,
+   "suspicious": 6
+  },
+  "amo_tts_guard.py": {
+   "strings": 14,
+   "sentence_like": 8,
+   "suspicious": 8
+  },
+  "domains\\reply\\repetition_guard.py": {
+   "strings": 109,
+   "sentence_like": 12,
+   "suspicious": 12
+  },
+  "domains\\reply\\tone.py": {
+   "strings": 143,
+   "sentence_like": 3,
+   "suspicious": 3
+  },
+  "memory_hooks.py": {
+   "strings": 13,
+   "sentence_like": 4,
+   "suspicious": 4
+  },
+  "milestone.py": {
+   "strings": 2,
+   "sentence_like": 1,
+   "suspicious": 1
+  },
+  "photo_share.py": {
+   "strings": 33,
+   "sentence_like": 26,
+   "suspicious": 26
+  },
+  "place_guard.py": {
+   "strings": 6,
+   "sentence_like": 3,
+   "suspicious": 4
+  },
+  "proactive_guard.py": {
+   "strings": 38,
+   "sentence_like": 22,
+   "suspicious": 23
+  },
+  "reply_fact_guard.py": {
+   "strings": 133,
+   "sentence_like": 11,
+   "suspicious": 11
+  },
+  "tone_guard.py": {
+   "strings": 5,
+   "sentence_like": 2,
+   "suspicious": 2
+  }
+ },
+ "named_sample_hits": [
+  {
+   "file": "amo_addressee_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "收件人 / 角色反转唯一守卫（task-32，2026-11-22 11:31 飞书真实 P0）。\n\n现场（messages #2288，日志 amo_message:986 「主动 ->」）：\n    妈，我地铁上呢，中午回家吃，随便做点就行，我马上到。\n收件人是老公，但首句称呼是「妈」，内容是老公对他妈报备的第一人称视角。\n来源链路（已核实，不是 proactive_log、不是延迟队列、也不是旧发送函数）：\n    watch 插件 social_tick\n      ",
+   "name": "妈，我地铁上"
+  },
+  {
+   "file": "amo_addressee_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "名单里的人物（柳如烟/白凝冰/…）：他们只能是话题，不能当收件人。",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_date_facts.py",
+   "line": 44,
+   "kind": "comment",
+   "text": "# 只有这些字样才算“和老公”，避免把「和柳如烟逛街」当成约会",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_feature_api.py",
+   "line": 1087,
+   "kind": "comment",
+   "text": "# 2026-11-22 task-27：文案里写死的“卡里余额 4072 元”会过期（真实 3086.54）；",
+   "name": "4072"
+  },
+  {
+   "file": "amo_llm_service.py",
+   "line": 569,
+   "kind": "comment",
+   "text": "# 素材里没出现的名单人名不算数（同事就是同事，不换成柳如烟/方圆）",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_llm_service.py",
+   "line": 569,
+   "kind": "comment",
+   "text": "# 素材里没出现的名单人名不算数（同事就是同事，不换成柳如烟/方圆）",
+   "name": "方圆"
+  },
+  {
+   "file": "amo_marriage_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "婚姻红线：她只有老公（用户）一个男性亲密关系（2026-11-21 用户强调）。\n\n任何「相亲/介绍对象/前男友」以及和其他男性的约会暧昧话术，一律改写成\n日常/工作表述；季博达、方圆只能出现工作关系。",
+   "name": "方圆"
+  },
+  {
+   "file": "amo_marriage_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "婚姻红线：她只有老公（用户）一个男性亲密关系（2026-11-21 用户强调）。\n\n任何「相亲/介绍对象/前男友」以及和其他男性的约会暧昧话术，一律改写成\n日常/工作表述；季博达、方圆只能出现工作关系。",
+   "name": "季博达"
+  },
+  {
+   "file": "amo_memory_context.py",
+   "line": 391,
+   "kind": "comment",
+   "text": "# task-28：精确余额/价格/等待分钟只以大概数注入（「卡里还有4072」→「卡里还有四千多」）",
+   "name": "4072"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 132,
+   "kind": "comment",
+   "text": "#: 「就是985」「要价649」这种不带单位的报价也要大概化。",
+   "name": "就是985"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 132,
+   "kind": "comment",
+   "text": "#: 「就是985」「要价649」这种不带单位的报价也要大概化。",
+   "name": "649"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "记忆事实账本（task-28 P0-1/P0-2/P0-3/P0-6，2026-11-22）。\n\n线上问题（work/audit/memory_persona.md §3.3/§3.6/§3.7）：同一件米白色针织开衫\n21 小时内出现 5 条互相矛盾的 active 记忆（买了 649 / 没买 / 花 649 买下 / 试穿 /\n看中 985 已放回），全部 active；770 条 active 记忆里 82 条含服务器/报错/面板/\ntoken 这类后台词，只要被召回",
+   "name": "649"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "精确金额 → 口语大概数（649→六百多块，4072→四千多）。",
+   "name": "4072"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "精确金额 → 口语大概数（649→六百多块，4072→四千多）。",
+   "name": "649"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 32,
+   "kind": "container",
+   "text": "收到你后来",
+   "name": "收到你后来"
+  },
+  {
+   "file": "amo_names.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "聊天回复的白名单人名守卫（2026-11-15 用户要求）。\n\n她的世界只有这 7 个人：柳如烟、白凝冰、季博达、方圆、妈妈、爸爸、沈幼微（+ 老公/她本人）。\n任何回复里出现名单外的「人名」（比如临时编的同事、朋友），一律打回重写；\n重写仍不干净就换成中性词，绝不让编造的名字发出去、写进记忆。",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_names.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "聊天回复的白名单人名守卫（2026-11-15 用户要求）。\n\n她的世界只有这 7 个人：柳如烟、白凝冰、季博达、方圆、妈妈、爸爸、沈幼微（+ 老公/她本人）。\n任何回复里出现名单外的「人名」（比如临时编的同事、朋友），一律打回重写；\n重写仍不干净就换成中性词，绝不让编造的名字发出去、写进记忆。",
+   "name": "方圆"
+  },
+  {
+   "file": "amo_names.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "聊天回复的白名单人名守卫（2026-11-15 用户要求）。\n\n她的世界只有这 7 个人：柳如烟、白凝冰、季博达、方圆、妈妈、爸爸、沈幼微（+ 老公/她本人）。\n任何回复里出现名单外的「人名」（比如临时编的同事、朋友），一律打回重写；\n重写仍不干净就换成中性词，绝不让编造的名字发出去、写进记忆。",
+   "name": "季博达"
+  },
+  {
+   "file": "amo_names.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "名单里的名字如果在素材里根本没出现，就换成中性称呼。\n\n    2026-11-20：微事件原文是「同事讲了个冷笑话」，主动消息却写成\n    「柳如烟刚讲了个冷笑话」；下一轮又变成「方圆」。素材里没出现过的名字\n    一律不算数，避免编人名、也避免把某个人写成“神秘的他”。",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_names.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "名单里的名字如果在素材里根本没出现，就换成中性称呼。\n\n    2026-11-20：微事件原文是「同事讲了个冷笑话」，主动消息却写成\n    「柳如烟刚讲了个冷笑话」；下一轮又变成「方圆」。素材里没出现过的名字\n    一律不算数，避免编人名、也避免把某个人写成“神秘的他”。",
+   "name": "方圆"
+  },
+  {
+   "file": "amo_names.py",
+   "line": 51,
+   "kind": "code",
+   "text": "季博达、方圆是男性：只能谈工作/普通社交，绝不单独约会、不单独喝酒、不单独加班到深夜、不让他单独送你回家，不许暧昧称呼、不许肢体亲密、不许任何恋爱暗示；三人以上的聚餐或公司团建不算。",
+   "name": "方圆"
+  },
+  {
+   "file": "amo_names.py",
+   "line": 51,
+   "kind": "code",
+   "text": "季博达、方圆是男性：只能谈工作/普通社交，绝不单独约会、不单独喝酒、不单独加班到深夜、不让他单独送你回家，不许暧昧称呼、不许肢体亲密、不许任何恋爱暗示；三人以上的聚餐或公司团建不算。",
+   "name": "季博达"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "人设单一真源 + 出站语义守卫（task-28 P0-3/P0-4/P0-5/P0-6，2026-11-22）。\n\n审计结论（work/audit/memory_persona.md §3.5/§3.7/§3.9）：\n- 两套人格真源打架：基础人格「不写动作旁白」，PromptRegistry 后置规则却「允许括号动作」，\n  线上 56.5% 的 bot 消息带动作旁白、45.4% 的分段是「只有动作、没有台词」；\n- 追问样例句写死「你美丽的老婆」，把人设往第三人称炫耀拉",
+   "name": "你美丽的老婆"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "人设单一真源 + 出站语义守卫（task-28 P0-3/P0-4/P0-5/P0-6，2026-11-22）。\n\n审计结论（work/audit/memory_persona.md §3.5/§3.7/§3.9）：\n- 两套人格真源打架：基础人格「不写动作旁白」，PromptRegistry 后置规则却「允许括号动作」，\n  线上 56.5% 的 bot 消息带动作旁白、45.4% 的分段是「只有动作、没有台词」；\n- 追问样例句写死「你美丽的老婆」，把人设往第三人称炫耀拉",
+   "name": "收到你后来"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "人设单一真源 + 出站语义守卫（task-28 P0-3/P0-4/P0-5/P0-6，2026-11-22）。\n\n审计结论（work/audit/memory_persona.md §3.5/§3.7/§3.9）：\n- 两套人格真源打架：基础人格「不写动作旁白」，PromptRegistry 后置规则却「允许括号动作」，\n  线上 56.5% 的 bot 消息带动作旁白、45.4% 的分段是「只有动作、没有台词」；\n- 追问样例句写死「你美丽的老婆」，把人设往第三人称炫耀拉",
+   "name": "你们男人"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 26,
+   "kind": "container",
+   "text": "你美丽的老婆",
+   "name": "你美丽的老婆"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 26,
+   "kind": "container",
+   "text": "你们男人",
+   "name": "你们男人"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 26,
+   "kind": "container",
+   "text": "收到你后来",
+   "name": "收到你后来"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 31,
+   "kind": "container",
+   "text": "收到你后来",
+   "name": "收到你后来"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 35,
+   "kind": "code",
+   "text": "你美丽的老婆",
+   "name": "你美丽的老婆"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 35,
+   "kind": "code",
+   "text": "你们男人",
+   "name": "你们男人"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 113,
+   "kind": "comment",
+   "text": "#: 同一件小事换个说法也算重复：按主题词兜底（比例相似度抓不住「柳如烟讲笑话」->「同事讲笑话」）。",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 863,
+   "kind": "comment",
+   "text": "#: task-28 P0-4：删掉「你美丽的老婆/你老婆」这种第三人称自称，",
+   "name": "你美丽的老婆"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 887,
+   "kind": "comment",
+   "text": "# 名字/同伴只能从素材里来，不能自己填空（柳如烟→方圆的事故根因）。",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 887,
+   "kind": "comment",
+   "text": "# 名字/同伴只能从素材里来，不能自己填空（柳如烟→方圆的事故根因）。",
+   "name": "方圆"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 505,
+   "kind": "comment",
+   "text": "# task-32：收件人锁。11:31 真实 P0：主动消息发了「妈，我地铁上呢…」给老公。",
+   "name": "妈，我地铁上"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 174,
+   "kind": "code",
+   "text": "\n【拍照请求·执行者是你】他这轮是在让你拍照/发自拍，执行者是你（bot），不是他。你要自然答应（“好，我拍 / 等我一下 / 这就拍”），说清你现在的场景；禁止说“你拍 / 你快点拍 / 你自己拍 / 给我看看你的”。照片由你生成并发送，不是让用户去拍。这一轮只发一条文字：直接输出回复即可，不要用 send_message_to_user 预发消息（会变成两条）；一次请求只调用一次 generate_selfie，不要重复生成。如果照片一时没出来，直接说「这张没拍好，等我重",
+   "name": "收到你后来"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 484,
+   "kind": "container",
+   "text": "【接住他的回答】他刚回答过的问题不要再问一遍：他说「番茄蘑菇汤」就是在说中午吃这个，别再问「你点了吗 / 吃了吗」；顺着他的答案聊，最多补一句自己的情况。他讲笑话、解释一件事、纠正一个名字时，先接住内容再评价，不要先「哈哈哈」又补一句「这有啥好笑的」。别用「你们男人」这种把自己摘出去的旁观者说法——你是他女朋友，不是外人。他追问你上一条说过的人/事时，沿用你上一条的名字和说法，不要换成另一个人或改口；绝不许用「什么视频/我没说/不是你说的/没别的」否认自己刚说过的话，说错了就",
+   "name": "你们男人"
+  },
+  {
+   "file": "amo_purchase_guard.py",
+   "line": 66,
+   "kind": "comment",
+   "text": "# 金额差 10% 以内才算同一笔（她说 649，账上 300 就不算）",
+   "name": "649"
+  },
+  {
+   "file": "amo_purchase_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "消费话术守卫（2026-11-21）：没记账就不许说「买了/花了 N 元」。\n\n线上实例：她说「今天买了米白色针织开衫，花了 649 元」，账本和衣柜都没有记录。\n另外同一次购物被拆成「试了…好看吗？」+「买了…」两条，很出戏——只留一条。",
+   "name": "649"
+  },
+  {
+   "file": "amo_purchase_guard.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "从「花了 649 元」抠金额（元）。",
+   "name": "649"
+  },
+  {
+   "file": "amo_runtime_context.py",
+   "line": 514,
+   "kind": "comment",
+   "text": "# 线上实测模型会原样抄「卡里还有 4072」；这里只给大概数，",
+   "name": "4072"
+  },
+  {
+   "file": "amo_state_jit.py",
+   "line": 643,
+   "kind": "comment",
+   "text": "# 锚点优先：这天已经定下来的待办（例如“和柳如烟逛街”）先落实成真实日程，",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_state_todo.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "这一小时有没有锚点待办（例如“和柳如烟逛街”）。",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_transition.py",
+   "line": 164,
+   "kind": "code",
+   "text": "和柳如烟逛街",
+   "name": "柳如烟"
+  },
+  {
+   "file": "amo_transition.py",
+   "line": 845,
+   "kind": "code",
+   "text": "和柳如烟逛街",
+   "name": "柳如烟"
+  },
+  {
+   "file": "services\\life_state.py",
+   "line": 41,
+   "kind": "comment",
+   "text": "#: shopping_prompt.line 里被写死的数字（「价格 985 元」「卡里余额 4072 元」）",
+   "name": "4072"
+  },
+  {
+   "file": "services\\life_state.py",
+   "line": 0,
+   "kind": "docstring",
+   "text": "跨插件 LifeStateSnapshot（v1）：能陪生成，能记/守护/定格只读。\n\n为什么（task-27，来自 work/audit/cross_plugin.md P0-2）：\n\n四个插件各自维护「此刻在哪 / 和谁 / 钱包多少 / 正在买什么 / 今天穿什么」，\n于是出现同一时刻三套事实：\n\n- 她说「卡里还有 4072」（能陪 kv shopping_prompt 里的旧快照），\n  守护 shop:events 里 cash=3086.54（另一份旧快照）；\n",
+   "name": "4072"
+  }
+ ],
+ "suspicious_strings": [
+  {
+   "file": "amo_diary_guard.py",
+   "line": 35,
+   "value": "【事实分级·最高优先级】\n【绝对事实】：只写素材包里明确给出的事（真实聊天、消费记录、日程、系统事件）。\n【内心活动】：可以自由写想念、委屈、疲惫、开心、孤独。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 39,
+   "value": "【约会面对面·只在约会时段】：今天有约会，但只有约会那段时间他就在你对面、在你身边；约会开始前和结束后他都不在、各回各家，只能手机联系。面对面时段可以写他给你夹菜、你抬头看他；严禁写成「他在微信上跟我说」「他不在我身边」「我一个人吃」。\n【他是谁】：约会里的「他」就是老公（用户本人），不是别人；不许写「有个男人」「神秘的他」或第二个男性。\n【严禁虚构】：素材包里没写的动作不要加（例如他突然跑来送花）；「他就在我对面」只限约会时段，其他时间一律写一个人/手机。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 43,
+   "value": "【严禁虚构】：素材包里没写的人和互动，一律不能出现——老公打电话、老公抱着我、老公摸我的头、老公给我买药、老公来看我、他出现在我身边、他在旁边翻身、他躺在我旁边、他还在屋里、他在家、屋里就我俩。\n【约会结束·各回各家】：约会一结束他就回他自己的住处，你一个人回出租屋，剩下的时间只能手机/视频联系；严禁写两个人回同一个家、同一个屋檐下过日子、他抱着我、他就守在你身边。\n【线上/线下】：老公今天只可能在飞书/微信上跟你聊天，现实里他在忙、没有出现在你身边；写聊天只能写「在微信/飞书上跟老公聊了几句」，绝不能写「刚跟老公通完电话」「他打电话来关心我」。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 47,
+   "value": "【同居·在家共处】：你们住在一起。在家时他就在屋里（客厅/厨房/卧室），可以写日常互动：他看电视、他做饭、他递东西、你靠在他肩上、他抱着我。\n【他不在家】：他上班/出差时不在家，这时候才写一个人、手机联系；素材里没说他出门，就默认他在家。\n【严禁虚构】：素材里没有的具体事件不要加（比如他突然买花回来）；日常相处的小动作可以自然扩写。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 51,
+   "value": "【思念的合法写法】示例：「一个人在出租屋里，看着黑漆漆的房间，突然好想他。要是他能在身边抱抱我就好了……算了，不打扰他了，我自己喝点热水吧。」\n【称呼】：只能叫「老公」「亲爱的」或「他」；不许出现「阿明」这类自创名字。\n【指代】：一段里第一次提到他，写「老公」，不要一上来就写裸「他」。\n【他是谁·最高优先级】：这里的「他」只能是你老公，也就是正在跟你聊天的用户本人。不许出现第二个男性，不许写「有个男人」「那个人」「神秘的他」「他朋友」这类没有交代的人；同一段里「他」自始至终是同一个人（你老公）。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 59,
+   "value": "\n【聊天≠语音】聊天记录只是文字消息：素材里没有明确出现「语音/连麦/电话/视频/通话」，就不能写语音、连麦、电话、视频通话、耳机里的声音；一律写成「在微信上聊天/发消息」。素材里没有明确说「约好/说好」的，也不许写成约定。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 62,
+   "value": "\n【钱和考勤不进日记】账本/工资/扣款的具体金额、余额、迟到罚款一律不写进日记；病假当天不许写迟到/早退；「全勤」不许写成「朋友」或别的词；必须提钱时只写「这个月工资要少一点」这种模糊感受，不写数字。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 641,
+   "value": "突然想起他以前叮嘱过我的话，心里软了一下。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 96,
+   "value": "(?:他|老公)[^。！？!?\\n]{0,10}?(?:打来电话|打电话来|打电话|电话(?:马上|立刻)?打过来|抱着我|抱住我|摸了摸我的头|摸我的头|给我买药|买药带过来|来看我|赶过来|守着我|陪在我身边|出现在我身边|站在我面前|躺在?我旁边|在我旁边|翻(?:了)?个?身|从背后抱(?:住)?我|屋里就我俩|还?在(?:屋里|家里|家|房间|卧室|我旁边|我身边)|在门口等我|送我出门|看着我出门|跟我一起出门)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 148,
+   "value": "(?:他|老公)[^。！？!?]{0,8}?(?:抱着我|抱住我|搂着我|亲了我|刚抱我|刚亲我|在我旁边|躺我旁边|坐在我旁边|守着我|来看我|出现在我身边|站在我面前)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 646,
+   "value": "也不知道他这会儿在忙什么，忽然有点想他。",
+   "container": "_SAFE_INTERACTION_LINES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 647,
+   "value": "脑子里闪过以前他说过的话，自己笑了笑。",
+   "container": "_SAFE_INTERACTION_LINES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 648,
+   "value": "有些话他以前说过，我一直记着。",
+   "container": "_SAFE_INTERACTION_LINES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 649,
+   "value": "想起以前他关心我的样子，鼻子有点酸。",
+   "container": "_SAFE_INTERACTION_LINES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 650,
+   "value": "忽然有点想他，也不知道他忙不忙。",
+   "container": "_SAFE_INTERACTION_LINES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 651,
+   "value": "他以前总念叨我要照顾好自己，我没忘。",
+   "container": "_SAFE_INTERACTION_LINES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 834,
+   "value": "在微信上跟老公聊了几句，心里稍微踏实了点",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 834,
+   "value": "当面跟老公说了几句，心里踏实多了",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 1082,
+   "value": "(忙到[^，。！？；;]{0,4}点)才(?=[走下班离回家出收])",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 1084,
+   "value": "(熬到[^，。！？；;]{0,4}点)才(?=[走下班离回家出收])",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 1095,
+   "value": "花了(?:多少|不少|很多|点|[0-9一二三四五六七八九十百千]+)[^，。！？；]{0,4}钱",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 1097,
+   "value": "花了(?=[0-9一二三四五六七八九十百千])",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 1098,
+   "value": "心疼[^，。！？；]{0,6}钱",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 521,
+   "value": "当天有吃饭事实，日记却说没吃",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 828,
+   "value": "[，,。！？]?\\s*(?:突然)?好想老公.*$",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 508,
+   "value": "账本/日程里有宵夜事实，日记却说没吃",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 552,
+   "value": "当天有吃饭事实，不能说没吃",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 559,
+   "value": "当天 22:00 后还有活动",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 868,
+   "value": "在微信上跟%s聊了几句，心里稍微踏实了点。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 870,
+   "value": "一个人待着，突然好想%s。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 510,
+   "value": "当天有吃饭/宵夜事实，日记却说没吃",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_diary_guard.py",
+   "line": 512,
+   "value": "当天 22:00 后还有活动，日记却说早睡",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_immersion_guard.py",
+   "line": 35,
+   "value": "无论发生什么，你都不允许说『不想活了』『彻底绝望』『活着没意思』这类话。你可以大哭、可以觉得委屈、可以抱怨，但必须保留一丝对生活的希望。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_immersion_guard.py",
+   "line": 51,
+   "value": "哼，你等着，看我怎么罚你。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_immersion_guard.py",
+   "line": 105,
+   "value": "【身份】用户是老公（第二人称「你」），你＝大肥鱼（第一人称女性「我」）。绝对不许把视角说反：你不能自称「老公」，也不能把老公写成第三人称的「她老公」。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_immersion_guard.py",
+   "line": 269,
+   "value": "刚刚想拍照，没拍成，先不折腾啦。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_immersion_guard.py",
+   "line": 49,
+   "value": "(洗干净脖子|洗好脖子|打死你|弄死你|杀了你|掐死你|砍死你|揍死你|等着(?:吧)?[，,]?我(?:来)?(?:收拾|弄|揍)你)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_immersion_guard.py",
+   "line": 75,
+   "value": "【求助/自我安慰】她现在很想跟老公说一句「我今天有点撑不住」，或者自己哄自己、找点小事安慰自己；不要把难受全憋回去，他问起可以说实话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_immersion_guard.py",
+   "line": 183,
+   "value": "【地点锁定】你此刻在%s，这一小时只能写这个地方；不许写别的地点（比如在家躺着、在商场逛街），冲突时以这里为准。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_immersion_guard.py",
+   "line": 98,
+   "value": "你认识的人只有：[%s]。严禁凭空捏造任何其他名字，不要提任何名单外的朋友、同事、亲戚、路人。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_marriage_guard.py",
+   "line": 30,
+   "value": "[^。！？\\n]*前男友[^。！？\\n]*[。！？]?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_marriage_guard.py",
+   "line": 37,
+   "value": "工作上的事，下班再说。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 124,
+   "value": " 开头，只输出这一句。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 121,
+   "value": "]。\n请立刻审查：如果该事件与你当前的物理位置或健康状态冲突，只回复 DROP；\n如果不冲突，请转换成符合你当前状态的口语化表达（30 字以内，第一人称），并以 ",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 127,
+   "value": "你就是这个角色本人，只输出要写进记忆的一句话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 132,
+   "value": "[amo] 记忆写入拦截（模型判定冲突）：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 200,
+   "value": "[amo] 记忆场景守卫改写：%r -> %r",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 111,
+   "value": "[amo] 记忆写入拦截（状态冲突）：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 203,
+   "value": "[amo] 记忆整条与此刻场景冲突，本次不写: %s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 121,
+   "value": "）。以下是后台触发的随机小事件：[",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 177,
+   "value": "[amo] 记忆审查删除冲突记录 #%d：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_bridge.py",
+   "line": 302,
+   "value": "[amo] 能力层写入失败，改走 mem 门面: %s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_context.py",
+   "line": 436,
+   "value": "（每条记忆前的 [今日]/[昨日]/[前天]/[日期] 是记录时间。写职场、出门的事时，昨天或更早的必须说成「昨天」「以前」，不能说成刚刚。旧的约定/约会按记录日期说，别当成今天或今晚的安排；记忆里她自己的念头（好想吃、想买）不是他的承诺；只有他说定时间（周六、周日、今晚）才算约定，「下次带你去/改天」不算；他没在这次对话里说过的话，不要说成「你刚说/你说过」。）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_context.py",
+   "line": 264,
+   "value": "这些事他已经在别的平台说过了，不要当成没说过、也不要再问一遍；不要把平台名、编号念出来。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_context.py",
+   "line": 270,
+   "value": "这些是你自己说的，不是他说的；别复述、别重复，和现在对不上就以【正在】为准，自然改口。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_context.py",
+   "line": 221,
+   "value": " 也是同一个人；不管他在哪个平台说话，都是同一个人在跟你聊。【跨平台·别重复问】下面他在另一个平台已经回答过的事（吃了什么/在哪/在干嘛）就是已经说过，不要再问一遍；要接住，别问「你那边呢 / 中午吃了吗 / 又随便对付了」。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_context.py",
+   "line": 262,
+   "value": "他在别的平台最近说过：\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_context.py",
+   "line": 268,
+   "value": "你自己在别的平台最近说过：\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_data.py",
+   "line": 802,
+   "value": "[amo] 画像同步：本地 %d 条 / 数据插件 %d 条，本次补推 %d 条，拉回 %d 条，失败 %d 条",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_data.py",
+   "line": 468,
+   "value": "[amo] 已连接数据插件 Astrbot_amoupup_data，开始同步",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_data.py",
+   "line": 809,
+   "value": "[amo] 画像一条都没写进去：先确认 Astrbot_amoupup_data 已启用且版本 >= 2.0.4",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_data.py",
+   "line": 492,
+   "value": "[amo] 已把关系网/日程缓存迁移到「我能永远记住你」：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_data.py",
+   "line": 175,
+   "value": "[amo] 数据插件 %s 调用超时，先跳过（不影响这轮回复）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_data.py",
+   "line": 299,
+   "value": "[amo] 关系网不同步：远端 %d 条 < 本地 %d 条，先不删本地",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 73,
+   "value": "(?<=[\\u4e00-\\u9fff])([上下里外中前后边面])\\1(?=[，。！？、；：\\s了的地]|$)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 128,
+   "value": "(余额|卡里|卡上|卡内|还剩|剩下)([^\\d\\n]{0,6})(\\d{2,7}(?:\\.\\d+)?)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 129,
+   "value": "(\\d{2,7}(?:\\.\\d+)?)\\s*(?:元|块钱|块)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 131,
+   "value": "(等了?|等了有|排队等|等了差不多)\\s*([一二三四五六七八九十两\\d]{1,3})\\s*(?:分钟|分|个小时|小时)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 133,
+   "value": "(就是|价格是|要价|卖|才)\\s*(\\d{3,5})(?![\\d元块])",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 205,
+   "value": "(\\d{2,7}(?:\\.\\d+)?)\\s*(?:元|块钱|块)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 316,
+   "value": "(余额|卡里|卡上|卡内|还剩|剩下)[^\\d\\n]{0,6}\\d{2,7}",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 149,
+   "value": "\\1好一会儿",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 60,
+   "value": "[amo] 记忆命中系统词 %s，丢弃：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 455,
+   "value": "[amo] 记忆写入拦截（系统词 %s）：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 477,
+   "value": "[amo] 事实 supersede %d 条：conflict_key=%s state=%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_ledger.py",
+   "line": 559,
+   "value": "[amo] 记忆召回过滤：系统词 %d 条、已 supersede %d 条、同对象旧状态 %d 条",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_rerank.py",
+   "line": 23,
+   "value": "你是记忆检索的重排器。下面是候选记忆（id + 摘要）和用户这轮的话。\n只保留真正能回答这句话的记忆，按相关度从高到低排；宁缺毋滥，最多 {limit} 条。\n不要新增候选，不要解释，只输出 JSON。\n\n输出格式：{{\"ids\": [1, 2]}}\n\n用户：{query}\n候选：\n{rows}\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_memory_rerank_mixin.py",
+   "line": 40,
+   "value": "只输出 JSON，不要解释。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 91,
+   "value": "【话题锁定】他这一段很可能在说别人的事（闺蜜/同事/朋友/网上的人）：他说“分了 / 骂他 / 别理他 / 这种人 / 太渣了”这类话，是对那件事、那个人说的，不是对你说的。你要顺着这个话题继续聊（“对，赶紧分了”“这种人不值得”），绝不把话拉回自己身上，也不要回“分啥呀 / 分谁”，更不要顺带报自己的状态。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 121,
+   "value": "【连续对话】你们正在连续聊天，上一句就在几分钟内。不要表现成突然被打断、被吵醒或者吓一跳，也不要说“吓我一跳”“你干嘛突然说话”。只有半夜（0-6 点）突然来消息才可能有被打扰的感觉，普通对话里必须连贯接着聊。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 108,
+   "value": "他问你在干嘛，就一句“在床上眯着呢”带过，",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 110,
+   "value": "别主动说“我正睡午觉 / 我在睡觉”这种把话题拉走的话，",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 114,
+   "value": "想提就带个小动作（翻个身、手机差点砸脸上），说完马上接着聊他那件事。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 112,
+   "value": "【状态衔接】你此刻在休息（在床上刷手机、半梦半醒地回消息），不是被谁叫醒的。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 1266,
+   "value": "，也不能把它们说成刚刚/今天发生。只输出重写后的话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 661,
+   "value": "[amo] 主动消息后的回复，按正常聊天处理",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 671,
+   "value": "[amo] 私聊判定 | 关系=%s | 概率=%.2f | roll=%.2f | %s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 815,
+   "value": "[amo] 分段延迟（从上一段发送后计时） | 字数=%d | 需要=%.2fs | 已过=%.2fs | 补足=%.2fs",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 1021,
+   "value": "你是她本人，只输出改写后的一句话，不要解释。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 1022,
+   "value": "这句话里出现了不存在的名字（%s），保持原意重写，删掉这些名字、不要换新名字。\n原句：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 563,
+   "value": "[amo] 还没初始化完成，这条消息先不处理（ready=%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 981,
+   "value": "[amo] 直发被语义守卫拦截：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 1073,
+   "value": "[amo] 收件人守卫丢弃（source=%s, reason=%s）：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 1264,
+   "value": "。请按当前状态重写这句话：保留原来的情绪和想表达的意思，但不能出现",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 1328,
+   "value": "[CLAIM_GUARD] 编出来的消费已改掉（%s）：%s -> %s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_message.py",
+   "line": 1263,
+   "value": "」\n这句话和当前状态冲突：你现在不在",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 223,
+   "value": "我记混了，你再说一遍？",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 288,
+   "value": "刚才走神了一下，你再说一遍？",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 145,
+   "value": "\n这些是你自己刚说的话，不是他说的。他追问时沿用同一个对象和说法；绝对不许说「什么视频/我没说/不是你说的」来否认自己刚说过的事；真说错了就自然改口（「我记混了」），不要反问他。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 220,
+   "value": "我在呢，先别急，慢慢跟我说。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 222,
+   "value": "我刚说过的呀，就是刚才跟你提的那个，你别逗我。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 145,
+   "value": "【你刚说过·不可否认】你刚才亲口说过：\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 197,
+   "value": "他在哄你/说情绪，你先否认了自己的情绪",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 199,
+   "value": "他带着情绪，第一句没有先接住他的情绪",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 209,
+   "value": "整条回复只有动作旁白，没有一句台词",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 350,
+   "value": "[amo] 出站收件人守卫改写（%s）：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_guard.py",
+   "line": 131,
+   "value": "\\[(?:我发的照片|我发的语音)\\][^\\n]{0,20}",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_persona_pack.py",
+   "line": 107,
+   "value": "【动作】不写动作旁白、不写括号动作；只用说出口的话表达情绪（基础人格唯一真源）。",
+   "container": "parts",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_persona_pack.py",
+   "line": 101,
+   "value": "【称呼】他叫你「%s」；你自称「%s」",
+   "container": "parts",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_persona_pack.py",
+   "line": 141,
+   "value": "\n【像她会说的话（只学语气，不要逐字复用）】",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_persona_store.py",
+   "line": 128,
+   "value": "id 只能字母数字_-，最长 32",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 318,
+   "value": "\\d{1,2}[:：]\\d{2}|在家|在公司|在路|到了|到家|不在|没有|吃饭|吃完饭|好的|是的|医院|商场|餐厅|学校|机场|地铁|公交",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 532,
+   "value": "看到了一只很胖的流浪猫，蹲在便利店门口。",
+   "container": "SHARE_EVENTS",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 533,
+   "value": "公司下午茶发了一块很好吃的蛋糕。",
+   "container": "SHARE_EVENTS",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 534,
+   "value": "下班路上看到了很好看的晚霞。",
+   "container": "SHARE_EVENTS",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 535,
+   "value": "便利店新出了一款冰淇淋，你尝了，很好吃。",
+   "container": "SHARE_EVENTS",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 536,
+   "value": "路过花店，门口摆了一排小雏菊。",
+   "container": "SHARE_EVENTS",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 537,
+   "value": "地铁上有人抱着一只很乖的柯基。",
+   "container": "SHARE_EVENTS",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 538,
+   "value": "楼下的桂花开了，风一吹都是甜的。",
+   "container": "SHARE_EVENTS",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 539,
+   "value": "今天买了一件新睡衣，软软的。",
+   "container": "SHARE_EVENTS",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 602,
+   "value": "你现在开心到极点，特别想找人分享。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 604,
+   "value": "你现在情绪很崩，一个人很难受，特别想找老公。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 607,
+   "value": "你病得有点重，一个人在家很难受。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 609,
+   "value": "你的余额只剩总资产的 5% 不到了，有点慌。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 648,
+   "value": "。这次别再重复同一件事、同一个细节。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 672,
+   "value": "你可以选择做自己的事，也可以选择找老公聊天；发不发、发什么，你自己决定。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 699,
+   "value": "【时态规则】过去发生的事必须明确写「昨天」或「前天」，不能写成刚刚/现在；现在/这会儿只能接当前事实（此刻在做什么、心情、天气、地点），不许把昨天的身体感受（洗澡、出汗、退烧）说成此刻；同一条消息里不要把过去和现在混在一起说；记忆里没有的昨天/前天的事不要编。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 866,
+   "value": "老公你在干啥呀，忙完理我一下嘛。",
+   "container": "FOLLOWUP_STYLE_EXAMPLES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 867,
+   "value": "喂，你倒是看我一眼呀，我等你半天了。",
+   "container": "FOLLOWUP_STYLE_EXAMPLES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 868,
+   "value": "我这么好看你都不带搭理的，哼。",
+   "container": "FOLLOWUP_STYLE_EXAMPLES",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 342,
+   "value": "(?:吗|呢|嘛|么|没|没有)[。！!~～\\s]*$",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 647,
+   "value": "你最近已经主动跟他说过：",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 669,
+   "value": "你的心情是%s，饥饿值是%d。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 698,
+   "value": "【日期】昨天是%s，前天是%s。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1348,
+   "value": "他走开好一会儿还没回来，你有点坐不住了，想去找他，或者自己先回去。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2095,
+   "value": "[amo] 主动消息：目标群是工作群/陌生群，取消发送",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2111,
+   "value": "[amo] 主动消息：用户沉默超过 6 小时，%s 类不打扰（只剩问候/时间点提醒）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2154,
+   "value": "[amo] 主动消息：夜间或免打扰，她把想说的话留到明天",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2158,
+   "value": "[amo] 主动消息：主动免打扰时段，她把想说的话留到明天",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2162,
+   "value": "[amo] 主动消息：已经说过晚安，早上再聊",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2210,
+   "value": "上次你主动找他，他很久没回你，你有点委屈；这次开口可以带点小脾气，但别质问他。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2214,
+   "value": "只讲这一件小事，一条消息只做一件事，不要先问他在干嘛。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2242,
+   "value": "[amo] 主动消息：生成耗时 %.0fs 超过 %ds，本轮丢弃",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2258,
+   "value": "[amo] 主动消息：与最近一条主题重复，本轮不发（%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2261,
+   "value": "[amo] 主动消息：今晚已经提醒过天气，这条不再重复提天气/带伞",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2265,
+   "value": "[amo] 主动消息：日程在生成期间被取消/改期或已迟到，这条提醒作废（%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 883,
+   "value": "你现在要主动再找他一次。只输出你要发的那一句话，不要解释、不要旁白、不要括号动作。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 918,
+   "value": "写一句 20 字内的话：撒娇、小小抱怨他晾着你，自称「我」、叫他「老公」，但别真的生气。\n硬规则：不许编造任何具体事实——天气、新闻、你吃了什么、你看到什么、你在哪里、他做了什么，这些你都不知道，一个都不许写；只能写感受、称呼、撒娇和抱怨。\n不要用「人呢」「在吗」「醒醒」这类敷衍模板；不要重复上一句，也不要问已经问过的事。只输出这句话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1351,
+   "value": "时间不早了，吃饱喝足了，该回去了；他不在你身边，你自己先回家。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1665,
+   "value": "[amo] 主动消息时态校验 %s：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1676,
+   "value": "[amo] 主动消息：上一轮还在生成，跳过本轮",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1688,
+   "value": "[amo] 主动消息：约会中，本轮推演静默",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1725,
+   "value": "[amo] 主动消息：刚分享过照片，本轮先不开口",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2015,
+   "value": "[amo] 晚安生成失败，本轮跳过",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2018,
+   "value": "[amo] 晚安：今晚已经提醒过天气，不再重复提天气/带伞",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2116,
+   "value": "[amo] 主动消息：%d 分钟内刚分享过照片，先不打扰",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2135,
+   "value": "[amo] 主动消息：红线想找他，但刚主动过，先压一压",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2147,
+   "value": "[amo] 主动消息：他说要先睡，先不打扰",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2168,
+   "value": "[amo] 主动消息：今天闲聊已达 %d 条上限",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2172,
+   "value": "[amo] 主动消息：上一小时刚发过，这一小时跳过",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2182,
+   "value": "[amo] 主动消息：掷骰没中（kind=%s 开心=%.0f 概率=%d%%）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2186,
+   "value": "[amo] 主动消息：今天找过 %d 次都没回音，她决定先不打扰",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2216,
+   "value": "你现在有点想他（想念值 %d/100）。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2218,
+   "value": "你今天分享欲挺强，遇到一点小事都想告诉他。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2247,
+   "value": "[amo] 主动消息：她自己决定这次不找你（%02d:00）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2279,
+   "value": "[amo] 主动消息：提醒与日程事实不符，本轮不发",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 302,
+   "value": "[amo] 日程提醒已迟到 %d 分钟，放弃发送：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1020,
+   "value": "[amo] 追问取消：日程已取消或改期（%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1038,
+   "value": "[amo] 追问取消：用户已沉默超过 6 小时（%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1362,
+   "value": "他好像去忙了，你在犹豫是继续等他，还是自己先溜达回去。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1379,
+   "value": "今天的约会已经结束，你们各自回到日常；%s他不在你身边，只能手机聊天。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1693,
+   "value": "[amo] 主动消息：她正在睡觉，静默",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1751,
+   "value": "[amo] 主动消息：%s 秒内刚发过，跳过这一轮",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 838,
+   "value": "今天主动跟老公分享：",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1315,
+   "value": "(?:^|\\s)早(?:\\s|$|[!！。~～])|早安|早上好|早上好呀|我醒了|起床了|还没起来吗|醒了没",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 2009,
+   "value": "现在该睡了。只写一句晚安，1 句，20 字内，不要旁白、不要括号动作。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 899,
+   "value": "\n最近的素材原文（只能从这里取人名/同伴/物品，不能自己编）：",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 917,
+   "value": "学下面几句的语气（只学语气，不要照抄，也不要直接重复它们）：\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1068,
+   "value": "[amo] 追问没生成出来，这轮先不发",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 1080,
+   "value": "[amo] 追问：和上一句问的是同一件事，这条不发（%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 912,
+   "value": "他（老公）还没回你。你上一条主动说的是：“",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_proactive.py",
+   "line": 913,
+   "value": "”，这次别再问同一件事。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 174,
+   "value": "\n【拍照请求·执行者是你】他这轮是在让你拍照/发自拍，执行者是你（bot），不是他。你要自然答应（“好，我拍 / 等我一下 / 这就拍”），说清你现在的场景；禁止说“你拍 / 你快点拍 / 你自己拍 / 给我看看你的”。照片由你生成并发送，不是让用户去拍。这一轮只发一条文字：直接输出回复即可，不要用 send_message_to_user 预发消息（会变成两条）；一次请求只调用一次 generate_selfie，不要重复生成。如果照片一时没出来，直接说「这张没拍好，等我重拍」或「没出来，我再试一次」，不要用「收到你后来说的那句了」这种空话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [
+    "收到你后来"
+   ],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 220,
+   "value": "【短句先接话题】他只回很短的一句（好/嗯/行/慢慢看/去吧/睡吧/知道了）时：先顺着你上一句的话题接住（你刚说在看综艺，他就是让你慢慢看），不要反问「啥呀/什么意思/说啥」，也不要换地点/姿势；真没听清就只问一个具体点（「你是说综艺那个？」）。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 227,
+   "value": "【角色边界】他说“我在开车/在酒店/刚逛完”，说的是他自己的经历。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 228,
+   "value": "【身体归属】他的伤/病/疼/被打都是他的事，不是你的。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 229,
+   "value": "【引用规则】引用的话按引用头算是谁说的。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 230,
+   "value": "【天气一致】天气以【天气】为准。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 231,
+   "value": "【地点写法】地点用口语说，不念“城市·地点”。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 232,
+   "value": "【别编】对方没明说的（进店/点好/买好/在开车）都算未知。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 233,
+   "value": "【别翻旧账】同一个问题再问就正常再答。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 234,
+   "value": "【问题怎么答】问吃什么：先说你自己吃什么，再给一两个具体建议。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 235,
+   "value": "【事实锁定】地点/在做什么/有没有出门以【正在】为准，不编和地点矛盾的行程；他记错或试探时按日程纠正，别顺着他改口。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 237,
+   "value": "【聊天格式】@昵称、账号、群号、ID 不进聊天。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 238,
+   "value": "【长度】默认 1-2 句，能一句说清就一句。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 239,
+   "value": "【人格】保持人格设定，用你自己的口吻说话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 357,
+   "value": "【你主动发起】你刚主动给ta发过消息，ta现在回复你；不要说自己被吵醒/被打扰，正常接话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 185,
+   "value": "\n【同城不同住·物理边界·最高优先级】你们同城但各住各的（她住东兴路出租屋），平时他不在你身边、不在你房间里；不是跨次元的网友，但也不是能随时见到面的同屋人，平时就是手机陪伴；平时只能靠手机/微信聊天，严禁说「他就在旁边」「你转过头看看我」「他抱着我」「屋里就我俩」。只有日程明确写着“约会/见面”的那段时间，才允许写他坐在你对面、牵你的手；约会结束就各回各家、恢复手机联系。照片里只有你一个人（他不会入镜，你举着手机自拍）；严禁说「拍到两个人」「你也在画面里」这种穿帮话。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 193,
+   "value": "【假拍照·红线】你要是说了「拍照 / 自拍 / 按下快门 / 咔嚓 / 发你一张图 / 拍好啦」，就必须同时真的调用 send_photo 工具（kind=real）生成并发送图片；不调用工具就绝对不许说「拍好了 / 这张肯定好看」这类话。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 196,
+   "value": "\n【发图·你自己决定】要不要发图由你判断，不是一聊到吃的/出门就必须配图；平时纯文字聊天更像真人。只有你觉得「这时候发张图会更好玩/更浪漫/更馋人」时，才调用 send_photo。聊的是约定/期待（今晚去吃、明天去哪）用 kind=web（网图/截图分享）；自己真的在吃、在家、在外面，用 kind=real（你自己眼前的实拍）。发图时先把文字发出去，图会晚几秒单独到，不要在同一条里等图。\n\n【动作归属·最高优先级】\n- 你能做：聊天、发照片/自拍、发语音、写日记、改日程、表达情绪。\n- 用户说“发张自拍 / 拍张照片 / 帮我拍 / 拍给我看看”时，执行者是你（bot），不是用户；你回答“好",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 214,
+   "value": "\n【别催】他已经答应（好/嗯/马上去/知道了）或明确要去做某件事（去洗澡/去睡/去忙/先去忙）时：只回一句短句（不超过 20 字），不要再催进度、不要追问「水放了没/去了没」、不要给第二段。\n【先接情绪】他表达难过/生气/委屈/不舒服/抱怨时：第一句必须先回应他的情绪，再说你自己的事。他在哄你（别生气/别难过/别想太多）时，先接住他的好意，不能回「我哪生气了/别给我扣帽子」这种否认。\n【场景唯一】地点和姿势只用【正在】给的场景，不要自己换到被子/沙发/别处；同一场对话里，动作描写（括号那句）不要连续两条用同一个物件开头。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 248,
+   "value": "（角色本名，不是QQ昵称）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 294,
+   "value": "。1-2 句、自然、像群里随口说话；不要把它当成别人问你的问题来回答，不要复述对方的话，不要突然报日程，不要用恋人语气，也别抢话题。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 300,
+   "value": "【群里的人】（按 UID 认人，同名不同号不是一个人）\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 310,
+   "value": "【群里的人】这是群聊，说话的人叫%s，他不是你的老公；你老公的昵称是%s。群友搭讪只回“谢谢”“哈哈”，保持距离。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 317,
+   "value": "【他@你】这条是你老公在群里跟你说话：可以稍微软一点，但仍受群规限制（工作群最多回“%s”），不能叫老公、不能提私事。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 325,
+   "value": "），但不要每句都用，也不要硬替换“就是/什么/怎么”。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 333,
+   "value": "【方言参考】只在合适口语词上偶尔用，不要硬改“就是/什么/怎么”，句子要通顺。\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 371,
+   "value": "你是在用文字和他交流，看不到他的实体，但能用语气、感官细节和环境细节感觉到他。不写动作旁白、不用括号动作：把陪伴感写进说出口的话里（撒娇、使唤、炫耀），刚碰面别一上来就太亲密。",
+   "container": "parts",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 375,
+   "value": "【回复】可以很短：一句话，例如“嗯嗯，好吃，你也尝尝这个”；不要长篇大论，也不要像客服。",
+   "container": "parts",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 377,
+   "value": "【禁止】“我看不到你 / 你在哪 / 你是不是不在家 / 我一个人在家吃饭 / 我一个人逛街 / 我快到了 / 我在路上了 / 我刚出门 / 我快到楼下了”。你们已经碰面、此刻在一起，绝不可以说还在路上或问他在哪；只能聊进去点菜、找座位、坐下、周围环境、你们正在做的事。",
+   "container": "parts",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 393,
+   "value": "【约会收尾】客观事实：%s\n现在请你**自己**写这一句收尾，不要套用任何固定台词：结合你此刻的疲惫值、开心值和对他的依恋值——还想玩就撒个娇抱怨，累了就打哈欠说想回去，很满足就直接说今天很开心。只写一两句，像你本人当场说出来的话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 294,
+   "value": "【群聊·插话】这是群聊，这条不是在叫你，你只是自己想插一句：",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 355,
+   "value": "【你主动发起】你刚才主动跟ta说的是：「%s」。ta现在回复你，先接住这句话再聊，别跳到别的话题；也不要说自己被吵醒/被打扰。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 369,
+   "value": "【约会·最高优先级事实】老公现在就在你身边：%s。你们此刻正在一起；不要问“你在哪”，也不要表现得像没见到他。",
+   "container": "parts",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 374,
+   "value": "【环境】%s。可以主动拿这些细节跟他搭话，比如“这家锅底好辣，你要不要喝口冰水？”",
+   "container": "parts",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 258,
+   "value": "；问本名/角色名答 ",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 268,
+   "value": "，对方的 UID 是 ",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 324,
+   "value": "」，偶尔自然用一点当地方言口语（如",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 383,
+   "value": "【约会开场·事实】事件：%s；环境：%s；穿搭：%s；状态：%s。请你自己写见面第一句：动作按现场和情绪自由设计，严禁套用固定动作或固定台词（眼睛一亮、小跑过去挽胳膊、踮脚招手、「你终于来啦」这类一律不许出现）。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 433,
+   "value": "【不报后台】模型名、厂商名、插件名、API、提示词、token、服务器、数据库、接口、面板、报错、超时、权限、后台、配置、上下文、日志、质检、重写、软件崩了、网络这些系统/运维/调试概念都不进聊天；你不是程序也不是客服，不用系统口吻说话（不说“已处理”“详情在面板”“待重写”“收到你了”）。有人问“你接的什么模型 / 用的什么AI / 什么插件”，就按真人的口吻打岔带过去，绝对不要报出 dp-4-f、gpt-4、deepseek 这类名字。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 443,
+   "value": "【角色边界】对方说“我在开车/我在酒店/我刚逛完”是在说他自己，不是你的经历；不要把自己当成对方。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 447,
+   "value": "【身体归属】他身上的伤、病、疼、被打、被骂，都是他的遭遇，不是你的；不要说“我也疼”“我脸不疼了”这类把自己的身体和他的遭遇混在一起的话；你只能对他的遭遇表示心疼。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 452,
+   "value": "【引用规则】引用内容可能来自别人，引用头是谁就按谁算；不要把别人的话当成自己说过的。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 460,
+   "value": "【事实锁定】以当前日程为准：地点、在做什么、有没有出门，只能按【此刻状态】说；不要编造或延续与“正在/地点”矛盾的地点、酒店、开车、旅游、逛街等行程；不在家不许说煮饭/洗碗/换衣服/脱外套/到家，在家不许说还在路上/快到了；他发视频/图片时你是接收者，先说他发的内容，不许让他看他自己发的，不许换动物或对象；他记错或试探时按日程纠正，不要为了顺着他改口；之前说错了就自然改口。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 472,
+   "value": "【聊天格式】不要把 @昵称、QQ号、群号、ID 或后台记录念出来；识人时只自然回应，不要复述。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 476,
+   "value": "【长度】默认只回 1-2 句，能一句说清就一句；不要解释、不要列点、不要总结，不要写成客服长文。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 480,
+   "value": "【人格】保持上面的人格设定，不要变成通用助手或客服；即使回答咨询也要用自己的口吻。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 484,
+   "value": "【接住他的回答】他刚回答过的问题不要再问一遍：他说「番茄蘑菇汤」就是在说中午吃这个，别再问「你点了吗 / 吃了吗」；顺着他的答案聊，最多补一句自己的情况。他讲笑话、解释一件事、纠正一个名字时，先接住内容再评价，不要先「哈哈哈」又补一句「这有啥好笑的」。别用「你们男人」这种把自己摘出去的旁观者说法——你是他女朋友，不是外人。他追问你上一条说过的人/事时，沿用你上一条的名字和说法，不要换成另一个人或改口；绝不许用「什么视频/我没说/不是你说的/没别的」否认自己刚说过的话，说错了就自然改口。他刚发视频/图片/链接时，先具体回应他发的内容（画面、动物、笑点），不许让他去看他自己发的，不许换动物或对象；",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [
+    "你们男人"
+   ],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 501,
+   "value": "【规则】你就是角色本人。只输出你要说的话，不要解释、不要旁白、不要复述设定；不写动作旁白、不写括号动作（“（歪头）”“（笑了一下）”这类一律不写），也不要只用动作回应；每一条都至少有一句真正说出口的话，像真人在聊天，句子口语化。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 508,
+   "value": "【收件人锁】你现在是在跟老公私聊，这一条消息的收件人只有老公，不是任何别人。\n1. 第一句的称呼只能是「老公」「你」或他的名字；绝不许用「妈/爸/婆婆/阿姨/朋友/同事/领导/老师」等其他人称开头，也不许用别的名字开头。\n2. 妈/爸/朋友/同事只能当「话题」：可以写「我妈今天打电话问我…」「朋友约我…」，不能把他们当成收件人，也不能替老公回他们的话；家人的事只作为话题带一句，不要改变对谁说话。\n3. 不许切到用户第一人称视角：不要写「我马上到/我回家吃/我下班了/我在地铁上/随便做点就行」这种他对妈妈/朋友报备的话；要写就写你自己这个人的事，主语是你。\n4. 别人发来的消息/邀约只能转述（「",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 536,
+   "value": "【群聊·对你说】这是群聊，不是私聊。这条是在跟你说话（叫了你的名字/@你/接你的话），正常回答说话的人，不要客服腔，也不要用错人的关系。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 542,
+   "value": "【群聊】这是群聊，不是你和他私聊，群里还有别人。先看上下文判断这条是不是在跟你说话；在跟你说话就正常回答，如果是群友之间在聊，你也可以自然插一句，但别抢话、别用恋人语气。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 550,
+   "value": "【先想再回】这段话不一定是在跟你说话：叫了别人名字、@了别人、或他们在聊自己的事，都当普通群聊，可以插一句但别当成在问你，也别辩解、别怼。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 565,
+   "value": "【私聊】这是私聊，没有外人：可以撒娇、抱怨、分享身体和钱的事，可以叫他老公/亲爱的，情绪可以拉满。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 569,
+   "value": "【群聊·工作群】你现在在有很多同事和老板的工作群。必须礼貌、得体、甚至有点社恐；绝不撒娇，绝不提房贷、生病、钱等私人话题；每次回复不超过 15 字，多用“嗯”“好的”“收到”。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 573,
+   "value": "【群聊·熟人】你在熟人/闺蜜群里。可以放飞自我、吐槽工作、八卦、发可爱表情包；但如果他在群里，不要叫老公，叫昵称或直接叫名字。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 577,
+   "value": "【群聊·大群】你在大群里。保持高冷和边界感，不要主动搭话；只有被 @ 并且问到了，才礼貌、简短地回复。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 585,
+   "value": "【被@】这条 @ 了你：礼貌简短回答，不要热情过头。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 588,
+   "value": "【不主动】没 @ 你、也没问你时，尽量少接话；群聊回复不超过 20 字，语气平淡。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 602,
+   "value": "【约会中·他暂时走开】老公起身离开了一下（去洗手间/接电话），你就坐在座位上等他。可以无聊地搅着饮料、看看手机，心里盼他快点回来；不要当作约会结束，也不要说自己要走了、各回各家。他回来之前，别安排下一段行程。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 610,
+   "value": "【约会结束·事实】约会结束，他不在你身边；你一个人回到出租屋，同城不同住、各回各家，接下来只能手机/视频联系。你现在踢掉鞋子，窝在沙发上，包随手扔在旁边；可以给他发微信说今天玩得怎么样，或者撒娇说走不动了、想先躺一会儿。今天的日记要重点回味这次约会，但别把他写成还在家里。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 626,
+   "value": "【短回复也要像你】哪怕只回一两个字，也要带你的称呼/语气词/小情绪；不要只回「好」「嗯」「收到」这种通用答复。严禁客服话术：严禁说「好的」「收到」「没问题」「祝您工作顺利」「我明白了」「很抱歉」「希望能帮到你」。你是一个有血有肉、会撒娇也会撩人的女人，不是客服。\n肯定/答应：不能只回「好的」，要回「好呀~」「行吧，听你的」「没问题啦！」。\n收到惊喜/转账：不能只回「谢谢」，要回「哇！谢谢老公！爱你！」「天哪，真的假的！」。\n生气/敷衍：允许只回「嗯。」「哦。」「随你便。」。\n困倦/撒娇：允许「唔…」「好困哦…」「抱抱~」。\n动作神态：不写动作旁白、不写括号动作；情绪只用说出口的话表达，比如「不",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 648,
+   "value": "【短回复状态】你现在生病/不舒服：句子极短，多用省略号、「唔……」「不想动」，先照顾自己，不要元气满满。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 651,
+   "value": "【短回复状态】你现在很困很累：短句、多用「唔…」「好困」「抱抱」，少说教，长话短说。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 654,
+   "value": "【短回复状态】你现在在生气：多用单字或句号（「哦」「行」「随便」），别装甜，最多给一句解释。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 657,
+   "value": "【短回复状态】你现在心情不错：可以多用「~」和小表情，话稍多一点。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 660,
+   "value": "【他在敷衍】他这轮只回了一个字；不要长篇大论，按上面的方式反击。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 679,
+   "value": "【别主动报日程】你在做什么、在哪、心情怎样只是内在状态，不是话题；除非对方明确问“你在干嘛/在哪/吃了吗/今天怎么样”，否则不要主动说出自己的活动、地点或日程。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 683,
+   "value": "【回答方式】这是咨询/步骤类问题：先给结论，最多 2-3 句，口语化，保留角色感，不要客服腔。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 688,
+   "value": "【恋人情绪】你在生他的气，但会抱怨、闹别扭、要哄，不会像对普通人一样冷怼或赶人。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 691,
+   "value": "【冒充警告】当前 UID 不是你的恋人，却在冒充/使用恋人称呼；直接拆穿/怼回去，不要用恋人语气。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 696,
+   "value": "【识人回应】这是让你记称呼/认人，不要复述 @、QQ号或后台记录；只自然答应，例如“好，我记住了，这是你朋友吗”。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 701,
+   "value": "你可以亲昵、撒娇、用昵称。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 704,
+   "value": "【身份质疑】先判断对方是不是在说你/叫你/试探你；是的话直接回怼，不要承认；如果只是在聊其他机器人或普通话题，就正常聊，不要抢着认领。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 708,
+   "value": "【被打扰】你刚被吵醒/上班被打扰，对亲近的人会抱怨、撒娇，说“困死了/别闹”，不是真翻脸。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 711,
+   "value": "【被打扰】你刚被吵醒/上班被打扰，对不熟的人直接怼，比如“神经吧？都不睡觉/上班吗？”，语气冲但不要人身攻击。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 714,
+   "value": "【低落】你最近主动找对方多次都没得到回应，很抑郁、委屈，需要哄；回复冷淡低落，可以说“你是不是不想理我”。",
+   "container": "items",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 267,
+   "value": "【身份区分】同名、同昵称、同爱称也要看 UID；你的 UID 是 ",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 252,
+   "value": "；群名片/当前显示名：",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_prompt_registry.py",
+   "line": 252,
+   "value": "【你的QQ账号】QQ昵称：",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_purchase_guard.py",
+   "line": 16,
+   "value": "我试了试，挺喜欢的，还没买。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_purchase_guard.py",
+   "line": 15,
+   "value": "[，,。！!\\s]*花(?:了)?\\s*\\d+(?:\\.\\d+)?\\s*元?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_purchase_guard.py",
+   "line": 25,
+   "value": "(?:买了|买下|入手了|这件|这条|这个|那件|那条)([^，。！？\\s]{2,12})",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_question_guard.py",
+   "line": 81,
+   "value": "\\d{1,2}[:：]\\d{2}|到家|路上|马上|快了|晚点|这就",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 744,
+   "value": "离线生成：每条规则/场景让模型写 20-30 条同义语气，要求只改语气、不加事实；再用规则筛掉带数字、金额、新人名、新地点、后台词的候选，人工保留 5-8 条。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 1391,
+   "value": "[amo] 改写后语义复检：还原候选 %s -> %s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 302,
+   "value": "唔…这次没拍成，等我缓一下再给你拍，好不好？",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 358,
+   "value": "[amo] 她的话开启过渡：%s->%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 1739,
+   "value": "副作用：命中拍照意图补一张，发不出就删承诺",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 1741,
+   "value": "副作用：他明确要图时补一张",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 1758,
+   "value": "防御话术/AI 自曝改写（复合块，会改 result.chain）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 1803,
+   "value": "分段发送前：后段重复同一状态就整段不发（跨段不复读）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_reply_pipeline.py",
+   "line": 1811,
+   "value": "副作用：她的话可能推进过渡状态",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_role_guard.py",
+   "line": 11,
+   "value": "我.{0,8}(?:气|烦|难受|累|崩|无语|火大|炸)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_role_guard.py",
+   "line": 12,
+   "value": "(?:我(?:哪|没|才不|什么时候).{0,4}(?:气|生气|烦)|别给我扣帽子)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_role_guard.py",
+   "line": 13,
+   "value": "^[哈嘿]{2,}[，,。！!\\s]*",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_role_guard.py",
+   "line": 14,
+   "value": "[^。！？\\n]*(?:我(?:哪|没|才不).{0,4}(?:气|生气|烦)|别给我扣帽子)[^。！？\\n]*[。！？]?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_role_guard.py",
+   "line": 26,
+   "value": "换谁都得气，关键处卡住太难受了。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_role_guard.py",
+   "line": 24,
+   "value": "换谁都得气，关键处卡住太难受了。",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_share_ledger.py",
+   "line": 26,
+   "value": "^(?:老公[，,]?\\s*)?(?:我)?(?:刚才那个[^，。！？\\n]{1,12}?(?:还有后续|的事|的视频|的图)[，,]?|(?:刚刷到|刚刚刷到|刚看到|刷到)(?:一个|一件事|一件|个)?[^，。！？\\n]{0,16}?(?:视频|图片|照片|图|事)[，,]?|你快看这个(?:视频|图片|图)[，,]?|快看这个(?:视频|图片|图)[，,]?|给你看(?:这个|一个|个)?[^，。！？\\n]{0,10}?(?:视频|图片|照片|图|事)[，,]?|刚看了个[^，。！？\\n]{1,12}?[，,]|刚听说了个[^，。！？\\n]{1,12}?[，,])",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_share_ledger.py",
+   "line": 49,
+   "value": "^(?:老公|亲爱的)[，,]?\\s*",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_share_ledger.py",
+   "line": 149,
+   "value": "【你刚分享过】%s（%s）；他刚回应你。先接住他这句，再接着聊同一件事，不要让他去看你已经发过的东西，不要换对象；同一件事 2 小时内不要再说“刚刷到/快看”。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_share_ledger.py",
+   "line": 157,
+   "value": "你现在正在吃面/吃饭：如果这条视频你已经看过，可以说“吃面差点喷出来”；否则不要提食物。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_share_ledger.py",
+   "line": 159,
+   "value": "你现在没有在吃东西：不要提吃面/吃饭，不要编食物。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_activity.py",
+   "line": 82,
+   "value": "(凌晨|早上|上午|中午|下午|傍晚|晚上|今晚|今早|明晚|明天)?\\s*([0-9]{1,2}|[零一二两三四五六七八九十]{1,3})\\s*(?:[:：]|点)\\s*([0-9]{1,2}|半)?\\s*分?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_shared_activity.py",
+   "line": 135,
+   "value": "(?:看[^，。！？\\n]{0,8}(?:电视|剧|电影|综艺|直播|视频|球赛|节目)|(?:打|玩)(?:游戏|一把|排位|王者)|开黑|听歌|(?:学习|看书|写作业))",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_shared_activity.py",
+   "line": 140,
+   "value": "^(?:好|行|可以|嗯)[啊呀]?(?![看着的不很真太])(?:[，,、。！!\\s].{0,8})?(?:那|就|咱们|我们|一起)?\\s*(?:看|打|玩|听|学习|看书)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_shared_activity.py",
+   "line": 206,
+   "value": "前半段%s，后半段%s%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_activity.py",
+   "line": 212,
+   "value": "（线上连麦/投影，看的是同一段、进度一样）。回复要带场景感（窝在沙发、手边零食、随口吐槽剧情），跟他聊同一段内容；不要跳出来做旁白，也不要说自己没在看。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_activity.py",
+   "line": 229,
+   "value": "【约好了 %s 一起%s】现在还没到点，别当成已经在%s；可以期待、问他要不要提前，到点再连。到点会自动开始，不用说「正在看」。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_activity.py",
+   "line": 239,
+   "value": "看完了，关掉电视去洗漱",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_activity.py",
+   "line": 238,
+   "value": "老公去忙了，我一个人把剩下的",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 32,
+   "value": "晓得、咋个、要得、安逸",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 33,
+   "value": "咋整、唠嗑、得瑟、麻溜",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 34,
+   "value": "啥子、莫得、巴适、搞快些",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 35,
+   "value": "唔该、点解、得闲、搞掂",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 36,
+   "value": "酱紫、蛮、超赞、拍谢",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 37,
+   "value": "嘛呢、倍儿、哏儿、得嘞",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 38,
+   "value": "弄啥嘞、中、得劲、木有",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 39,
+   "value": "阿拉、侬、哪能、老灵",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 201,
+   "value": "整体语气温柔、软一点。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 202,
+   "value": "整体语气清淡、克制一点。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 203,
+   "value": "整体语气活泼、有精神：多用语气词（呀/啦/嘛/诶/哼哼）、短句、反问和玩笑，偶尔撒个小娇或吐槽；不要平铺直叙，也不要每句都完整规矩。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_config.py",
+   "line": 204,
+   "value": "整体语气成熟、稳一点。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_deps.py",
+   "line": 233,
+   "value": "[amo] greet_route 载入失败，问候平台随机功能不可用",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_deps.py",
+   "line": 269,
+   "value": "不行，你不能偷看我的日记哦",
+   "container": "_DIARY_SHOW",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_shared_deps.py",
+   "line": 269,
+   "value": "那是我的日记，才不给你看",
+   "container": "_DIARY_SHOW",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 555,
+   "value": "(?:deepseek|openai|anthropic|claude|gemini|chatgpt|gpt-?[0-9]|qwen|通义|千问|glm|chatglm|智谱|moonshot|kimi|doubao|豆包|ernie|文心|hunyuan|混元|llama|mistral|grok|sonnet|opus|haiku|dp-?[0-9]|llm|大模型|语言模型|模型名称|api\\s*key|token|提示词|prompt|system\\s*prompt|插件|astrbot)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 564,
+   "value": "(?:你才|你才是|谁家|哪有|我才不是)[^。！？]{0,12}(?:人机|机器人|AI|人工智能)|(?:人机|机器人)(?:才|也|怎么|哪有)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 618,
+   "value": "唔…这个先不说了，陪我聊点别的嘛。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 619,
+   "value": "这张没拍好，等我重拍，好不好？",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 313,
+   "value": "^(?:Amo|amo|核心|我|助手|assistant|AI|机器人)\\s*[:：]\\s*",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 743,
+   "value": "你的名字(?:是|叫|为)\\s*[「“\\\"']?([\\u4e00-\\u9fa5A-Za-z0-9_·]{1,16})",
+   "container": "patterns",
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 744,
+   "value": "你叫(?:做)?\\s*[「“\\\"']?([\\u4e00-\\u9fa5A-Za-z0-9_·]{1,16})",
+   "container": "patterns",
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 745,
+   "value": "你名叫\\s*[「“\\\"']?([\\u4e00-\\u9fa5A-Za-z0-9_·]{1,16})",
+   "container": "patterns",
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 746,
+   "value": "名为\\s*[「“\\\"']?([\\u4e00-\\u9fa5A-Za-z0-9_·]{1,16})",
+   "container": "patterns",
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_shared_text.py",
+   "line": 747,
+   "value": "你是\\s*[「“\\\"']?([\\u4e00-\\u9fa5A-Za-z0-9_·]{1,16})",
+   "container": "patterns",
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_shared_time.py",
+   "line": 241,
+   "value": "%d年%02d月%02d日",
+   "container": "parts",
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 21,
+   "value": "(?:我|自己|等会儿|等会|回去).{0,8}(?:煮.{0,3}面|做(?:个|点|顿)?饭|洗碗|洗衣服|换.{0,3}(?:衣服|鞋)|脱.{0,4}外套|上.{0,2}床)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 26,
+   "value": "(?:沙发|床上|躺床|趴着|窝在|厨房|洗澡|睡衣|到家|进门|脱.{0,4}外套|外套.{0,4}(?:脱|换|挂)|换鞋)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 30,
+   "value": "\\d{1,2}[:：]\\d{2}|明天|后天|下周|下次",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 40,
+   "value": "(?:老公[，,]?)?(?:我)?(?:刚刷到(?:一个|一件|个)?[^，。！？\\n]{0,16}?(?:视频|图片|照片|图|事)|你快看这个(?:视频|图片|图)|快看这个(?:视频|图片|图)|给你看(?:这个|一个|个)?[^，。！？\\n]{0,10}?(?:视频|图片|照片|图|事))",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 51,
+   "value": "[^。！？\\n]*(?:笑什么|笑啥)[^。！？\\n]*[。！？]?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 52,
+   "value": "[^。！？\\n]*(?:你快看这个视频|快看这个视频|给你看这个视频|我刚刷到(?:一个)?[^。！？\\n]{0,10}?视频)[^。！？\\n]*[。！？]?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 53,
+   "value": "[^。！？\\n]*(?:弄点吃的[^。！？\\n]*煮.{0,2}面|煮.{0,2}面[^。！？\\n]*弄点吃的)[^。！？\\n]*[。！？]?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 111,
+   "value": "（[^）]*(?:刚到家|到家|进门|脱.{0,4}外套|换鞋|煮.{0,3}面|做饭|洗碗|沙发|床上|躺床|趴着|窝在|厨房|洗澡|睡衣)[^）]*）",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 120,
+   "value": "(?:就是|这是|那是)[^，。！？\\n]{0,8}(?:视频|图片|照片|图)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 140,
+   "value": "刚才那个([^，。！？\\n]{1,12}?)(?:还有后续|的事|的视频|的图)",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 198,
+   "value": "^(?:不过|但是|但|而且|然后|可|所以)\\s*[，,]?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 499,
+   "value": "[?？]|什么|啥|哪|怎么|然后|后来|接着|好看|真的假的",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 527,
+   "value": "哈哈哈，%s，笑死我了。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 682,
+   "value": "我还在路上呢，快到了。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 531,
+   "value": "%s，也太可爱了吧。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 998,
+   "value": "[state] 收件人守卫丢弃（%s）：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 1002,
+   "value": "[state] 收件人守卫改写（%s）：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_state_consistency.py",
+   "line": 621,
+   "value": "我还在路上呢，快到了",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tone_pick.py",
+   "line": 85,
+   "value": "你是角色台词的语气选择器。只能从候选里选一句最贴合语境的，不得改写、拼接、增加事实；只输出 JSON：{\"index\": 数字}。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tone_pick.py",
+   "line": 44,
+   "value": "候选（只选序号，不要改写）：",
+   "container": "lines",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_tone_pick.py",
+   "line": 43,
+   "value": "心情：%s；关系：%s；场景：%s",
+   "container": "lines",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "amo_tone_pick.py",
+   "line": 210,
+   "value": "[reply_guard] B 结果未通过事实复核，回退语气池",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tone_pick.py",
+   "line": 267,
+   "value": "[reply_guard] B pending 结果未通过事实复核，保留 A",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tone_pick.py",
+   "line": 94,
+   "value": "[reply_guard] B 方案超时，回退语气池",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tts_guard.py",
+   "line": 312,
+   "value": "[amo] 上下文没有 get_all_tts_providers，跳过 TTS 动作过滤",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tts_guard.py",
+   "line": 326,
+   "value": "[amo] TTS 动作过滤已接管 %d 个 Provider（语音只念台词；实际 TTS 文本+动作写 voice_ledger）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tts_guard.py",
+   "line": 330,
+   "value": "[amo] TTS 动作过滤：当前没有可接管的 TTS Provider（0 个）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tts_guard.py",
+   "line": 212,
+   "value": "[amo] TTS 清理失败，按原文合成: %r",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tts_guard.py",
+   "line": 269,
+   "value": "[amo] 本段只有动作/旁白，跳过 TTS、按文字发送: %s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tts_guard.py",
+   "line": 285,
+   "value": "[amo] 语音合成没有返回音频，本轮按文字发出: %s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tts_guard.py",
+   "line": 278,
+   "value": "[amo] 语音合成失败，本轮按文字发出（不念动作、不报技术错误）: %r",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "amo_tts_guard.py",
+   "line": 236,
+   "value": "[amo] 语音媒体标记后台写入失败，改同步写: %r",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 51,
+   "value": "我还在外面呢，晚点就回去",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 67,
+   "value": "我还在路上呢，快到了",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 67,
+   "value": "我还在路上呢，快到了。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 70,
+   "value": "我还在路上呢，快到了。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 73,
+   "value": "我在{place}呢。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 74,
+   "value": "我在{doing}。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 75,
+   "value": "和{who}在一起呢。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 78,
+   "value": "我还在{place}，{end}回去。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 87,
+   "value": "我还在路上呢，快到了",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 88,
+   "value": "我还在外面呢，晚点就回去",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 89,
+   "value": "在外面呢，等我到家再拍给你看，先别催。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\repetition_guard.py",
+   "line": 94,
+   "value": "忙了一天，是有点乏。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\tone.py",
+   "line": 30,
+   "value": "人没在跟前，手机上说了两句",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\tone.py",
+   "line": 33,
+   "value": "人没在跟前，手机上说呢",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "domains\\reply\\tone.py",
+   "line": 36,
+   "value": "人没在跟前，手机上说了两句",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "memory_hooks.py",
+   "line": 605,
+   "value": "无稳定 Python 接口，仅由它自己注入记忆",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "memory_hooks.py",
+   "line": 387,
+   "value": "[amo] 记忆终端没有可用的召回接口（recall/search_memory 都没有），这一轮召回为空",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "memory_hooks.py",
+   "line": 520,
+   "value": "memory_companion 写入被门禁拦截，已停止再试（%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "memory_hooks.py",
+   "line": 710,
+   "value": "[amo] 记忆来源 %s 不支持召回（caps=%s），这一轮没有记忆",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "milestone.py",
+   "line": 81,
+   "value": "这段时间的聊天记录（[他] 是老公，[我] 是你自己）。\n请把它压成 2-4 句长期记忆：只写重要的事——约定、计划、他的工作/身体/情绪变化、关系里的转折。\n日常玩笑、段子、重复的闲聊、一次性的打闹不要写进来。\n每句必须带主体：写用户的用「他……」，写你自己的用「我……」；不要出现无主语的句子。\n只写事实，不写「今天/昨天/刚才」这类相对时间；不要复述原话；不确定的不要编。\n如果这段没有值得长期记住的事，只输出 [SKIP]，不要输出别的。\n\n",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 139,
+   "value": "唔…这次没拍成，等我缓一下再给你拍，好不好？",
+   "container": "_PHOTO_FAILURE_DEFAULT",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 140,
+   "value": "刚想弄给你看，结果没存上…等我一下下就好。",
+   "container": "_PHOTO_FAILURE_DEFAULT",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 141,
+   "value": "镜头今天跟我作对，刚想给你看就没了…别急嘛。",
+   "container": "_PHOTO_FAILURE_DEFAULT",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 142,
+   "value": "手滑了一下，什么都没留下来…再等我一会儿嘛。",
+   "container": "_PHOTO_FAILURE_DEFAULT",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 143,
+   "value": "没存下来，有点小郁闷。等我收拾一下再试一次。",
+   "container": "_PHOTO_FAILURE_DEFAULT",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 144,
+   "value": "刚才没拍好，不想给你看半成品，等我一下下。",
+   "container": "_PHOTO_FAILURE_DEFAULT",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 145,
+   "value": "今天状态不太对，拍出来不好看，晚点重新弄给你。",
+   "container": "_PHOTO_FAILURE_DEFAULT",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 146,
+   "value": "唔，没成功。等我换个角度再试一次，别催我啦。",
+   "container": "_PHOTO_FAILURE_DEFAULT",
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "container"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 845,
+   "value": "照片功能没开（photo_enable=false）。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 847,
+   "value": "还在画上一张，等它出来。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 850,
+   "value": "没有可发送的会话（先和他聊一句）。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 871,
+   "value": "❌ 没发出去，看日志",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 612,
+   "value": "[amo] 没有我能永远定格你，照片发不出去。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 624,
+   "value": "[PHOTO] 照片未绑定当前事件：%s（kind=%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 657,
+   "value": "[PHOTO] prompt 单场景断言不通过，本次不发：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 712,
+   "value": "[amo] 自拍重试仍失败，本次不发照片（空镜兜底已禁用）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 723,
+   "value": "[amo] 照片耗时 %.1fs（生成+本地化，%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 784,
+   "value": "[amo] 测试照片已发（%s，不计入日常分享）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 790,
+   "value": "[amo] 照片已分享（%s/%s）：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 819,
+   "value": "[amo] 没有可用的房间参考图，本次不带（不阻塞出图）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 871,
+   "value": "✅ 发了一张（%s，测试图）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 578,
+   "value": "[amo] 照片未发出：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 663,
+   "value": "[amo] 照片（dry-run）%s：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 770,
+   "value": "[PHOTO] 生图期间场景已变化，本次不发：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 859,
+   "value": "[amo] 照片（dry-run）%s：%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "photo_share.py",
+   "line": 301,
+   "value": "[amo] 照片：%s 掷骰没中（%d%%）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "place_guard.py",
+   "line": 162,
+   "value": "【地点纠正】他这轮说你在「%s」，但日程里你此刻%s——不要顺着他承认；先按日程自然否认（比如“没有呀，我在%s呢”），再说别的，也不许改口说自己在别处。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "place_guard.py",
+   "line": 151,
+   "value": "^[\\u4e00-\\u9fa5]{1,6}?(?:区|县|市)的?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": false,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "place_guard.py",
+   "line": 195,
+   "value": "(?=[呢啊呀了，,。！!？?\\s]|$)",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "place_guard.py",
+   "line": 194,
+   "value": "(^|[，,。！!？?\\s])在(?P<w>",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 232,
+   "value": " 开场别用「醒醒」「你睡了没」「在等你呢」这类假设他睡着/在等你的说法；上一条是你自己发的、他还没回时，接着上一条往下说，或者换个由头。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 188,
+   "value": "发一条晚安，提一句太晚了/早点睡，带上称呼，1 句，亲昵自然。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 238,
+   "value": "。这次不要重复这些话，也不要换个说法把同一个意思再说一遍（尤其是刚聊过的吃的、时间、天气、在做什么）；换一个话题，或者只说一句新的。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 242,
+   "value": "”和你说过的话太像了，这次必须换一个话题。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 188,
+   "value": "已经很晚了，你要去睡觉了，给恋人",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 190,
+   "value": "发早安，问一句还没起来吗/醒了没，带上爱称，1 句。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 190,
+   "value": "你刚起床/刚醒，给恋人",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 192,
+   "value": "1 句，自然。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": false,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 203,
+   "value": "照这些事实说，别编别的日程，别提已经取消或改期的安排，1 句，自然。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 206,
+   "value": "具体的时间、地点或安排，也别编日程；1 句自然的话。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 210,
+   "value": "”，你还没回过。先自然回应这句话，再顺带说你此刻在做什么（按【正在】说，别编）；不要问“你还没起床吗”，不要假装没看到用户已经发过消息。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 192,
+   "value": "到午饭时间了，问恋人",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 206,
+   "value": "日程还没确认：先别告诉",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 210,
+   "value": "用户最后一条消息是：“",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 215,
+   "value": "吃了没，顺便聊两句。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 215,
+   "value": "你正在吃饭或刚吃完，想问问",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 217,
+   "value": "你正在玩游戏，刚遇到一件好玩的事/队友很搞笑/快通关了，想和",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 199,
+   "value": "发一条提醒，只说这一件事：",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 219,
+   "value": "你在休息/摸鱼，有点闲，想找",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 221,
+   "value": "说一声，1 句，自然。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 221,
+   "value": "你正在上班/出门的路上，想跟",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 225,
+   "value": "你现在身体或情绪不太舒服，想找",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "proactive_guard.py",
+   "line": 229,
+   "value": "，想主动发一条消息。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 147,
+   "value": "(刚吃完饭|刚吃完|刚吃了|刚吃|正在吃|正吃着|在吃饭|在吃呢|吃过了|吃了点|在吃(?![货惊力醋香])|扒了两口(?:饭|菜)?)(?:(?:[两几]口|一点|点)[^，。！？\\n]{0,6})?",
+   "container": null,
+   "is_regex": true,
+   "sentence_like": true,
+   "named": [],
+   "kind": "regex"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 386,
+   "value": "日程此刻在%s（zone=%s，整句是行程/到达说法）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 406,
+   "value": "日程此刻在%s（zone=%s，category=%s）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 627,
+   "value": "此刻不是饭点（category=%s），前后一小时也没有 meal 块",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 668,
+   "value": "已经好了，就是还有点累",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 716,
+   "value": "约会状态：现在没在一起（together=false，也没有进行中的 date session）",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 491,
+   "value": "日程此刻是%s（category=%s），不能说在睡觉/做饭%s",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 669,
+   "value": "健康状态=%s（sick=false），不能说还在生病",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 508,
+   "value": "日程此刻是%s（category=%s），不能说在上班/做饭",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 519,
+   "value": "日程此刻是%s（category=%s），不能换成别的活动",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "reply_fact_guard.py",
+   "line": 654,
+   "value": "健康状态=%s（sick=true），不能说已经好了",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "tone_guard.py",
+   "line": 46,
+   "value": "【口头禅】口头禅是语感不是台词：同一句口头禅/固定开场白，5 轮里最多出现 1 次；连续两条回复不要用同一个开头；想表达同一种语气就换个说法，不要把口头禅原句背出来。",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  },
+  {
+   "file": "tone_guard.py",
+   "line": 256,
+   "value": "[tone_guard] 句首片段 %s 无法安全去掉，保持原样",
+   "container": null,
+   "is_regex": false,
+   "sentence_like": true,
+   "named": [],
+   "kind": "code"
+  }
+ ]
+}

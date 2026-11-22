@@ -66,7 +66,7 @@ class DiaryHost(BaseHost):
             raise self.compose_result
         return getattr(self, "compose_result", "")
 
-    async def _send_to_umo(self, umo, text):
+    async def _send_to_umo(self, umo, text, source=None, kind=""):
         self.sent.append((umo, text))
         return True
 

@@ -21,9 +21,10 @@ HAPPY = {"health": {"status": "健康"}, "mood": {"开心": 70}}
 class PromptTests(unittest.TestCase):
     def test_rules_cover_required_constraints(self):
         rules = short_reply.RULES
+        # task-28 P0-4：人设单一真源——动作旁白/括号动作已被删除，改成明令禁止。
         for phrase in ("严禁客服话术", "好的", "收到", "没问题", "祝您工作顺利",
                        "好呀~", "行吧，听你的", "哇！谢谢老公！爱你！",
-                       "（摇头）", "（揉眼睛）", "（叹气）", "演话剧",
+                       "不写动作旁白", "不写括号动作",
                        "~", "？？？", "……", "状态绑定",
                        "你就回我一个嗯？", "你敷衍我是吧？"):
             self.assertIn(phrase, rules, phrase)

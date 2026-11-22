@@ -104,7 +104,8 @@ def card_text(pack: dict, register: str = "partner_safe") -> str:
         "【语言】" + "；".join(str(item) for item in (language.get("rules") or [])),
         "【金钱观】" + str(card.get("money") or ""),
         "【公开场合】" + str(card.get("public") or ""),
-        "【绝不说】" + "、".join(str(item) for item in (card.get("forbidden") or [])[:14]),
+        "【动作】不写动作旁白、不写括号动作；只用说出口的话表达情绪（基础人格唯一真源）。",
+        "【绝不说】" + "、".join(str(item) for item in (card.get("forbidden") or [])[:20]),
     ]
     return "\n".join(item for item in parts if item.strip())
 

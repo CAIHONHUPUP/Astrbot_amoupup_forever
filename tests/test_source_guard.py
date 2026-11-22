@@ -6,6 +6,9 @@
 - amo_observability.py：clock 的底层依赖（clock 导入它），它反向 import clock 会成环；
 - amo_shared.py 的 _clock_now / _clock_now_ts：clock 模块不可用时的兜底实现；
 - amo_shared_deps.py 的同名两个函数：2026-11-17 从 amo_shared 拆出的依赖兜底模块，实现逐字未改。
+- amo_media.py 的 _now / services/life_state.py 的 _now / services/metrics.py 的 _clock_now：
+  这三个函数的裸时钟都只在「clock 不可用」的 except 分支兜底（task-23/task-27 引入，
+  主路径一律走统一时钟），和上面 amo_shared 的兜底同性质，因此按函数白名单放行。
 除此之外，生产模块出现裸 time.time()/datetime.now() 一律红。
 """
 from __future__ import annotations
@@ -35,6 +38,10 @@ ALLOWED_FUNCS = {
     ("amo_shared.py", "_clock_now_ts"): "clock 模块不可用时的 time.time 兜底",
     ("amo_shared_deps.py", "_clock_now"): "clock 模块不可用时的 datetime 兜底（从 amo_shared 拆出）",
     ("amo_shared_deps.py", "_clock_now_ts"): "clock 模块不可用时的 time.time 兜底（从 amo_shared 拆出）",
+    # task-23/27 新增模块的降级兜底：只有 clock.now_ts()/clock.now() 抛异常才走裸时钟。
+    ("amo_media.py", "_now"): "task-23：clock.now_ts() 异常时的 time.time() 兜底（仅 except 分支）",
+    ("services/life_state.py", "_now"): "task-27：clock 不可用时的 datetime.now() 兜底（仅 except 分支）",
+    ("services/metrics.py", "_clock_now"): "task-27：clock 不可用时的 datetime.now() 兜底（仅 except 分支）",
 }
 
 #: 共享 helper 的唯一 owner（出现再定义 → 红）。zone_for_place 有两个 owner：

@@ -87,6 +87,24 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from photo_view import sanitize_selfie_prompt
 
+try:  # 唯一在场/沉默/照片绑定策略（2026-11-22 架构收口）
+    from . import amo_presence as _presence
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_presence as _presence
+
+try:  # 单一媒体出口/账本（2026-11-22 task-23）：三条照片链路都从这里发
+    from . import amo_media as _media
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_media as _media
+
+try:  # 单 zone / 床句 / 房间家具 / 姿势发送前断言（task-23）
+    from .photo_prompt import enforce_photo_media_prompt as _enforce_media_prompt
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_prompt import enforce_photo_media_prompt as _enforce_media_prompt
+
 #: 阈值默认值（配置化：infra/config/amo_thresholds.json 可覆盖，代码里保留兜底）。
 AMO_THRESHOLDS_DEFAULT = {"proactive_silence_seconds": 10 * 60,
                           "proactive_burst_guard_seconds": 90}
@@ -259,6 +277,15 @@ class PhotoShareMixin:
             if not profiles:
                 logger.debug("[PHOTO] tick skip reason=no_owner_profile")
                 return
+            # 唯一在场策略：沉默 6 小时 / 逛街 pending 但不在商场 → 自动照片整轮不发。
+            try:
+                blocked = not _presence.can_photo(self.plugin, profiles[0], now=now_ts())
+            except Exception as _amo_exc:
+                _note_swallowed("photo_share.PhotoShareMixin.tick.presence", _amo_exc)
+                blocked = False
+            if blocked:
+                logger.debug("[PHOTO] tick skip reason=presence_gate")
+                return
             for kind, scene, prob, key in self._candidates():
                 roll_key = self._roll_key(kind, key)
                 try:
@@ -386,9 +413,22 @@ class PhotoShareMixin:
                                               "reason": str(reason or "")[:160]}
 
     def photo_guard_state(self, umo="", ok_window=120, fail_window=600):
-        """给回复守卫判断：ok / pending / failed / idle。"""
+        """给回复守卫判断：ok / pending / failed / idle。
+
+        顺带收编「模型直接调外部 generate_selfie」：它自己发图不会走 amo 的
+        MediaGateway，这里按它写在 omni._selfie_turn_store 的证据补一条
+        external_selfie 账本（占 cap + 写 memory），这样「发过的图」聊天/记忆查得到。
+        """
         umo = str(umo or "")
         now = time.monotonic()
+        try:
+            finder = getattr(self, "_find_omni", None)
+            omni = finder() if callable(finder) else None
+            if umo and _media.reconcile_external(self.plugin, umo, omni):
+                logger.info("[PHOTO] 外部 generate_selfie 已补记媒体账本（umo=%s）", umo[:48])
+                return "ok"
+        except Exception as _amo_exc:
+            _note_swallowed("photo_share.PhotoShareMixin.photo_guard_state.external", _amo_exc)
         record = self._photo_turn_state().get(umo) or {}
         fail_at = float(record.get("fail") or 0)
         if fail_at and now - fail_at < max(0, int(fail_window)):
@@ -430,71 +470,139 @@ class PhotoShareMixin:
         return line
 
     async def _notify_failure(self, umo, reason="", profile=None):
-        """按日程分享失败时补一句温柔人话；同一会话 10 分钟只提醒一次。"""
+        """按日程分享失败时补一句温柔人话。
+
+        节流只保留统一出口那一层（push_to_owner 的 5 分钟窗口 + outbound 去重），
+        这里不再自己记 10 分钟：多套节流互相打架时，失败话术会时灵时不灵。
+        """
         if not umo or MessageChain is None:
             return
         try:
-            store = getattr(self, "_failure_notice_at", None)
-            if not isinstance(store, dict):
-                store = {}
-                self._failure_notice_at = store
-            now = time.monotonic()
-            last = store.get(umo)
-            if last is not None and now - last < 600:
-                return
-            store[umo] = now
             relation = str((profile or {}).get("relation") or "") if isinstance(profile, dict) else ""
-            line = self.failure_line(umo, relation)
+            line = _media.sanitize_failure_text(self.failure_line(umo, relation))
             logger.warning("[PHOTO] failure_notice=1 reason=%s", str(reason or "")[:80])
             try:
                 from astrbot.api.message_components import Plain
             except Exception:
                 from astrbot.api.event.components import Plain
-            await self.plugin.context.send_message(umo, MessageChain([Plain(text=line)]))
+            push = getattr(self.plugin, "push_to_owner", None)
+            if callable(push):
+                await push(line)
+            else:
+                await self.plugin.context.send_message(umo, MessageChain([Plain(text=line)]))
         except Exception as exc:
             logger.warning("[PHOTO] failure_notice send failed: %s", exc)
 
     async def _send(self, umo, item, caption=""):
-        """发图；caption 非空时同一条消息里带一句说明（测试图用）。"""
-        if not umo or MessageChain is None:
+        """发图：唯一入口是 amo_media.send_photo（MediaGateway）。
+
+        Gateway 内完成：caption 媒体标记剥离 → 内容签名/事件去重 → 每日配额 →
+        事件占位 → 统一出站出口（_send_media_to_umo，保留 task-16 的 source=photo）
+        → 记一条账本 + 占 cap + 写 memory。caption 里的「[我发的照片]」在
+        gateway 里再剥一次，任何出口都不会把占位符当人话发出去。
+        """
+        if not umo:
             return False
         component = self._image_component(item)
         if component is None:
             return False
-        components = []
-        if caption:
+        meta = getattr(self, "_photo_send_meta", None) or {}
+        binding = getattr(self, "_photo_event_binding", None) or {}
+        if binding.get("resend"):
+            origin = "resend"
+            claim_event = False
+        else:
+            origin = str(meta.get("origin") or "manual")
+            claim_event = bool(meta.get("claim_event", origin == "auto"))
+        event_id = str(meta.get("event_id") or binding.get("event_id") or "")
+        scene = meta.get("scene") if isinstance(meta.get("scene"), dict) else {}
+        test = bool(meta.get("test"))
+
+        async def _transport():
+            """宿主没有 _send_media_to_umo（单测/旧宿主）时的直接发送。"""
+            parts = []
+            caption_text = str(caption or "")
             try:
-                from astrbot.api.message_components import Plain
-            except Exception:
                 try:
-                    from astrbot.api.event.components import Plain
+                    from .amo_message import strip_media_markers as _strip
+                except ImportError:
+                    from amo_message import strip_media_markers as _strip
+                caption_text = _strip(caption_text)
+            except Exception:  # cleanup: 兜底/降级，保持原行为
+                pass
+            if caption_text:
+                try:
+                    from astrbot.api.message_components import Plain
                 except Exception:
-                    Plain = None
-            if Plain is not None:
-                components.append(Plain(text=str(caption)))
-        components.append(component)
+                    try:
+                        from astrbot.api.event.components import Plain
+                    except Exception:
+                        Plain = None
+                if Plain is not None:
+                    parts.append(Plain(text=str(caption_text)))
+            parts.append(component)
+            await self.plugin.context.send_message(umo, MessageChain(parts))
+
+        bump = None
         try:
-            await self.plugin.context.send_message(umo, MessageChain(components))
-            try:
-                store = getattr(self, "_last_sent", None)
-                if not isinstance(store, dict):
-                    store = {}
-                    self._last_sent = store
-                store[str(umo)] = item
-            except Exception as exc:
-                _note_swallowed("photo_share._send.remember", exc)
-            return True
+            if not callable(getattr(getattr(self.plugin, "photo", None), "_bump_count", None)):
+                bump = getattr(self, "_bump_count", None)
+        except Exception:
+            bump = None
+        try:
+            result = await _media.send_photo(
+                self.plugin, umo, item,
+                components=[component],
+                caption=caption,
+                origin=origin,
+                kind=str(meta.get("kind") or "photo"),
+                event_id=event_id,
+                scene=scene,
+                pose=meta.get("pose"),
+                outfit=str(meta.get("outfit") or ""),
+                test=test,
+                claim_event=claim_event,
+                dedupe=meta.get("dedupe"),
+                enforce_cap=meta.get("enforce_cap"),
+                count=meta.get("count"),
+                transport=_transport,
+                bump=bump,
+            )
         except Exception as exc:
             logger.warning("[amo] 照片发送失败: %s" % exc)
             return False
+        if not result.get("ok"):
+            if str(result.get("reason") or "") not in ("dup_event", "dup_signature",
+                                                       "daily_cap", "no_component",
+                                                       "send_blocked"):
+                logger.warning("[amo] 照片未发出：%s", result.get("reason"))
+            return False
+        try:
+            store = getattr(self, "_last_sent", None)
+            if not isinstance(store, dict):
+                store = {}
+                self._last_sent = store
+            store[str(umo)] = item
+        except Exception as exc:
+            _note_swallowed("photo_share._send.remember", exc)
+        return True
 
     async def resend_last(self, umo):
-        """他要「发给我看看」时，把最近发过的那张原样再发一次，不重新生图。"""
+        """他要「发给我看看」时，把最近发过的那张原样再发一次，不重新生图。
+
+        这是他明确要的，不算自动分享：source=chat 绕过 90 秒主动去重，
+        也不占用事件配额（同一 event_id 第一张的额度已经用掉）。
+        """
         store = getattr(self, "_last_sent", None)
         item = (store or {}).get(str(umo or ""))
         if not item:
             return False
-        return await self._send(str(umo), item)
+        old = getattr(self, "_photo_event_binding", None)
+        self._photo_event_binding = {"event_id": "", "resend": True}
+        try:
+            return await self._send(str(umo), item)
+        finally:
+            self._photo_event_binding = old
 
     async def _share(self, kind, scene, profile, target_umo="", lock_scene=True,
                      room_refs=None, test=False):
@@ -504,6 +612,21 @@ class PhotoShareMixin:
             logger.warning("[amo] 没有我能永远定格你，照片发不出去。")
             return False
         umo = str(target_umo or "") or self._target_umo(profile)
+        # 唯一在场策略：照片必须绑定当前事件（沉默 6 小时 / 逛街 pending 但不在商场 → 不发；
+        # pending 且在商场 → 场景强制成商场/试衣间，不能让家里自拍配商场文案）。
+        try:
+            binding = _presence.photo_binding(self.plugin, profile, kind=kind,
+                                              manual=bool(test), now=now_ts())
+        except Exception as _amo_exc:
+            _note_swallowed("photo_share.PhotoShareMixin._share.presence", _amo_exc)
+            binding = {"ok": True, "reason": "", "scene": "", "event_id": "", "shopping": False}
+        if not binding.get("ok"):
+            logger.info("[PHOTO] 照片未绑定当前事件：%s（kind=%s）",
+                        binding.get("reason"), kind)
+            return False
+        if binding.get("scene"):
+            scene = str(binding["scene"])
+        self._photo_event_binding = binding
         # 一次生图先把“日程 → zone → 姿势/守卫”定型；提示词 / 参考图 / 锁 / 调试
         # 全程共用这一份计划——整条链路只解析一次（2026-11-16 Phase 9）
         try:
@@ -526,6 +649,16 @@ class PhotoShareMixin:
         prompt = (self._selfie_prompt_for(kind, scene, activity, pose=pose, plan=plan,
                                           pose_text=pose_text) if selfie
                   else self._prompt_for(kind, scene, activity, plan=plan))
+        # 2026-11-22 task-23：生成前先断言「单 zone + 床句/家具/姿势对齐」。
+        # 不通过就不生成、不发（宁可发失败话术，也不发地铁+床/浴室+客厅那种互斥图）。
+        prompt, _prompt_ok, _prompt_reasons = _enforce_media_prompt(
+            prompt, plan=plan, pose=pose, activity=activity)
+        if not _prompt_ok:
+            logger.warning("[PHOTO] prompt 单场景断言不通过，本次不发：%s",
+                           "；".join(_prompt_reasons) or "-")
+            self._stats["failed"] += 1
+            self.note_photo_fail(umo, "prompt_conflict:" + ",".join(_prompt_reasons))
+            return False
         if self._cfg_bool("photo_dry_run", False):
             logger.info("[amo] 照片（dry-run）%s：%s" % ("自拍" if selfie else "街景", prompt))
             return False
@@ -589,31 +722,71 @@ class PhotoShareMixin:
             item = localized
         logger.info("[amo] 照片耗时 %.1fs（生成+本地化，%s）" % (
             time.monotonic() - started, "自拍" if selfie else "街景"))
-        if not await self._send(umo, item, caption=PHOTO_TEST_MARK if test else ""):
+        # 发送元数据（账本/去重/配额都在 amo_media.MediaGateway 里用）：事件占位从
+        # _share 挪到 gateway，避免 photo_share 和 MediaGateway 各 claim 一次。
+        _binding = self._photo_event_binding or {}
+        outfit_meta = ""
+        try:
+            outfit_meta = (self._selfie_outfit_text(str(getattr(plan, "zone", "") or ""))
+                           if selfie else self.outfit_today())
+        except Exception as _amo_exc:
+            _note_swallowed("photo_share.PhotoShareMixin._share.outfit_meta", _amo_exc)
+            outfit_meta = ""
+        self._photo_send_meta = {
+            "origin": "test" if test else "auto",
+            "kind": str(kind or "photo"),
+            "event_id": str(_binding.get("event_id") or ""),
+            "scene": {
+                "event_id": str(_binding.get("event_id") or ""),
+                "zone": str(getattr(plan, "zone", "") or ""),
+                "place": str(getattr(plan, "where", "") or ""),
+            },
+            "pose": pose,
+            "outfit": outfit_meta,
+            "test": bool(test),
+            "claim_event": not test,
+            "dedupe": not test,
+            "enforce_cap": not test,
+            "count": not test,
+        }
+        # 2026-11-22 task-25：发送前按场景账本复核一次——生图几十秒，期间日程可能已经切走
+        # （14:00 在商场拍完、14:05 已经回到家）。复核不过就这次不发，绝不发错场景的图。
+        if not test and lock_scene:
+            try:
+                try:
+                    from .amo_scene_ledger import verify_photo_scene as _verify_photo
+                except ImportError:
+                    from amo_scene_ledger import verify_photo_scene as _verify_photo
+                _scene_check = _verify_photo(
+                    self.plugin,
+                    expected_zone=str(getattr(plan, "base_zone", "") or ""),
+                    expected_event_id=str((self._photo_event_binding or {}).get("event_id") or ""),
+                    now=now_ts(),
+                )
+            except Exception as _amo_exc:
+                _note_swallowed("photo_share.PhotoShareMixin._share.verify_scene", _amo_exc)
+                _scene_check = {"ok": True, "reasons": []}
+            if not _scene_check.get("ok"):
+                logger.info("[PHOTO] 生图期间场景已变化，本次不发：%s",
+                            "；".join(_scene_check.get("reasons") or []) or "-")
+                self._stats["failed"] += 1
+                self._photo_send_meta = None
+                return False
+        try:
+            sent_ok = await self._send(umo, item, caption=PHOTO_TEST_MARK if test else "")
+        finally:
+            self._photo_send_meta = None
+        if not sent_ok:
             self._stats["failed"] += 1
             return False
         if test:
             # 测试/手动图不算日常分享：不占每日配额，也不写进「我今天发了照片」的长期记忆
             logger.info("[amo] 测试照片已发（%s，不计入日常分享）", kind)
-        else:
-            self._bump_count()
         self._stats["sent"] += 1
         self.note_photo_ok(umo)
         self.note_sent(source="test" if test else "auto", test=test, kind=kind, umo=umo)
-        if not test:
-            try:
-                remember = getattr(self.plugin, "_remember_bot_media", None)
-                if callable(remember):
-                    scene_text = ""
-                    if isinstance(scene, dict):
-                        scene_text = str(scene.get("place") or scene.get("zone") or "")
-                    marker = "[我发的照片] %s%s" % (
-                        "自拍" if selfie else "随手拍",
-                        ("，背景：" + scene_text) if scene_text else "",
-                    )
-                    await remember(umo, marker)
-            except Exception as exc:
-                logger.debug("[amo] 记录照片失败: %s" % exc)
+        # 占 cap / 写 memory / 记 scene_id+pose+hash+event_id 账本都在 MediaGateway 里完成
+        # （2026-11-22 task-23：以前只在这条链路 note_sent + remember，工具链路 0 记录）。
         logger.info("[amo] 照片已分享（%s/%s）：%s" % (kind, "自拍" if selfie else "街景", prompt))
         return True
 

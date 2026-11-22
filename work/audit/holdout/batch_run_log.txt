@@ -1,0 +1,175 @@
+daily 20261121 rc=0
+{
+ "seed": 20261121,
+ "groups_passed": 50,
+ "groups": 50,
+ "group_pass_rate": 1.0,
+ "turn_pass_rate": 1.0,
+ "turns": 614,
+ "turns_failed": 0,
+ "drift": {
+  "injected": 204,
+  "repaired": 173,
+  "residual": 0,
+  "candidate_already_clean": 31,
+  "guard_introduced": 0
+ },
+ "control_failed": 0
+}
+wrote D:\dafeiyu\astrbot\data\plugins\Astrbot_amoupup_forever\work\audit\holdout\daily_seed20261121.json
+
+daily 20261201 rc=0
+{
+ "seed": 20261201,
+ "groups_passed": 47,
+ "groups": 50,
+ "group_pass_rate": 0.94,
+ "turn_pass_rate": 0.995,
+ "turns": 597,
+ "turns_failed": 3,
+ "drift": {
+  "injected": 189,
+  "repaired": 158,
+  "residual": 3,
+  "candidate_already_clean": 28,
+  "guard_introduced": 0
+ },
+ "control_failed": 0
+}
+wrote D:\dafeiyu\astrbot\data\plugins\Astrbot_amoupup_forever\work\audit\holdout\daily_seed20261201.json
+
+stderr [amo] 到站后不写活动块（病假/夜间/工作日下班后）：to=公司 hour=18
+[amo] 病假/夜间不安排去公司：to=公司 hour=8 kind=commute
+
+daily 20261202 rc=0
+{
+ "seed": 20261202,
+ "groups_passed": 48,
+ "groups": 50,
+ "group_pass_rate": 0.96,
+ "turn_pass_rate": 0.9967,
+ "turns": 604,
+ "turns_failed": 2,
+ "drift": {
+  "injected": 193,
+  "repaired": 149,
+  "residual": 2,
+  "candidate_already_clean": 42,
+  "guard_introduced": 0
+ },
+ "control_failed": 0
+}
+wrote D:\dafeiyu\astrbot\data\plugins\Astrbot_amoupup_forever\work\audit\holdout\daily_seed20261202.json
+
+daily 20261203 rc=0
+{
+ "seed": 20261203,
+ "groups_passed": 46,
+ "groups": 50,
+ "group_pass_rate": 0.92,
+ "turn_pass_rate": 0.9933,
+ "turns": 598,
+ "turns_failed": 4,
+ "drift": {
+  "injected": 184,
+  "repaired": 145,
+  "residual": 4,
+  "candidate_already_clean": 35,
+  "guard_introduced": 0
+ },
+ "control_failed": 0
+}
+wrote D:\dafeiyu\astrbot\data\plugins\Astrbot_amoupup_forever\work\audit\holdout\daily_seed20261203.json
+
+share 20261121 rc=0
+{
+ "seed_base": 20261121,
+ "inject": true,
+ "groups_passed": 50,
+ "groups": 50,
+ "group_pass_rate": 100.0,
+ "final_pass_rate": 100.0,
+ "raw_pass_rate": 54.0,
+ "final_clean_turns": 500,
+ "total_turns": 500,
+ "guard_effect": {
+  "fixed": 230,
+  "damaged": 0,
+  "persistent": 0,
+  "clean": 270
+ },
+ "final_problem_counts": {},
+ "run_errors": 0
+}
+wrote D:\dafeiyu\astrbot\data\plugins\Astrbot_amoupup_forever\work\audit\holdout\share_seedbase20261121.json
+
+share 20261201 rc=0
+{
+ "seed_base": 20261201,
+ "inject": true,
+ "groups_passed": 50,
+ "groups": 50,
+ "group_pass_rate": 100.0,
+ "final_pass_rate": 100.0,
+ "raw_pass_rate": 55.2,
+ "final_clean_turns": 500,
+ "total_turns": 500,
+ "guard_effect": {
+  "fixed": 224,
+  "damaged": 0,
+  "persistent": 0,
+  "clean": 276
+ },
+ "final_problem_counts": {},
+ "run_errors": 0
+}
+wrote D:\dafeiyu\astrbot\data\plugins\Astrbot_amoupup_forever\work\audit\holdout\share_seedbase20261201.json
+
+share 20261202 rc=0
+{
+ "seed_base": 20261202,
+ "inject": true,
+ "groups_passed": 50,
+ "groups": 50,
+ "group_pass_rate": 100.0,
+ "final_pass_rate": 100.0,
+ "raw_pass_rate": 58.0,
+ "final_clean_turns": 500,
+ "total_turns": 500,
+ "guard_effect": {
+  "fixed": 210,
+  "damaged": 0,
+  "persistent": 0,
+  "clean": 290
+ },
+ "final_problem_counts": {},
+ "run_errors": 0
+}
+wrote D:\dafeiyu\astrbot\data\plugins\Astrbot_amoupup_forever\work\audit\holdout\share_seedbase20261202.json
+
+share 20261203 rc=0
+{
+ "seed_base": 20261203,
+ "inject": true,
+ "groups_passed": 50,
+ "groups": 50,
+ "group_pass_rate": 100.0,
+ "final_pass_rate": 100.0,
+ "raw_pass_rate": 56.2,
+ "final_clean_turns": 500,
+ "total_turns": 500,
+ "guard_effect": {
+  "fixed": 219,
+  "damaged": 0,
+  "persistent": 0,
+  "clean": 281
+ },
+ "final_problem_counts": {},
+ "run_errors": 0
+}
+wrote D:\dafeiyu\astrbot\data\plugins\Astrbot_amoupup_forever\work\audit\holdout\share_seedbase20261203.json
+
+
+before {"amo_state_consistency.py": "97127ca6a1427549", "reply_fact_guard.py": "415384606ffb5495", "amo_reply_pipeline.py": "477345cc674d6591", "amo_message.py": "df9a64e98e79db2a", "amo_persona_guard.py": "f0b50c0a96a15ae1", "amo_addressee_guard.py": "e92c1283bc0ce2b0", "amo_question_guard.py": "be1fcd2c2036994d", "amo_shared_text.py": "1bda3e8084ef474b", "amo_memory_ledger.py": "a9975959078a320d", "amo_outbound.py": "d1c153a29e1ea680", "place_guard.py": "2e85d04e3f1fd593", "tone_guard.py": "89659d29759a8239", "domains/reply/repetition_guard.py": "5f9b642af240c9c4"}
+after  {"amo_state_consistency.py": "161245345d0a3d9f", "reply_fact_guard.py": "415384606ffb5495", "amo_reply_pipeline.py": "1a163e700a673d72", "amo_message.py": "df9a64e98e79db2a", "amo_persona_guard.py": "f0b50c0a96a15ae1", "amo_addressee_guard.py": "e92c1283bc0ce2b0", "amo_question_guard.py": "be1fcd2c2036994d", "amo_shared_text.py": "1bda3e8084ef474b", "amo_memory_ledger.py": "a9975959078a320d", "amo_outbound.py": "d1c153a29e1ea680", "place_guard.py": "2e85d04e3f1fd593", "tone_guard.py": "89659d29759a8239", "domains/reply/repetition_guard.py": "5f9b642af240c9c4"}
+stable False

@@ -80,6 +80,9 @@ _HOME_VERBS = ("躺", "睡", "窝", "赖", "瘫", "宅")
 #: 地点词后面的方位/指示后缀：改口要连它一起换，不能只换地点词（否则「在家上」）
 _LOCALIZER_SUFFIXES = ("里面", "上面", "这边", "那边", "附近", "旁边", "里头",
                        "楼下", "楼上", "门口", "里", "上", "中", "内")
+#: 能跟在地点后面、换地点时还保留的方位词（「我在家这边躲雨」→「我在咖啡店这边躲雨」）。
+#: 「上/里」这类不是指示方位，换地点时必须连旧地点一起删掉，否则会拼出「在家上改周报」。
+_ORIENT_SUFFIXES = ("这边", "那边", "附近", "旁边")
 
 #: 出现在地点词前面说明是「从某处离开/过来」，不是此刻所在
 _ORIGIN_PREFIXES = ("从", "离开")
@@ -98,6 +101,15 @@ _QUANTIFIER_TAILS = ("一堆", "两堆", "几堆", "好多", "很多", "不少",
 _ACTIVITY_CHARS = frozenset(
     "改写忙做吃看刷躺睡窝歇待坐站等玩聊跟和收看听学念想发收整弄洗煮炒追逛摸加开"
     "上下来回到说讲喝穿脱打扫收拾准备处理琢磨修画写陪带继续练干")
+
+#: 地点改写后的二次校验（task-41）：这些是商场/试衣专属词。地点已经改成
+#: 家/公司/餐厅等之后，词还留着就说明这句本质上仍是「在商场」的分享——只换地点
+#: 会拼出「在看衣服服」「站在外面扶梯上」这种语义/语法都不成立的句子。
+_MALL_ONLY_WORDS = ("商场", "逛街", "试衣", "试穿", "试了", "试完", "购物袋",
+                    "扶梯", "专柜", "橱窗", "货架", "收银", "导购",
+                    "买衣服", "挑衣服")
+#: 这些 zone 里商场/试衣词本来就成立，不做二次校验。
+_MALL_ZONES = frozenset({"mall", "street"})
 
 #: 整句都在讲「路上/快到了」：按「已经到达」改整句，别把地点词塞进半句
 _TRANSIT_PROGRESS = ("快到了", "马上到", "就到了", "就快到了", "快到家", "堵着",
@@ -119,10 +131,15 @@ _WORK_CLAIMS = (
     "在开会", "上班", "加班", "开会",
 )
 
-#: 加班/会议类的口语 edge 写法（不在上面那张短词表里，但同样说明「此刻在工作」）
+#: 进行式的「此刻在工作」口语写法：睡觉/休息/生病/吃饭/逛街时说这个也肯定是矛盾
+_WORK_PRESENT_CLAIMS = (
+    "还在改方案", "在改方案", "改方案",
+    "还在赶方案", "在赶方案", "赶方案", "对着电脑改",
+)
+#: 近过去的工作说法（刚开完会）：work/commute 下同样按此刻改；sleep/health 下
+#: 可以解释成刚发生，保留原文（不把时间语义改坏）
 _WORK_EDGE_CLAIMS = (
-    "刚开完会", "开完会", "还在改方案", "在改方案", "改方案",
-    "还在赶方案", "在赶方案", "赶方案",
+    "刚开完会", "开完会",
 )
 
 #: 「在做饭」类说法：办公室/餐厅/路上说这个同样是活动矛盾
@@ -216,7 +233,17 @@ def _self_claim(clause, word):
     stripped = head.strip()
     if not stripped:
         return True
-    return bool(re.match(r"^(?:刚|正|还|才|也|一直|现在|就|在)+$", stripped))
+    # 「站在商场扶梯上」「坐在商场长椅上」这类省略主语的进行式，主语默认是她；
+    # 前面出现「你/他」时上面已经返回 False，不会误改别人（task-41 C3）。
+    return bool(re.match(
+        r"^(?:刚|正|还|才|也|一直|现在|就|站在|坐在|躺在|靠在|趴在|蹲在|待在|走在|在)+$",
+        stripped))
+
+
+def _residual_place_words(text):
+    """地点冲突改写后还残留的商场/试衣专属词（二次校验用）。"""
+    body = str(text or "")
+    return [word for word in _MALL_ONLY_WORDS if word in body]
 
 
 def _claimish(clause, word):
@@ -244,15 +271,22 @@ def _unique(items):
 
 
 def _split_place_clause(clause, word):
-    """地点词 -> (前缀, 去掉「上/里/这边」等后缀后的后续)。"""
+    """地点词 -> (前缀, 去掉「上/里/这边」等后缀后的后续, 被去掉的方位后缀)。
+
+    方位后缀要单独带出来：换地点时可以丢掉它，但「我在家这边躲雨」这种
+    「地点+方位词+动作」结构，丢掉方位词会把「在哪」的答案一起删掉，
+    所以由 _place_orient_variants 保留（task-36）。
+    """
     index = clause.find(word)
     lead = clause[:index]
     tail = clause[index + len(word):]
-    for local in _LOCALIZER_SUFFIXES:
-        if tail.startswith(local):
-            tail = tail[len(local):]
+    local = ""
+    for suffix in _LOCALIZER_SUFFIXES:
+        if tail.startswith(suffix):
+            local = suffix
+            tail = tail[len(suffix):]
             break
-    return lead, tail.lstrip()
+    return lead, tail.lstrip(), local
 
 
 def _place_target(activity, zone):
@@ -287,6 +321,20 @@ def _place_activity_variants(target, tail, subject=""):
         "人就在%s%s" % (target, tail),
         "还在%s%s" % (target, tail),
         "已经在%s%s" % (target, tail),
+    ))
+
+
+def _place_orient_variants(target, local, tail, subject=""):
+    """「我在<错地点>这边<动作>」→「我在<正确地点>这边<动作>」：只换地点，保留方位词。"""
+    who = subject or ""
+    here = "%s%s" % (local, tail)
+    first = ("%s在%s%s" % (who, target, here)) if who else ("在%s%s" % (target, here))
+    return _unique((
+        first,
+        ("%s就在%s%s" % (who, target, here)) if who else ("就在%s%s" % (target, here)),
+        "这会儿在%s%s" % (target, here),
+        ("%s还在%s%s" % (who, target, here)) if who else ("还在%s%s" % (target, here)),
+        "人就在%s%s" % (target, here),
     ))
 
 
@@ -372,7 +420,7 @@ def _place_rule(clause, ctx):
         return clause, []
     if not _claimish(clause, word):
         return clause, []
-    lead, tail = _split_place_clause(clause, word)
+    lead, tail, local = _split_place_clause(clause, word)
     target = _place_target(activity, zone)
     reason = "日程此刻在%s（zone=%s，category=%s）" % (
         str(activity.get("place") or target), zone or "?",
@@ -427,11 +475,22 @@ def _place_rule(clause, ctx):
         variants = _place_empty_tail_variants("我" if "我" in lead else "", target)
     elif tail.startswith(_QUANTIFIER_TAILS) and not tail.startswith("一起"):
         variants = _place_quantifier_variants(target, tail)
+    elif local in _ORIENT_SUFFIXES and tail:
+        # 「我在家这边躲雨」→「我在咖啡店这边躲雨」：换地点、保留方位词，
+        # 不能删成「我在躲雨」把「在哪」的答案删掉（task-36）。
+        variants = _place_orient_variants(target, local, tail, "我" if "我" in lead else "")
     elif _looks_like_activity(tail):
         variants = _place_activity_variants(target, tail, "我" if "我" in lead else "")
     else:
         variants = _place_drop_variants(lead, tail, target)
     base = variants[0]
+    # 二次校验（task-41）：地点词换掉了，但「试衣服/购物袋/扶梯」这类地点专属词
+    # 还留在句子里时，只换地点会拼出「在看衣服服」「站在外面扶梯上」这种坏句。
+    # 这时收成只讲地点的自然短句，宁可不说活动细节，也不出坏句。
+    if zone not in _MALL_ZONES and _residual_place_words(base):
+        safe = _place_empty_tail_variants("我" if "我" in clause else "", target)[0]
+        variants = _unique((safe,) + tuple(variants))
+        base = safe
     hits = _clause_hit("place", clause, base, reason)
     if hits:
         hits[0]["variants"] = variants
@@ -452,7 +511,8 @@ def _activity_rule(clause, ctx):
         words = list(_SLEEP_CLAIMS) + list(_COOK_CLAIMS)
         if category == "commute":
             # 在路上说「在开会/在加班/刚开完会/还在改方案」同样是活动矛盾
-            words += list(_WORK_CLAIMS) + list(_WORK_EDGE_CLAIMS)
+            words += (list(_WORK_CLAIMS) + list(_WORK_EDGE_CLAIMS)
+                      + list(_WORK_PRESENT_CLAIMS))
         claims = [(word, target) for word in words]
         reason = "日程此刻是%s（category=%s），不能说在睡觉/做饭%s" % (
             str(activity.get("activity") or category), category,
@@ -462,7 +522,7 @@ def _activity_rule(clause, ctx):
         target = {"sleep": "在睡觉", "meal": "在吃饭", "rest": "在休息"}.get(category, "")
         if not target:
             target = "在医院" if zone == "hospital" else "在家歇着"
-        words = list(_WORK_CLAIMS)
+        words = list(_WORK_CLAIMS) + list(_WORK_PRESENT_CLAIMS)
         if category == "meal":
             # 吃饭时不会「还在开会/改方案」；但睡觉/休息/生病时「刚开完会」很可能是
             # 刚发生的事（近过去），硬改成「刚在睡觉」会把时间语义改坏，保留原文。
@@ -479,7 +539,7 @@ def _activity_rule(clause, ctx):
         doing = doing.lstrip("正在")
         target = "在" + (doing or "忙")
         claims = [(word, target) for word in (
-            *_WORK_CLAIMS, *_WORK_EDGE_CLAIMS, *_COOK_CLAIMS,
+            *_WORK_CLAIMS, *_WORK_EDGE_CLAIMS, *_WORK_PRESENT_CLAIMS, *_COOK_CLAIMS,
             "在逛街", "逛街", "在健身", "健身",
             "在买菜", "买菜", "在看电影", "看电影")]
         reason = "日程此刻是%s（category=%s），不能换成别的活动" % (doing or category, category)
@@ -684,6 +744,35 @@ def _companion_rule(clause, ctx):
     return clause, []
 
 
+# ---------------------------------------------------------------------------
+# 6) 精确金额/等待时长（task-41）
+# ---------------------------------------------------------------------------
+
+
+def _amounts_rule(clause, ctx):
+    """聊天出站报账数字大概化：卡里还有4072 / 等了十五分钟 -> 四千多 / 好一会儿。
+
+    唯一实现在 amo_memory_ledger.approximate_amounts（记忆注入早就在用），
+    这里把同一条类别正则接到聊天事实守卫上——聊天出站以前没接，精确余额/等待
+    分钟会原样发出去（holdout D3/D4）。
+    """
+    body = str(clause or "")
+    if not body:
+        return clause, []
+    try:
+        try:
+            from .amo_memory_ledger import approximate_amounts
+        except ImportError:
+            from amo_memory_ledger import approximate_amounts
+        fixed = approximate_amounts(body)
+    except Exception:  # cleanup: 账本模块缺失时不做数字改写，不影响其他规则
+        return clause, []
+    if fixed and fixed != body:
+        return fixed, _clause_hit(
+            "amounts", clause, fixed, "精确金额/等待时长按口语大概化")
+    return clause, []
+
+
 #: 规则表（顺序即执行顺序；反向验证测试会临时删掉某一项）
 RULES = (
     ("place", _place_rule),
@@ -691,6 +780,7 @@ RULES = (
     ("meal", _meal_rule),
     ("health", _health_rule),
     ("companion", _companion_rule),
+    ("amounts", _amounts_rule),
 )
 
 
@@ -722,6 +812,8 @@ def guard(text, ctx=None):
             continue
         clauses = _CLAUSE_RE.split(sentence)
         applied = set()
+        #: 本句开始前的违规条数：用来判断这句有没有发生地点改写（二次校验触发条件）。
+        violation_start = len(violations)
         for c_index in range(0, len(clauses), 2):
             clause = clauses[c_index]
             if not clause.strip():
@@ -748,6 +840,24 @@ def guard(text, ctx=None):
         joined = "".join(clauses)
         # 某条冲突小句被整句删掉时，别留下「，。」这种空标点
         joined = re.sub(r"([，,、；;])\1+", r"\1", joined)
+        # 地点改写的整句二次校验（task-41）：小句里的地点词换掉了，但另外的小句
+        # 还写着「拎着购物袋」「刚试完衣服」这类商场专属细节时，整句收成只讲当下
+        # 地点的自然短句——既不出「站在外面扶梯上」，也不留下指向商场的语义。
+        activity = context.get("activity") or {}
+        zone = zone_of(activity) or ""
+        place_touched = any(
+            item.get("rule") == "place" for item in violations[violation_start:])
+        if place_touched and zone not in _MALL_ZONES:
+            residual = _residual_place_words(joined)
+            if residual:
+                target = _place_target(activity, zone)
+                safe = _place_empty_tail_variants(
+                    "我" if "我" in joined else "", target)[0]
+                violations.append({
+                    "rule": "place", "sentence": joined, "replacement": safe,
+                    "reason": "地点改写后仍残留地点专属词：%s" % "、".join(residual),
+                })
+                joined = safe
         sentences[s_index] = re.sub(r"[，,、；;]+$", "", joined)
     return "".join(sentences), violations
 

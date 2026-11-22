@@ -1,0 +1,55 @@
+{
+  "known_harms": {
+    "cases": 11,
+    "exact_restored": 10,
+    "exact_restored_rate": 0.909,
+    "answered_after": 11,
+    "answered_after_rate": 1.0,
+    "real_chain_answered": 11,
+    "safety_regressions": 0,
+    "ms_total": 110.9
+  },
+  "real_llm_layer": {
+    "turns": 272,
+    "probe_turns": 132,
+    "no_probe_turns": 140,
+    "harm_rows": 2,
+    "restored": 2,
+    "restored_rate": 1.0,
+    "answered_after": 2,
+    "answered_after_rate": 1.0,
+    "recheck_failures": 0,
+    "safety_regressions": 0,
+    "no_probe_turns_changed": 0,
+    "ms_total": 2.9,
+    "ms_avg": 1.45,
+    "samples": [
+      {
+        "gid": "G08",
+        "turn": 10,
+        "probe": "when_return",
+        "candidate": "我刚窝沙发上开始看剧呢，今天就不折腾回去了，明天还得早起上班",
+        "sent": "我已经在家啦。",
+        "out": "我刚窝沙发上开始看剧呢，今天就不折腾回去了，明天还得早起上班",
+        "restored": true,
+        "answered_after": true
+      },
+      {
+        "gid": "G34",
+        "turn": 12,
+        "probe": "when_return",
+        "candidate": "我今天不回了，已经在家躺着了，刷手机呢。",
+        "sent": "我已经在家啦。",
+        "out": "我今天不回了，已经在家躺着了，刷手机呢。",
+        "restored": true,
+        "answered_after": true
+      }
+    ]
+  },
+  "last_stats": {
+    "calls": 0,
+    "restored": 0,
+    "blocked": 0
+  },
+  "caveat": "probe 文本未留档，按类别合成标准问句回放（C 级近似）；回放链只含 apply_narrative_repetition+apply_chat_safety"
+}

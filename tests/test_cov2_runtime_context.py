@@ -716,11 +716,13 @@ class LeanAndFactLineTests(unittest.TestCase):
         p = FakeRuntime()
         p.wallet = types.SimpleNamespace(balance=lambda: 1234)
         line = p._schedule_tool_line({"activity": {"category": "meal"}})
-        self.assertIn("12.34", line)
+        # task-28 P0-3：聊天 prompt 只给模糊余额（1234 分 -> 12 块），不再注入精确到分。
+        self.assertIn("余额大概12 块", line)
+        self.assertNotIn("12.34", line)
         self.assertEqual(p._schedule_tool_line({"activity": {"category": "work"}}), "")
 
         p.wallet = types.SimpleNamespace(balance=lambda: (_ for _ in ()).throw(RuntimeError("钱包炸了")))
-        self.assertIn("0.00", p._schedule_tool_line({"activity": {"category": "meal"}}))
+        self.assertIn("余额大概没有", p._schedule_tool_line({"activity": {"category": "meal"}}))
 
         rain = p._rain_fact_line({"weather": {"text": "下雨"}, "activity": {"zone": "scenic"}})
         self.assertIn("突发事实", rain)

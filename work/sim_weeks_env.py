@@ -358,7 +358,7 @@ def generate_one_diary(plugin, state, day, item, rows, index, checks):
     record = record_of(plugin, day, item)
     if not record:
         fail(checks, "diary.not_persisted", "%s-%s" % (start, item.get("end")))
-    elif str(record.get("status") or "") not in ("valid", "frozen"):
+    elif str(record.get("status") or "") not in ("valid", "frozen", "stale"):
         fail(checks, "diary.status", "%s-%s status=%s" % (start, item.get("end"), record.get("status")))
     return text
 

@@ -581,12 +581,23 @@ class LlmMixin(_MixinBase):
         if not isinstance(last_refusal, dict):
             last_refusal = {}
         coax = refusal.is_coax(text)
+        # task-28 P0-5：她最近 3 条自己发的话，作为「不可否认」硬清单进 prompt / critic
+        try:
+            try:
+                from .amo_persona_guard import self_recent_texts as _self_recent_texts
+            except ImportError:
+                from amo_persona_guard import self_recent_texts as _self_recent_texts
+            self_texts = _self_recent_texts(recent, 3)
+        except Exception as _amo_exc:
+            logger.debug("[amo] 取自我发言清单失败: %s" % _amo_exc)
+            self_texts = []
         return {
             "umo": umo, "uid": uid, "scene": scene, "is_owner": is_owner,
             "sender_name": sender_name, "owner_name": owner_name, "name": name,
             "relation": relation, "persona": persona, "world": world,
             "asked_activity": asked_activity, "state_text": state_text, "tone": tone,
             "style": style, "consult": consult, "recent": recent,
+            "self_texts": self_texts,
             "transcript": transcript, "self_name": self_name, "self_uid": self_uid,
             "self_qq_nick": self_qq_nick, "self_display": self_display,
             "sender_nick": sender_nick, "plat": plat, "cash_cents": cash_cents,
@@ -602,6 +613,9 @@ class LlmMixin(_MixinBase):
         system_parts.extend(await self._reply_conditional_parts(
             ctx, event, text, snap, profile, group, memory_text))
         system_parts.append(_prompts.render("llm.rule.core"))
+        if not group:
+            # task-32：收件人锁（私聊生成层）。首句称呼只能老公/你/名字；家人只作话题。
+            system_parts.append(_prompts.render("llm.rule.addressee"))
         if note:
             # 延迟补话的说明放在系统侧，不能混进“对方刚刚说”里
             system_parts.append(_prompts.render("llm.note", note=note))
@@ -676,6 +690,7 @@ class LlmMixin(_MixinBase):
                             uid=uid, name=name),
             _prompts.render("llm.identity_distinction", self_uid=self_uid, uid=uid),
             _prompts.render("llm.no_backend"),
+            _prompts.render("llm.self_recent", self_texts=ctx.get("self_texts") or []),
             _prompts.render("llm.role_boundary"),
             _prompts.render("llm.body_ownership"),
             _prompts.render("llm.quote_rule"),
@@ -819,7 +834,7 @@ class LlmMixin(_MixinBase):
             reply = await self.llm.polish(
                 umo, reply, tone, state_text=state_text, relation=relation, name=name,
                 persona=persona, style=style, consult=consult, public=bool(group),
-                user_text=str(text or ""),
+                user_text=str(text or ""), self_texts=ctx.get("self_texts") or [],
             )
             reply = self._trim_reply(reply)
             try:

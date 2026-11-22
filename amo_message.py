@@ -28,17 +28,20 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        Comp, MessageChain, logger, now_ts, to_float, typing_delay_ms,
+        Comp, MessageChain, logger, now_ts, sanitize_caption, strip_tech_terms,
+        to_float, typing_delay_ms,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            Comp, MessageChain, logger, now_ts, to_float, typing_delay_ms,
+            Comp, MessageChain, logger, now_ts, sanitize_caption,
+            strip_tech_terms, to_float, typing_delay_ms,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                Comp, MessageChain, logger, now_ts, to_float, typing_delay_ms,
+                Comp, MessageChain, logger, now_ts, sanitize_caption,
+                strip_tech_terms, to_float, typing_delay_ms,
             )
 
 
@@ -47,6 +50,12 @@ try:  # 回复守卫流水线（Phase 6）：发送前的顺序与去重统一�
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         import amo_reply_pipeline as _reply_pipeline
+
+try:  # 唯一发送出口（2026-11-22 task-16）：去重/频控/批互斥/outbound_log
+    from . import amo_outbound as _gateway
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_outbound as _gateway
 
 
 if TYPE_CHECKING:
@@ -275,6 +284,70 @@ def strip_confused_short_reply(reply, user_text, bot_text=""):
     return out or reply
 
 
+# ---------------------------------------------------------------------------
+# 媒体记录标记（2026-11-22 task-15，10:32 真实 P0）
+#
+# 「[我发的照片] 自拍」「[我发的语音] …」是给审计/记忆用的内部记录，不是人话。
+# 线上模型在最近对话里看到它，就把它当成一句可以复读的话抄进正文；她此刻在家，
+# 连照片记录里的旧地点也一起复读。这里只做两件事：
+# - 读侧（_recent / 记忆注入）整行剔除，绝不进 LLM 可复读文本；
+# - 写侧出站前 strip，人话里不出现占位符（真正的图仍由图片组件发）。
+# ---------------------------------------------------------------------------
+_MEDIA_MARKER_RE = re.compile(r"[\[【]\s*我发的(?:照片|语音)[^\]】]*[\]】]\s*(?:自拍|随手拍|一段语音)?")
+_MEDIA_RECORD_RE = re.compile(r"^\s*[\[【]\s*我发的(?:照片|语音)")
+
+
+def is_media_record(text):
+    """这行是不是机器人自己发的照片/语音占位记录（不是一句人话）。"""
+    return bool(_MEDIA_RECORD_RE.match(str(text or "")))
+
+
+def strip_media_markers(text):
+    """去掉正文里的媒体占位符（连同紧跟的「自拍/随手拍/一段语音」说明）。"""
+    return _MEDIA_MARKER_RE.sub("", str(text or "")).strip()
+
+
+def sanitize_context_rows(plugin, rows):
+    """喂给模型的近聊行：媒体占位整行剔除；她自己旧场景断言降级成过去时。"""
+    clean_rows = []
+    demote, scene = None, None
+    try:
+        try:
+            from .amo_state_consistency import current_scene as _scene_of
+            from .amo_state_consistency import demote_past_claims as _demote
+        except ImportError:
+            from amo_state_consistency import current_scene as _scene_of
+            from amo_state_consistency import demote_past_claims as _demote
+        demote = _demote
+        scene = _scene_of(plugin)
+    except Exception:
+        demote, scene = None, None
+    for row in list(rows or []):
+        if not isinstance(row, dict):
+            clean_rows.append(row)
+            continue
+        content = str(row.get("content") or "")
+        if not content.strip():
+            clean_rows.append(row)
+            continue
+        if is_media_record(content):
+            continue
+        cleaned = strip_media_markers(content)
+        role = str(row.get("role") or "")
+        if demote is not None and role in ("bot", "assistant") and cleaned:
+            try:
+                cleaned = demote(cleaned, plugin, scene)
+            except Exception:  # cleanup: 兜底/降级，保持原行为
+                pass
+        if not cleaned.strip():
+            continue
+        if cleaned != content:
+            row = dict(row)
+            row["content"] = cleaned
+        clean_rows.append(row)
+    return clean_rows
+
+
 class MessageMixin(_MixinBase):
 
     def _strip_repeated_urge(self, reply, user_text, bot_text):
@@ -317,19 +390,19 @@ class MessageMixin(_MixinBase):
                 _note_swallowed("amo_message.HumanCorePlugin._recent", _amo_exc)
                 rows = []
         if len(rows) >= size:
-            return rows[-size:]
+            return sanitize_context_rows(self, rows[-size:])
         try:
             local = self.db.recent_messages(umo, size)
         except Exception as _amo_exc:
             _note_swallowed("amo_message.HumanCorePlugin._recent", _amo_exc)
             local = []
         if not rows:
-            return local
+            return sanitize_context_rows(self, local)
         # 缓冲只有一小段时，用本地补前面
         known = {(row.get("role"), row.get("content")) for row in rows}
         merged = [row for row in local if (row.get("role"), row.get("content")) not in known]
         merged.extend(rows)
-        return merged[-size:]
+        return sanitize_context_rows(self, merged[-size:])
 
     async def _recent_by_uid(self, uid, limit=20, umo=""):
         """取近聊：优先按会话，其次按 uid；都没有再退回缓冲/本地缓存。"""
@@ -347,7 +420,8 @@ class MessageMixin(_MixinBase):
                 _note_swallowed("amo_message.HumanCorePlugin._recent_by_uid", _amo_exc)
                 rows = []
             if rows:
-                return sorted(rows, key=lambda item: to_float(item.get("created_at"), 0))[-size:]
+                return sanitize_context_rows(
+                    self, sorted(rows, key=lambda item: to_float(item.get("created_at"), 0))[-size:])
         if callable(lister):
             try:
                 rows = await lister(self._data_bot_id(), "", size, uid=uid) or []
@@ -355,7 +429,8 @@ class MessageMixin(_MixinBase):
                 _note_swallowed("amo_message.HumanCorePlugin._recent_by_uid", _amo_exc)
                 rows = []
             if rows:
-                return sorted(rows, key=lambda item: to_float(item.get("created_at"), 0))[-size:]
+                return sanitize_context_rows(
+                    self, sorted(rows, key=lambda item: to_float(item.get("created_at"), 0))[-size:])
         merged = []
         hub = self._memory_hub()
         if hub is not None:
@@ -368,9 +443,10 @@ class MessageMixin(_MixinBase):
             for rows in list((getattr(self, "_ctx_buffer", {}) or {}).values()):
                 merged.extend([row for row in rows if str(row.get("uid") or "") == uid])
         if merged:
-            return sorted(merged, key=lambda item: to_float(item.get("created_at"), 0))[-size:]
+            return sanitize_context_rows(
+                self, sorted(merged, key=lambda item: to_float(item.get("created_at"), 0))[-size:])
         try:
-            return self.db.messages_by_uid(uid, size)
+            return sanitize_context_rows(self, self.db.messages_by_uid(uid, size))
         except Exception as _amo_exc:
             _note_swallowed("amo_message.HumanCorePlugin._recent_by_uid", _amo_exc)
             return []
@@ -559,7 +635,11 @@ class MessageMixin(_MixinBase):
         if self.heartflow is None or not self.cfg_bool("hf_enable_heartflow", True):
             logger.debug("[GATE] chat=group skip reason=heartflow_off")
             return
-        snap = self.state.snapshot()
+        try:  # task-30：此刻地点/动作唯一读场景账本（含请假/出差硬约束）
+            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        except ImportError:
+            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        snap = _snap_with_scene(self)
         if self._should_disturb(snap, umo, uid, text, group=True):
             self._apply_disturbance(umo)
             setattr(event, "amo_force_reply", True)
@@ -569,7 +649,11 @@ class MessageMixin(_MixinBase):
             logger.error("[amo] 心流处理失败: %s" % exc)
 
     async def _handle_private(self, event, profile):
-        snap = self.state.snapshot()
+        try:  # task-30：此刻地点/动作唯一读场景账本（含请假/出差硬约束）
+            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        except ImportError:
+            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        snap = _snap_with_scene(self)
         umo = event.unified_msg_origin
         uid = self._canonical_uid(event)
         if self._recent_bot_initiated(umo):
@@ -602,7 +686,11 @@ class MessageMixin(_MixinBase):
     async def _handle_group_directed(self, event, text, profile):
         umo = event.unified_msg_origin
         group_id = event.get_group_id()
-        snap = self.state.snapshot()
+        try:  # task-30：此刻地点/动作唯一读场景账本（含请假/出差硬约束）
+            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        except ImportError:
+            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        snap = _snap_with_scene(self)
         recent = self._recent(umo, 8 if self.cfg_str("context_style", "lean") == "lean" else 12)
         result = await self.gate.should_reply_group(
             umo, group_id, text, recent, True, profile, snap
@@ -850,9 +938,23 @@ class MessageMixin(_MixinBase):
         uid = str(umo).rsplit(":", 1)[-1].strip()
         if not uid or uid == "bot":
             return
+        # task-30：照片/语音也是长期记忆写者，统一过场景守卫（只改「现在/此刻」的错地点，
+        # 空串=这条不写）。标记句本身不含地点，守卫防的是以后 caption 混进媒体记忆。
+        memory_text = marker
+        try:
+            try:
+                from .amo_scene_ledger import guard_memory_text as _guard_memory
+            except ImportError:
+                from amo_scene_ledger import guard_memory_text as _guard_memory
+            memory_text = str(_guard_memory(self, marker) or "")
+        except Exception:  # cleanup: 记忆守卫异常时保留原标记
+            memory_text = marker
+        if not memory_text:
+            logger.debug("[amo] 媒体记忆被场景守卫丢弃: %s", marker[:40])
+            return
         try:
             await self._data_memory_write(
-                uid, marker, kind="bot_media", tier=0, scope="private", subject="bot",
+                uid, memory_text, kind="bot_media", tier=0, scope="private", subject="bot",
             )
         except Exception as exc:
             logger.debug("[amo] 媒体记忆写入失败: %s" % exc)
@@ -861,6 +963,25 @@ class MessageMixin(_MixinBase):
         """跳过分段引擎直接发一条（seg 关闭时，用来绕开 AstrBot 核心的引用/@）。"""
         if Comp is None or MessageChain is None:
             return False
+        # 媒体占位符不是人话：直发路径同样剥掉（真正需要发图时走图片组件）。
+        text = strip_media_markers(text)
+        # task-26：出站技术词黑名单（聊天直发路径）；全命中时换成角色化短句。
+        text = strip_tech_terms(text, source="chat")
+        if not str(text or "").strip():
+            return False
+        # task-28：直发路径也过一遍人设/报账数字/姓名守卫（动作-only 不发）。
+        try:
+            try:
+                from .amo_persona_guard import prepare_outbound as _prepare_outbound
+            except ImportError:
+                from amo_persona_guard import prepare_outbound as _prepare_outbound
+            _umo = str(getattr(event, "unified_msg_origin", "") or "")
+            text, _guard_reason = _prepare_outbound(self, _umo, text, "chat")
+            if not text:
+                logger.info("[amo] 直发被语义守卫拦截：%s", _guard_reason)
+                return False
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message.HumanCorePlugin._send_now.persona", _amo_exc)
         chain = []
         if quote_id is not None:
             try:
@@ -868,11 +989,17 @@ class MessageMixin(_MixinBase):
             except Exception as _amo_exc:
                 _note_swallowed("amo_message.HumanCorePlugin._send_now", _amo_exc)
         chain.append(Comp.Plain(text))
+        umo = str(getattr(event, "unified_msg_origin", "") or "")
+        # task-16：这是 chat 直发路径，登记 chat 批，期间非 chat 推送排队不插队。
+        _batch = _gateway.begin_chat_batch(self, umo, "chat-now:%s" % time.monotonic())
         try:
             await event.send(MessageChain(chain))
+            _gateway.note_chat(self, umo, text, _batch)
         except Exception as exc:
             logger.error("[amo] 直接发送失败: %s" % exc)
             return False
+        finally:
+            _gateway.end_chat_batch(self, umo, _batch)
         self._remember_sent_reply(event, text)
         try:
             self._last_reply_at[event.unified_msg_origin] = now_ts()
@@ -901,13 +1028,55 @@ class MessageMixin(_MixinBase):
             logger.debug("[amo] 人名重写失败: %s", exc)
         return ""
 
-    async def _send_to_umo(self, umo, text, quote_id=None, group=False):
+    def _outbound_allowed(self, umo, text, source=None):
+        """统一出口去重闸：同人 + 同来源，90 秒内近似重复只发一次。
+
+        来源走 contextvar（proactive/push/photo），时间走插件时钟 now_ts()。
+        以前把来源字符串塞进 allow() 的 now 参数，float("proactive") 抛异常被吞，
+        去重实际恒放行（07:30 4 秒 7 条的根因之一）。
+        """
+        try:
+            try:
+                from .amo_outbound_guard import allow as _outbound_allow
+            except ImportError:
+                from amo_outbound_guard import allow as _outbound_allow
+            src = str(source or getattr(self, "_outbound_source", "chat"))
+            return bool(_outbound_allow(self, umo, text, source=src, now=now_ts()))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message.MessageMixin._outbound_allowed", _amo_exc)
+            return True
+
+    async def _send_to_umo(self, umo, text, quote_id=None, group=False,
+                            source=None, kind=""):
+        """主动/推送文本的唯一发送出口（task-16）。
+
+        source 必须显式或由调用方设置 _outbound_source；缺省 fail-closed 当 push，
+        不再默认 chat。去重、频控、chat 批互斥、outbound_log 都在 amo_outbound。
+        """
         # Phase 6：发送前的守卫不再手写在这里，统一走 amo_reply_pipeline 的 send 阶段
-        # （顺序与该模块文档一致）：clean_reply -> 白名单外人名 -> 地点黑名单 ->
-        # 居家服 -> 隐私词 -> 约会 -> 极端词/视角 -> 过渡推进（副作用）-> 过渡地点 ->
-        # 后台信息泄漏。守卫函数本身没变，只是调用顺序登记在那边。
         context = _reply_pipeline.context_for_send(self, umo, group=bool(group))
         text = (await _reply_pipeline.run(text, context))["text"]
+        # 媒体占位符只用于内部记录，任何出站文本都剥掉（图仍由图片组件发）。
+        text = strip_media_markers(text)
+        # task-32：收件人/角色反转唯一守卫（主动/push/延迟补话/外部插件推送都从这里出）。
+        # 11:31 真实样例的链路是 watch request_push -> push_to_owner -> 这里，source=push；
+        # 判定只在 amo_addressee_guard 一处，日志和 outbound_log 都带 source，便于追外部推送。
+        _addr_src = str(source or getattr(self, "_outbound_source", "") or "push")
+        _addr_raw = str(text or "")
+        try:
+            try:
+                from .amo_addressee_guard import enforce as _addressee_enforce
+            except ImportError:
+                from amo_addressee_guard import enforce as _addressee_enforce
+            text, _addr_reason = _addressee_enforce(self, umo, text, source=_addr_src)
+            if not text:
+                logger.info("[amo] 收件人守卫丢弃（source=%s, reason=%s）：%s",
+                            _addr_src, _addr_reason, _addr_raw[:120])
+                return False
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message._send_to_umo.addressee", _amo_exc)
+            text = _addr_raw
+        _user_text = ""
         try:
             try:
                 from .amo_anti_nag import rewrite as _anti_nag
@@ -932,11 +1101,41 @@ class MessageMixin(_MixinBase):
                 _note_swallowed("amo_message.purchase_guard", _amo_exc)
         except Exception as _amo_exc:
             _note_swallowed("amo_message.anti_nag", _amo_exc)
+        # task-15 拼装前统一校验（聊天/主动共用）：媒体标记 -> 自我复读分句 -> 当前场景冲突。
+        try:
+            try:
+                from .amo_state_consistency import validate_reply_assembly as _validate_assembly
+            except ImportError:
+                from amo_state_consistency import validate_reply_assembly as _validate_assembly
+            text = _validate_assembly(text, self, umo=umo,
+                                      user_text=str(_user_text or ""))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message._send_to_umo.validate_assembly", _amo_exc)
+        # task-26：出站统一技术词黑名单。主动/push/系统通知/后台补话都走这里；
+        # 整条只剩技术话时按来源处理（system/push 直接不发，chat 换成角色化短句）。
+        try:
+            _tech_src = str(source or getattr(self, "_outbound_source", "") or "push")
+            _tech_kind = str(kind or getattr(self, "_outbound_kind", "") or "")
+            text = strip_tech_terms(text, source=_tech_src, kind=_tech_kind)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message._send_to_umo.tech_terms", _amo_exc)
         if not text or not umo:
             return False
         segments = self._segment(text)
         if not segments:
             return False
+        # task-15 分段去重：后段和最近说过的话/本轮前面的段重复就整段不发。
+        try:
+            try:
+                from .amo_state_consistency import dedupe_reply_segments as _dedupe_segments
+            except ImportError:
+                from amo_state_consistency import dedupe_reply_segments as _dedupe_segments
+            segments = _dedupe_segments(segments, plugin=self, umo=umo) or [text]
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message._send_to_umo.dedupe_segments", _amo_exc)
+        src = str(source or getattr(self, "_outbound_source", "") or "push")
+        _kind = str(kind or getattr(self, "_outbound_kind", "") or "")
+        _batch = str(getattr(self, "_outbound_batch", "") or "")
         last_sent_at = 0.0
         for index, segment in enumerate(segments):
             # 含分段：每一段发出前和最近 3-5 条 bot 消息 / 本轮前面的段比对，
@@ -959,10 +1158,13 @@ class MessageMixin(_MixinBase):
                 except Exception as _amo_exc:
                     _note_swallowed("amo_message.HumanCorePlugin._send_to_umo", _amo_exc)
             chain.append(Comp.Plain(segment))
-            try:
+
+            async def _transport(chain=chain):
                 await self.context.send_message(umo, MessageChain(chain))
-            except Exception as exc:
-                logger.warning("[amo] 主动发送失败: %s" % exc)
+
+            sent_ok = await _gateway.send(self, umo, segment, source=src, kind=_kind,
+                                          batch_id=_batch, transport=_transport)
+            if not sent_ok:
                 if index > 0:
                     # 前面的分段已经发出去了，返回 True，别让换边逻辑整段重发
                     partial = "\n".join(segments[:index])
@@ -973,9 +1175,58 @@ class MessageMixin(_MixinBase):
             last_sent_at = time.monotonic()
         self._last_reply_at[umo] = now_ts()
         logger.info("[amo] 主动 -> %s: %s" % (umo, text[:300]))
-        self._remember_bot_message(umo, text)
+        # task-28：落库/近聊里绝不能留动作旁白（否则下一轮又被模型复读回去）。
+        _memory_text = text
+        try:
+            try:
+                from .amo_persona_guard import strip_action_narration as _strip_actions
+            except ImportError:
+                from amo_persona_guard import strip_action_narration as _strip_actions
+            _memory_text = _strip_actions(text) or text
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message.HumanCorePlugin._send_to_umo.memory_text", _amo_exc)
+        self._remember_bot_message(umo, _memory_text)
         return True
+    async def _send_media_to_umo(self, umo, components, event_id="", source="photo",
+                                  kind="photo"):
+        """图片统一出口（task-16）：同一 event_id 90 秒内最多一张 + 频控 + 日志。
 
+        同一 event_id 最多一张图由 amo_presence.claim_photo_event 在调用方先占位；
+        这里再走 amo_outbound.send_media 做出口级去重/频控/outbound_log。
+        """
+        if not umo or MessageChain is None or not components:
+            return False
+        # task-26：照片 caption 也走技术词黑名单；命中就只发图（不切半句）。
+        _plain_cls = getattr(Comp, "Plain", None)
+        payload = []
+        for comp in components:
+            if _plain_cls is not None and isinstance(comp, _plain_cls):
+                caption = sanitize_caption(getattr(comp, "text", ""))
+                if not caption:
+                    continue
+                try:
+                    comp.text = caption
+                except Exception:  # pragma: no cover - 组件字段不可写时重建
+                    comp = _plain_cls(caption)
+            payload.append(comp)
+        if not payload:
+            # 组件全被剥掉（理论上不会，图片组件不是 Plain）：宁可不发也不发半句。
+            return False
+
+        async def _transport():
+            await self.context.send_message(umo, MessageChain(payload))
+
+        ok = await _gateway.send_media(self, umo, payload, event_id=event_id,
+                                       source=str(source or "photo"), kind=kind,
+                                       transport=_transport)
+        if not ok:
+            return False
+        try:
+            self._last_reply_at[umo] = now_ts()
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message.MessageMixin._send_media_to_umo.stamp", _amo_exc)
+        logger.info("[amo] 图片 -> %s（event=%s）", umo, str(event_id or "-")[:48])
+        return True
     async def _guard_zone_reply(self, text, umo="", system="", snapshot=None, user_text=""):
         """地点黑名单：和当前状态冲突就先重生成，退一步再确定性改写。
 

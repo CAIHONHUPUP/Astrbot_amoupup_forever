@@ -292,7 +292,7 @@ class LLMService:
     async def chat(self, umo, system, prompt, contexts=None, limit=300):
         return clean_reply(await self.chat_raw(umo, system, prompt, contexts), limit)
 
-    async def polish(self, umo, text, tone, state_text="", relation="", name="", persona="", style="", consult=False, public=False, user_text=""):
+    async def polish(self, umo, text, tone, state_text="", relation="", name="", persona="", style="", consult=False, public=False, user_text="", self_texts=None):
         text = (text or "").strip()
         if not text or not self.p.cfg_bool("enable_polish", True):
             return text
@@ -322,8 +322,10 @@ class LLMService:
             "4. 保留原句的情绪强度和态度：原句在生气/烦躁/怼人，就继续带着这个情绪，最多缓和一点；\n"
             "5. 情绪有惯性，前后一致；\n"
             "6. 默认 1-2 句，能一句说清就一句；咨询/步骤最多 3 句，先给结论；\n"
-            "7. 长度接近原句，不扩写。"
-            + ("\n8. 这是咨询/步骤类：用角色口吻简短回答，不要客服腔。" if consult else "")
+            "7. 长度接近原句，不扩写；\n"
+            "8. 收件人锁：第一句称呼只能用「老公」「你」或他的名字，不许用妈/爸/婆婆/阿姨/朋友/同事"
+            "等其他人称开头；家人朋友只能当话题，不许替老公回他们的话，也不许切成用户第一人称视角。"
+            + ("\n9. 这是咨询/步骤类：用角色口吻简短回答，不要客服腔。" if consult else "")
         )
         result = await self.chat(umo, system, prompt, limit=self.p.cfg_int("max_reply_chars", 220))
         if not result:
@@ -348,21 +350,39 @@ class LLMService:
                     from .amo_grounding_critic import issues as _grounding_issues
                 except ImportError:
                     from amo_grounding_critic import issues as _grounding_issues
-                _miss = _grounding_issues(user_text, result)
+                try:
+                    from .amo_persona_guard import issues as _persona_issues
+                except ImportError:
+                    from amo_persona_guard import issues as _persona_issues
+
+                def _issues_of(value):
+                    found = list(_grounding_issues(user_text, value) or [])
+                    try:
+                        found.extend(_persona_issues(user_text, value, self_texts) or [])
+                    except Exception:  # cleanup: 兜底/降级，保持原行为
+                        pass
+                    return found
+
+                _miss = _issues_of(result)
                 if _miss:
                     _retry = await self.chat(
                         umo,
                         "你就是这个角色本人，只输出一句她会说的话。",
-                        "你上一版没有接住他最后一句：%s。\n他最后说：%s\n上一版：%s\n"
-                        "请重写一句：先回答他/接住他，再补自己的，不要答非所问。"
+                        "你上一版有这些问题：%s。\n他最后说：%s\n上一版：%s\n"
+                        "请重写一句：先回答他/接住他，再补自己的；不要否认自己刚说过的话，"
+                        "先接住他的情绪，不要答非所问。"
                         % ("、".join(_miss), str(user_text)[:160], result),
                         limit=self.p.cfg_int("max_reply_chars", 220))
-                    if _retry and not _grounding_issues(user_text, _retry):
+                    if _retry and not _issues_of(_retry):
                         result = _retry
-                    elif _grounding_issues(user_text, result):
+                    elif _issues_of(result):
                         from .amo_grounding_critic import safe_reply as _safe_reply
-                        logger.info("[amo] 接话失败两次，发安全句: %s", str(user_text)[:40])
-                        result = _safe_reply(user_text)
+                        try:
+                            from .amo_persona_guard import safe_reply as _persona_safe
+                        except ImportError:
+                            from amo_persona_guard import safe_reply as _persona_safe
+                        logger.info("[amo] 接话/人设复检失败两次，发安全句: %s", str(user_text)[:40])
+                        result = _persona_safe(user_text, self_texts) or _safe_reply(user_text)
             except Exception as exc:
                 logger.debug("[amo] 接话 critic 失败: %r", exc)
         if len(result) > max(len(text) + 30, int(len(text) * 1.5)):
@@ -470,6 +490,18 @@ class LLMService:
             "身边小事里写的是谁就是谁：写的是同事就写同事，不要换成名单里的名字；"
             "没写名字就用「同事/朋友」，不要自己加名字。"
         )
+        # task-32：收件人锁（主动消息生成层）。11:31 真实 P0 是外部 watch 推送，
+        # 但陪伴自己的主动消息也必须先锁收件人：只有老公，妈/爸/朋友只作话题。
+        try:
+            try:
+                from . import amo_prompt_registry as _prompt_registry
+            except ImportError:
+                import amo_prompt_registry as _prompt_registry
+            _addressee_block = _prompt_registry.render("llm.rule.addressee")
+            if _addressee_block:
+                system = system + "\n" + _addressee_block
+        except Exception as _amo_exc:
+            _note_swallowed("amo_llm_service.gen_proactive.addressee", _amo_exc)
         try:
             from .amo_immersion_guard import prompt_block as _immersion_block
         except ImportError:

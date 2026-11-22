@@ -68,6 +68,10 @@ except ImportError:  # 直接按文件加载时
 #: 同一小时小日记最多允许重写的次数（超过后冻结，保留最后一版）
 DIARY_REWRITE_LIMIT = 10
 
+#: 日程空档：最多沿用上一块多少分钟；超过就按“地点未知”处理，
+#: 不许再拿 14:00 的商场块解释 21:00（2026-11-22 task-17）。
+STALE_CONTINUE_MINUTES = 30
+
 
 # PLACE_WHITELIST / _PLACE_ALIASES / normalize_place 已迁到 amo_place（顶部 import 兼容旧名）。
 
@@ -212,16 +216,44 @@ def _validate_activity(activity, approved=False):
     return _state_module()._validate_activity(activity, approved=approved)
 
 
+def _constrain_activity(self, data):
+    """读侧硬约束：请假/出差期间把非法地点钳到允许场景（唯一规则在 scene_ledger）。"""
+    if not isinstance(data, dict) or not data:
+        return data
+    try:
+        try:
+            from .amo_scene_ledger import constrain_activity as _constrain
+        except ImportError:
+            from amo_scene_ledger import constrain_activity as _constrain
+        return _constrain(self, data)
+    except Exception as exc:
+        _note_swallowed("amo_state_common.constrain_activity", exc)
+        return data
+
+
+def _stale_gap_minutes(item, current):
+    """当前分钟距这一块结束多少分钟（解析失败按 0，不误杀）。"""
+    try:
+        start = parse_hhmm(item.get("start"))
+        end = parse_hhmm(item.get("end"))
+        if end is None:
+            end = start + 60
+        return max(0, int(current) - int(end))
+    except Exception:
+        return 0
+
+
 def _jit_activity(self):
     """到点即时决策的当前活动（JIT 优先），没有就返回 None。"""
     try:
         jit = self.jit_action()
         if jit and float(jit.get("until") or 0) > now_ts():
             place = str(jit.get("place") or "家")
-            return {"activity": jit.get("action"), "place": place,
+            data = {"activity": jit.get("action"), "place": place,
                     "zone": str(jit.get("zone") or zone_for_place(place) or "home"),
                     "category": str(jit.get("category") or "life"),
                     "_source": "jit", "_reason": "到点即时决策"}
+            return _constrain_activity(self, data)
     except Exception as exc:
         _note_swallowed("amo_human_state.current_activity_info.jit", exc)
     return None
@@ -257,14 +289,18 @@ def _pick_covering(self, items, current):
             % (len(hits), chosen.get("start"), chosen.get("end"), chosen.get("zone"),
                "|".join("%s-%s" % (it.get("start"), it.get("end")) for it in hits[:-1]))
         )
-        return dict(chosen), "schedule_conflict"
+        return _constrain_activity(self, dict(chosen)), "schedule_conflict"
     if hits:
-        return dict(hits[0]), "schedule"
+        return _constrain_activity(self, dict(hits[0])), "schedule"
     return None, ""
 
 
 def _pick_stale(self, items, current):
-    """今天有日程但这小时没覆盖：沿用最近开始的一段。"""
+    """今天有日程但这小时没覆盖：最多沿用上一块 STALE_CONTINUE_MINUTES 分钟。
+
+    超过上限返回“地点未知”占位（quality=unknown），不再拿几小时前的块当现在：
+    2026-11-21 21:00 用 14:00 的商场块说“还在试衣服”就是这么来的。
+    """
     if not items:
         return None
     started = []
@@ -279,14 +315,27 @@ def _pick_stale(self, items, current):
     if not started:
         return None
     chosen = max(started, key=lambda it: parse_hhmm(it.get("start")))
+    gap = _stale_gap_minutes(chosen, current)
+    if gap > STALE_CONTINUE_MINUTES:
+        self._photo_info(
+            "[PHOTO_DEBUG] fallback=gap_unknown chosen=%s-%s gap=%d min limit=%d"
+            % (chosen.get("start"), chosen.get("end"), gap, STALE_CONTINUE_MINUTES)
+        )
+        return {
+            "activity": "", "place": "", "zone": "unknown", "category": "rest",
+            "_source": "gap_unknown",
+            "_reason": "距最近日程块结束 %d 分钟，超过 %d 分钟不再沿用"
+                       % (gap, STALE_CONTINUE_MINUTES),
+        }
     data = dict(chosen)
     data["_source"] = "stale_slot"
-    data["_reason"] = "今天日程这小时没有覆盖，沿用最近开始的一段"
+    data["_reason"] = "今天日程这小时没有覆盖，沿用最近开始的一段（gap=%d 分钟）" % gap
+    data["_gap_minutes"] = gap
     self._photo_info(
-        "[PHOTO_DEBUG] fallback=stale_slot chosen=%s-%s zone=%s"
-        % (chosen.get("start"), chosen.get("end"), chosen.get("zone"))
+        "[PHOTO_DEBUG] fallback=stale_slot chosen=%s-%s zone=%s gap=%d"
+        % (chosen.get("start"), chosen.get("end"), chosen.get("zone"), gap)
     )
-    return data
+    return _constrain_activity(self, data)
 
 
 def _pick_yesterday_hour(self, current):
@@ -313,7 +362,7 @@ def _pick_yesterday_hour(self, current):
                     "[PHOTO_DEBUG] fallback=no_schedule_today reused=yesterday_same_hour %s zone=%s"
                     % (yesterday, data.get("zone"))
                 )
-                return data
+                return _constrain_activity(self, data)
         except Exception:
             continue
     return None

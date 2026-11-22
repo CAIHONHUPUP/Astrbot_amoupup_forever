@@ -122,6 +122,10 @@ class DataSyncMixin(_MixinBase):
                 created_at = getattr(memory, "created_at", 0)
             if len(content) < 2:
                 continue
+            try:
+                memory_id = int(row.get("id") or row.get("memory_id") or 0)
+            except (AttributeError, TypeError, ValueError):
+                memory_id = 0
             items.append({
                 "content": content[:500],
                 "tier": 2 if importance >= 0.72 else (1 if importance >= 0.42 else 0),
@@ -129,8 +133,10 @@ class DataSyncMixin(_MixinBase):
                 "kind": kind,
                 "subject": ("bot" if (subject == "bot" or kind.startswith("bot_")) else "user"),
                 "name": name,
+                "id": memory_id,
                 "source": "hub",
                 "created_at": created_at,
+                "id": memory_id,
                 "hits": 0,
                 "expires_at": None,
             })
@@ -677,6 +683,7 @@ class DataSyncMixin(_MixinBase):
                 "source": "amo_data",
                 "memory_type": str(row.get("kind") or ""),
                 "created_at": row.get("created_at", 0),
+                "id": int(row.get("id") or row.get("memory_id") or 0),
                 "platform": str(row.get("platform") or ""),
                 "pid": int(row.get("pid") or 0),
                 "hits": 0,

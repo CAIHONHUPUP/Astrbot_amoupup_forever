@@ -58,6 +58,7 @@ class RuntimeTickMixin(RuntimeMixinBase):
     _last_pending_check: float
     _last_schedule_save: str
     _proactive_last: float
+    _last_wallet_reconcile: float
 
     async def _background_loop(self):
         """后台 tick：注册进 JobManager（首跑 4s、之后 cfg 间隔，默认 30s）。
@@ -198,6 +199,10 @@ class RuntimeTickMixin(RuntimeMixinBase):
         if now_ts() - to_float(getattr(self, "_last_date_wrap", 0), 0) > 60:
             self._last_date_wrap = now_ts()
             self._spawn(self._maybe_date_wrap())
+        if now_ts() - to_float(getattr(self, "_last_wallet_reconcile", 0), 0) > 6 * 3600:
+            # 2026-11-22 P0：账本 vs 账户、无原扣退款要能被发现并留痕（只读对账，不自动改库）。
+            self._last_wallet_reconcile = now_ts()
+            self._wallet_reconcile_check()
         if now_ts() - to_float(getattr(self, "_last_milestone_check", 0), 0) > 300:
             self._last_milestone_check = now_ts()
             self._spawn(self._maybe_milestone_archive())
@@ -225,6 +230,30 @@ class RuntimeTickMixin(RuntimeMixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime._tick.shared_activity", _amo_exc)
         return True
+
+    def _wallet_reconcile_check(self):
+        """只读对账：sum(ledger)==account、无原扣退款/重复退款；结果写 kv 可审计。"""
+        wallet = getattr(self, "wallet", None)
+        reconcile = getattr(wallet, "reconcile", None)
+        if not callable(reconcile):
+            return {}
+        try:
+            report = dict(reconcile() or {})
+        except Exception as exc:
+            _note_swallowed("amo_runtime.wallet_reconcile", exc)
+            return {}
+        anomalies = list(report.get("anomalies") or [])
+        try:
+            self.db.kv_set("wallet_reconcile_status", {
+                "ok": bool(report.get("ok")), "count": len(anomalies),
+                "anomalies": anomalies[:5], "at": now_ts(),
+            })
+        except Exception as exc:
+            _note_swallowed("amo_runtime.wallet_reconcile.kv", exc)
+        if anomalies:
+            logger.warning("[amo] 钱包对账异常 %d 项（明细 kv=wallet_reconcile_status）",
+                           len(anomalies))
+        return report
 
     async def _diary_audit_tick(self):
         """每日日记质检：审一天、写报告；HARD 已标 stale，交给小日记调度重写。"""

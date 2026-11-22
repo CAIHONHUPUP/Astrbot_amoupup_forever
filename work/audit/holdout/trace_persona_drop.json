@@ -1,0 +1,56 @@
+[
+ {
+  "text": "在写代码呀。",
+  "after_persona": "",
+  "persona_reason": "system_phrase",
+  "decide": null
+ },
+ {
+  "text": "写代码呢，你呢？",
+  "after_persona": "",
+  "persona_reason": "system_phrase",
+  "decide": null
+ },
+ {
+  "text": "我在景区爬山。",
+  "after_persona": "我在景区爬山。",
+  "persona_reason": "",
+  "decide": [
+   "send",
+   ""
+  ]
+ },
+ {
+  "text": "没干嘛，写代码。",
+  "after_persona": "",
+  "persona_reason": "system_phrase",
+  "decide": null
+ },
+ {
+  "text": "我在写方案。",
+  "after_persona": "我在写方案。",
+  "persona_reason": "",
+  "decide": [
+   "send",
+   ""
+  ]
+ },
+ {
+  "text": "在改方案呢。",
+  "after_persona": "在改方案呢。",
+  "persona_reason": "",
+  "decide": [
+   "send",
+   ""
+  ]
+ },
+ {
+  "text": "在工位上班。",
+  "after_persona": "在工位上班。",
+  "persona_reason": "",
+  "decide": [
+   "send",
+   ""
+  ]
+ }
+]

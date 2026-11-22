@@ -62,15 +62,22 @@ class ProactiveFactsTests(unittest.TestCase):
         self.assertFalse(night_now(dt.datetime(2026, 11, 15, 7, 0)))
         self.assertFalse(night_now(dt.datetime(2026, 11, 15, 12, 0)))
 
-    def test_share_drive_decays_when_ignored(self):
+    def test_share_drive_does_not_rise_with_silence(self):
+        # 2026-11-22 收口：沉默时长不再给分享欲加分（旧实现越久没聊越催）。
         from amo_proactive import share_drive
-        self.assertGreater(share_drive(8), share_drive(1))
+        self.assertEqual(share_drive(8), share_drive(1))
+        self.assertEqual(share_drive(8), share_drive(0))
         self.assertLess(share_drive(8, sent_today=5), share_drive(8))
         self.assertEqual(share_drive(0, sent_today=9, ignored_today=9), 0)
 
+    def test_missing_score_does_not_rise_with_silence(self):
+        from amo_proactive import missing_score
+        self.assertEqual(missing_score(0), missing_score(10))
+
     def test_forced_red_lines(self):
         from amo_proactive import forced_reason
-        self.assertIn("一整天", forced_reason({}, None, 8.5))
+        # 「一整天没交流」已删：沉默是禁发信号，不是必须主动的红线。
+        self.assertEqual(forced_reason({}, None, 8.5), "")
         self.assertIn("开心到极点", forced_reason({"mood": {"开心": 95}}, None, 1))
         self.assertIn("5%", forced_reason({}, 0.04, 1))
         self.assertEqual(forced_reason({}, 0.5, 2), "")

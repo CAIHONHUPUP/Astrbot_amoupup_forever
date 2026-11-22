@@ -133,8 +133,20 @@ def finish_date_now(plugin, now=None, reason="user_done"):
                                              source="date", reason="约会结束截断")
     except Exception:
         pass  # cleanup：日程截断失败不阻断收尾状态
-    home_line = ("今天的约会已经结束，你们各自回到日常；现在你在家，"
-                 "他不在你身边，只能手机聊天。")
+    # task-30：收尾事实的地点从场景账本取，不能硬说「现在你在家」——约会结束她可能
+    # 直接回公司/医院，旧文案会在 21:00 写一句和日程冲突的「你在家」。
+    _after_place = ""
+    try:
+        try:
+            from .amo_scene_ledger import scene_at as _scene_at
+        except ImportError:
+            from amo_scene_ledger import scene_at as _scene_at
+        _after_place = str((_scene_at(plugin, now) or {}).get("place") or "")
+    except Exception as exc:  # cleanup：账本读不到就用中性说法
+        logger.debug("[amo] 约会收尾场景读取失败: %r", exc)
+        _after_place = ""
+    home_line = ("今天的约会已经结束，你们各自回到日常；%s他不在你身边，"
+                 "只能手机聊天。" % (("现在你在" + _after_place + "，") if _after_place else ""))
     try:
         plugin.set_date_fact(home_line, now.timestamp() + 6 * 3600)
     except Exception:

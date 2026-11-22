@@ -146,6 +146,12 @@ except ImportError:  # 直接按文件加载时
 #: 兼容：老名字叫 resolve_plan（draw_engine 里的调用点仍按这个名字）
 resolve_plan = build_plan
 
+try:  # 单一媒体出口/账本（2026-11-22 task-23）：send_photo 工具链路也必须记账/占 cap
+    from . import amo_media as _media
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_media as _media
+
 # 生图可能卡死；最多等 3 分钟就放弃这一次
 GENERATE_TIMEOUT_SECONDS = 180
 # data_url 是 base64，超过这个长度就不进 kv（否则数据库会被撑大）
@@ -1107,9 +1113,9 @@ class DrawEngine:
             if umo:
                 store[umo] = now
             logger.warning("[DRAW] failure_notice=1 reason=%s", str(reason or "")[:80])
-            await self._send_text(
-                event, "这次没拍成，等会儿再给你拍；不是不理你。"
-            )
+            # 2026-11-22 task-23：失败话术统一出口（技术词一律不出现；"没拍成"固定句
+            # 与旧行为逐字一致，测试/用户都认这句）。
+            await self._send_text(event, _media.failure_line(fixed=True))
         except Exception as _amo_exc:
             _note_swallowed("draw_engine.DrawEngine._notify_failure", _amo_exc)
 
@@ -1125,7 +1131,27 @@ class DrawEngine:
         except Exception as exc:
             logger.warning("[amo] 缺画图插件提示发不出去（拿不到 Plain）: %s" % exc)
             return False
+        # 2026-11-22 task-16：补话也走统一出口（source=photo），不再直发 event.send。
+        plugin = getattr(self, "plugin", None)
+        sender = getattr(plugin, "_send_to_umo", None)
+        if callable(sender):
+            try:
+                return bool(await sender(str(getattr(event, "unified_msg_origin", "") or ""),
+                                         str(text), source="photo", kind="draw_text"))
+            except Exception as exc:
+                logger.warning("[amo] 缺画图插件提示发送失败: %s" % exc)
+                return False
         try:
+            try:
+                try:
+                    from .amo_message import strip_media_markers as _strip_media
+                except ImportError:
+                    from amo_message import strip_media_markers as _strip_media
+                text = _strip_media(text)
+            except Exception:  # cleanup: 兜底/降级，保持原行为
+                pass
+            if not str(text or "").strip():
+                return False
             await event.send(MessageChain([Plain(text)]))
             return True
         except Exception as exc:
@@ -1177,9 +1203,9 @@ class DrawEngine:
     def send_photo_now(self, event, description, kind="web", force=False, caption=""):
         """大模型主动决定发图：web=网图/截图分享，real=她自己的实拍。"""
         if not self.enabled:
-            return "画图功能未开启（draw_enable=false）"
+            return "这会儿不方便拍，等会儿再说"
         if not self.is_owner(event):
-            return "权限不足：这个功能只对老公开放"
+            return "这个只拍给你一个人看"
         text = str(description or "").strip() or "随手拍"
 
         try:
@@ -1197,13 +1223,20 @@ class DrawEngine:
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         self._attempt_turn = _photo_turn_key(event)
         if umo and umo in self._inflight:
-            return "上一张还在生成，还没出来"
+            return "上一张还在拍，等它出来"
         uid = str(self.plugin._canonical_uid(event) or "")
         if not force and self._check_limits(uid):
-            return "这次不发图：触发了发图限制（今天/本轮已经发过）"
+            return "今天拍得够多啦，先歇会儿"
         if str(kind or "web").lower() == "real":
             activity = self._activity()
             scene = scene_for(activity) if callable(scene_for) else ""
+            try:
+                # 2026-11-22 task-23：工具链路也生成一份计划——账本要 scene/pose，
+                # 发送前要用同一份计划做单 zone 断言（和自动分享同口径）。
+                photo_plan = build_plan(activity, mode="photo", scene=str(scene or ""))
+            except Exception as _amo_exc:
+                _note_swallowed("draw_engine.send_photo_now.plan", _amo_exc)
+                photo_plan = None
             outfit = ""
             try:
                 getter = getattr(getattr(self.plugin, "photo", None), "outfit_today", None)
@@ -1223,7 +1256,7 @@ class DrawEngine:
             if _couple:
                 if not self._can_couple_photo():
                     # 只给事实，不替模型写死台词；由她自己按此刻上下文开口
-                    return "合拍失败：%s，他此刻不在她身边，不能生成两人同框的照片。" % self._couple_block_reason()
+                    return "这会儿拍不了合照：%s，他不在你身边，没法同框。" % self._couple_block_reason()
                 engine = getattr(self.plugin, "photo", None)
                 if engine is not None:
                     pose = None
@@ -1269,6 +1302,7 @@ class DrawEngine:
                     prompt += "\n（参考图：三视图是长相；服装平铺图只参考裙摆/裤子和颜色，鞋子按今天的鞋脱在脚边；脚上不穿鞋袜；正常手机距离，不是微距特写。）"
             else:
                 _pose_refs = None
+                _pose = None
                 try:
                     try:
                         from .pose_library import match_pose
@@ -1276,9 +1310,20 @@ class DrawEngine:
                         from pose_library import match_pose
                     _library = getattr(self.plugin, "pose", None)
                     _pose = match_pose(_library, text)
+                    _zone = str(getattr(photo_plan, "zone", "") or "")
+                    if _pose and _zone:
+                        try:
+                            try:
+                                from .pose_library import pose_fits_zone as _fits
+                            except ImportError:
+                                from pose_library import pose_fits_zone as _fits
+                            if not _fits(_pose, _zone):
+                                logger.info("[DRAW] 点名的姿势不适合当前场景 %s，本次不用", _zone)
+                                _pose = None
+                        except Exception:  # cleanup: 兜底/降级，保持原行为
+                            pass
                     if _pose:
-                        detail = (detail + "。姿势：%s（%s）" % (
-                            _pose.get("name") or "", _pose.get("note") or "")).strip("。")
+                        detail = (detail + "。" + pose_line(_pose)).strip("。")
                         try:
                             try:
                                 from .pose_library import camera_mode
@@ -1297,9 +1342,25 @@ class DrawEngine:
                 prompt = build_selfie_prompt(scene, outfit, activity,
                                              getattr(self.plugin, "state", None),
                                              extra=detail) + "。" + REALISM_POSITIVE
+            # 发送前单 zone 断言：工具链路和他明确点单的图也要和当前日程对齐
+            # （不通过就清洗；仍不通过只记日志，用户明确要图不静默丢弃）。
+            try:
+                try:
+                    from .photo_prompt import enforce_photo_media_prompt as _enforce_prompt
+                except ImportError:
+                    from photo_prompt import enforce_photo_media_prompt as _enforce_prompt
+                prompt, _prompt_ok, _prompt_reasons = _enforce_prompt(
+                    prompt, plan=photo_plan,
+                    pose=None if wants_foot_closeup(text) else _pose,
+                    activity=activity)
+                if not _prompt_ok:
+                    logger.warning("[DRAW] prompt 单场景断言不通过：%s",
+                                   "；".join(_prompt_reasons) or "-")
+            except Exception as _amo_exc:
+                _note_swallowed("draw_engine.send_photo_now.prompt_verify", _amo_exc)
             self._schedule(event, prompt, "tool", selfie=True,
                            refs=_refs if wants_foot_closeup(text) else _pose_refs,
-                           caption=caption)
+                           caption=caption, photo_plan=photo_plan)
             try:
                 self._last_tool_photo_at = time.monotonic()
             except Exception:  # cleanup: 时间戳失败不影响发图
@@ -1348,7 +1409,8 @@ class DrawEngine:
             logger.warning("[DRAW] 补拍失败: %s", exc)
             return body
         _blocked = ("画图功能未开启", "画图没开", "权限不足", "拍不了", "上一张还在生成",
-                    "这次不发图", "合拍失败", "没找到")
+                    "上一张还在拍", "这次不发图", "合拍失败", "这会儿拍不了",
+                    "今天拍得够多", "这个只拍给", "没找到")
         if result and not any(word in str(result) for word in _blocked):
             logger.info("[DRAW] 他说要重拍但她只想演，已真试一次（不保证出图）")
             return "我试试，等我一下。"
@@ -1378,22 +1440,22 @@ class DrawEngine:
     def manual(self, event, text):
         """``/amo draw 描述``：跳过触发词，直接画（给测试用）。"""
         if not self.enabled:
-            return "画图功能未开启（draw_enable=false）。"
+            return "这会儿不方便拍，等会儿再说。"
         if not self.is_owner(event):
-            return "权限不足：这个功能只对老公开放。"
+            return "这个只拍给你一个人看。"
         text = str(text or "").strip()
         if not text:
             return self.diagnostics()
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         if umo and umo in self._inflight:
-            return "上一张还在生成，还没出来。"
+            return "上一张还在拍，等它出来。"
         selfie = looks_like_her(text)
         prefix = self._cfg_str("photo_prompt_prefix", "自然生活照，手机随手拍，")
         body = text if ("自拍" in text or not selfie) else "自拍，" + text
         view = view_suffix(selfie) if selfie else (SCENERY_ONLY + "，" + view_suffix(False))
         prompt = (prefix + body + "，" + view).strip("，")
         self._schedule(event, prompt, "manual", selfie=selfie)
-        tail = "（dry-run，只记提示词）" if self.dry_run else ""
+        tail = "（这次只记提示词）" if self.dry_run else ""
         return "🎨 开始画：%s%s（画好会单独发一张）" % (text, tail)
 
     # ---------- 任务 ----------
@@ -1425,7 +1487,7 @@ class DrawEngine:
             if not self.enabled:
                 return
             if cached:
-                if await self._send_image(event, cached, caption=caption):
+                if await self._send_image(event, cached, caption=caption, plan=photo_plan):
                     self._stats["cached"] += 1
                 return
             if self.dry_run:
@@ -1460,7 +1522,7 @@ class DrawEngine:
                 except Exception as _amo_exc:
                     _note_swallowed("draw_engine.DrawEngine._run", _amo_exc)
             self._cache_put(cache_key, image)
-            if await self._send_image(event, image, caption=caption):
+            if await self._send_image(event, image, caption=caption, plan=photo_plan):
                 self._record(uid)
                 self._stats["sent"] += 1
             else:
@@ -1561,7 +1623,14 @@ class DrawEngine:
     def _image_component(item):
         return image_component(item)
 
-    async def _send_image(self, event, item, caption=""):
+    async def _send_image(self, event, item, caption="", plan=None):
+        """画图结果发送：唯一入口 amo_media.send_photo（MediaGateway）。
+
+        2026-11-22 task-23：send_photo 工具链路以前直接 event.send，不记账、不占
+        每日配额、不 claim 事件、不写 memory，于是「发过照片」在聊天/记忆里查不到、
+        同一天可远超 cap。现在和自动分享走同一条账本/出口：source=tool，
+        用户明确要图不因 cap 拦截（计数但不在 CAP_ENFORCED_SOURCES 里）。
+        """
         component = self._image_component(item)
         if component is None:
             logger.warning("[amo] 画图结果没有可发送的图片字段: %s" % list(item.keys()))
@@ -1569,24 +1638,73 @@ class DrawEngine:
         if MessageChain is None:
             logger.warning("[amo] 画图发送失败：拿不到 MessageChain")
             return False
+        # task-26：照片说明也过技术词黑名单；命中就只发图，不把半句后台话带出去。
         if caption:
             try:
-                from astrbot.api.message_components import Plain
-            except Exception:
                 try:
-                    from astrbot.api.event.components import Plain
-                except Exception:  # cleanup: 拿不到 Plain 就只发图，不阻断发送
-                    Plain = None
-            if Plain is not None:
-                try:
-                    await event.send(MessageChain([Plain(text=str(caption))]))
-                except Exception as exc:
-                    logger.warning("[amo] 照片说明发送失败: %s" % exc)
+                    from .amo_shared import sanitize_caption as _sanitize_caption
+                except ImportError:
+                    from amo_shared import sanitize_caption as _sanitize_caption
+                caption = _sanitize_caption(caption)
+            except Exception:  # cleanup: 兜底/降级，保持原行为
+                pass
+        plugin = getattr(self, "plugin", None)
+        umo = str(getattr(event, "unified_msg_origin", "") or "")
+        activity = self._activity() if callable(getattr(self, "_activity", None)) else {}
+        scene = {
+            "event_id": str((activity or {}).get("event_id") or ""),
+            "zone": str(getattr(plan, "zone", "") or (activity or {}).get("zone") or ""),
+            "place": str(getattr(plan, "where", "") or (activity or {}).get("place") or ""),
+        }
+        pose = getattr(plan, "pose", None) if plan is not None else None
+        outfit = ""
         try:
-            await event.send(MessageChain([component]))
+            getter = getattr(getattr(plugin, "photo", None), "outfit_today", None)
+            outfit = str(getter() or "") if callable(getter) else ""
+        except Exception as _amo_exc:
+            _note_swallowed("draw_engine._send_image.outfit", _amo_exc)
+
+        async def _transport():
+            """宿主没有 _send_media_to_umo（单测/旧宿主）时的直接发送。"""
+            parts = []
+            if caption:
+                try:
+                    from astrbot.api.message_components import Plain
+                except Exception:
+                    try:
+                        from astrbot.api.event.components import Plain
+                    except Exception:  # cleanup: 拿不到 Plain 就只发图
+                        Plain = None
+                if Plain is not None:
+                    parts.append(Plain(text=str(caption)))
+            parts.append(component)
+            await event.send(MessageChain(parts))
+
+        try:
+            result = await _media.send_photo(
+                plugin, umo, item,
+                caption=caption,
+                origin="tool",
+                kind="draw",
+                event_id=_photo_turn_key(event),
+                scene=scene,
+                pose=pose,
+                outfit=outfit,
+                claim_event=True,
+                dedupe=False,
+                enforce_cap=False,
+                count=True,
+                transport=_transport,
+            )
         except Exception as exc:
             self._last_error = str(exc)
             logger.warning("[amo] 画图发送失败: %s" % exc)
+            return False
+        if not result.get("ok"):
+            reason = str(result.get("reason") or "")
+            self._last_error = reason or "send_failed"
+            if reason not in ("dup_event", "send_blocked"):
+                logger.warning("[amo] 画图未发出：%s", reason)
             return False
         return True
 

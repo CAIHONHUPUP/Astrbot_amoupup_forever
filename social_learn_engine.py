@@ -441,7 +441,13 @@ class SocialLearnEngine:
             return {"ok": False, "reason": "no_items", "error": self.last_error}
         state_line = ""
         try:
-            state_line = self.p.state.snapshot()["activity"].get("activity", "")
+            # task-30：观点分享的「此刻」只读场景账本，不拿 state.snapshot 的旧 activity
+            try:
+                from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+            except ImportError:
+                from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+            _snap = _snap_with_scene(self.p)
+            state_line = str((_snap.get("activity") or {}).get("activity") or "")
         except Exception:
             state_line = ""
         system, prompt = build_opinion_prompt(items[:MAX_ITEMS], state_line)

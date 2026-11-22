@@ -41,11 +41,62 @@ def _now(now=None):
     return now or _amo_clock.now()
 
 
+def _scene_meta(plugin, now=None):
+    """当前场景（唯一来源 scene_ledger）；读不到返回 {}，调用方不误杀。"""
+    try:
+        try:
+            from .amo_scene_ledger import scene_at as _scene_at
+        except ImportError:
+            from amo_scene_ledger import scene_at as _scene_at
+        return dict(_scene_at(plugin, now) or {})
+    except Exception:
+        return {}
+
+
+def _scene_stale(plugin, data, now=None):
+    """消费方校验 scene_id：记录属于「另一个场景实例」时返回 True（task-30）。
+
+    只比值、不猜：记录没有 scene_id（老库）或当前账本给不出版本 → 不算过期。
+    """
+    data = data if isinstance(data, dict) else {}
+    saved = str(data.get("scene_id") or "")
+    if not saved:
+        return False
+    scene = _scene_meta(plugin, now)
+    current = str(scene.get("event_id") or "")
+    if current:
+        return current != saved
+    saved_zone = str(data.get("scene_zone") or "")
+    current_zone = str(scene.get("zone") or "")
+    if saved_zone and current_zone and current_zone != "unknown":
+        return current_zone != saved_zone
+    return False
+
+
+def _home_claim_conflict(plugin, data, now=None):
+    """约会收尾锁断言「刚回到家/瘫在床上」，但账本明确她此刻在外面 → True（task-30）。"""
+    data = data if isinstance(data, dict) else {}
+    if not str(data.get("scene_id") or ""):
+        return False  # 老记录没有场景版本：保持原样，不误杀
+    scene = _scene_meta(plugin, now)
+    quality = str(scene.get("quality") or "")
+    zone = str(scene.get("zone") or "")
+    if (quality in ("covering", "transition", "jit")
+            and zone not in ("", "unknown", "home", "hospital")):
+        return True
+    return False
+
+
 def record(plugin, activity, ended_ts=0, hours=6, now=None):
     base = float(ended_ts or _now(now).timestamp())
     data = {"activity": str(activity or "约会"), "ended_ts": base,
             "until_ts": base + float(hours or 6) * 3600,
             "day": _dt.datetime.fromtimestamp(base).strftime("%Y-%m-%d")}
+    # task-30：约会事实也带场景版本，消费方（prompt_line）才能发现地址已换。
+    scene = _scene_meta(plugin, now)
+    if scene:
+        data["scene_id"] = str(scene.get("event_id") or "")
+        data["scene_zone"] = str(scene.get("zone") or "")
     try:
         plugin.db.kv_set(KV_LOCK, data)
     except Exception as exc:
@@ -98,12 +149,17 @@ def prompt_line(plugin, now=None):
     lock = active(plugin, now)
     if lock:
         activity = str(lock.get("activity") or "约会")
-        line = ("【绝对事实】你刚刚（就在几十分钟前）才和老公一起%s，他刚把你送回家/你们刚分开。"
+        # task-30：账本明确她此刻还在外面时，连「他刚把你送回家」也不能说，只保留「刚分开」。
+        _away = _home_claim_conflict(plugin, lock, now)
+        line = ("【绝对事实】你刚刚（就在几十分钟前）才和老公一起%s，%s。"
                 "今天你们一直在一起，度过了非常开心的一天。不要问“你去哪里了”“你怎么不在”，"
-                "也不要表现得像今天没见过他。" % activity)
+                "也不要表现得像今天没见过他。"
+                % (activity, "你们刚分开" if _away else "他刚把你送回家/你们刚分开"))
         try:
             ended = _dt.datetime.fromtimestamp(float(lock.get("ended_ts") or 0))
-            if ended.hour >= 18:
+            # task-30：账本明确她此刻还在外面（公司/路上/商场）时，不能注入
+            # 「刚回到家、换上睡衣瘫在床上」这种和当前地点冲突的收尾事实。
+            if ended.hour >= 18 and not _away:
                 line += ("你刚回到家，洗了澡、卸了妆、换上舒服的睡衣，正瘫在床上准备休息。"
                          "如果他晚上找你，语气带一点居家慵懒。")
         except Exception as exc:
@@ -120,12 +176,14 @@ def prompt_line(plugin, now=None):
                              "早上打招呼可以顺口提一句。" % str((data or {}).get("activity") or "约会"))
         except Exception as exc:
             logger.debug("[amo] optional step failed: %r", exc)
+    # task-30：出门准备/小插曲只在「还是同一个场景实例」时注入；日程早切走的话，
+    # 「正在化妆马上出门」就是上个小时的旧事实。
     pre = prep(plugin, now)
-    if pre:
+    if pre and not _scene_stale(plugin, pre, now):
         parts.append("【出门准备】你正在化妆/挑衣服，马上要出门和老公%s；他催你就说"
                      "“别催啦，我在涂口红呢/等我换双鞋”。" % str(pre.get("activity") or "约会"))
     inc = incident(plugin, now)
-    if inc:
+    if inc and not _scene_stale(plugin, inc, now):
         parts.append("【约会小插曲】" + str(inc.get("text")))
     return "\n".join(parts)
 

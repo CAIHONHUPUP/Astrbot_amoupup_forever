@@ -1,0 +1,19 @@
+{
+  "available": false,
+  "env_keys_present": [],
+  "local_endpoints": [
+    {
+      "port": 11434,
+      "name": "ollama",
+      "responds": true,
+      "status": 200
+    }
+  ],
+  "ollama_models": [
+    "bge-m3:latest"
+  ],
+  "chat_models": [],
+  "summary": "未发现隔离可用的聊天 provider：ollama 在监听，但只有 bge-m3:latest（非聊天模型）；无相关环境变量密钥",
+  "detail": "本轮未读取生产 AstrBot 配置与密钥；ollama 仅 embedding 模型，不能跑分享对话。因此真实模型语义未覆盖。",
+  "note": "不联网外网、不读生产配置文件；仅 localhost 探测。"
+}

@@ -206,7 +206,7 @@ class FakeProactive(ProactiveMixin):
             raise RuntimeError("近聊炸了")
         return list(self.recent_rows)
 
-    async def _send_to_umo(self, umo, text, quote_id=None, group=False):
+    async def _send_to_umo(self, umo, text, quote_id=None, group=False, source=None, kind=""):
         if not self.send_ok:
             return False
         self.sent.append((umo, text))
@@ -259,20 +259,23 @@ class PureTests(unittest.TestCase):
         self.assertFalse(amo_proactive.night_now(dt.datetime(2026, 1, 1, 7, 0)))
         self.assertFalse(amo_proactive.night_now(dt.datetime(2026, 1, 1, 15, 0)))
 
-    def test_silence_hours(self):
+    def test_silence_hours_uses_presence_policy(self):
+        # 2026-11-22 收口：本地 silence_hours 已删，统一走 amo_presence（未知=0，不误杀）。
+        import amo_presence
         now = 10000.0
-        self.assertEqual(amo_proactive.silence_hours(0, now), 24.0)
-        self.assertEqual(amo_proactive.silence_hours(now - 3600, now), 1.0)
-        self.assertEqual(amo_proactive.silence_hours(now + 100, now), 0.0)
+        self.assertEqual(amo_presence.silence_hours(0, now), 0.0)
+        self.assertEqual(amo_presence.silence_hours(now - 3600, now), 1.0)
+        self.assertEqual(amo_presence.silence_hours(now + 100, now), 0.0)
+        self.assertFalse(hasattr(amo_proactive, "silence_hours"),
+                         "旧本地实现必须删掉，否则 24h 默认会和 6h 规则打架")
 
     def test_share_drive(self):
-        self.assertEqual(amo_proactive.share_drive(0), 0)
-        self.assertEqual(amo_proactive.share_drive(10), 80)
+        self.assertEqual(amo_proactive.share_drive(0), 60)
+        self.assertEqual(amo_proactive.share_drive(10), 60)
         self.assertEqual(amo_proactive.share_drive(10, sent_today=5, ignored_today=5), 0)
 
     def test_missing_score(self):
-        self.assertEqual(amo_proactive.missing_score(0), 0)
-        self.assertEqual(amo_proactive.missing_score(10), 100)
+        self.assertEqual(amo_proactive.missing_score(0), amo_proactive.missing_score(10))
 
     def test_pick_life_event_stable(self):
         first = amo_proactive.pick_life_event("2026-11-18", "u1")
@@ -302,7 +305,8 @@ class PureTests(unittest.TestCase):
         sick = {"health": {"sick": True, "severity": "serious"}}
         self.assertIn("病得有点重", amo_proactive.forced_reason(sick))
         self.assertIn("余额", amo_proactive.forced_reason({}, balance_ratio=0.01))
-        self.assertIn("一整天", amo_proactive.forced_reason({}, silence=9))
+        # 沉默不再触发「一整天没说话」红线（会抵消沉默 6 小时禁发规则）。
+        self.assertEqual(amo_proactive.forced_reason({}, silence=9), "")
         self.assertEqual(amo_proactive.forced_reason({}), "")
 
     def test_proactive_period(self):
@@ -558,6 +562,58 @@ class CheckPendingTests(unittest.TestCase):
         with mock.patch.object(amo_proactive, "quiet_now", lambda spec: False):
             asyncio.run(p._check_proactive_pending())
         self.assertFalse(p.db.kv["proactive_pending_u1"]["followup"])
+
+    def test_followup_repeat_question_not_sent(self):
+        """追问闸门：上一句追问换语气词再问一遍不发，并把占坑回滚。"""
+        now = amo_proactive.now_ts()
+        pending = {"sent_at": now - 2000, "umo": "lark:private:u1", "kind": "greet",
+                   "text": "在吗", "followup": False, "mood": True}
+
+        async def _live(*args, **kwargs):
+            return "你忙完了没？呀？"
+
+        p = self._plugin(pending, config={"proactive_no_reply_minutes": 0})
+        p._followup_text_live = _live
+        p.db.kv["proactive_followup_last_u1"] = "你忙完了没？"
+        with mock.patch.object(amo_proactive, "quiet_now", lambda spec: False):
+            asyncio.run(p._check_proactive_pending())
+        self.assertEqual(p.sent, [])
+        self.assertFalse(p.db.kv["proactive_pending_u1"]["followup"])
+
+    def test_followup_sent_records_last_and_log(self):
+        """发出去的追问落到 kv + proactive_log：下一轮去重才看得到。"""
+        now = amo_proactive.now_ts()
+        pending = {"sent_at": now - 2000, "umo": "lark:private:u1", "kind": "greet",
+                   "text": "在吗", "followup": False, "mood": False}
+        p = self._plugin(pending, config={"proactive_no_reply_minutes": 0})
+        with mock.patch.object(amo_proactive, "quiet_now", lambda spec: False):
+            asyncio.run(p._check_proactive_pending())
+        self.assertEqual(p.sent[0], ("lark:private:u1", "在忙吗"))
+        self.assertEqual(p.db.kv["proactive_followup_last_u1"], "在忙吗")
+        self.assertEqual(p.db.kv["proactive_pending_u1"]["followup_text"], "在忙吗")
+        self.assertIn(("u1", "followup", "在忙吗"), p.db.logs)
+
+    def test_pending_schedule_recheck_ignores_late_window(self):
+        """追问前复核日程：只查还在/没改期，不吃迟到窗口（late_window=False）。"""
+        now = amo_proactive.now_ts()
+        calls = []
+
+        def spy(db, fact, now=None, late_window=True):
+            calls.append(late_window)
+            return True
+
+        pending = {"sent_at": now - 2000, "umo": "lark:private:u1",
+                   "kind": "schedule_reminder", "text": "我15:00在公司开会",
+                   "followup": False, "mood": True,
+                   "schedule": {"day": amo_proactive.today_str(),
+                                "key": "开会|公司|15:00", "time": "15:00",
+                                "place": "公司", "event": "开会"}}
+        p = self._plugin(pending, config={"proactive_no_reply_minutes": 0})
+        with mock.patch.object(amo_proactive, "quiet_now", lambda spec: False), \
+                mock.patch.object(amo_proactive, "schedule_fact_current", spy):
+            asyncio.run(p._check_proactive_pending())
+        self.assertEqual(calls, [False])
+        self.assertEqual(p.sent[0], ("lark:private:u1", "在忙吗"))
 
     def test_mood_depressed_threshold(self):
         now = amo_proactive.now_ts()

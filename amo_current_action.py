@@ -138,15 +138,51 @@ def set_action(plugin, action, until_ts=0, place="家", zone="", category="life"
     value = str(action or "").strip()
     place = str(place or "家").strip() or "家"
     zone = str(zone or "").strip() or _zone_of(place)
+    category = str(category or "life") or "life"
+    scene = {}
+    # task-30：current_action 是「此刻」的第二事实源，写之前必须过场景账本写入唯一入口
+    # （请假/事假只能家或医院、出差限定 zone）。账本钳制后的场景写回记录，
+    # 旧写入者（微型事件/守护插件/共享活动）不用各自再猜。
+    try:
+        try:
+            from .amo_scene_ledger import constraints as _scene_constraints
+            from .amo_scene_ledger import write as _scene_write
+        except ImportError:
+            from amo_scene_ledger import constraints as _scene_constraints
+            from amo_scene_ledger import write as _scene_write
+        written = _scene_write(
+            plugin,
+            {"activity": value, "place": place, "zone": zone, "category": category},
+            source="current_action", reason=str(source or "manual"))
+        record = written.get("record") if isinstance(written, dict) else {}
+        if isinstance(record, dict) and record:
+            scene = dict(record)
+            if not written.get("ok"):
+                # 硬约束下这条动作不可能发生（例如在请假日的公司/商场）：给兜底场景，
+                # 绝不把违反约束的地点写进 current_action。
+                kind = str((_scene_constraints(plugin) or {}).get("kind") or "")
+                if kind in ("sick_leave", "leave"):
+                    value, place, zone, category = "请假在家休息", "家", "home", "rest"
+                else:
+                    value, place, zone, category = "在酒店休息", "酒店", "hotel", "rest"
+            else:
+                place = str(record.get("place") or place)
+                zone = str(record.get("zone") or zone)
+                category = str(record.get("category") or category)
+    except Exception:
+        scene = {}
     data = {
         "action": value,
         "place": place,
         "zone": zone,
-        "category": str(category or "life") or "life",
+        "category": category,
         "at": _now().timestamp(),
         "until": float(until_ts or 0),
         "source": str(source or "manual"),
     }
+    if scene:
+        data["scene_id"] = str(scene.get("event_id") or "")
+        data["quality"] = str(scene.get("quality") or "")
     try:
         try:
             from .amo_state_store import for_plugin as _state_store_for

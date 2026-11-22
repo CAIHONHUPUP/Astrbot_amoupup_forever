@@ -1,0 +1,8 @@
+share 20261121 groups 50/50 final 100.0 raw 54.0 fixed 230 damaged 0 persistent 0 raw_problems {"miss_last_line": 156, "place_out_says_home": 101, "opener_repeat": 39, "object_swap": 30, "place_home_says_road": 27, "asks_user_to_look": 19} final_problems {} by_scene {"mall": [114, 114], "road": [100, 100], "home": [117, 117], "noodle": [80, 80], "office": [89, 89]}
+  raw_pass_windows: seed_base=20261121 inject=True critic=True elapsed=0.37
+share 20261201 groups 50/50 final 100.0 raw 55.2 fixed 224 damaged 0 persistent 0 raw_problems {"miss_last_line": 150, "place_out_says_home": 98, "place_home_says_road": 38, "opener_repeat": 31, "object_swap": 21, "asks_user_to_look": 14} final_problems {} by_scene {"home": [108, 108], "noodle": [97, 97], "office": [97, 97], "road": [111, 111], "mall": [87, 87]}
+  raw_pass_windows: seed_base=20261201 inject=True critic=True elapsed=0.37
+share 20261202 groups 50/50 final 100.0 raw 58.0 fixed 210 damaged 0 persistent 0 raw_problems {"miss_last_line": 134, "place_out_says_home": 101, "opener_repeat": 29, "place_home_says_road": 27, "object_swap": 23, "asks_user_to_look": 14} final_problems {} by_scene {"office": [83, 83], "mall": [94, 94], "home": [114, 114], "road": [114, 114], "noodle": [95, 95]}
+  raw_pass_windows: seed_base=20261202 inject=True critic=True elapsed=0.39
+share 20261203 groups 50/50 final 100.0 raw 56.2 fixed 219 damaged 0 persistent 0 raw_problems {"miss_last_line": 124, "place_out_says_home": 93, "opener_repeat": 39, "asks_user_to_look": 28, "place_home_says_road": 26, "object_swap": 23} final_problems {} by_scene {"noodle": [92, 92], "mall": [99, 99], "road": [98, 98], "office": [105, 105], "home": [106, 106]}
+  raw_pass_windows: seed_base=20261203 inject=True critic=True elapsed=0.45

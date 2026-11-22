@@ -51,8 +51,12 @@ import main as main_module  # noqa: E402
 class ProtocolTests(unittest.TestCase):
     def test_protocol_info_shape(self):
         info = main_module.HumanCorePlugin.protocol_info(object())
-        self.assertEqual(sorted(info), ["api_hash", "plugin", "protocol",
+        # task-27：新增 contracts（LifeStateSnapshot/MetricsAPI 版本），字段只增不改
+        self.assertEqual(sorted(info), ["api_hash", "contracts", "plugin", "protocol",
                                         "protocol_version", "schema_version", "version"])
+        self.assertEqual(info["contracts"]["life_state"]["contract"], "amo-life-state")
+        self.assertEqual(info["contracts"]["life_state"]["version"], 1)
+        self.assertEqual(info["contracts"]["metrics"]["contract"], "amo-metrics")
         self.assertEqual(info["plugin"], "Astrbot_amoupup_forever")
         self.assertEqual(info["protocol"], "amo-feature")
         self.assertEqual(info["protocol_version"], "1.0")

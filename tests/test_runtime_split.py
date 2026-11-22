@@ -47,14 +47,17 @@ EXPECTED_METHODS = [
     "_dynamic_context", "_ensure_home_images", "_fill_pose_refs", "_first_private_umo", "_lean_parts",
     "_maybe_daily_digest", "_maybe_milestone_archive", "_maybe_send_voice_reply",
     "_milestone_archive_once", "_rain_fact_line", "_recent_micro_line", "_schedule_proposal_line",
+    "_sanitize_command_result", "_wallet_reconcile_check",
     "_schedule_tool_line", "_self_identity", "_tick", "_tick_housekeeping", "_tick_loop_tasks",
     "_tick_schedule_media", "_tick_social", "_trip_sync", "on_after_message_sent",
     "on_decorating_result", "on_message", "sync_current_state",
 ]
 CODE_MD5 = {
     "on_message": "acc047b7fd28796c805811abd9c7df05",
-    "_dynamic_context": "cb95d4b83caf9c5efe0e919ceb10de19",
-    "on_decorating_result": "995fd5ab87cbe4f07a7d152015f08f37",
+    # 2026-11-22 task-30：_dynamic_context 的 snap 改读 snapshot_with_scene（场景账本唯一源）
+    "_dynamic_context": "998260f562709582a1312e18b5946c05",
+    # 2026-11-22 task-23：on_decorating_result 每轮补记外部 generate_selfie 媒体回执
+    "on_decorating_result": "41c9d5c92bf0f56f725a979d0a2af9d5",
     "_tick": "ac96fb9f0472533cfc38feb32d6a078e",
     "_maybe_daily_digest": "4acb3ce8497d6574eaed72b676066486",
     "warm_up": "511847b73896b66a6b03cb204c5832da",
@@ -62,8 +65,8 @@ CODE_MD5 = {
 #: 常量表指纹：递归展开 code 对象（按结构，不掺内存地址），改了提示词/数值就红。
 FINGERPRINTS = {
     "on_message": "6da8d75162f656678fc8120b2a2dbee0",
-    "_dynamic_context": "80205d5e7e2942927e3d71ac2c17db71",
-    "on_decorating_result": "018fc26a5fb61bfd4722cac145de50d0",
+    "_dynamic_context": "d080b5c312edaec7515e14c733698643",
+    "on_decorating_result": "6fb5640a03ab7ddf2f30a055d0fea034",
     "_tick": "ea8ccbb018f28d852b20e7ef4c6f1644",
     "_maybe_daily_digest": "ee8626b0b24ac01c304112f7456abe22",
     "warm_up": "2e1a8372ae7b979ccade341cacff8811",
@@ -120,7 +123,7 @@ class RuntimeSplitTests(unittest.TestCase):
 
     def test_method_set_unchanged(self):
         self.assertEqual(_method_names(), sorted(EXPECTED_METHODS))
-        self.assertEqual(len(_method_names()), 55)
+        self.assertEqual(len(_method_names()), 57)
 
     def test_facade_methods_are_same_objects(self):
         for mixin in (amo_runtime_context.RuntimeContextMixin,

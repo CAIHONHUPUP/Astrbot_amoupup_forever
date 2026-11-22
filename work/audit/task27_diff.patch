@@ -1,0 +1,4224 @@
+--- a/Astrbot_amoupup_forever\amo_feature_api.py
++++ b/Astrbot_amoupup_forever\amo_feature_api.py
+@@ -28,4 +28,21 @@
+     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+         import amo_date_session as _date_session
++
++
++def _contract_module(name):
++    """读 services/<name>.py（包模式与顶层导入都兼容）；失败抛 ImportError。
++
++    task-27：跨插件只读契约实现放在 services/ 下，FeatureApiMixin 只做透传；
++    用模块级函数而不是 self._xxx 方法，避免 main.py 挂载公开方法时漏掉私有辅助。
++    """
++    import importlib as _importlib
++    name = str(name or "")
++    package = str(__package__ or "")
++    if package:
++        try:
++            return _importlib.import_module("." + name, package + ".services")
++        except ImportError:
++            pass
++    return _importlib.import_module("services." + name)
+ 
+ 
+@@ -154,4 +171,20 @@
+ 
+ 
++def _current_scene_meta(plugin, now=None):
++    """当前场景版本（task-30：约会事实也带 scene_id，消费方可校验是否同一场景）。"""
++    try:
++        try:
++            from .amo_scene_ledger import scene_at as _scene_at
++        except ImportError:
++            from amo_scene_ledger import scene_at as _scene_at
++        scene = _scene_at(plugin, now) or {}
++    except Exception:
++        return {}
++    if not isinstance(scene, dict) or not scene:
++        return {}
++    return {"scene_id": str(scene.get("event_id") or ""),
++            "scene_zone": str(scene.get("zone") or ""),
++            "scene_place": str(scene.get("place") or "")}
++
+ try:
+     from .amo_api_persona import PersonaApiMixin
+@@ -633,4 +666,6 @@
+                 "day": _t.strftime("%Y-%m-%d", _t.localtime(end)),
+ 
++                **_current_scene_meta(self),
++
+             })
+ 
+@@ -641,5 +676,7 @@
+             self.db.kv_set("date_prep", {"activity": str(activity or "约会"),
+ 
+-                                          "start_ts": float(start_ts or 0)})
++                                          "start_ts": float(start_ts or 0),
++
++                                          **_current_scene_meta(self)})
+ 
+         def set_date_incident(self, text, until_ts=0):
+@@ -649,5 +686,7 @@
+             self.db.kv_set("date_incident", {"text": str(text or ""),
+ 
+-                                             "until_ts": float(until_ts or 0)})
++                                             "until_ts": float(until_ts or 0),
++
++                                             **_current_scene_meta(self)})
+ 
+         def set_current_action(self, action, until_ts=0, place="外面", zone="restaurant", category="social"):
+@@ -672,9 +711,43 @@
+                 logger.debug("[amo] optional step failed: %r", exc)
+ 
++            # task-30：兜底分支也不绕过场景源——先过 scene_ledger.write，被硬约束拒绝就不写。
++            try:
++
++                try:
++                    from .amo_scene_ledger import write as _scene_write
++                except ImportError:
++                    from amo_scene_ledger import write as _scene_write
++
++                _written = _scene_write(
++
++                    self, {"activity": str(action or ""), "place": str(place or ""),
++
++                           "zone": str(zone or ""), "category": str(category or "")},
++
++                    source="writer")
++
++                _record = _written.get("record") if isinstance(_written, dict) else {}
++
++                if not _written.get("ok") or not isinstance(_record, dict) or not _record:
++
++                    return
++
++            except Exception as exc:
++
++                logger.debug("[amo] optional step failed: %r", exc)
++
++                return
++
+             self.db.kv_set("current_action", {
+ 
+-                "action": str(action or ""), "place": str(place or ""),
+-
+-                "zone": str(zone or ""), "category": str(category or ""),
++                "action": str(_record.get("activity") or action or ""),
++
++                "place": str(_record.get("place") or place or ""),
++
++                "zone": str(_record.get("zone") or zone or ""),
++
++                "category": str(_record.get("category") or category or ""),
++
++                "scene_id": str(_record.get("event_id") or ""),
+ 
+                 "at": now_ts(), "until": float(until_ts or 0),
+@@ -1008,9 +1081,21 @@
+             self.db.kv_set("recent_topic", {"text": body, "until": until})
+ 
+-        def note_shopping_pending(self, line, until_ts=0, scene_id=""):
++        def note_shopping_pending(self, line, until_ts=0, scene_id="", name="", color="", price_cents=0):
+ 
+             # 2026-11-22 task-25：逛街事实带 scene_id（场景账本 event_id），照片/约会/日记
+             # 之后再引用这条事实时能对上是哪一段 schedule，不再靠地点词猜。
+-            record = {"line": str(line or ""), "until": float(until_ts or 0)}
++            # 2026-11-22 task-27：文案里写死的“卡里余额 4072 元”会过期（真实 3086.54）；
++            # 这里同时存结构化字段（商品/价格/写入时的余额），快照据此判陈旧并给实时余额。
++            record = {"line": str(line or ""), "until": float(until_ts or 0),
++                      "name": str(name or ""), "color": str(color or "")}
++            try:
++                record["price_cents"] = int(price_cents or 0)
++            except (TypeError, ValueError):
++                record["price_cents"] = 0
++            try:
++                record["wallet_balance_cents_at_write"] = int(self.wallet.balance("cash") or 0)
++            except Exception:
++                record["wallet_balance_cents_at_write"] = 0
++            record["written_at"] = _amo_clock.now_ts()
+             sid = str(scene_id or "").strip()
+             if not sid:
+@@ -1051,2 +1136,50 @@
+ 
+                 self.state.late.on_forced_overtime()
++
++        # ---- 跨插件只读契约（task-27）：LifeStateSnapshot / MetricsAPI ----
++        # 守护/能记/定格只读这两个方法，禁止各自维护“此刻/余额/本月支出”副本。
++        # 返回 dict 契约见 services/life_state.py、services/metrics.py。
++
++        def life_state_contract(self):
++            """LifeStateSnapshot 契约自述（版本/字段/单位）；纯常量，不读库。"""
++            try:
++                return dict(_contract_module("life_state").contract_descriptor())
++            except Exception as exc:
++                logger.debug("[amo] life_state_contract 不可用: %r", exc)
++                return {}
++
++        def life_state_snapshot(self, now=None):
++            """只读状态快照：location/current_action/schedule/date_session/
++            shopping/wallet/outfit/mood/media + consistency 自检。"""
++            try:
++                snapshot = _contract_module("life_state").build_snapshot(self, now)
++                return dict(snapshot) if isinstance(snapshot, dict) else {}
++            except Exception as exc:
++                logger.warning("[amo] life_state_snapshot 构建失败: %r", exc)
++                return {}
++
++        def metrics_contract(self):
++            """MetricsAPI 契约自述（指标定义/单位）；纯常量，不读库。"""
++            try:
++                return dict(_contract_module("metrics").contract_descriptor())
++            except Exception as exc:
++                logger.debug("[amo] metrics_contract 不可用: %r", exc)
++                return {}
++
++        def metrics_snapshot(self, now=None):
++            """统一指标快照：钱包余额/本月消费/本月资产变动/今日生图（读失败只降级）。"""
++            try:
++                return dict(_contract_module("metrics").build_metrics(self, now) or {})
++            except Exception as exc:
++                logger.warning("[amo] metrics_snapshot 构建失败: %r", exc)
++                return {}
++
++        def month_consumption_cents(self, month=""):
++            """本月消费（整数分）：面板/守护唯一口径，含退款/资产/账单排除。"""
++            try:
++                metrics = _contract_module("metrics")
++                wallet = getattr(self, "wallet", None)
++                return int(metrics.wallet_month_consumption_cents(wallet, str(month or "")))
++            except Exception as exc:
++                logger.debug("[amo] month_consumption_cents 失败: %r", exc)
++                return 0
+
+--- a/Astrbot_amoupup_forever\photo_generate.py
++++ b/Astrbot_amoupup_forever\photo_generate.py
+@@ -65,7 +65,13 @@
+         from photo_view import HEADWEAR_LOCK, SELFIE_NEGATIVE
+ 
++#: 跨插件生图 principal 调用方标识（task-27，与 photo.plugin 的受信名单一致）
++PLUGIN_CALLER = "Astrbot_amoupup_forever"
++PLUGIN_PRINCIPAL_CONTRACT = "amo-image-principal"
++PLUGIN_PRINCIPAL_VERSION = 1
++
++
+ async def _call_omni(omni, args):
+-    """调我能永远定格你；旧版不认识 scene_lock/pose_lock/allow_local_refs 时逐个去掉重试。"""
+-    removable = ("pose_ref", "scene_lock", "pose_lock", "allow_local_refs")
++    """调我能永远定格你；旧版不认识 scene_lock/pose_lock/allow_local_refs/principal 时逐个去掉重试。"""
++    removable = ("pose_ref", "scene_lock", "pose_lock", "allow_local_refs", "principal")
+     while True:
+         try:
+@@ -101,4 +107,33 @@
+         _PERSONA_VIEW_FILES: Any
+         _ensure_png_file: Any
++
++    def _photo_principal(self, kind="owner"):
++        """跨插件生图 principal（v1）：event=None 的自动生图也必须带身份。
++
++        - kind=owner：她自己的照片/自拍，定格侧走权限+每日配额+用量记账；
++        - kind=system：参考图/房间图等内部资产，不占个人配额、不计“今日生图”。
++        uid 取私聊 owner umo 的最后一段，和命令路径共用同一个每日额度计数。
++        """
++        umo = ""
++        for getter_name in ("_first_private_umo",):
++            getter = getattr(self, getter_name, None)
++            if callable(getter):
++                try:
++                    umo = str(getter() or "")
++                except Exception:
++                    umo = ""
++            if umo:
++                break
++        uid = umo.rsplit(":", 1)[-1] if ":" in umo else umo
++        scope = "group" if ":GroupMessage:" in umo else "private"
++        return {
++            "contract": PLUGIN_PRINCIPAL_CONTRACT,
++            "version": PLUGIN_PRINCIPAL_VERSION,
++            "caller": PLUGIN_CALLER,
++            "kind": str(kind or "owner"),
++            "user_id": uid,
++            "scope": scope,
++            "umo": umo,
++        }
+ 
+     def _find_omni(self):
+@@ -292,5 +327,11 @@
+                 "refs": len(refs),
+             }
++        # task-27：自动生图没有 event，但必须带 principal，定格侧才能校验权限/配额并记账。
++        # 老引擎/测试桩没有 _photo_principal 时不传（定格侧按 legacy_system 放行并计数）。
++        principal = (self._photo_principal("owner")
++                     if callable(getattr(self, "_photo_principal", None)) else None)
+         args = {"prompt": prompt, "count": 1, "record_usage": True}
++        if principal is not None:
++            args["principal"] = principal
+         # 姿势图单独传给生图插件：它会把姿势放在三视图前面；
+         # refs 里也保留一份，旧版生图插件不认识 pose_ref 时仍能拿到姿势参考。
+@@ -457,5 +498,10 @@
+             refs = [ref] if ref else []
+         refs = [item for item in refs if item]
++        # 内部参考图：principal kind=system，放行但不占个人配额/不计“今日生图”
++        principal = (self._photo_principal("system")
++                     if callable(getattr(self, "_photo_principal", None)) else None)
+         args = {"prompt": prompt, "count": 1, "event": None, "record_usage": False}
++        if principal is not None:
++            args["principal"] = principal
+         if refs:
+             args["refs"] = refs
+
+--- a/Astrbot_amoupup_forever\main.py
++++ b/Astrbot_amoupup_forever\main.py
+@@ -157,5 +157,14 @@
+         return any(prefix and text.startswith(prefix) for prefix in self._command_prefixes())
+ 
+-    _on_astrbot_loaded_hook = getattr(filter, "on_astrbot_loaded", None)
++    # 2026-11-22 task-24：这里以前直接 getattr(filter, ...)，但 main.py 从未 import
++    # AstrBot 的 filter，`filter` 解析成 Python 内建函数 → hook 恒为 None，
++    # on_astrbot_loaded 整段（TTS 动作过滤接管、send_photo/buy_appliance 工具注册、
++    # 姿势参考图补齐）从未执行（生产日志「TTS 动作过滤已接管」0 次）。
++    # 现在取 amo_shared 导出的真 filter；包模式 / 平铺模式两种 import 都覆盖。
++    try:
++        from .amo_shared import filter as _amo_filter
++    except ImportError:  # 按文件直接加载（离线单测）
++        from amo_shared import filter as _amo_filter
++    _on_astrbot_loaded_hook = getattr(_amo_filter, "on_astrbot_loaded", None)
+ 
+     if _on_astrbot_loaded_hook is not None:
+@@ -221,4 +230,28 @@
+         except ImportError:  # 按文件直接加载
+             import amo_db_schema as _schema
++        # task-27：只读状态/指标契约版本（消费者据此选择新路径或降级，字段只增不改）
++        # 动态导入（不写 from .services import ...）：契约模块缺失/旧安装都不能
++        # 让 protocol_info 抛异常，也避免给架构棘轮新增顶层 import 边。
++        import importlib as _importlib
++        contracts = {}
++        package = str(__package__ or "")
++        for key in ("life_state", "metrics"):
++            descriptor = {}
++            module = None
++            for module_name in (("." + "services." + key) if package else (),
++                                "services." + key, key):
++                try:
++                    module = _importlib.import_module(module_name,
++                                                      package or None)
++                    break
++                except Exception:
++                    module = None
++            try:
++                if module is not None:
++                    descriptor = module.contract_descriptor()
++            except Exception:  # 契约模块坏了不影响老协议
++                descriptor = {}
++            contracts[key] = {"contract": descriptor.get("contract", ""),
++                              "version": descriptor.get("version", 0)}
+         return {
+             "plugin": "Astrbot_amoupup_forever",
+@@ -228,4 +261,5 @@
+             "schema_version": int(getattr(_schema, "LATEST_VERSION", 0) or 0),
+             "version": PLUGIN_VERSION,
++            "contracts": contracts,
+         }
+ 
+
+--- a/Astrbot_amoupup_photo\main_commands.py
++++ b/Astrbot_amoupup_photo\main_commands.py
+@@ -78,4 +78,21 @@
+     from .core.video_manager import VideoManager
+     from .models import PluginConfig
++
++
++#: 跨插件生图 principal 契约（task-27，photo 侧）
++#: 能陪/守护调用 generate_images_for_plugin 时必须带 principal；event 为空时也校验：
++#: - caller 必须在受信插件名单内（本进程内跨插件调用，防的是误调用/坏形状）；
++#: - kind=owner 走与命令路径同一套权限+每日配额+用量记账；
++#: - kind=system 是系统内部生成（参考图/房间图），不占个人配额、不计“她的今日生图”。
++PLUGIN_PRINCIPAL_CONTRACT = "amo-image-principal"
++PLUGIN_PRINCIPAL_VERSION = 1
++PLUGIN_PRINCIPAL_KINDS = ("owner", "system")
++TRUSTED_PLUGIN_CALLERS = (
++    "Astrbot_amoupup_forever",
++    "Astrbot_amoupup_watch",
++    "Astrbot_amoupup_data",
++)
++#: 权限失败时的“能说出口”的话：不出现权限/配额/配额不足/event 等工程词
++PLUGIN_PRINCIPAL_SAFE_DENY = "这个只给老公看哦。"
+ 
+ 
+@@ -921,4 +938,110 @@
+         return f"{MessageEmoji.WARNING} 你已被加入用户黑名单，无法使用「我能永远定格你」。"
+ 
++    def _normalize_plugin_principal(self, principal: Any) -> Optional[Dict[str, Any]]:
++        """跨插件 principal -> 与 event 同形状的 access status；坏形状返回 None。
++
++        约定见模块常量 PLUGIN_PRINCIPAL_*；调用方（能陪）传：
++        {contract, version, caller, kind, user_id, scope, umo}
++        """
++        if not isinstance(principal, dict):
++            return None
++        caller = str(principal.get("caller") or "").strip()
++        kind = str(principal.get("kind") or "").strip().lower()
++        if caller not in TRUSTED_PLUGIN_CALLERS or kind not in PLUGIN_PRINCIPAL_KINDS:
++            return None
++        user_id = str(principal.get("user_id") or "").strip() or ("%s:owner" % caller)
++        status = {
++            "user_id": user_id,
++            "group_id": str(principal.get("group_id") or "").strip(),
++            "allowed": True,
++            "unlimited": kind == "system",
++            "level": "plugin_" + kind,
++            "reason": "",
++            "caller": caller,
++            "kind": kind,
++            "contract": str(principal.get("contract") or ""),
++            "principal": dict(principal),
++        }
++        blocked_users = self._config_id_set(getattr(self.plugin_config, "blocked_users", []))
++        if user_id in blocked_users:
++            status.update({"allowed": False, "level": "blocked_user", "reason": "用户黑名单"})
++        return status
++
++    def _plugin_legacy_status(self) -> Dict[str, Any]:
++        """旧版调用方（无 event 也无 principal）：放行但打标，用量记到 unattributed。
++
++        这是滚动升级期的过渡：旧能陪还会 record_usage=True 但不带 principal，
++        这里至少把图计入面板（修 11-22 面板停在 11-21），并把 contract_miss 记账，
++        面板/健康项可见；新能陪（photo_generate.py）已改为带 principal 走完整校验。
++        """
++        return {
++            "user_id": "", "group_id": "", "allowed": True, "unlimited": True,
++            "level": "legacy_system", "reason": "missing principal", "legacy": True,
++            "caller": "", "kind": "", "contract": "",
++        }
++
++    def _plugin_principal_status(self, principal: Any, event: Any = None) -> Optional[Dict[str, Any]]:
++        """生图入口的 access status：event 优先，其次 principal；都没有返回 None。"""
++        if event is not None:
++            return self._access_status(event)
++        return self._normalize_plugin_principal(principal)
++
++    def _resolve_plugin_access(self, event: Any, principal: Any):
++        """生图入口统一解析：返回 (access_status, record_source, contract_error)。
++
++        - event 优先（命令/工具路径，原有权限判定不变）；
++        - event=None 时 principal 必须合法（owner：权限+配额+用量；system：内部生成）；
++        - 都没有 = 旧版调用：放行但打标、计 contract_miss（滚动升级期，面板可见）。
++        """
++        if event is not None:
++            return self._access_status(event), "event", ""
++        if principal is not None:
++            status = self._normalize_plugin_principal(principal)
++            if status is None:
++                return None, "", PLUGIN_PRINCIPAL_SAFE_DENY
++            return status, "plugin", ""
++        self._notice_contract("contract_miss", "generate_images_for_plugin")
++        return self._plugin_legacy_status(), "legacy", ""
++
++    def _with_usage_contract(self, response: Any, access: Any, usage_recorded: bool,
++                             record_source: str = "") -> Dict[str, Any]:
++        """给生图结果补契约字段：调用方据此判断权限/配额/用量是否真的走了。"""
++        data = dict(response) if isinstance(response, dict) else {"success": False, "images": []}
++        data["usage_recorded"] = bool(usage_recorded)
++        data["contract"] = PLUGIN_PRINCIPAL_CONTRACT
++        data["principal"] = {
++            "caller": str((access or {}).get("caller") or ""),
++            "kind": str((access or {}).get("kind") or ""),
++            "level": str((access or {}).get("level") or ""),
++            "user_id": str((access or {}).get("user_id") or ""),
++            "source": str(record_source or ""),
++        }
++        return data
++
++    def _ensure_usage_runtime(self) -> None:
++        """测试桩/老实例可能没在 __init__ 里建 usage 设施：按需补齐（幂等）。"""
++        if not hasattr(self, "_usage_lock"):
++            import threading
++            self._usage_lock = threading.RLock()
++        if not hasattr(self, "_usage_stats"):
++            self._usage_stats = {}
++        if not hasattr(self, "_quota_reservations"):
++            self._quota_reservations = {}
++
++    def _notice_contract(self, key: str = "contract_miss", where: str = "") -> None:
++        """跨插件契约缺口计数（不写日志洪水）：面板 + /status 可见。"""
++        key = str(key or "contract_miss")
++        try:
++            self._ensure_usage_runtime()
++            with self._usage_lock:
++                stats = self._normalize_usage_stats(self._usage_stats)
++                stats[key] = self._to_nonnegative_int(stats.get(key, 0)) + 1
++                if key == "contract_miss" and where:
++                    stats["contract_miss_last"] = str(where)[:64]
++                self._usage_stats = stats
++                self._persist_usage_stats()
++        except Exception as exc:  # 计数失败不影响生图
++            logger.warning(f"[我能永远定格你] 契约计数失败: {exc}")
++
+     def _get_event_text(self, event: AstrMessageEvent) -> str:
+         text = getattr(event, "message_str", "") or getattr(getattr(event, "message_obj", None), "message_str", "")
+@@ -939,11 +1062,16 @@
+ 
+     def _image_quota_state(self, event: AstrMessageEvent) -> Dict[str, Any]:
+-        status = self._access_status(event)
++        return self._status_quota_state(self._access_status(event))
++
++    def _status_quota_state(self, status: Dict[str, Any]) -> Dict[str, Any]:
++        """配额状态：event 与跨插件 principal 收敛成同一个 access status 后再算。"""
++        self._ensure_usage_runtime()
++        status = dict(status or {})
+         limit = self._daily_image_limit()
+-        user_id = status.get("user_id") or self._get_event_user_id(event)
++        user_id = str(status.get("user_id") or "")
+         with self._usage_lock:
+             stats = self._normalize_usage_stats(self._usage_stats)
+             self._usage_stats = stats
+-            record = stats.get("users", {}).get(user_id, {})
++            record = stats.get("users", {}).get(user_id, {}) if user_id else {}
+             used = self._to_nonnegative_int(record.get("count", 0))
+             bonus = self._to_nonnegative_int(record.get("bonus", 0))
+@@ -952,4 +1080,5 @@
+         return {
+             **status,
++            "user_id": user_id,
+             "base_limit": limit,
+             "bonus": bonus,
+@@ -961,38 +1090,65 @@
+         }
+ 
++    def _reserve_status_quota(self, status: Dict[str, Any], requested_count: int) -> Tuple[str, int]:
++        """按 access status 预留配额；event / principal / legacy 三条入口共用。"""
++        requested_count = max(1, self._to_nonnegative_int(requested_count, 1))
++        quota = self._status_quota_state(status)
++        if not quota.get("allowed", True):
++            return str(quota.get("reason") or "forbidden"), 0
++        if quota.get("unlimited") or quota.get("base_limit", 0) <= 0:
++            return "", 0
++        user_id = str(quota.get("user_id") or "")
++        if not user_id:
++            return "", 0
++        used = self._to_nonnegative_int(quota.get("used", 0))
++        reserved = self._to_nonnegative_int(quota.get("reserved", 0))
++        effective_limit = self._to_nonnegative_int(quota.get("effective_limit", 0))
++        if used + reserved + requested_count > effective_limit:
++            return self._quota_short_message(quota, requested_count), 0
++        with self._usage_lock:
++            current = self._to_nonnegative_int(self._quota_reservations.get(user_id, 0))
++            self._quota_reservations[user_id] = current + requested_count
++        return "", requested_count
++
++    def _quota_short_message(self, quota: Dict[str, Any], requested_count: int = 1) -> str:
++        used = self._to_nonnegative_int(quota.get("used", 0))
++        base_limit = self._to_nonnegative_int(quota.get("base_limit", 0))
++        bonus = self._to_nonnegative_int(quota.get("bonus", 0))
++        effective_limit = self._to_nonnegative_int(quota.get("effective_limit", base_limit))
++        reserved = self._to_nonnegative_int(quota.get("reserved", 0))
++        remaining = max(0, effective_limit - used - reserved)
++        limit_text = f"{effective_limit} 张"
++        if bonus:
++            limit_text = f"{effective_limit} 张（基础 {base_limit} + 签到 {bonus}）"
++        return (
++            f"{MessageEmoji.WARNING} 今日生图额度不足：你已使用 {used}/{limit_text}，"
++            f"本次需要 {requested_count} 张，剩余 {remaining} 张。"
++        )
++
++    def _release_quota_for(self, event: Any, access: Dict[str, Any], reserved_count: int) -> None:
++        """统一释放：event 路径走原有 hook（可被测试替换），principal 路径直接释放。"""
++        if not reserved_count:
++            return
++        if event is not None:
++            self._release_image_quota(event, reserved_count)
++        else:
++            self._release_status_quota(access, reserved_count)
++
+     def _reserve_image_quota(self, event: AstrMessageEvent, requested_count: int) -> Tuple[str, int]:
+-        requested_count = max(1, self._to_nonnegative_int(requested_count, 1))
+-        with self._usage_lock:
+-            status = self._access_status(event, refresh=False)
+-            if not status.get("allowed", True):
+-                return self._permission_denied_message(event), 0
+-            limit = self._daily_image_limit()
+-            if status.get("unlimited") or limit <= 0:
+-                return "", 0
+-            user_id = status.get("user_id") or self._get_event_user_id(event)
+-            stats = self._normalize_usage_stats(self._usage_stats)
+-            self._usage_stats = stats
+-            record = stats.get("users", {}).get(user_id, {})
+-            used = self._to_nonnegative_int(record.get("count", 0))
+-            bonus = self._to_nonnegative_int(record.get("bonus", 0))
+-            effective_limit = limit + bonus
+-            reserved = self._to_nonnegative_int(self._quota_reservations.get(user_id, 0))
+-            if used + reserved + requested_count > effective_limit:
+-                remaining = max(0, effective_limit - used - reserved)
+-                limit_text = f"{effective_limit} 张"
+-                if bonus:
+-                    limit_text = f"{effective_limit} 张（基础 {limit} + 签到 {bonus}）"
+-                return (
+-                    f"{MessageEmoji.WARNING} 今日生图额度不足：你已使用 {used}/{limit_text}，"
+-                    f"本次需要 {requested_count} 张，剩余 {remaining} 张。",
+-                    0,
+-                )
+-            self._quota_reservations[user_id] = reserved + requested_count
+-            return "", requested_count
+-
+-    def _release_image_quota(self, event: AstrMessageEvent, reserved_count: int) -> None:
++        status = self._access_status(event, refresh=False)
++        if not status.get("allowed", True):
++            return self._permission_denied_message(event), 0
++        return self._reserve_status_quota(status, requested_count)
++
++    def _release_status_quota(self, status: Dict[str, Any], reserved_count: int) -> None:
++        if reserved_count is None or str((status or {}).get("user_id") or "") == "":
++            return
++        self._ensure_usage_runtime()
++        reserved_count = max(0, self._to_nonnegative_int(reserved_count, 0))
+         if reserved_count <= 0:
+             return
+-        user_id = self._access_status(event, refresh=False).get("user_id") or self._get_event_user_id(event)
++        user_id = str((status or {}).get("user_id") or "")
++        if not user_id:
++            return
+         with self._usage_lock:
+             current = self._to_nonnegative_int(self._quota_reservations.get(user_id, 0))
+@@ -1003,4 +1159,28 @@
+                 self._quota_reservations.pop(user_id, None)
+ 
++    def _release_image_quota(self, event: AstrMessageEvent, reserved_count: int) -> None:
++        self._release_status_quota(self._access_status(event, refresh=False), reserved_count)
++
++    def _finalize_status_quota(
++        self,
++        status: Dict[str, Any],
++        reserved_count: int,
++        actual_count: int,
++        source: str = "event",
++    ) -> None:
++        """结算预留：先释放，再按实际出图张数计入 usage（source=event/plugin/legacy）。"""
++        self._ensure_usage_runtime()
++        user_id = str((status or {}).get("user_id") or "")
++        reserved_count = max(0, self._to_nonnegative_int(reserved_count, 0))
++        with self._usage_lock:
++            if reserved_count and user_id:
++                current = self._to_nonnegative_int(self._quota_reservations.get(user_id, 0))
++                remaining = max(0, current - reserved_count)
++                if remaining:
++                    self._quota_reservations[user_id] = remaining
++                else:
++                    self._quota_reservations.pop(user_id, None)
++            self._record_status_images_locked(status, actual_count, source)
++
+     def _finalize_image_quota(
+         self,
+@@ -1009,13 +1189,6 @@
+         actual_count: int,
+     ) -> None:
+-        user_id = self._access_status(event, refresh=False).get("user_id") or self._get_event_user_id(event)
+-        with self._usage_lock:
+-            current = self._to_nonnegative_int(self._quota_reservations.get(user_id, 0))
+-            remaining = max(0, current - max(0, reserved_count))
+-            if remaining:
+-                self._quota_reservations[user_id] = remaining
+-            else:
+-                self._quota_reservations.pop(user_id, None)
+-            self._record_generated_images_locked(event, actual_count)
++        self._finalize_status_quota(self._access_status(event, refresh=False),
++                                    reserved_count, actual_count, "event")
+ 
+     def _complete_image_quota(
+@@ -1030,41 +1203,46 @@
+             self._record_generated_images(event, actual_count)
+ 
+-    def _image_quota_error_message(self, event: AstrMessageEvent, requested_count: int = 1) -> str:
+-        quota = self._image_quota_state(event)
++    def _image_quota_error_for_status(self, status: Dict[str, Any], requested_count: int = 1) -> str:
++        """不预留、只检查：event 与 principal 共用。旧版内部调用没有身份，不查配额。"""
++        status = dict(status or {})
++        if status.get("legacy") or not str(status.get("user_id") or "").strip():
++            return ""
++        quota = self._status_quota_state(status)
+         if not quota.get("allowed", True):
+-            return self._permission_denied_message(event)
++            return str(quota.get("reason") or "forbidden")
+         if quota.get("unlimited") or quota.get("base_limit", 0) <= 0:
+             return ""
+-
+         requested_count = max(1, self._to_nonnegative_int(requested_count, 1))
+-        used = quota.get("used", 0)
+-        base_limit = quota.get("base_limit", 0)
+-        bonus = quota.get("bonus", 0)
+-        effective_limit = quota.get("effective_limit", base_limit)
+-        remaining = max(0, effective_limit - used - quota.get("reserved", 0))
++        used = self._to_nonnegative_int(quota.get("used", 0))
++        effective_limit = self._to_nonnegative_int(quota.get("effective_limit", 0))
++        remaining = max(0, effective_limit - used - self._to_nonnegative_int(quota.get("reserved", 0)))
+         if requested_count <= remaining:
+             return ""
+-
+-        limit_text = f"{effective_limit} 张"
+-        if bonus:
+-            limit_text = f"{effective_limit} 张（基础 {base_limit} + 签到 {bonus}）"
+-        return (
+-            f"{MessageEmoji.WARNING} 今日生图额度不足：你已使用 {used}/{limit_text}，"
+-            f"本次需要 {requested_count} 张，剩余 {remaining} 张。"
+-        )
+-
+-    def _record_generated_images(self, event: AstrMessageEvent, count: int = 1) -> None:
++        return self._quota_short_message(quota, requested_count)
++
++    def _image_quota_error_message(self, event: AstrMessageEvent, requested_count: int = 1) -> str:
++        status = self._access_status(event)
++        if not status.get("allowed", True):
++            return self._permission_denied_message(event)
++        return self._image_quota_error_for_status(status, requested_count)
++
++    def _record_status_images(self, status: Dict[str, Any], count: int = 1, source: str = "event") -> None:
++        self._ensure_usage_runtime()
+         count = self._to_nonnegative_int(count)
+         if count <= 0:
+             return
+-
+         with self._usage_lock:
+-            self._record_generated_images_locked(event, count)
+-
+-    def _record_generated_images_locked(self, event: AstrMessageEvent, count: int = 1) -> None:
++            self._record_status_images_locked(status, count, source)
++
++    def _record_status_images_locked(self, status: Dict[str, Any], count: int = 1,
++                                     source: str = "event") -> None:
++        """按 access status 记用量；source 让面板能分“命令/跨插件/旧版”三条路径。"""
++        self._ensure_usage_runtime()
++        status = dict(status or {})
+         stats = self._normalize_usage_stats(self._usage_stats)
+         self._usage_stats = stats
+-        status = self._access_status(event, refresh=False)
+-        user_id = status.get("user_id") or self._get_event_user_id(event)
++        user_id = str(status.get("user_id") or "").strip()
++        if not user_id:
++            user_id = "legacy:unattributed" if str(source) == "legacy" else "unattributed"
+         users = stats.setdefault("users", {})
+         record = users.setdefault(
+@@ -1078,12 +1256,24 @@
+         record["last_at"] = int(time.time())
+         record["access_level"] = str(status.get("level") or "limited")
+-        group_id = status.get("group_id") or self._get_event_group_id(event)
++        record["source"] = str(source or "event")
++        group_id = status.get("group_id") or ""
+         if group_id:
+             record["group_id"] = group_id
+-        display_name = self._get_event_user_label(event).strip()
++        display_name = str((status.get("principal") or {}).get("display_name") or "").strip()
++        if not display_name:
++            display_name = str(status.get("display_name") or "").strip()
+         if display_name and display_name != user_id:
+             record["display_name"] = display_name
+         stats["total"] = sum(self._to_nonnegative_int(item.get("count", 0)) for item in users.values())
+-        self._persist_usage_stats()
++        try:
++            self._persist_usage_stats()
++        except Exception as exc:  # 测试桩/数据目录不可写：内存计数仍然有效
++            logger.warning(f"[我能永远定格你] 生图统计保存失败: {exc}")
++
++    def _record_generated_images(self, event: AstrMessageEvent, count: int = 1) -> None:
++        self._record_status_images(self._access_status(event, refresh=False), count, "event")
++
++    def _record_generated_images_locked(self, event: AstrMessageEvent, count: int = 1) -> None:
++        self._record_status_images_locked(self._access_status(event, refresh=False), count, "event")
+ 
+     def _extract_command_message(self, event: AstrMessageEvent, command: str, fallback: str = "") -> str:
+
+--- a/Astrbot_amoupup_photo\main_tasks.py
++++ b/Astrbot_amoupup_photo\main_tasks.py
+@@ -76,4 +76,10 @@
+ 
+ 
++try:
++    from .main_commands import PLUGIN_PRINCIPAL_CONTRACT, PLUGIN_PRINCIPAL_SAFE_DENY
++except ImportError:  # 顶层导入（测试）
++    from main_commands import PLUGIN_PRINCIPAL_CONTRACT, PLUGIN_PRINCIPAL_SAFE_DENY
++
++
+ if TYPE_CHECKING:
+     from .models import PluginConfig
+@@ -107,4 +113,14 @@
+     _finalize_image_quota: Callable[..., None]
+     _record_generated_images: Callable[..., Any]
++    # task-27：event/principal 两条入口共用同一套权限/配额/用量
++    _resolve_plugin_access: Callable[..., Any]
++    _with_usage_contract: Callable[..., Any]
++    _notice_contract: Callable[..., None]
++    _reserve_status_quota: Callable[..., Any]
++    _release_quota_for: Callable[..., None]
++    _image_quota_error_for_status: Callable[..., str]
++    _release_status_quota: Callable[..., None]
++    _finalize_status_quota: Callable[..., None]
++    _record_status_images: Callable[..., Any]
+ 
+     def _create_background_task(
+@@ -662,4 +678,5 @@
+         event: Optional[AstrMessageEvent] = None,
+         record_usage: bool = False,
++        principal: Any = None,
+         allow_local_refs: bool = False,
+         use_gif: bool = False,
+@@ -688,14 +705,32 @@
+         reserved_count = 0
+         generation = {}
+-        if event is not None:
+-            permission_error = self._permission_denied_message(event)
+-            if permission_error:
+-                return {"success": False, "message": permission_error, "images": []}
+-            if record_usage:
++        # task-27：权限/配额/用量不再绑定 event 是否存在。event=None 的跨插件自动
++        # 生图必须带 principal（能陪 photo_generate.py 已带 owner principal）；
++        # 无 event 无 principal 的旧版调用放行但打标 + 计数（滚动升级期）。
++        access, record_source, contract_error = self._resolve_plugin_access(event, principal)
++        if contract_error:
++            self._notice_contract("principal_denied", "generate_images_for_plugin")
++            return {"success": False, "message": contract_error, "user_safe": contract_error,
++                    "internal_reason": "invalid principal", "images": [],
++                    "usage_recorded": False, "contract": PLUGIN_PRINCIPAL_CONTRACT}
++        if not access.get("allowed", True):
++            denied = (self._permission_denied_message(event) if event is not None
++                      else PLUGIN_PRINCIPAL_SAFE_DENY)
++            self._notice_contract("principal_denied", "generate_images_for_plugin")
++            return {"success": False, "message": denied, "user_safe": denied,
++                    "internal_reason": str(access.get("reason") or ""), "images": [],
++                    "usage_recorded": False, "contract": PLUGIN_PRINCIPAL_CONTRACT}
++        if record_usage:
++            if event is not None:  # 保持命令路径原有 hook（_reserve_image_quota 可被测试/旧代码替换）
+                 quota_error, reserved_count = self._reserve_image_quota(event, count)
+             else:
+-                quota_error = self._image_quota_error_message(event, count)
+-            if quota_error:
+-                return {"success": False, "message": quota_error, "images": []}
++                quota_error, reserved_count = self._reserve_status_quota(access, count)
++        else:
++            quota_error = (self._image_quota_error_message(event, count) if event is not None
++                           else self._image_quota_error_for_status(access, count))
++        if quota_error:
++            return {"success": False, "message": quota_error, "user_safe": quota_error,
++                    "images": [], "usage_recorded": False,
++                    "contract": PLUGIN_PRINCIPAL_CONTRACT}
+ 
+         try:
+@@ -740,21 +775,26 @@
+             response, valid_results = self._plugin_generation_response(generation)
+             if not response.get("success"):
+-                if event is not None and record_usage and reserved_count:
+-                    self._release_image_quota(event, reserved_count)
+-                return response
+-
+-            if event is not None and record_usage:
++                self._release_quota_for(event, access, reserved_count)
++                return self._with_usage_contract(response, access, False, record_source)
++
++            usage_recorded = False
++            if record_usage:
+                 if reserved_count:
+-                    self._finalize_image_quota(event, reserved_count, len(valid_results))
++                    if event is not None:
++                        self._finalize_image_quota(event, reserved_count, len(valid_results))
++                    else:
++                        self._finalize_status_quota(access, reserved_count,
++                                                    len(valid_results), record_source)
++                elif event is not None:
++                    self._record_generated_images(event, len(valid_results))
+                 else:
+-                    self._record_generated_images(event, len(valid_results))
+-            return response
++                    self._record_status_images(access, len(valid_results), record_source)
++                usage_recorded = True
++            return self._with_usage_contract(response, access, usage_recorded, record_source)
+         except asyncio.CancelledError:
+-            if event is not None and record_usage and reserved_count:
+-                self._release_image_quota(event, reserved_count)
++            self._release_quota_for(event, access, reserved_count)
+             raise
+         except Exception:
+-            if event is not None and record_usage and reserved_count:
+-                self._release_image_quota(event, reserved_count)
++            self._release_quota_for(event, access, reserved_count)
+             raise
+         finally:
+
+--- a/Astrbot_amoupup_photo\main_config.py
++++ b/Astrbot_amoupup_photo\main_config.py
+@@ -198,5 +198,5 @@
+                 "last_at": self._to_nonnegative_int(record.get("last_at", 0)),
+             }
+-            for key in ("display_name", "group_id", "access_level"):
++            for key in ("display_name", "group_id", "access_level", "source"):
+                 value = str(record.get(key, "")).strip()
+                 if value:
+@@ -204,9 +204,16 @@
+             normalized_users[user_id] = normalized_record
+ 
+-        return {
++        # task-27：跨插件契约计数与“命令/插件/旧版”来源都要跨日保留结构（只重置为 0）
++        stats_out = {
+             "date": today,
+             "total": sum(record["count"] for record in normalized_users.values()),
+             "users": normalized_users,
++            "contract_miss": self._to_nonnegative_int(stats.get("contract_miss", 0)),
++            "principal_denied": self._to_nonnegative_int(stats.get("principal_denied", 0)),
+         }
++        last_miss = str(stats.get("contract_miss_last", "") or "").strip()
++        if last_miss:
++            stats_out["contract_miss_last"] = last_miss[:64]
++        return stats_out
+ 
+     def _current_usage_stats(self) -> Dict[str, Any]:
+@@ -240,8 +247,16 @@
+         )
+         limit = self._daily_image_limit()
++        by_source: Dict[str, int] = {}
++        for record in users:
++            source = str(record.get("source") or "event")
++            by_source[source] = by_source.get(source, 0) + self._to_nonnegative_int(record.get("count", 0))
+         return {
+             "date": stats.get("date", self._today_key()),
+             "total": stats.get("total", 0),
+             "users": users,
++            "by_source": by_source,
++            "contract_miss": self._to_nonnegative_int(stats.get("contract_miss", 0)),
++            "principal_denied": self._to_nonnegative_int(stats.get("principal_denied", 0)),
++            "contract_miss_last": str(stats.get("contract_miss_last", "") or ""),
+             "quota": {
+                 "enabled": limit > 0,
+
+--- a/Astrbot_amoupup_watch\ui\report.py
++++ b/Astrbot_amoupup_watch\ui\report.py
+@@ -14,15 +14,13 @@
+ import datetime as _dt
+ 
++#: 本月消费口径（task-27）：唯一计算函数在 services/metrics.py（与能陪 metrics 同口径）。
++#: 这里只做导入，不再本地按 reason 前缀排除——那是 473 vs 16016 两个面板不同源的根因。
++try:
++    from ..services.metrics import consumption_cents as _consumption_cents
++except ImportError:
++    from services.metrics import consumption_cents as _consumption_cents
++
+ #: 算进「水电燃气」的结算类型
+ UTILITY_KINDS = ("water", "electric", "gas", "broadband")
+-
+-#: 不算「本月支出」的流水原因（房租水电走 settled，工资是收入，交易/借贷另有卡片）
+-_EXCLUDE_PREFIXES = (
+-    "房租", "水费", "电费", "燃气费", "宽带", "物业", "取暖",
+-    "工资", "奖金", "红包",
+-    "买入", "卖出", "申购", "赎回", "基金",
+-    "贷款", "还款", "利息", "分期",
+-    "转账", "初始存款", "可取余额", "卖出资金", "用户转账",
+-)
+ 
+ 
+@@ -50,6 +48,11 @@
+ 
+ 
+-def life_block(settlements, ledger, salary_cents, today, rent_day=1, salary_day=15) -> dict:
+-    """生活账单：当月已结算的房租/水电 + 本月其他支出。金额单位是元（面板口径）。"""
++def life_block(settlements, ledger, salary_cents, today, rent_day=1, salary_day=15,
++               consumption_cents=None) -> dict:
++    """生活账单：当月已结算的房租/水电 + 本月消费。金额单位是元（面板口径）。
++
++    consumption_cents：调用方已从能陪 MetricsAPI 取到本月消费（整数分）时直接传，
++    保证「首页/生活卡」是同一个数；不传才用同一口径在本地重算。
++    """
+     today = today or _dt.date.today()
+     month = today.strftime("%Y-%m")
+@@ -65,17 +68,11 @@
+         elif kind in UTILITY_KINDS:
+             utilities += amount
+-    expense = 0
+-    for row in ledger or []:
+-        delta = int(row.get("delta_cents") or 0)
+-        if delta >= 0:
+-            continue
+-        if str(row.get("account") or "cash") != "cash":
+-            continue
+-        if _month_of(row.get("ts")) != month:
+-            continue
+-        reason = str(row.get("reason") or "")
+-        if any(reason.startswith(prefix) for prefix in _EXCLUDE_PREFIXES):
+-            continue
+-        expense += -delta
++    if consumption_cents is None:
++        expense = _consumption_cents(ledger or [], month)
++    else:
++        try:
++            expense = int(consumption_cents)
++        except (TypeError, ValueError):
++            expense = _consumption_cents(ledger or [], month)
+     return {
+         "salary": int(salary_cents or 0) / 100.0,
+
+--- a/Astrbot_amoupup_watch\ui\cards.py
++++ b/Astrbot_amoupup_watch\ui\cards.py
+@@ -230,5 +230,13 @@
+             ledger = self.finance.ledger(200) if self.finance is not None else []
+             salary_cents = self.finance_life.salary_cents() if self.finance_life is not None else 0
+-            life = life_block(rows, ledger, salary_cents, today)
++            # task-27：本月消费与首页同源（能陪 MetricsAPI），不再两处各算一套
++            try:
++                from ..services.metrics import month_consumption
++            except ImportError:
++                from services.metrics import month_consumption
++            expense_metric = month_consumption(self)
++            life = life_block(rows, ledger, salary_cents, today,
++                              consumption_cents=expense_metric.get("cents", 0))
++            life["month_expense_source"] = str(expense_metric.get("source") or "")
+             keys = self.finance_repo.meta_keys("decision_done:" + today.isoformat()) if self.finance_repo else []
+             market = market_block([str(k).split(":", 3)[-1] for k in keys], 3,
+@@ -296,6 +304,7 @@
+             if self.finance_expense is not None:
+                 summ = self.finance_expense.month_summary()
+-                if summ.get("total_cents"):
+-                    life["month_expense"] = summ["total_cents"] / 100.0
++                # task-27：expense_engine 的月汇总（watch.expenses）只覆盖小额日常，
++                # 不能覆盖本月消费的权威口径；单列成分类小卡，不再篡改 month_expense。
++                life["expense_category_total"] = summ.get("total_cents", 0) / 100.0
+                 life["expense_categories"] = [
+                     {"key": item["key"], "label": item["label"],
+
+--- a/Astrbot_amoupup_watch\services\dashboard.py
++++ b/Astrbot_amoupup_watch\services\dashboard.py
+@@ -20,6 +20,12 @@
+         market = sum(int(p.get("qty") or 0) * int(p.get("last_cents") or 0) for p in positions)
+         loans = sum(int(r.get("balance_cents") or 0) for r in (repo.loans() if repo else [])) if hasattr(repo, "loans") else 0
+-        month = __import__("datetime").date.today().strftime("%Y-%m")
+-        expense = sum(int(r.get("amount_cents") or 0) for r in (repo.expenses(period=month) if hasattr(repo, "expenses") else []))
++        # task-27：首页“本月支出”不能读 watch.expenses（只有小额日常，且会漏跨插件消费），
++        # 与生活卡同源：能陪 MetricsAPI 的唯一消费口径。
++        try:
++            from ..services.metrics import month_consumption
++        except ImportError:
++            from services.metrics import month_consumption
++        expense_metric = month_consumption(plugin)
++        expense = int(expense_metric.get("cents") or 0)
+         city = (getattr(plugin, "config", {}) or {}).get("city") or ""
+         medical = getattr(plugin, "medical", None)
+
+--- a/Astrbot_amoupup_watch\services\shopping_engine.py
++++ b/Astrbot_amoupup_watch\services\shopping_engine.py
+@@ -1,8 +1,22 @@
+ # -*- coding: utf-8 -*-
+-"""逛街购物：周末/情绪/发薪触发，按余额档位消费，衣服同步陪伴衣橱。"""
++"""逛街购物：周末/情绪/发薪触发，按余额档位消费，衣服同步陪伴衣橱。
++
++2026-11-22 task-24：把「试穿/购买」从两条演出事件改成一条状态机
++（services/shopping_state.py）：
++- interest → tryon → approved → purchased，只有 purchased 才允许说「买了/花了」；
++- tick 只排 tryon 事件，不再预先排 +180min 的 home（以前到点必说买了，是假购买源头）；
++- 用户同意后走一笔事务：扣款（账本）→ 衣橱入库 → home 事件入队，三步都成功才置
++  purchased；任一步失败退款并把衣服放回衣架（不说买了）；
++- home 事件必须带 purchase_id，flush 时去 shop:purchases 对账，没有完整购买记录一律
++  不发「买了」；
++- 颜色+单品名统一走 shopping_state.item_label()（修「米白色米白色」）；
++- shopping_prompt / 主动推送只用「快一千了 / 卡里余额还够」这种人话，不写精确金额。
++"""
+ from __future__ import annotations
+ 
++import asyncio
+ import datetime as _dt
+ import json
++import re
+ 
+ try:
+@@ -19,4 +33,21 @@
+ except ImportError:  # 离线测试 / 顶层加载
+     from guard import isolated
++
++try:  # 统一日志（离线单测没有 astrbot 时退回标准库）
++    from astrbot.api import logger
++except Exception:  # pragma: no cover - 离线单测
++    import logging
++
++    logger = logging.getLogger("watch")
++
++try:  # 跨插件只读状态快照（task-27）：余额/地点与陪伴唯一同源
++    from ..core import life_state as _life_state
++except ImportError:
++    from core import life_state as _life_state
++
++try:  # 购物状态机纯规则（task-24）
++    from . import shopping_state as _state
++except ImportError:
++    from services import shopping_state as _state
+ 
+ SHOP_MALL = (
+@@ -33,4 +64,17 @@
+ )
+ 
++#: 购买事务日志（shop:purchases）：只有三步都 True 的记录才允许说「买了」。
++PURCHASES_KEY = "shop:purchases"
++PURCHASES_LIMIT = 20
++#: 统一失败话术：不出现技术词，也不冒充「买了」。
++FAILURE_LINES = {
++    "expense": "唔…卡里的钱不太够，这件先不买了，衣服放回衣架啦。",
++    "wardrobe": "唔…试衣间那边说这件没合适的码，今天没买成，衣服先放回去了。",
++    "event": "唔…这件先没买成，衣服放回去了，明天再来看。",
++    "refund": "唔…这次没买成，钱退回来了，衣服放回去了。",
++}
++#: 同一笔 pending 的结算串行锁（重复回复/重复 tick 不会扣两次钱）。
++_LOCKS: dict = {}
++
+ 
+ def _amo(plugin):
+@@ -51,19 +95,4 @@
+ 
+ 
+-def _money_words(price):
+-    """把价格（分）说成人话，不报 985/4072 这种精确数字。"""
+-    try:
+-        value = int(price or 0)
+-    except (TypeError, ValueError):
+-        value = 0
+-    if value >= 200000:
+-        return "快两千了"
+-    if value >= 100000:
+-        return "快一千了"
+-    if value >= 50000:
+-        return "小几百了"
+-    return "几十块"
+-
+-
+ def _can_engage(amo, kind=""):
+     """统一主动闸（陪伴侧 amo_presence.can_proactive）：沉默 6 小时不催问/不逛街/不追问。"""
+@@ -73,4 +102,208 @@
+         return False
+ 
++
++def _cash_cents(finance, life=None):
++    """余额：优先 LifeStateSnapshot（task-27），再退回本地钱包。"""
++    cash = 0
++    if life is not None and getattr(life, "available", False):
++        try:
++            cash = int(life.wallet_balance_cents() or 0)
++        except Exception:
++            cash = 0
++    if cash <= 0 and finance is not None:
++        try:
++            cash = int(finance.balance_cents() or 0)
++        except Exception:
++            cash = 0
++    return cash
++
++
++def _scene(life):
++    """试穿/购买事实带场景（task-27/25）：place + 场景账本 event_id。"""
++    data = {"place": "", "event_id": "", "snapshot": "local"}
++    if life is not None and getattr(life, "available", False):
++        data["snapshot"] = "life_state"
++        try:
++            data["place"] = str(life.place() or "")
++            data["event_id"] = str(life.get("location.event_id") or "")
++        except Exception:
++            pass
++    return data
++
++
++def _lock_for(key):
++    key = str(key or "")
++    lock = _LOCKS.get(key)
++    if lock is None:
++        lock = asyncio.Lock()
++        _LOCKS[key] = lock
++    return lock
++
++
++# ---------------------------------------------------------------- 记录读写
++
++def _pending_events(repo):
++    try:
++        raw = repo.meta_get("shop:events", []) or []
++        if isinstance(raw, str):
++            raw = json.loads(raw or "[]")
++        return list(raw)
++    except Exception:
++        return []
++
++
++def _save_events(repo, events) -> bool:
++    try:
++        repo.meta_set("shop:events", json.dumps(list(events)[-20:], ensure_ascii=False))
++        return True
++    except Exception as exc:
++        isolated("shopping_engine.save_events", exc)
++        return False
++
++
++def _pending_order(repo):
++    try:
++        raw = repo.meta_get("shop:pending", {}) or {}
++        if isinstance(raw, str):
++            raw = json.loads(raw or "{}")
++        return raw if isinstance(raw, dict) else {}
++    except Exception:
++        return {}
++
++
++def _save_pending(repo, pending) -> bool:
++    try:
++        repo.meta_set("shop:pending", json.dumps(pending, ensure_ascii=False))
++        return True
++    except Exception as exc:
++        isolated("shopping_engine.save_pending", exc)
++        return False
++
++
++def _clear_pending(repo):
++    try:
++        repo.meta_set("shop:pending", {})
++    except Exception as exc:
++        isolated("shopping_engine._clear_pending", exc)
++
++
++def _purchases(repo):
++    try:
++        raw = repo.meta_get(PURCHASES_KEY, []) or []
++        if isinstance(raw, str):
++            raw = json.loads(raw or "[]")
++        return [dict(item) for item in raw if isinstance(item, dict)]
++    except Exception:
++        return []
++
++
++def _save_purchases(repo, rows) -> bool:
++    try:
++        repo.meta_set(PURCHASES_KEY, json.dumps(list(rows)[-PURCHASES_LIMIT:], ensure_ascii=False))
++        return True
++    except Exception as exc:
++        isolated("shopping_engine.save_purchases", exc)
++        return False
++
++
++def _find_purchase(repo, purchase_id):
++    key = str(purchase_id or "").strip()
++    if not key:
++        return None
++    for row in reversed(_purchases(repo)):
++        if str(row.get("id") or "") == key:
++            return row
++    return None
++
++
++def _purchase_idem(pending):
++    return idem_key("shop:purchase", int(float(pending.get("created") or 0)))
++
++
++def _drop_open_events(repo, pending):
++    """放弃/超时/失败时，把这件衣服未发生的 tryon 事件清掉；已买的 home 事件不动。"""
++    name = str((pending or {}).get("name") or "")
++    events = _pending_events(repo)
++    keep = [event for event in events
++            if not (str(event.get("kind")) == "tryon" and str(event.get("name")) == name)]
++    return _save_events(repo, keep)
++
++
++# ---------------------------------------------------------------- 事务辅助
++
++def _closet_ok(result) -> bool:
++    """衣橱入库结果：新宿主返回 {ok:...}；老宿主返回 None 时按成功处理。"""
++    if isinstance(result, dict):
++        return bool(result.get("ok"))
++    return result is not False
++
++
++def _add_to_wardrobe(amo, pending, price) -> bool:
++    add = getattr(amo, "add_closet_item", None)
++    if not callable(add):
++        return False
++    try:
++        result = add({
++            "name": pending.get("name"),
++            "color": pending.get("color"),
++            "category": pending.get("category"),
++            "time_slot": pending.get("time_slot"),
++            "price": int(price or 0) // 100,
++        })
++    except Exception as exc:
++        isolated("shopping_engine.add_closet", exc)
++        return False
++    return _closet_ok(result)
++
++
++def _wallet_has_idem(amo, idem) -> bool:
++    """钱包流水里已经有这笔（崩溃后重放时避免二次扣款）。只看公开 ledger()。"""
++    wallet = getattr(amo, "wallet", None)
++    ledger = getattr(wallet, "ledger", None)
++    if not callable(ledger):
++        return False
++    try:
++        rows = ledger(80) or []
++    except Exception:
++        return False
++    key = str(idem or "")
++    return any(str((row or {}).get("idem") or "") == key for row in rows
++               if isinstance(row, dict))
++
++
++def _refund(amo, idem, price, label) -> bool:
++    """事务回滚：原路退回这笔衣服钱（refund: 前缀，不计入消费）。"""
++    wallet = getattr(amo, "wallet", None)
++    credit = getattr(wallet, "credit", None)
++    if not callable(credit):
++        return False
++    try:
++        return bool(credit(int(price or 0), "退款：%s 没买成" % label,
++                           "refund:" + str(idem or ""), ref=str(idem or "")))
++    except Exception as exc:
++        isolated("shopping_engine.refund", exc)
++        return False
++
++
++async def _push(amo, text):
++    fn = getattr(amo, "push_to_owner", None)
++    if not callable(fn):
++        return False
++    try:
++        return bool(await fn(text))
++    except Exception as exc:
++        isolated("shopping_engine.push", exc)
++        return False
++
++
++async def _push_failure(amo, kind="generic"):
++    await _push(amo, FAILURE_LINES.get(str(kind or ""), FAILURE_LINES["event"]))
++
++
++def _pending_allows(state) -> bool:
++    return _state.normalize_state(state) in _state.OPEN_STATES
++
++
++# ---------------------------------------------------------------- 定时触发
+ 
+ async def tick(plugin, now=None):
+@@ -84,4 +317,6 @@
+     if amo is None or finance is None or not hasattr(amo, "shopping_trigger"):
+         return None
++    # task-27：余额/地点读 LifeStateSnapshot（能陪唯一事实），旧版再退回本地读法
++    life = _life_state.read(plugin)
+     # 唯一在场策略：只有人真的在商场/街上/景区才逛街；在家不触发（2026-11-22）。
+     if not _can_shop(amo):
+@@ -107,5 +342,10 @@
+     except Exception as exc:
+         isolated("shopping_engine.tick", exc)
+-    cash = int(finance.balance_cents() or 0)
++    if repo is not None:
++        # 上一笔还没走完（等他回复/结算中）：不覆盖 pending，交给 flush 收尾或退回
++        current = _pending_order(repo)
++        if current and _pending_allows(current.get("state")):
++            return None
++    cash = _cash_cents(finance, life)
+     try:
+         factor = float(factor_of(current_city(plugin)) or 1.0)
+@@ -129,19 +369,20 @@
+         name, cat, slot, color = SHOP_CHEAP[stable_int(day + ":c", 0, len(SHOP_CHEAP))]
+         buy = 10000 + stable_int(day + ":p", 0, 20000)
++    pending = {}
+     if buy:
+         buy = max(500, int(buy * factor))
++        label = _state.item_label(name, color)
+         item = {"name": name, "color": color, "category": cat,
+                 "time_slot": slot, "price": buy}
+-        try:
+-            repo.meta_set("shop:pending", json.dumps({
+-                "name": name, "color": color, "category": cat, "time_slot": slot,
+-                "price": buy, "cash": cash, "due": now.timestamp() + 15 * 60,
+-                "created": now.timestamp()}, ensure_ascii=False))
+-        except Exception as exc:
+-            isolated("shopping_engine.tick.2", exc)
++        scene = _scene(life)
++        # 状态机从 interest 开始：先在试衣间看到，再把 tryon 事件排到 90 分钟后。
++        pending = _state.pending_record(
++            name, color, cat, slot, buy, cash, now.timestamp(), now.timestamp() + 15 * 60,
++            scene=scene)
++        _save_pending(repo, pending)
+         try:
+             # 人话口径：不要报“985/4072”这种精确数字，正常人说“快一千了、手里还有点钱”
+-            facts = "在商场试了一件%s%s，觉得挺好看，就是好贵，%s，手里还有点钱" % (
+-                color, name, _money_words(buy))
++            facts = "在商场试了一件%s，觉得挺好看，就是好贵，%s，手里还有点钱" % (
++                label, _state.money_words(buy))
+             if hasattr(amo, "note_recent_topic"):
+                 # 即使这次推送没发出去，他追问「差多少」也能接住
+@@ -156,5 +397,5 @@
+                 isolated("shopping_engine.phrase", exc)
+             if line:
+-                await amo.push_to_owner(line)
++                await _push(amo, line)
+                 if hasattr(amo, "note_recent_topic"):
+                     amo.note_recent_topic(facts + "；你刚跟他说：" + line,
+@@ -162,11 +403,15 @@
+                                           key="shop:%s" % now.date().isoformat())
+             if hasattr(amo, "note_shopping_pending"):
+-                # 把价格/余额一起给她：他追问「差多少」时能直接算，不用猜
++                # 追问口径也是人话：价格/余额只说大概，绝不注入精确金额（真实飞书 985/4072）
+                 amo.note_shopping_pending(
+-                    "你正在商场试%s%s，价格 %d 元，卡里余额 %d 元，等老公回复"
+-                    % (color, name, buy // 100, cash // 100),
+-                    now.timestamp() + 15 * 60)
++                    "你正在商场试%s，价格%s，%s，等老公回复"
++                    % (label, _state.money_words(buy), _state.cash_phrase(cash, buy)),
++                    now.timestamp() + 15 * 60,
++                    name=name, color=color, price_cents=buy)
+         except Exception as exc:
+-            isolated("shopping_engine.tick.3", exc)
++            isolated("shopping_engine.tick.2", exc)
++        # 她已经在试了：interest -> tryon（失败也保留 tryon，tick 只排 tryon 事件）
++        pending["state"] = _state.advance(pending.get("state"), _state.TRYON)
++        _save_pending(repo, pending)
+     try:
+         if repo is not None:
+@@ -174,39 +419,193 @@
+             if item:
+                 events = _pending_events(repo)
+-                base = now.timestamp()
+-                events.append({"due": base + 90 * 60, "kind": "tryon",
+-                               "name": item["name"], "color": item["color"],
+-                               "price": item["price"], "cash": cash - buy})
+-                events.append({"due": base + 180 * 60, "kind": "home",
+-                               "name": item["name"], "color": item["color"],
+-                               "price": item["price"], "cash": cash - buy})
+-                repo.meta_set("shop:events", json.dumps(events[-20:], ensure_ascii=False))
+-    except Exception as exc:
+-        isolated("shopping_engine.tick.4", exc)
+-    except Exception as exc:
+-        isolated("shopping_engine.tick.5", exc)
++                events.append(_state.tryon_event(
++                    item, now.timestamp() + 90 * 60, cash - buy, scene=_scene(life)))
++                _save_events(repo, events)
++    except Exception as exc:
++        isolated("shopping_engine.tick.3", exc)
+     if finance is not None:
+         try:
+-            if buy:
+-                finance.small_diary("今天%s，试了一件%s，等老公点头再买，好期待！" % (reason, item["name"] if item else "衣服"))
++            if item:
++                finance.small_diary(
++                    "今天%s，试了一件%s，等老公点头再买，好期待！"
++                    % (reason, _state.item_label(item.get("name"), item.get("color"))))
+             else:
+                 finance.small_diary("今天%s，只逛不买，看到一条好漂亮的裙子但买不起，好难过。" % reason)
+         except Exception as exc:
+-            isolated("shopping_engine.tick.6", exc)
++            isolated("shopping_engine.tick.4", exc)
+     return {"reason": reason, "item": item, "spent": spent}
+ 
+ 
+-def _pending_events(repo):
+-    try:
+-        raw = repo.meta_get("shop:events", []) or []
+-        if isinstance(raw, str):
+-            raw = json.loads(raw or "[]")
+-        return list(raw)
+-    except Exception:
+-        return []
+-
++# ---------------------------------------------------------------- 购买事务
++
++async def _settle_purchase(plugin, repo, finance, amo, pending, record, now):
++    """approved 之后的唯一结算入口：账本→事件→衣橱→purchased（任一步失败就退款）。
++
++    顺序是刻意的：home 事件只是先排队（flush 必须对账到完整购买记录才允许发），
++    衣橱放最后入库。这样任何一步失败只需要"退款 + 撤事件"，不用回滚衣橱。
++    幂等：事务日志 shop:purchases 记住每步是否完成，崩溃/重复回复都不会扣两次钱。
++    """
++    label = str(record.get("label") or _state.item_label(pending.get("name"), pending.get("color")))
++    price = int(record.get("price") or pending.get("price") or 0)
++    idem = str(record.get("id") or _purchase_idem(pending))
++    record["id"] = idem
++    steps = record.setdefault("steps", {step: False for step in _state.PURCHASE_STEPS})
++    # 1) 账本扣款
++    if not steps.get("debited"):
++        if _wallet_has_idem(amo, idem):
++            steps["debited"] = True   # 上次已经扣过（崩溃重放）
++        else:
++            try:
++                res = await finance.expense(price, "买衣服：%s" % label, idem, necessary=True)
++            except Exception as exc:
++                isolated("shopping_engine.buy.expense", exc)
++                res = {"ok": False}
++            if not isinstance(res, dict) or not res.get("ok"):
++                # 扣款没发生：退回 tryon，不改衣橱/事件，可以等他转账后再试
++                record["state"] = _state.FAILED
++                record["reason"] = "expense_failed"
++                _merge_purchase(repo, record)
++                pending["state"] = _state.advance(pending.get("state"), _state.TRYON)
++                _save_pending(repo, pending)
++                await _push_failure(amo, "expense")
++                return {"ok": False, "bought": False, "reason": "expense"}
++            steps["debited"] = True
++        record["steps"] = steps
++        _merge_purchase(repo, record)
++    # 2) home 事件入队（"回家炫耀"必须带 purchase_id，flush 据此对账；此时还不会发）
++    if not steps.get("event"):
++        events = _pending_events(repo)
++        events = [item for item in events
++                  if str(item.get("purchase_id") or "") != idem]
++        events.append(_state.home_event(pending, now.timestamp() + 60 * 60,
++                                        _cash_cents(finance), idem,
++                                        scene=_scene(_life_state.read(plugin))))
++        if not _save_events(repo, events):
++            refunded = _refund(amo, idem, price, label)
++            steps["debited"] = not refunded   # 退款失败：保留 debited，flush 会重试退款
++            record["steps"] = steps
++            _fail_purchase(repo, pending, record, "event_failed")
++            await _push_failure(amo, "event" if refunded else "refund")
++            return {"ok": False, "bought": False, "reason": "event"}
++        steps["event"] = True
++        record["steps"] = steps
++        _merge_purchase(repo, record)
++    # 3) 衣橱入库（最后一步：失败只退款+撤事件，不用回滚衣橱）
++    if not steps.get("wardrobe"):
++        if not _add_to_wardrobe(amo, pending, price):
++            refunded = _refund(amo, idem, price, label)
++            steps["debited"] = not refunded
++            steps["event"] = False
++            record["steps"] = steps
++            _drop_event_by_purchase(repo, idem)
++            _fail_purchase(repo, pending, record, "wardrobe_failed")
++            await _push_failure(amo, "wardrobe" if refunded else "refund")
++            return {"ok": False, "bought": False, "reason": "wardrobe"}
++        steps["wardrobe"] = True
++        record["steps"] = steps
++        _merge_purchase(repo, record)
++    # 4) 提交：三步都完成才允许 purchased
++    if not all(bool(steps.get(step)) for step in _state.PURCHASE_STEPS):
++        isolated("shopping_engine.buy.incomplete", RuntimeError(str(steps)))
++        return {"ok": False, "bought": False, "reason": "incomplete"}
++    record["state"] = _state.PURCHASED
++    _merge_purchase(repo, record)
++    pending["state"] = _state.PURCHASED
++    _save_pending(repo, pending)
++    _clear_pending(repo)
++    # 5) 人话副作用（买到已成立；这里失败不影响"已买"事实）
++    try:
++        if hasattr(amo, "note_purchase"):
++            amo.note_purchase(pending.get("name"), price)
++        hook = getattr(finance, "furniture_bought", None)
++        if callable(hook):
++            hook(pending.get("name"))
++        finance.small_diary("老公同意我买%s啦，超开心！" % label)
++        await finance.permanent_memory(
++            "我买了%s（%s），%d 元。" % (pending.get("name"), pending.get("color"), price // 100),
++            idem_key("shop:purchase", int(float(pending.get("created") or 0)), "mem"))
++    except Exception as exc:
++        isolated("shopping_engine.buy.side_effects", exc)
++    await _push(amo, "谢谢老公！我买啦，等我回家穿给你看~")
++    return {"ok": True, "bought": True, "purchase_id": idem}
++
++
++def _fail_purchase(repo, pending, record, reason):
++    """事务失败收尾：日志记 FAILED、退掉 pending、把这件衣服的未发生事件作废。"""
++    record["state"] = _state.FAILED
++    record["reason"] = str(reason or "")
++    _merge_purchase(repo, record)
++    pending["state"] = _state.FAILED
++    _save_pending(repo, pending)
++    _drop_open_events(repo, pending)
++    _clear_pending(repo)
++
++
++def _drop_event_by_purchase(repo, purchase_id):
++    key = str(purchase_id or "")
++    if not key:
++        return False
++    events = _pending_events(repo)
++    keep = [event for event in events
++            if str(event.get("purchase_id") or "") != key]
++    return _save_events(repo, keep)
++
++
++def _retry_refunds(repo, amo):
++    """退款失败的事务：下次 flush 继续原路退，直到钱退回（幂等 refund: 前缀）。"""
++    rows = _purchases(repo)
++    changed = False
++    for row in rows:
++        if _state.normalize_state(row.get("state")) != _state.FAILED:
++            continue
++        if str(row.get("reason") or "") not in ("wardrobe_failed", "event_failed"):
++            continue
++        steps = row.get("steps") if isinstance(row.get("steps"), dict) else {}
++        if not steps.get("debited"):
++            continue
++        label = str(row.get("label") or _state.item_label(row.get("name"), row.get("color")))
++        if _refund(amo, row.get("id"), int(row.get("price") or 0), label):
++            steps["debited"] = False
++            row["steps"] = steps
++            row["refunded"] = True
++            changed = True
++    if changed:
++        _save_purchases(repo, rows)
++    return changed
++
++
++def _merge_purchase(repo, record):
++    rows = _purchases(repo)
++    key = str(record.get("id") or "")
++    merged = [row for row in rows if str(row.get("id") or "") != key]
++    merged.append(dict(record))
++    merged.sort(key=lambda row: float(row.get("created") or 0))
++    return _save_purchases(repo, merged)
++
++
++async def _recover_purchase(plugin, repo, finance, amo, now):
++    """收尾半截事务：approved 未完成 → 继续；已 purchased 但 pending 没清 → 清掉。"""
++    pending = _pending_order(repo)
++    if not pending:
++        return None
++    state = _state.normalize_state(pending.get("state"))
++    if state == _state.PURCHASED:
++        _clear_pending(repo)
++        return {"ok": True, "bought": True, "recovered": True}
++    if state != _state.APPROVED:
++        return None
++    idem = _purchase_idem(pending)
++    record = _find_purchase(repo, idem)
++    if record is None:
++        record = _state.purchase_record(pending, idem, now.timestamp())
++        if not _save_purchases(repo, _purchases(repo) + [record]):
++            return {"ok": False, "reason": "journal"}
++    return await _settle_purchase(plugin, repo, finance, amo, pending, record, now)
++
++
++# ---------------------------------------------------------------- 到点推送
+ 
+ async def flush(plugin, now=None):
+-    """到点主动发：试穿问好看 / 回家炫耀（大额且余额低时心虚）。"""
++    """到点主动发：试穿问好看 / 买到后回家炫耀；未入账的 home 事件一律不发。"""
+     now = now or _dt.datetime.now()
+     repo = getattr(plugin, "finance_repo", None)
+@@ -214,23 +613,52 @@
+     if repo is None or amo is None or not hasattr(amo, "push_to_owner"):
+         return None
++    finance = getattr(plugin, "finance", None)
++    # task-27：文案里的“卡里还剩多少”用快照实时余额，不用事件里写死的旧数
++    life = _life_state.read(plugin)
++    try:
++        _retry_refunds(repo, amo)
++    except Exception as exc:
++        isolated("shopping_engine.retry_refunds", exc)
++    try:
++        await _recover_purchase(plugin, repo, finance, amo, now)
++    except Exception as exc:
++        isolated("shopping_engine.recover", exc)
+     pending = _pending_order(repo)
+-    if pending and float(pending.get("due") or 0) <= now.timestamp():
+-        # 统一主动闸：用户沉默 6 小时后不再追问「等了十五分钟」，这条 pending 作废。
+-        if not _can_engage(amo, "nudge"):
+-            _clear_pending(repo)
+-        else:
+-            line = ""
++    state = _state.normalize_state(pending.get("state")) if pending else ""
++    if pending and _state.is_open(state) and float(pending.get("due") or 0) <= now.timestamp():
++        # 统一主动闸：用户沉默 6 小时后不再追问，这条 pending 直接作废。
++        if state != _state.APPROVED and not _can_engage(amo, "nudge"):
++            _expire_pending(repo, pending, state)
++        elif state != _state.APPROVED:
+             try:
+-                from . import social_ai as _social_ai
+-                line = await _social_ai.phrase(
+-                    plugin, "试穿后等了十五分钟没等到回复，她把衣服放回衣架了", "有点失落")
+-            except Exception as exc:
+-                isolated("shopping_engine.flush.phrase", exc)
+-            if line:
++                nudges = int(pending.get("nudges") or 0)
++            except (TypeError, ValueError):
++                nudges = 0
++            if nudges <= 0:
++                # 第一次到点：还在商场犹豫，不把衣服放回去（真正的"试/没试"由 tryon 事件决定）
++                line = ""
+                 try:
+-                    await amo.push_to_owner(line)
++                    from . import social_ai as _social_ai
++                    line = await _social_ai.phrase(
++                        plugin, "试穿后等了十五分钟没等到回复，她还在犹豫要不要买", "有点失落")
+                 except Exception as exc:
+-                    isolated("shopping_engine.flush", exc)
+-            _clear_pending(repo)
++                    isolated("shopping_engine.flush.phrase", exc)
++                if line:
++                    await _push(amo, line)
++                pending["nudges"] = 1
++                # 同一次逛街的收尾时间：tick 后 180 分钟还没回音才真的放回衣架
++                pending["due"] = float(pending.get("created") or 0) + 180 * 60
++                _save_pending(repo, pending)
++            else:
++                line = ""
++                try:
++                    from . import social_ai as _social_ai
++                    line = await _social_ai.phrase(
++                        plugin, "等了半天没等到回复，她把衣服放回衣架了", "有点失落")
++                except Exception as exc:
++                    isolated("shopping_engine.flush.phrase", exc)
++                if line:
++                    await _push(amo, line)
++                _expire_pending(repo, pending, state)
+     events = _pending_events(repo)
+     keep, sent = [], []
+@@ -243,22 +671,41 @@
+             keep.append(event)
+             continue
+-        kind = event.get("kind")
++        kind = str(event.get("kind") or "")
+         name = str(event.get("name") or "衣服")
+         color = str(event.get("color") or "")
+         price = int(event.get("price") or 0)
+         cash = int(event.get("cash") or 0)
++        if life.available and life.wallet_balance_cents() > 0:
++            cash = life.wallet_balance_cents()
++        label = _state.item_label(name, color)
+         if kind == "tryon":
+             # 统一主动闸：人不在商场 / 用户沉默 6 小时 → 不再发「在商场试」类。
+             if not _can_engage(amo, "shopping"):
+                 continue
+-            facts = "在商场试了%s%s，想问好不好看" % (color, name)
++            # 快照明确“不在商场/在家”时，试穿推送与日程直接矛盾，作废
++            if life.available and life.in_shop() is False:
++                continue
++            current = _pending_order(repo)
++            if not _state.claim_allowed("tryon", current.get("state")):
++                # 没有在试的 pending（已放弃/超时/已买）→ 不许再声称在试
++                continue
++            facts = "在商场试了%s，想问好不好看" % label
+             style = "期待他夸"
+-        else:
+-            # 回家炫耀是「逛街回来」的事实，受沉默闸限制，但不再要求此刻仍在商场。
++        elif kind == "home":
++            # 回家炫耀是「已经买了」的事实：必须对账到完整的购买事务记录。
+             if not _can_engage(amo, "share"):
+                 continue
++            record = _find_purchase(repo, event.get("purchase_id"))
++            if not _state.claim_allowed("home", event.get("state"), record):
++                # 没有完整购买事务（账本+衣橱+事件）：宁可丢掉这条炫耀，也不说「买了」
++                logger.info("[WATCH][SHOP] 未入账的回家事件不生成「买了」文案（%s）",
++                            str(event.get("name") or "-")[:24])
++                continue
+             wallet = "卡里不多了，有点心虚" if cash < 200000 else "手里还有点钱"
+-            facts = "逛街回来，买了%s，花了%s，%s" % (name, _money_words(price), wallet)
++            facts = "逛街回来，买了%s，花了%s，%s" % (
++                label, _state.money_words(price), wallet)
+             style = "有点心虚，怕他说乱花钱" if price > 50000 and cash < 200000 else "开心炫耀"
++        else:
++            continue
+         line = ""
+         try:
+@@ -275,30 +722,42 @@
+         except Exception:
+             keep.append(event)
+-    try:
+-        repo.meta_set("shop:events", json.dumps(keep[-20:], ensure_ascii=False))
+-    except Exception as exc:
+-        isolated("shopping_engine.flush.2", exc)
++    _save_events(repo, keep)
+     return {"sent": sent}
+ 
+ 
+-def _pending_order(repo):
+-    try:
+-        raw = repo.meta_get("shop:pending", {}) or {}
+-        if isinstance(raw, str):
+-            raw = json.loads(raw or "{}")
+-        return raw if isinstance(raw, dict) else {}
+-    except Exception:
+-        return {}
+-
+-
+-def _clear_pending(repo):
+-    try:
+-        repo.meta_set("shop:pending", {})
+-    except Exception as exc:
+-        isolated("shopping_engine._clear_pending", exc)
++# ---------------------------------------------------------------- 用户回复
++
++async def _reject(plugin, repo, finance, amo, pending, now):
++    _set_terminal(repo, pending, _state.REJECTED)
++    _clear_pending(repo)
++    _drop_open_events(repo, pending)
++    try:
++        nudge = getattr(finance, "nudge_mood", None)
++        if callable(nudge):
++            nudge({"委屈": 6, "开心": -5}, idem_key("shop:reject", int(now.timestamp())))
++    except Exception as exc:
++        isolated("shopping_engine.handle_reply.mood", exc)
++    await _push(amo, "好吧，听你的，那不买了……")
++    return {"ok": True, "bought": False}
++
++
++def _expire_pending(repo, pending, state):
++    """超时/沉默：标记 expired、清 pending、把这件衣服的 tryon 事件一起作废。"""
++    pending["state"] = _state.advance(state, _state.EXPIRED)
++    _save_pending(repo, pending)
++    _drop_open_events(repo, pending)
++    _clear_pending(repo)
++
++
++def _set_terminal(repo, pending, state):
++    pending["state"] = _state.advance(pending.get("state"), state)
++    _save_pending(repo, pending)
+ 
+ 
+ async def handle_reply(plugin, text, now=None):
+-    """用户在 pending 期间回复：买/好看/转账 → 结算；太贵/不好看 → 放弃。"""
++    """用户在 pending 期间回复：买/好看/转账 → 结算；太贵/不好看 → 放弃。
++
++    只有 approved→purchased 全链路成功才说「买啦」；未 approved 的回复不会产生购买事实。
++    """
+     now = now or _dt.datetime.now()
+     repo = getattr(plugin, "finance_repo", None)
+@@ -308,63 +767,40 @@
+     if not pending or finance is None or amo is None:
+         return None
++    state = _state.normalize_state(pending.get("state"))
++    if state == _state.PURCHASED:
++        return {"ok": True, "bought": True, "duplicate": True}
++    if not _state.is_open(state):
++        return None
+     body = str(text or "")
+     buy = int(pending.get("price") or 0)
+-    import re
+     transfer = re.search(r"转账\]?\s*([0-9]+(?:\.[0-9]+)?)", body)
+     yes = bool(transfer) or any(w in body for w in ("买", "好看", "可以", "要", "好呀", "行"))
+     no = any(w in body for w in ("太贵", "不好看", "不买", "算了", "别买", "不要"))
+-    if no:
+-        _clear_pending(repo)
+-        try:
+-            finance.nudge_mood({"委屈": 6, "开心": -5}, idem_key("shop:reject", int(now.timestamp())))
+-            await amo.push_to_owner("好吧，听你的，那不买了……")
+-        except Exception as exc:
+-            isolated("shopping_engine.handle_reply", exc)
+-        return {"ok": True, "bought": False}
+-    if yes:
+-        cash = int(finance.balance_cents() or 0)
++    key = _purchase_idem(pending)
++    async with _lock_for(key):
++        # 锁内重读：另一个回复/定时任务可能已经推进/结算过
++        pending = _pending_order(repo)
++        state = _state.normalize_state(pending.get("state")) if pending else ""
++        if not pending or state == _state.PURCHASED:
++            return {"ok": True, "bought": True, "duplicate": True}
++        if not _state.is_open(state):
++            return None
++        if no:
++            return await _reject(plugin, repo, finance, amo, pending, now)
++        if not yes:
++            return None
++        cash = _cash_cents(finance, _life_state.read(plugin))
+         if cash < buy:
+-            try:
+-                await amo.push_to_owner("啊哦，我的钱不够了，老公你能转我一点吗？")
+-            except Exception as exc:
+-                isolated("shopping_engine.handle_reply.2", exc)
+-            return {"ok": False, "reason": "insufficient"}
+-        try:
+-            res = await finance.expense(buy, "买衣服：%s" % pending.get("name"),
+-                                        idem_key("shop:pending", int(pending.get("created") or 0)), necessary=True)
+-        except Exception:
+-            res = {"ok": False}
+-        if not isinstance(res, dict) or not res.get("ok"):
+-            return {"ok": False, "reason": "expense"}
+-        try:
+-            if hasattr(amo, "note_purchase"):
+-                amo.note_purchase(pending.get("name"), buy)
+-        except Exception as exc:
+-            isolated("shopping_engine.handle_reply.3", exc)
+-        try:
+-            hook = getattr(finance, "furniture_bought", None)
+-            if callable(hook):
+-                hook(pending.get("name"))
+-        except Exception as exc:
+-            isolated("shopping_engine.handle_reply.4", exc)
+-        try:
+-            amo.add_closet_item({"name": pending.get("name"), "color": pending.get("color"),
+-                                 "category": pending.get("category"), "time_slot": pending.get("time_slot"),
+-                                 "price": buy // 100})
+-            finance.small_diary("老公同意我买%s啦，超开心！" % pending.get("name"))
+-            await finance.permanent_memory("我买了%s（%s），%d 元。" % (pending.get("name"), pending.get("color"), buy // 100),
+-                                           idem_key("shop:pending", int(pending.get("created") or 0), "mem"))
+-            await amo.push_to_owner("谢谢老公！我买啦，等我回家穿给你看~")
+-        except Exception as exc:
+-            isolated("shopping_engine.handle_reply.5", exc)
+-        _clear_pending(repo)
+-        try:
+-            events = _pending_events(repo)
+-            events.append({"due": now.timestamp() + 60 * 60, "kind": "home",
+-                           "name": pending.get("name"), "color": pending.get("color"),
+-                           "price": buy // 100, "cash": cash - buy})
+-            repo.meta_set("shop:events", json.dumps(events[-20:], ensure_ascii=False))
+-        except Exception as exc:
+-            isolated("shopping_engine.handle_reply.6", exc)
+-        return {"ok": True, "bought": True}
+-    return None
++            await _push(amo, "啊哦，我的钱不够了，老公你能转我一点吗？")
++            return {"ok": False, "bought": False, "reason": "insufficient"}
++        # approved：先把事务日志落盘，再动钱（崩溃也能靠 shop:purchases 收尾/退款）
++        pending["state"] = _state.advance(state, _state.APPROVED)
++        pending["approved_at"] = now.timestamp()
++        _save_pending(repo, pending)
++        record = _state.purchase_record(pending, key, now.timestamp())
++        if not _save_purchases(repo, _purchases(repo) + [record]):
++            pending["state"] = _state.advance(pending.get("state"), _state.TRYON)
++            _save_pending(repo, pending)
++            await _push_failure(amo, "event")
++            return {"ok": False, "bought": False, "reason": "journal"}
++        return await _settle_purchase(plugin, repo, finance, amo, pending, record, now)
+
+--- a/Astrbot_amoupup_watch\core\amo_bridge.py
++++ b/Astrbot_amoupup_watch\core\amo_bridge.py
+@@ -153,4 +153,10 @@
+     "ledger": lambda amo, *a, **k: amo.wallet.ledger(*a, **k),
+     "chat_raw": lambda amo, *a, **k: amo.llm.chat_raw(*a, **k),
++    # 跨插件只读契约（task-27）：LifeStateSnapshot / MetricsAPI
++    "life_state_contract": lambda amo, *a, **k: amo.life_state_contract(*a, **k),
++    "life_state_snapshot": lambda amo, *a, **k: amo.life_state_snapshot(*a, **k),
++    "metrics_contract": lambda amo, *a, **k: amo.metrics_contract(*a, **k),
++    "metrics_snapshot": lambda amo, *a, **k: amo.metrics_snapshot(*a, **k),
++    "month_consumption_cents": lambda amo, *a, **k: amo.month_consumption_cents(*a, **k),
+ }
+ 
+
+--- a/Astrbot_amoupup_watch\tests\contracts\Astrbot_amoupup_forever_surface.json
++++ b/Astrbot_amoupup_watch\tests\contracts\Astrbot_amoupup_forever_surface.json
+@@ -44,4 +44,5 @@
+     "day",
+     "invalidate_from",
++    "new",
+     "new_items",
+     "old_items",
+@@ -108,9 +109,13 @@
+   ],
+   "kv_get": [
++    "d",
+     "default",
++    "k",
+     "key"
+   ],
+   "kv_set": [
++    "k",
+     "key",
++    "v",
+     "value"
+   ],
+@@ -128,4 +133,8 @@
+     "limit"
+   ],
++  "life_state_contract": [],
++  "life_state_snapshot": [
++    "now"
++  ],
+   "mark_meal": [
+     "cooldown_hours",
+@@ -133,4 +142,11 @@
+     "mood"
+   ],
++  "metrics_contract": [],
++  "metrics_snapshot": [
++    "now"
++  ],
++  "month_consumption_cents": [
++    "month"
++  ],
+   "note_expense_summary": [
+     "line"
+@@ -155,5 +171,9 @@
+   ],
+   "note_shopping_pending": [
+-    "line",
++    "color",
++    "line",
++    "name",
++    "price_cents",
++    "scene_id",
+     "until_ts"
+   ],
+
+--- a/Astrbot_amoupup_data\services\maintenance_engine.py
++++ b/Astrbot_amoupup_data\services\maintenance_engine.py
+@@ -264,3 +264,20 @@
+             except Exception as exc:
+                 logger.debug("[amo_data] optional step failed: %r", exc)
++            # task-27：面板“聊天”只算真实对话，摘要（role=summary）单列。
++            # 之前 messages 全表 = 436，其中 146 条是摘要，真实聊天 290（高估 33.5%）。
++            for name, condition in (
++                ("messages_chat", "role IN ('user','bot')"),
++                ("messages_summary", "role='summary'"),
++            ):
++                try:
++                    row = self.db.conn.execute(
++                        "SELECT COUNT(*) AS c FROM messages WHERE " + condition + where,
++                        params if where else (),
++                    ).fetchone()
++                    out[name] = int(row["c"] or 0) if row else 0
++                except Exception as exc:
++                    out[name] = 0
++                    logger.debug("[amo_data] optional step failed: %r", exc)
++            # 兜底：老库 role 可能大小写/空白不一致时，保证 chat+summary 不超过总数
++            out["messages_chat"] = max(0, min(out.get("messages_chat", 0), out.get("messages", 0)))
+         return out
+
+--- a/Astrbot_amoupup_data\views\dashboard\index.html
++++ b/Astrbot_amoupup_data\views\dashboard\index.html
+@@ -646,7 +646,12 @@
+     const data = objectFrom(await call("status")) || {};
+     const counts = data.counts || {};
++    // task-27：聊天只算真实对话（摘要单列）；记忆给 活跃/总数，避免“917/770”标签歧义
++    const chatCount = counts.messages_chat != null ? counts.messages_chat : (counts.messages || 0);
+     document.getElementById("stat").textContent =
+-      "画像 " + (counts.profiles || 0) + " · 记忆 " + (counts.memories || 0) +
+-      " · 关系 " + (counts.relations || 0) + " · 聊天 " + (counts.messages || 0) +
++      "画像 " + (counts.profiles || 0) +
++      " · 记忆 " + (counts.memories_active != null
++        ? counts.memories_active + "/" + (counts.memories || 0) : (counts.memories || 0)) +
++      " · 关系 " + (counts.relations || 0) + " · 聊天 " + chatCount +
++      "（摘要 " + (counts.messages_summary || 0) + " 单列）" +
+       " · v" + (data.version || "");
+   } catch (error) {
+@@ -757,7 +762,18 @@
+ }
+ /* ---------- 会话分组：先分「群聊 / 私聊」，再按 年 → 月 → 日 ---------- */
++/* 群会话 ID 唯一归一（task-27）：与后端 services/message_engine.normalize_group_umo
++   同一规则。入库、群列表、聊天页、群聊页、改名全走这里，禁止再写第二套正则。 */
++function normalizeGroupUmo(umo) {
++  const text = String(umo || "");
++  const matched = text.match(/:GroupMessage:([^:]+)/);
++  if (!matched) return text;
++  let gid = matched[1];
++  const head = gid.split("_")[0];
++  if (/^d+$/.test(head)) gid = head;
++  return text.slice(0, matched.index) + ":GroupMessage:" + gid;
++}
+ function sessionLabel(list) {
+   const item = Array.isArray(list) ? (list[0] || {}) : (list || {});
+-  const umo = String((item && item.umo) || "");
++  const umo = normalizeGroupUmo(String((item && item.umo) || ""));
+   const plat = String((item && (item.label || item.platform)) || "");
+   const group = umo.match(/:GroupMessage:([^:]+)$/);
+@@ -776,5 +792,6 @@
+   const groups = new Map();
+   items.forEach((item) => {
+-    const key = String((item && item.umo) || (item && item.platform) || "unknown");
++    const key = normalizeGroupUmo(
++      String((item && item.umo) || (item && item.platform) || "unknown"));
+     if (!groups.has(key)) groups.set(key, []);
+     groups.get(key).push(item);
+@@ -1898,11 +1915,6 @@
+ /* ---------- 群聊（群名 → 年 → 月 → 日） ---------- */
+ function groupKey(umo) {
+-  const text = String(umo || "");
+-  const matched = text.match(/:GroupMessage:([^:]+)/);
+-  if (!matched) return text;
+-  let gid = matched[1];
+-  const head = gid.split("_")[0];
+-  if (/^\d+$/.test(head)) gid = head;
+-  return text.slice(0, matched.index) + ":GroupMessage:" + gid;
++  // 唯一归一化在 normalizeGroupUmo（见上）；这里只是旧名字的别名，禁止再写第二套规则。
++  return normalizeGroupUmo(umo);
+ }
+ 
+@@ -1910,10 +1922,10 @@
+   const items = Array.isArray(list) ? list : [list || {}];
+   const item = items[0] || {};
+-  const umo = String(item.umo || "");
++  const umo = normalizeGroupUmo(String(item.umo || ""));
+   const plat = String(item.label || item.platform || "");
+   const matched = umo.match(/:GroupMessage:([^:]+)$/);
+   // 群名可能只在某几条消息上有（她自己的回复就没有），扫一遍取第一个非空的
+   const named = items.find((one) => String((one && one.group_name) || "").trim());
+-  // 手动起的名字 > 平台给的群名 > 群号
++  // 手动起的名字 > 平台给的群名 > 群号；手动名按归一化 key 查（改名后立即生效）
+   const manual = String(((window._groupNames || {})[umo]) || "").trim();
+   const name = manual || String((named && named.group_name) || "").trim()
+@@ -1926,5 +1938,11 @@
+   if (!force && Array.isArray(window._groupMsgs)) return window._groupMsgs;
+   const data = objectFrom(await call("messages", { kind: "group", limit: 800 })) || {};
+-  window._groupMsgs = Array.isArray(data.items) ? data.items : [];
++  // 统一群 umo（同一 normalizeGroupUmo）：同群多种 umo 形态合并成一个群节点
++  window._groupMsgs = (Array.isArray(data.items) ? data.items : []).map((it) => {
++    if (!it || typeof it !== "object") return it;
++    const umo = String(it.umo || "");
++    if (!umo.includes(":GroupMessage:")) return it;
++    return Object.assign({}, it, { umo: normalizeGroupUmo(umo) });
++  });
+   return window._groupMsgs;
+ }
+@@ -1936,5 +1954,5 @@
+   const map = new Map();
+   items.forEach((it) => {
+-    const key = groupKey(it && it.umo);
++    const key = normalizeGroupUmo(it && it.umo);
+     if (!key) return;
+     if (!map.has(key)) map.set(key, []);
+@@ -1973,5 +1991,5 @@
+     renderGroupOptions(all);
+     const picked = (document.getElementById("groupPick").value || "").trim();
+-    let items = picked ? all.filter((it) => groupKey(it && it.umo) === picked) : all;
++    let items = picked ? all.filter((it) => normalizeGroupUmo(it && it.umo) === picked) : all;
+     if (keyword) {
+       items = items.filter((it) =>
+
+--- a/Astrbot_amoupup_data\main.py
++++ b/Astrbot_amoupup_data\main.py
+@@ -161,8 +161,11 @@
+         try:
+             data = await self.mem.stats(self._bot_id({}, write=False)) or {}
+-            text = ("记忆 %s 条（活跃 %s）· 画像 %s · 人物 %s · 消息 %s · 关系 %s"
+-                    % (data.get("memories", 0), data.get("memories_active", 0),
++            # task-27：聊天只算 user/bot，摘要单列；记忆同时给活跃/总数，别只报 917
++            text = ("记忆 %s 条（活跃 %s / 共 %s）· 画像 %s · 人物 %s · 聊天 %s（摘要 %s 单列）· 关系 %s"
++                    % (data.get("memories_active", 0), data.get("memories_active", 0),
++                       data.get("memories", 0),
+                        data.get("profiles", 0), data.get("persons", 0),
+-                       data.get("messages", 0), data.get("relations", 0)))
++                       data.get("messages_chat", data.get("messages", 0)),
++                       data.get("messages_summary", 0), data.get("relations", 0)))
+         except Exception as exc:
+             logger.warning("[amo_data] /mem_stats 失败: %s" % exc)
+
+--- /dev/null
++++ b/Astrbot_amoupup_forever\services\life_state.py
+@@ -0,0 +1,384 @@
++# -*- coding: utf-8 -*-
++"""跨插件 LifeStateSnapshot（v1）：能陪生成，能记/守护/定格只读。
++
++为什么（task-27，来自 work/audit/cross_plugin.md P0-2）：
++
++四个插件各自维护「此刻在哪 / 和谁 / 钱包多少 / 正在买什么 / 今天穿什么」，
++于是出现同一时刻三套事实：
++
++- 她说「卡里还有 4072」（能陪 kv shopping_prompt 里的旧快照），
++  守护 shop:events 里 cash=3086.54（另一份旧快照）；
++- 她说「在商场试开衫」，当天日程 09:00-11:00 是「在家歇着」。
++
++这里把只读状态收敛成一份带 contract/version/source/generated_at 的快照：
++
++- 生产者：能陪（本模块，唯一写者）；
++- 消费者：守护/能记/定格只能读 life_state_snapshot()，禁止再各自存副本；
++- 字段只增不改；某项拿不到给 None/{} 并记进 degraded，绝不抛异常；
++- consistency 给出跨字段自检（例如 shopping 文案里的余额 != 钱包实时余额），
++  消费者/面板据此标记「陈旧」，而不是继续把旧数字说出去。
++
++契约测试：forever/tests/test_life_state_snapshot.py、
++watch/tests/test_life_state_contract.py（消费端容错）。
++"""
++from __future__ import annotations
++
++import datetime as _dt
++import re
++
++CONTRACT_NAME = "amo-life-state"
++CONTRACT_VERSION = 1
++SOURCE = "forever"
++
++#: v1 字段（消费者按这个列表判完整度；新增字段只追加，不改名/不删）
++REQUIRED_FIELDS = (
++    "contract", "version", "source", "generated_at", "day",
++    "principal", "location", "current_action", "schedule",
++    "date_session", "shopping", "wallet", "outfit", "mood", "media",
++    "consistency", "degraded",
++)
++
++#: shopping_prompt.line 里被写死的数字（「价格 985 元」「卡里余额 4072 元」）
++_PRICE_RE = re.compile(r"(?:价格|售价)\s*(\d+(?:\.\d+)?)\s*元")
++_BALANCE_RE = re.compile(r"(?:余额|卡里|卡上)\D{0,6}(\d+(?:\.\d+)?)\s*元")
++#: 同一价格/余额允许的误差（分）：写死的是整元文本，只做粗粒度陈旧检测
++_CENTS_TOLERANCE = 100
++
++
++def contract_descriptor():
++    """契约自述：版本、字段、单位，给消费端/面板/测试用（纯常量，不读库）。"""
++    return {
++        "contract": CONTRACT_NAME,
++        "version": CONTRACT_VERSION,
++        "source": SOURCE,
++        "fields": list(REQUIRED_FIELDS),
++        "units": {"cents": "整数分", "generated_at": "epoch 秒", "day": "YYYY-MM-DD"},
++        "readonly": True,
++    }
++
++
++def _now(plugin, now=None):
++    if now is not None:
++        try:
++            return now if isinstance(now, _dt.datetime) else _dt.datetime.fromtimestamp(float(now))
++        except (TypeError, ValueError):
++            pass
++    try:
++        try:
++            from .. import clock as _clock
++        except ImportError:
++            import clock as _clock
++        return _clock.now()
++    except Exception:
++        return _dt.datetime.now()
++
++
++def _ts(value):
++    try:
++        return float(value)
++    except (TypeError, ValueError):
++        return 0.0
++
++
++def _int(value):
++    try:
++        return int(value)
++    except (TypeError, ValueError):
++        return 0
++
++
++class _Collector:
++    """逐字段 try：任何一项失败只进 degraded，快照整体仍然可用。"""
++
++    def __init__(self):
++        self.degraded = []
++
++    def take(self, field, producer, default):
++        try:
++            return producer()
++        except Exception as exc:
++            self.degraded.append({"field": field, "reason": "%s: %s" % (type(exc).__name__, exc)})
++            return default
++
++
++def _principal(plugin):
++    """她和他之间的稳定身份：owner 私聊 umo/uid；没有就空（消费者按不可用处理）。"""
++    umos = []
++    getter = getattr(plugin, "_owner_umos", None)
++    if callable(getter):
++        getter_result = getter()
++        if isinstance(getter_result, (list, tuple)):
++            umos = [str(item) for item in getter_result if str(item or "").strip()]
++    if not umos:
++        try:
++            rows = list(plugin.db.proactive_profiles(limit=1) or [])
++        except Exception:
++            rows = []
++        for row in rows:
++            if not isinstance(row, dict):
++                continue
++            for key in ("private_umo", "last_group"):
++                umo = str(row.get(key) or "").strip()
++                if umo:
++                    umos.append(umo)
++            if umos:
++                break
++    umo = umos[0] if umos else ""
++    uid = umo.rsplit(":", 1)[-1] if ":" in umo else umo
++    platform = umo.split(":", 1)[0] if umo else ""
++    scope = "group" if ":GroupMessage:" in umo else "private"
++    return {"umo": umo, "uid": uid, "platform": platform, "scope": scope, "kind": "owner"}
++
++
++def _location(plugin):
++    """唯一场景源 amo_presence.current_scene（scene_ledger 钳制后的结果）。"""
++    try:
++        from .. import amo_presence as _presence
++    except ImportError:
++        import amo_presence as _presence
++    scene = dict(_presence.current_scene(plugin) or {})
++    scene["at_home"] = bool(_presence.at_home(scene))
++    scene["in_shop"] = bool(getattr(_presence, "_in_shop")(scene))
++    return scene
++
++
++def _current_action(plugin):
++    try:
++        from .. import amo_current_action as _action
++    except ImportError:
++        import amo_current_action as _action
++    return dict(_action.get_current_action(plugin) or {})
++
++
++def _schedule(plugin, day):
++    """当前日程块 + 取到它的原因 + 下一块；拿不到就是空（不猜）。"""
++    out = {"current": {}, "reason": "", "next": {}, "day": day}
++    state = getattr(plugin, "state", None)
++    if state is None:
++        return out
++    info = None
++    getter = getattr(state, "current_activity_info", None)
++    if callable(getter):
++        info = getter()
++    if isinstance(info, tuple) and len(info) == 2:
++        block, reason = info
++        out["current"] = dict(block) if isinstance(block, dict) else {}
++        out["reason"] = str(reason or "")
++    elif isinstance(info, dict):
++        out["current"] = dict(info)
++    # 下一块：只读 schedule 表（同一天、开始分钟 > 现在）
++    try:
++        items = list(state.schedule.get(day) or [])
++    except Exception:
++        items = []
++    current = out["current"]
++    current_start = str(current.get("start") or "")[:5]
++    later = [item for item in items if isinstance(item, dict)
++             and str(item.get("start") or "")[:5] > current_start]
++    if later:
++        out["next"] = dict(later[0])
++    return out
++
++
++def _date_session(plugin, now, collector):
++    """约会会话：canonical kv（date_session）优先，缺省时只读投影旧键。"""
++    try:
++        from .. import amo_date_session as _session
++    except ImportError:
++        import amo_date_session as _session
++    data = dict(_session.load(plugin, now, settle=False) or {})
++    canonical = {}
++    try:
++        canonical = dict(plugin.db.kv_get(_session.KV, {}) or {})
++    except Exception:
++        canonical = {}
++    return {
++        "canonical_present": bool(canonical.get("phase")),
++        "phase": str(data.get("phase") or ""),
++        "title": str(data.get("title") or ""),
++        "place": str(data.get("place") or ""),
++        "together": bool(data.get("together")),
++        "line": str(data.get("line") or ""),
++        "start_ts": _ts(data.get("start_ts")),
++        "end_ts": _ts(data.get("end_ts")),
++        "day": str(data.get("day") or ""),
++        "schema_version": _int(data.get("schema_version")),
++        "source": "date_session" if canonical.get("phase") else "legacy_projection",
++    }
++
++
++def _shopping(plugin, now_ts, wallet_balance_cents):
++    """正在逛街试衣 pending：保留原文，但把写死的数字和实时钱包对齐并标记陈旧。"""
++    try:
++        from .. import amo_presence as _presence
++    except ImportError:
++        import amo_presence as _presence
++    raw = dict(_presence.shopping_pending(plugin, now_ts) or {})
++    line = str(raw.get("line") or "")
++    summary = {"active": bool(line), "line": line,
++               "until": _ts(raw.get("until")), "source": "shopping_prompt"}
++    price_match = _PRICE_RE.search(line)
++    balance_match = _BALANCE_RE.search(line)
++    mentioned_price = _int(round(float(price_match.group(1)) * 100)) if price_match else 0
++    mentioned_balance = _int(round(float(balance_match.group(1)) * 100)) if balance_match else 0
++    summary["mentioned_price_cents"] = mentioned_price
++    summary["mentioned_balance_cents"] = mentioned_balance
++    summary["wallet_balance_cents"] = int(wallet_balance_cents or 0)
++    stale = False
++    if mentioned_balance and wallet_balance_cents:
++        # 文案里是整元（cash // 100），和实时余额按整元对齐后再比，避免 0.x 元误报
++        written_cents = (int(wallet_balance_cents) // 100) * 100
++        stale = abs(written_cents - mentioned_balance) > _CENTS_TOLERANCE
++    summary["line_stale"] = stale
++    return summary
++
++
++def _wallet(plugin, now):
++    """钱包 + 本月消费（消费口径见 services/metrics.py，单一定义）。"""
++    wallet = getattr(plugin, "wallet", None)
++    out = {"balance_cents": 0, "withdrawable_cents": 0, "month": "",
++           "month_consumption_cents": 0, "source": "wallet_ledger"}
++    if wallet is None:
++        return out
++    out["balance_cents"] = _int(wallet.balance("cash"))
++    out["withdrawable_cents"] = _int(wallet.balance("withdrawable"))
++    try:
++        from . import metrics as _metrics
++    except ImportError:
++        from services import metrics as _metrics
++    month = _metrics.month_of(now)
++    out["month"] = month
++    out["month_consumption_cents"] = _int(_metrics.wallet_month_consumption_cents(wallet, month))
++    return out
++
++
++def _outfit(plugin, now):
++    """今天白天穿搭（不含睡衣）：走 amo_fact_timeline.read_outfit 只读投影。"""
++    try:
++        from ..amo_fact_timeline import read_outfit
++    except ImportError:
++        from amo_fact_timeline import read_outfit
++    day = now.date()
++    text = str(read_outfit(plugin, day) or "").strip()
++    return {"day": day.isoformat(), "text": text, "source": "wardrobe"}
++
++
++def _mood(plugin):
++    state = getattr(plugin, "state", None)
++    out = {"score": None, "words": []}
++    if state is None:
++        return out
++    try:
++        out["score"] = int(state.mood_score())
++    except Exception:
++        out["score"] = None
++    try:
++        out["words"] = [str(item) for item in (state.mood_words() or [])]
++    except Exception:
++        out["words"] = []
++    return out
++
++
++def _media(plugin, day):
++    """今日照片：媒体账本（amo_media.photo_count）是唯一口径。"""
++    out = {"photos_today": 0, "source": "media_ledger"}
++    try:
++        from .. import amo_media as _media_module
++    except ImportError:
++        import amo_media as _media_module
++    getter = getattr(_media_module, "photo_count", None)
++    if callable(getter):
++        out["photos_today"] = _int(getter(plugin, day))
++    return out
++
++
++def _consistency(snapshot):
++    """跨字段自检：只报「同一事实两个值」，不改数值。"""
++    issues = []
++    shopping = snapshot.get("shopping") or {}
++    if shopping.get("line_stale"):
++        issues.append({
++            "code": "shopping_balance_stale",
++            "detail": "shopping_prompt 写死余额 %s 分，钱包实时 %s 分"
++                      % (shopping.get("mentioned_balance_cents"),
++                         snapshot.get("wallet", {}).get("balance_cents", 0)),
++        })
++    scene = snapshot.get("location") or {}
++    action = snapshot.get("current_action") or {}
++    scene_place = str(scene.get("place") or "")
++    action_place = str(action.get("place") or "")
++    if scene_place and action_place and scene_place != action_place:
++        issues.append({"code": "location_split",
++                       "detail": "scene=%s current_action=%s" % (scene_place, action_place)})
++    date_sess = snapshot.get("date_session") or {}
++    if date_sess.get("together") and not date_sess.get("canonical_present"):
++        issues.append({"code": "date_session_canonical_missing",
++                       "detail": "旧键里有约会状态，canonical date_session 不存在"})
++    return {"ok": not issues, "issues": issues}
++
++
++def build_snapshot(plugin, now=None):
++    """构建只读快照：不写 kv/DB/文件；任何字段失败只降级。
++
++    返回 dict（字段见 REQUIRED_FIELDS）；调用方禁止修改后回写。
++    """
++    moment = _now(plugin, now)
++    now_ts = _ts(moment.timestamp())
++    day = moment.date().isoformat()
++    collector = _Collector()
++    principal = collector.take("principal", lambda: _principal(plugin),
++                               {"umo": "", "uid": "", "platform": "", "scope": "private", "kind": ""})
++    location = collector.take("location", lambda: _location(plugin), {})
++    action = collector.take("current_action", lambda: _current_action(plugin), {})
++    schedule = collector.take("schedule", lambda: _schedule(plugin, day),
++                              {"current": {}, "reason": "", "next": {}, "day": day})
++    date_session = collector.take("date_session", lambda: _date_session(plugin, moment, collector), {})
++    wallet = collector.take("wallet", lambda: _wallet(plugin, moment),
++                            {"balance_cents": 0, "withdrawable_cents": 0, "month": "",
++                             "month_consumption_cents": 0, "source": "wallet_ledger"})
++    wallet_balance = _int((wallet or {}).get("balance_cents"))
++    shopping = collector.take("shopping", lambda: _shopping(plugin, now_ts, wallet_balance),
++                              {"active": False, "line": "", "until": 0.0,
++                               "line_stale": False})
++    outfit = collector.take("outfit", lambda: _outfit(plugin, moment),
++                            {"day": day, "text": "", "source": "wardrobe"})
++    mood = collector.take("mood", lambda: _mood(plugin), {"score": None, "words": []})
++    media = collector.take("media", lambda: _media(plugin, day),
++                           {"photos_today": 0, "source": "media_ledger"})
++    snapshot = {
++        "contract": CONTRACT_NAME,
++        "version": CONTRACT_VERSION,
++        "source": SOURCE,
++        "generated_at": now_ts,
++        "day": day,
++        "principal": principal,
++        "location": location,
++        "current_action": action,
++        "schedule": schedule,
++        "date_session": date_session,
++        "shopping": shopping,
++        "wallet": wallet,
++        "outfit": outfit,
++        "mood": mood,
++        "media": media,
++        "consistency": {"ok": True, "issues": []},
++        "degraded": collector.degraded,
++    }
++    try:
++        snapshot["consistency"] = _consistency(snapshot)
++    except Exception as exc:  # 自检失败也不算快照失败
++        snapshot["degraded"].append({"field": "consistency",
++                                     "reason": "%s: %s" % (type(exc).__name__, exc)})
++    return snapshot
++
++
++def compact(snapshot, fields=()):
++    """给日志/推送用的裁剪版：只留调用方需要的字段（契约不变形）。"""
++    data = snapshot if isinstance(snapshot, dict) else {}
++    keep = tuple(fields) or ("generated_at", "day", "location", "current_action",
++                             "shopping", "wallet", "media")
++    out = {"contract": CONTRACT_NAME, "version": CONTRACT_VERSION}
++    for key in keep:
++        if key in data:
++            out[key] = data[key]
++    return out
+
+--- /dev/null
++++ b/Astrbot_amoupup_forever\services\metrics.py
+@@ -0,0 +1,266 @@
++# -*- coding: utf-8 -*-
++"""统一指标契约 MetricsAPI（v1）：先把「算出来的数」收敛成一个定义。
++
++work/audit/cross_plugin.md P0-3 的根因不是某一个面板写错，而是没有「指标定义」
++这一层：守护首页读 watch.expenses（¥473）、守护生活卡读 wallet ledger 却按
++reason 前缀排除（¥16,016，含定期 10,000/基金 500），能记“聊天”把 146 条摘要
++也算进去（436 vs 真实 290），定格面板只统计“有 event 的命令路径”。
++
++本模块只定义**能陪自己拥有的**指标（钱包消费口径 / 照片用量），并提供唯一
++计算函数；守护面板、能记面板、定格面板各自通过跨插件方法调用同一函数，
++不再各写一份：
++
++- 本月消费 expense_month_consumption：
++  cash 账户负流水，排除
++  * 资产类（存款/投资/基金/理财/转账/退款/账户调整）——这部分单列“资产变动”；
++  * 生活账单类（房租/水费/电费/燃气费/宽带/物业/取暖）——面板另有账单卡；
++  * 退款/冲正（按幂等前缀 + 理由关键词）；
++  单位统一整数分。
++- 本月资产变动 expense_month_assets_change：资产类流水的绝对值（存起来/买基金）。
++- 今日生图 photos_today_by_all_paths：媒体账本（amo_media.photo_count）唯一口径；
++  定格插件自己的 usage 统计由 photo 侧记录并回传 usage_recorded，见
++  photo/main_tasks.py generate_images_for_plugin(principal=...)。
++
++契约测试：forever/tests/test_metrics_contract.py（与 watch 侧同口径比对）。
++"""
++from __future__ import annotations
++
++import datetime as _dt
++
++CONTRACT_NAME = "amo-metrics"
++CONTRACT_VERSION = 1
++SOURCE = "forever"
++
++#: 不算“消费”的分类（资产变动 / 账单）；与 wallet._EXPENSE_EXCLUDE_CATEGORIES 同源扩展
++ASSET_CATEGORIES = frozenset(("存款", "投资", "转账", "退款", "理财", "基金", "股票",
++                              "账户调整"))
++BILL_CATEGORIES = frozenset(("房租", "水电", "物业", "取暖", "宽带"))
++BILL_REASON_PREFIXES = ("房租", "水费", "电费", "燃气费", "宽带", "物业", "取暖")
++#: 老版 wallet_ledger category 被回填成“其他”的行，靠理由前缀识别
++ASSET_REASON_PREFIXES = ("存款", "投资", "转账", "退款", "理财", "基金", "股票",
++                         "买入", "卖出", "申购", "赎回", "贷款", "还款", "利息",
++                         "分期", "工资", "奖金", "红包", "初始存款", "可取余额",
++                         "卖出资金", "用户转账")
++#: 幂等前缀（与 amo_wallet._EXPENSE_EXCLUDE_PREFIXES + bank 前缀一致）
++ASSET_IDEM_PREFIXES = ("save:", "deposit:", "invest:", "transfer:", "refund:",
++                       "cleanup:refund:", "withdrawable:", "bank:dep:")
++REFUND_WORDS = ("退款", "退回", "冲正", "撤销", "退还")
++
++#: 分类结果（给测试/面板解释用）
++KIND_CONSUMPTION = "consumption"
++KIND_BILL = "bill"
++KIND_ASSET = "asset"
++KIND_REFUND = "refund"
++KIND_INCOME = "income"
++
++
++def contract_descriptor():
++    return {
++        "contract": CONTRACT_NAME,
++        "version": CONTRACT_VERSION,
++        "source": SOURCE,
++        "metrics": {
++            "expense_month_consumption": "cash 负流水去掉资产类/账单类/退款，整数分",
++            "expense_month_assets_change": "存款/理财/基金等资产类流水绝对值，整数分",
++            "expense_month_bill": "房租/水电/燃气/宽带/物业/取暖，整数分",
++            "photos_today_by_all_paths": "媒体账本口径，跨插件生图也计入",
++        },
++        "units": {"money": "整数分", "day": "YYYY-MM-DD", "month": "YYYY-MM"},
++    }
++
++
++def _clock_now(now=None):
++    if isinstance(now, _dt.datetime):
++        return now
++    if now is not None:
++        try:
++            return _dt.datetime.fromtimestamp(float(now))
++        except (TypeError, ValueError):
++            pass
++    try:
++        try:
++            from .. import clock as _clock
++        except ImportError:
++            import clock as _clock
++        return _clock.now()
++    except Exception:
++        return _dt.datetime.now()
++
++
++def month_of(now=None):
++    """当前本地月份 YYYY-MM（统一时钟；不用裸 datetime.now）。"""
++    return _clock_now(now).strftime("%Y-%m")
++
++
++def month_bounds(month="", now=None):
++    """本地月份 [start, end) epoch 秒。"""
++    text = str(month or "").strip() or month_of(now)
++    try:
++        start_dt = _dt.datetime.strptime(text + "-01", "%Y-%m-%d")
++    except (TypeError, ValueError):
++        start_dt = _clock_now(now).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
++        text = start_dt.strftime("%Y-%m")
++    end_dt = (start_dt.replace(year=start_dt.year + 1, month=1) if start_dt.month == 12
++              else start_dt.replace(month=start_dt.month + 1))
++    return text, float(start_dt.timestamp()), float(end_dt.timestamp())
++
++
++def _text(row, key):
++    value = row.get(key) if isinstance(row, dict) else None
++    return str(value or "")
++
++
++def _delta(row):
++    value = row.get("delta_cents") if isinstance(row, dict) else 0
++    try:
++        return int(value)
++    except (TypeError, ValueError):
++        return 0
++
++
++def classify_row(row):
++    """一行 wallet_ledger -> 指标分类：income/refund/bill/asset/consumption。
++
++    只读纯函数；口径变更只改这里（守护/面板/契约测试共用）。
++    """
++    delta = _delta(row)
++    reason = _text(row, "reason")
++    category = _text(row, "category")
++    idem = _text(row, "idem")
++    if delta > 0:
++        return KIND_REFUND if any(word in reason for word in REFUND_WORDS) else KIND_INCOME
++    if idem.startswith("refund:") or idem.startswith("cleanup:refund:"):
++        return KIND_REFUND
++    if any(word in reason for word in REFUND_WORDS):
++        return KIND_REFUND
++    if category in ASSET_CATEGORIES:
++        return KIND_ASSET
++    if category in BILL_CATEGORIES:
++        return KIND_BILL
++    if idem.startswith(ASSET_IDEM_PREFIXES):
++        return KIND_ASSET
++    if any(reason.startswith(prefix) for prefix in ASSET_REASON_PREFIXES):
++        # 工资/奖金等其实出现不到负流水里；负流水命中说明是资产/账单类
++        if any(reason.startswith(prefix) for prefix in BILL_REASON_PREFIXES):
++            return KIND_BILL
++        return KIND_ASSET
++    if any(reason.startswith(prefix) for prefix in BILL_REASON_PREFIXES):
++        return KIND_BILL
++    return KIND_CONSUMPTION
++
++
++def _month_rows(rows, month=None, now=None):
++    """筛出目标月份的行；row['ts'] 缺省视为当月（调用方通常已按区间取过）。"""
++    target = str(month or "").strip()
++    if not target:
++        return list(rows or [])
++    out = []
++    for row in rows or []:
++        if not isinstance(row, dict):
++            continue
++        try:
++            ts = float(row.get("ts") or 0)
++        except (TypeError, ValueError):
++            ts = 0.0
++        if not ts:
++            out.append(row)
++            continue
++        if _dt.datetime.fromtimestamp(ts).strftime("%Y-%m") == target:
++            out.append(row)
++    return out
++
++
++def consumption_cents(rows, month=None, now=None):
++    """本月消费（整数分）：唯一计算函数。"""
++    total = 0
++    for row in _month_rows(rows, month, now):
++        if classify_row(row) == KIND_CONSUMPTION:
++            total += abs(_delta(row))
++    return total
++
++
++def bill_cents(rows, month=None, now=None):
++    total = 0
++    for row in _month_rows(rows, month, now):
++        if classify_row(row) == KIND_BILL:
++            total += abs(_delta(row))
++    return total
++
++
++def assets_change_cents(rows, month=None, now=None):
++    """本月资产变动（存起来/买基金/转账）：正整数分。"""
++    total = 0
++    for row in _month_rows(rows, month, now):
++        if classify_row(row) == KIND_ASSET:
++            total += abs(_delta(row))
++    return total
++
++
++def _wallet_rows(wallet, month=None, now=None):
++    """取目标月份流水：优先 rows_between（不受 limit 截断），老钱包退回 ledger。"""
++    text, start, end = month_bounds(month, now)
++    reader = getattr(wallet, "rows_between", None)
++    if callable(reader):
++        rows = reader(start, end)
++        return [row for row in (rows or []) if isinstance(row, dict)]
++    ledger = getattr(wallet, "ledger", None)
++    if not callable(ledger):
++        return []
++    rows = ledger(2000) or []
++    return [row for row in rows if isinstance(row, dict)
++            and _text(row, "account") in ("cash", "")]
++
++
++def wallet_month_consumption_cents(wallet, month="", now=None):
++    """钱包本月消费：面板/快照/测试唯一入口。"""
++    try:
++        rows = _wallet_rows(wallet, month, now)
++    except Exception:
++        return 0
++    return consumption_cents(rows, month_of(now) if not month else month, now)
++
++
++def build_metrics(plugin, now=None):
++    """能陪拥有的指标（钱包 + 照片）；读失败只降级不抛。"""
++    moment = _clock_now(now)
++    month = month_of(moment)
++    degraded = []
++    wallet_out = {"balance_cents": 0, "withdrawable_cents": 0, "month": month,
++                  "month_consumption_cents": 0, "month_assets_change_cents": 0,
++                  "month_bill_cents": 0, "source": "wallet_ledger"}
++    wallet = getattr(plugin, "wallet", None)
++    if wallet is not None:
++        try:
++            rows = _wallet_rows(wallet, month, moment)
++            wallet_out.update({
++                "balance_cents": int(wallet.balance("cash") or 0),
++                "withdrawable_cents": int(wallet.balance("withdrawable") or 0),
++                "month_consumption_cents": consumption_cents(rows, month, moment),
++                "month_assets_change_cents": assets_change_cents(rows, month, moment),
++                "month_bill_cents": bill_cents(rows, month, moment),
++            })
++        except Exception as exc:
++            degraded.append({"field": "wallet", "reason": "%s: %s" % (type(exc).__name__, exc)})
++    else:
++        degraded.append({"field": "wallet", "reason": "wallet 未装配"})
++    photos_out = {"today": 0, "day": moment.date().isoformat(), "source": "media_ledger"}
++    try:
++        try:
++            from .. import amo_media as _media
++        except ImportError:
++            import amo_media as _media
++        getter = getattr(_media, "photo_count", None)
++        if callable(getter):
++            photos_out["today"] = int(getter(plugin, moment.date()) or 0)
++    except Exception as exc:
++        degraded.append({"field": "photos", "reason": "%s: %s" % (type(exc).__name__, exc)})
++    return {
++        "contract": CONTRACT_NAME,
++        "version": CONTRACT_VERSION,
++        "source": SOURCE,
++        "generated_at": float(moment.timestamp()),
++        "day": moment.date().isoformat(),
++        "wallet": wallet_out,
++        "photos": photos_out,
++        "degraded": degraded,
++    }
+
+--- /dev/null
++++ b/Astrbot_amoupup_forever\tests\test_life_state_snapshot.py
+@@ -0,0 +1,201 @@
++# -*- coding: utf-8 -*-
++"""LifeStateSnapshot v1 契约测试（task-27）。
++
++只读断言：字段/版本/优先级/跨字段一致性/降级不崩；
++用假插件跑，不连生产库、不启动 AstrBot。
++"""
++from __future__ import annotations
++
++import datetime as dt
++import sys
++import unittest
++
++from services import life_state
++
++NOW = dt.datetime(2026, 11, 22, 10, 32, 0)
++
++
++class _DB:
++    def __init__(self, kv=None, profiles=None):
++        self.kv = dict(kv or {})
++        self.profiles = list(profiles or [])
++        self.writes = []
++
++    def kv_get(self, key, default=None):
++        return self.kv.get(key, default)
++
++    def kv_set(self, key, value):
++        self.writes.append(key)
++        self.kv[key] = value
++
++    def proactive_profiles(self, limit=10):
++        return self.profiles
++
++
++class _Schedule:
++    def __init__(self, rows):
++        self.rows = dict(rows or {})
++
++    def get(self, day):
++        return list(self.rows.get(day) or [])
++
++
++class _State:
++    def __init__(self):
++        self.schedule = _Schedule({"2026-11-22": [
++            {"start": "09:00", "end": "11:00", "activity": "在家歇着", "place": "家", "zone": "home"},
++            {"start": "11:30", "end": "13:00", "activity": "做午饭", "place": "家", "zone": "home"},
++        ]})
++
++    def current_activity_info(self):
++        return ({"start": "09:00", "end": "11:00", "activity": "在家歇着",
++                 "place": "家", "zone": "home", "category": "life", "event_id": "ev_home"},
++                "covering")
++
++    def current_activity(self):
++        return self.current_activity_info()[0]
++
++    def mood_score(self):
++        return 62
++
++    def mood_words(self):
++        return ["平和", "有点想他"]
++
++
++class _Wallet:
++    def __init__(self, balance_cents=394725, rows=None):
++        self._balance = int(balance_cents)
++        self.rows = list(rows or [])
++
++    def balance(self, account="cash"):
++        return self._balance
++
++    def rows_between(self, start, end):
++        return list(self.rows)
++
++    def ledger(self, limit=200):
++        return list(self.rows)
++
++
++class _Wardrobe:
++    def daytime_text(self, day):
++        return "卡其色风衣、卡其色半身裙、米色乐福鞋"
++
++
++class _Plugin:
++    def __init__(self, kv=None, wallet_rows=None, balance=394725):
++        self.db = _DB(kv=kv, profiles=[{"uid": "u1",
++                                        "private_umo": "lark:FriendMessage:ou_cec66"}])
++        self.state = _State()
++        self.wallet = _Wallet(balance_cents=balance, rows=wallet_rows or [])
++        self.wardrobe = _Wardrobe()
++        self._owner_umos = lambda: ["lark:FriendMessage:ou_cec66"]
++
++
++def _nov_rows():
++    return [
++        {"idem": "meal:1", "account": "cash", "delta_cents": -1500, "reason": "面条",
++         "category": "餐饮", "ts": dt.datetime(2026, 11, 20, 12, 0).timestamp()},
++        {"idem": "get", "account": "cash", "delta_cents": -1000000, "reason": "存款：定期3个月",
++         "category": "存款", "ts": dt.datetime(2026, 11, 16, 9, 0).timestamp()},
++        {"idem": "rent:2026-11", "account": "cash", "delta_cents": -185303, "reason": "房租",
++         "category": "其他", "ts": dt.datetime(2026, 11, 1, 9, 0).timestamp()},
++    ]
++
++
++class LifeStateSnapshotTests(unittest.TestCase):
++    def test_contract_descriptor_matches_snapshot_fields(self):
++        descriptor = life_state.contract_descriptor()
++        self.assertEqual(descriptor["contract"], life_state.CONTRACT_NAME)
++        self.assertEqual(descriptor["version"], life_state.CONTRACT_VERSION)
++        self.assertEqual(tuple(descriptor["fields"]), life_state.REQUIRED_FIELDS)
++        snapshot = life_state.build_snapshot(_Plugin(), NOW)
++        self.assertEqual(set(snapshot), set(life_state.REQUIRED_FIELDS))
++
++    def test_snapshot_header_and_principal(self):
++        snapshot = life_state.build_snapshot(_Plugin(), NOW)
++        self.assertEqual(snapshot["contract"], "amo-life-state")
++        self.assertEqual(snapshot["version"], 1)
++        self.assertEqual(snapshot["source"], "forever")
++        self.assertEqual(snapshot["day"], "2026-11-22")
++        self.assertEqual(snapshot["generated_at"], NOW.timestamp())
++        self.assertEqual(snapshot["principal"]["umo"], "lark:FriendMessage:ou_cec66")
++        self.assertEqual(snapshot["principal"]["uid"], "ou_cec66")
++        self.assertEqual(snapshot["principal"]["kind"], "owner")
++
++    def test_location_and_action_come_from_single_scene(self):
++        snapshot = life_state.build_snapshot(_Plugin(), NOW)
++        self.assertEqual(snapshot["location"]["place"], "家")
++        self.assertEqual(snapshot["location"]["zone"], "home")
++        self.assertTrue(snapshot["location"]["at_home"])
++        self.assertFalse(snapshot["location"]["in_shop"])
++        self.assertEqual(snapshot["current_action"]["place"], "家")
++        self.assertEqual(snapshot["schedule"]["current"]["activity"], "在家歇着")
++        self.assertEqual(snapshot["schedule"]["next"]["activity"], "做午饭")
++
++    def test_month_consumption_uses_canonical_metric(self):
++        snapshot = life_state.build_snapshot(_Plugin(wallet_rows=_nov_rows()), NOW)
++        # 只有面条 15 元算消费：存款/房租排除（单列资产变动/账单）
++        self.assertEqual(snapshot["wallet"]["month"], "2026-11")
++        self.assertEqual(snapshot["wallet"]["month_consumption_cents"], 1500)
++        self.assertEqual(snapshot["wallet"]["balance_cents"], 394725)
++
++    def test_shopping_line_stale_vs_live_wallet(self):
++        kv = {"shopping_prompt": {
++            "line": "你正在商场试米白色针织开衫，价格 985 元，卡里余额 4072 元，等老公回复",
++            "until": NOW.timestamp() + 600,
++        }}
++        snapshot = life_state.build_snapshot(_Plugin(kv=kv), NOW)
++        shopping = snapshot["shopping"]
++        self.assertTrue(shopping["active"])
++        self.assertEqual(shopping["mentioned_balance_cents"], 407200)
++        self.assertEqual(shopping["mentioned_price_cents"], 98500)
++        self.assertTrue(shopping["line_stale"])
++        self.assertFalse(snapshot["consistency"]["ok"])
++        self.assertIn("shopping_balance_stale",
++                      [issue["code"] for issue in snapshot["consistency"]["issues"]])
++
++    def test_shopping_line_fresh_has_no_issue(self):
++        kv = {"shopping_prompt": {
++            "line": "你正在商场试米白色针织开衫，价格 985 元，卡里余额 3946 元，等老公回复",
++            "until": NOW.timestamp() + 600,
++        }}
++        snapshot = life_state.build_snapshot(_Plugin(kv=kv), NOW)
++        self.assertFalse(snapshot["shopping"]["line_stale"])
++        self.assertTrue(snapshot["consistency"]["ok"])
++
++    def test_date_session_reports_canonical_missing(self):
++        snapshot = life_state.build_snapshot(_Plugin(), NOW)
++        # 生产事实：canonical kv[date_session] 不存在，只有旧投影
++        self.assertFalse(snapshot["date_session"]["canonical_present"])
++        self.assertEqual(snapshot["date_session"]["source"], "legacy_projection")
++
++    def test_snapshot_is_readonly(self):
++        plugin = _Plugin(kv={"shopping_prompt": {"line": "试衣服", "until": NOW.timestamp() + 60}})
++        before = dict(plugin.db.kv)
++        life_state.build_snapshot(plugin, NOW)
++        self.assertEqual(plugin.db.writes, [])
++        self.assertEqual(plugin.db.kv, before)
++
++    def test_degraded_plugin_does_not_raise(self):
++        class _Broken:
++            def __getattr__(self, name):
++                raise RuntimeError("no %s" % name)
++
++        snapshot = life_state.build_snapshot(_Broken(), NOW)
++        self.assertEqual(snapshot["contract"], "amo-life-state")
++        self.assertTrue(snapshot["degraded"])
++        fields = {item["field"] for item in snapshot["degraded"]}
++        self.assertIn("wallet", fields)
++
++    def test_compact_keeps_contract(self):
++        snapshot = life_state.build_snapshot(_Plugin(), NOW)
++        compact = life_state.compact(snapshot, ("wallet",))
++        self.assertEqual(compact["contract"], "amo-life-state")
++        self.assertEqual(compact["version"], 1)
++        self.assertIn("wallet", compact)
++        self.assertNotIn("schedule", compact)
++
++
++if __name__ == "__main__":
++    unittest.main()
+
+--- /dev/null
++++ b/Astrbot_amoupup_forever\tests\test_metrics_contract.py
+@@ -0,0 +1,146 @@
++# -*- coding: utf-8 -*-
++"""MetricsAPI v1 契约测试（task-27）：消费口径四插件只有一份定义。
++
++跨仓数值比对：
++- forever/services/metrics.py（生产者，唯一计算函数）；
++- watch/services/metrics.py（消费端，旧版能陪时的降级重算）。
++同一批流水必须算出同一个“本月消费”，否则守护首页/生活卡/能陪面板又会各说各话。
++
++（watch 的 ui.report.life_block 与 dashboard_text 同源由 watch 仓
++test_metrics_consistency.py 覆盖；本文件只比对口径本身。）
++"""
++from __future__ import annotations
++
++import datetime as dt
++import importlib.util
++import os
++import sys
++import unittest
++
++from services import metrics
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++PLUGINS_DIR = os.path.dirname(ROOT)
++WATCH_METRICS = os.path.join(PLUGINS_DIR, "Astrbot_amoupup_watch", "services", "metrics.py")
++
++
++def _load_watch_metrics():
++    if not os.path.isfile(WATCH_METRICS):
++        return None
++    spec = importlib.util.spec_from_file_location("watch_metrics_under_test", WATCH_METRICS)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def _row(idem, delta, reason, category="其他", ts=None, account="cash"):
++    stamp = ts if ts is not None else dt.datetime(2026, 11, 20, 12, 0).timestamp()
++    return {"idem": idem, "account": account, "delta_cents": delta, "reason": reason,
++            "category": category, "ts": stamp}
++
++
++def _november_rows():
++    """2026-11 生产形态流水（删敏）：覆盖消费/账单/资产/退款/收入/其他月份。"""
++    return [
++        _row("meal:1", -1500, "面条", "餐饮"),
++        _row("shop:2026-11-14:item", -134997, "买衣服：一条绿色碎花连衣裙", "生活"),
++        _row("rent:2026-11", -185303, "房租", "其他"),                    # 旧库 category 被回填“其他”
++        _row("water:2026-11", -1929, "水费", "其他"),
++        _row("bank:dep:2026-11-16", -1000000, "存款：定期3个月", "存款"),
++        _row("decision:fundbuy", -50000, "buy_fund", "投资"),
++        _row("decision:buy", -126201, "买入 600968", "其他"),
++        _row("social_event:prepaid", -20000, "下班和柳如烟吃火锅（预扣，已退回）", "社交"),
++        _row("cleanup:refund:1", 20000, "退款：预扣已退回", "退款"),
++        _row("salary:2026-11", 680000, "工资", "工资"),
++        _row("meal:oct", -300, "早餐", "餐饮",
++             dt.datetime(2026, 10, 31, 9, 0).timestamp()),
++        _row("init:1", 2090104, "可取余额初始化", "其他", account="withdrawable"),
++    ]
++
++
++EXPECTED_CONSUMPTION = 1500 + 134997  # 面条 + 连衣裙（房租/存款/基金/买入/退款都不是消费）
++
++
++class MetricsConsumptionContractTests(unittest.TestCase):
++    def test_forever_consumption_is_canonical(self):
++        rows = _november_rows()
++        self.assertEqual(metrics.consumption_cents(rows, "2026-11"), EXPECTED_CONSUMPTION)
++        self.assertEqual(metrics.bill_cents(rows, "2026-11"), 185303 + 1929)
++        self.assertEqual(metrics.assets_change_cents(rows, "2026-11"),
++                         1000000 + 50000 + 126201)
++
++    def test_watch_fallback_matches_forever(self):
++        watch_metrics = _load_watch_metrics()
++        if watch_metrics is None:
++            self.skipTest("本机没有守护插件目录，跨仓比对跳过")
++        rows = _november_rows()
++        self.assertEqual(watch_metrics.consumption_cents(rows, "2026-11"),
++                         metrics.consumption_cents(rows, "2026-11"))
++        self.assertEqual(watch_metrics.consumption_cents(rows, "2026-11"),
++                         EXPECTED_CONSUMPTION)
++
++    def test_row_classification_agrees(self):
++        watch_metrics = _load_watch_metrics()
++        if watch_metrics is None:
++            self.skipTest("本机没有守护插件目录，跨仓比对跳过")
++        for row in _november_rows():
++            with self.subTest(row=row["idem"]):
++                self.assertEqual(watch_metrics.classify_row(row),
++                                 metrics.classify_row(row))
++
++    def test_contract_descriptors(self):
++        forever = metrics.contract_descriptor()
++        self.assertEqual(forever["contract"], "amo-metrics")
++        self.assertEqual(forever["version"], 1)
++        self.assertIn("expense_month_consumption", forever["metrics"])
++        watch_metrics = _load_watch_metrics()
++        if watch_metrics is not None:
++            watch = watch_metrics.contract_descriptor()
++            self.assertEqual(watch["contract"], forever["contract"])
++            self.assertEqual(watch["version"], forever["version"])
++            self.assertEqual(watch["role"], "consumer")
++
++
++class _Wallet:
++    def __init__(self, rows):
++        self.rows = rows
++
++    def balance(self, account="cash"):
++        return 394725
++
++    def rows_between(self, start, end):
++        return list(self.rows)
++
++    def ledger(self, limit=200):
++        return list(self.rows)
++
++
++class _Plugin:
++    def __init__(self, rows):
++        self.wallet = _Wallet(rows)
++
++    def __getattr__(self, name):
++        raise AttributeError(name)
++
++
++class BuildMetricsTests(unittest.TestCase):
++    def test_build_metrics_wallet_block(self):
++        # 固定“现在”为 2026-11，避免跨月跑测试时月界变化
++        result = metrics.build_metrics(_Plugin(_november_rows()), dt.datetime(2026, 11, 22))
++        self.assertEqual(result["contract"], "amo-metrics")
++        self.assertEqual(result["version"], 1)
++        wallet = result["wallet"]
++        self.assertEqual(wallet["month"], "2026-11")
++        self.assertEqual(wallet["month_consumption_cents"], EXPECTED_CONSUMPTION)
++        self.assertEqual(wallet["balance_cents"], 394725)
++        self.assertEqual(result["photos"]["source"], "media_ledger")
++
++    def test_month_bounds(self):
++        month, start, end = metrics.month_bounds("2026-11")
++        self.assertEqual(month, "2026-11")
++        self.assertEqual(dt.datetime.fromtimestamp(start).date(), dt.date(2026, 11, 1))
++        self.assertEqual(dt.datetime.fromtimestamp(end).date(), dt.date(2026, 12, 1))
++
++
++if __name__ == "__main__":
++    unittest.main()
+
+--- /dev/null
++++ b/Astrbot_amoupup_watch\core\life_state.py
+@@ -0,0 +1,189 @@
++# -*- coding: utf-8 -*-
++"""LifeStateSnapshot 消费端（task-27）：守护只读陪伴插件的一份状态快照。
++
++契约生产者：forever/services/life_state.py（与能陪 feature API
++life_state_snapshot() 同步）。本模块只做三件事：
++
++1. 经 AmoBridge（跨插件调用层）读 life_state_snapshot()，不碰对方表/文件；
++2. 校验 contract/version/字段，坏形状/旧版本 -> 降级（available=False + reason）；
++3. 给业务一个稳定的小视图：wallet_balance_cents / place / in_shop / shopping /
++   month_consumption_cents / photos_today。
++
++消费端约定：拿不到就退回旧逻辑，禁止自己再存一份“此刻/余额”副本；
++每次降级打一次结构化 CONTRACT_FALLBACK 日志（按 reason 去重，不刷屏）。
++"""
++from __future__ import annotations
++
++import logging
++
++try:
++    from astrbot.api import logger
++except Exception:  # 离线单测
++    logger = logging.getLogger("watch")
++
++CONTRACT_NAME = "amo-life-state"
++SUPPORTED_VERSION = 1
++REQUIRED_FIELDS = (
++    "contract", "version", "source", "generated_at", "day",
++    "principal", "location", "current_action", "schedule",
++    "date_session", "shopping", "wallet", "outfit", "mood", "media",
++    "consistency", "degraded",
++)
++#: 降级日志去重（reason -> 已打过）；模块级即可，不写库
++_WARNED: set = set()
++
++
++def _warn_fallback(reason, detail=""):
++    key = str(reason or "unknown")
++    if key in _WARNED:
++        return
++    _WARNED.add(key)
++    try:
++        logger.warning("[WATCH][CONTRACT_FALLBACK] life_state %s %s", key, detail)
++    except Exception:  # cleanup: 日志失败不影响业务
++        pass
++
++
++def contract_descriptor():
++    return {
++        "contract": CONTRACT_NAME,
++        "version": SUPPORTED_VERSION,
++        "role": "consumer",
++        "fields": list(REQUIRED_FIELDS),
++        "source": "forever.life_state_snapshot",
++    }
++
++
++class SnapshotView:
++    """只读视图：缺字段给默认值，不让调用方 KeyError。"""
++
++    def __init__(self, snapshot=None, available=False, reason="", raw=None):
++        # 不可用的快照不暴露给业务读取（accessor 返回默认值），原文只留在 raw 便于排障
++        self.snapshot = dict(snapshot) if available and isinstance(snapshot, dict) else {}
++        self.raw = dict(raw) if isinstance(raw, dict) else (
++            dict(snapshot) if isinstance(snapshot, dict) else {})
++        self.available = bool(available)
++        self.reason = str(reason or "")
++
++    # ---- 通用读取 ----
++    def get(self, path, default=None):
++        """按 a.b.c 取值；缺失返回 default。"""
++        data = self.snapshot
++        for part in str(path or "").split("."):
++            if not part:
++                continue
++            if not isinstance(data, dict) or part not in data:
++                return default
++            data = data[part]
++        return data if data is not None else default
++
++    @property
++    def version(self):
++        try:
++            return int(self.snapshot.get("version") or 0)
++        except (TypeError, ValueError):
++            return 0
++
++    @property
++    def day(self):
++        return str(self.snapshot.get("day") or "")
++
++    # ---- 业务小视图 ----
++    def wallet_balance_cents(self):
++        value = self.get("wallet.balance_cents")
++        try:
++            return int(value or 0)
++        except (TypeError, ValueError):
++            return 0
++
++    def month_consumption_cents(self):
++        try:
++            return int(self.get("wallet.month_consumption_cents") or 0)
++        except (TypeError, ValueError):
++            return 0
++
++    def place(self):
++        return str(self.get("location.place") or self.get("current_action.place") or "")
++
++    def zone(self):
++        return str(self.get("location.zone") or "")
++
++    def in_shop(self):
++        value = self.get("location.in_shop")
++        return bool(value) if value is not None else None
++
++    def at_home(self):
++        value = self.get("location.at_home")
++        return bool(value) if value is not None else None
++
++    def shopping(self):
++        data = self.get("shopping")
++        return dict(data) if isinstance(data, dict) else {}
++
++    def shopping_line(self):
++        return str(self.shopping().get("line") or "")
++
++    def shopping_stale(self):
++        return bool(self.shopping().get("line_stale"))
++
++    def photos_today(self):
++        try:
++            return int(self.get("media.photos_today") or 0)
++        except (TypeError, ValueError):
++            return 0
++
++    def issues(self):
++        data = self.get("consistency.issues")
++        return list(data) if isinstance(data, list) else []
++
++    def as_dict(self):
++        return dict(self.snapshot)
++
++
++def view(snapshot):
++    """把原始 dict 包成视图并做校验（测试/本地模拟用）。"""
++    data = dict(snapshot) if isinstance(snapshot, dict) else {}
++    if str(data.get("contract") or "") != CONTRACT_NAME:
++        return SnapshotView(None, False, "contract_mismatch", raw=data)
++    try:
++        version = int(data.get("version") or 0)
++    except (TypeError, ValueError):
++        version = 0
++    if version != SUPPORTED_VERSION:
++        return SnapshotView(None, False, "version_unsupported:%s" % version, raw=data)
++    missing = [field for field in REQUIRED_FIELDS if field not in data]
++    if missing:
++        return SnapshotView(None, False, "fields_missing:%s" % ",".join(missing[:4]), raw=data)
++    return SnapshotView(data, True, "")
++
++
++def _bridge(plugin):
++    try:
++        from .amo_bridge import AmoBridge
++    except ImportError:
++        from core.amo_bridge import AmoBridge
++    return AmoBridge(plugin, scope="life_state")
++
++
++def read(plugin, now=None):
++    """读快照：成功返回 available=True 的视图；失败返回 available=False + reason。
++
++    只通过 AmoBridge 调用（方法必须登记在 _CALLS），不 import 对方模块。
++    """
++    bridge = None
++    try:
++        bridge = _bridge(plugin)
++        result = bridge.call("life_state_snapshot")
++    except Exception as exc:
++        _warn_fallback("call_error", "%s: %s" % (type(exc).__name__, exc))
++        return SnapshotView(None, False, "call_error")
++    ok = bool(getattr(result, "ok", False))
++    if not ok:
++        reason = str(getattr(result, "reason", "") or "unavailable")
++        _warn_fallback(reason, "reason=%s" % reason)
++        return SnapshotView(None, False, reason)
++    value = getattr(result, "value", None)
++    snapshot = view(value)
++    if not snapshot.available:
++        _warn_fallback(snapshot.reason, "day=%s" % snapshot.day)
++    return snapshot
+
+--- /dev/null
++++ b/Astrbot_amoupup_watch\services\metrics.py
+@@ -0,0 +1,191 @@
++# -*- coding: utf-8 -*-
++"""统一消费口径（MetricsAPI 消费端，task-27）。
++
++work/audit/cross_plugin.md P0-3：守护首页“本月支出”读 watch.expenses（¥473，
++只含日常小额），生活卡读 amo wallet ledger 却按 reason 前缀排除（¥16,016，
++把定期存款 10,000 / 基金 500 也算成支出）——同一个指标两个数。
++
++规则收敛成一份（与 forever/services/metrics.py 同一口径，
++forever/tests/test_metrics_contract.py 用同一批流水做跨仓数值比对）：
++
++- 本月消费：cash 负流水里排除
++  * 资产类：存款/投资/基金/理财/转账/退款/账户调整（幂等前缀 save:/deposit:/
++    invest:/transfer:/refund:/withdrawable:/bank:dep:）；
++  * 账单类：房租/水费/电费/燃气费/宽带/物业/取暖（面板另有账单卡）；
++  * 退款/冲正（幂等前缀 + “退款/退回/冲正/撤销/退还”）。
++- 首选读取能陪 metrics_snapshot()（唯一计算函数）；对方是旧版时降级到
++  本地同一口径重算，并把 source/degraded 一起返回，面板能看出是否走到新契约。
++"""
++from __future__ import annotations
++
++import datetime as _dt
++
++CONTRACT_NAME = "amo-metrics"
++CONTRACT_VERSION = 1
++SOURCE_CONTRACT = "amo.metrics"
++SOURCE_LOCAL = "local_ledger"
++
++ASSET_CATEGORIES = frozenset(("存款", "投资", "转账", "退款", "理财", "基金", "股票",
++                              "账户调整"))
++BILL_CATEGORIES = frozenset(("房租", "水电", "物业", "取暖", "宽带"))
++BILL_REASON_PREFIXES = ("房租", "水费", "电费", "燃气费", "宽带", "物业", "取暖")
++ASSET_REASON_PREFIXES = ("存款", "投资", "转账", "退款", "理财", "基金", "股票",
++                         "买入", "卖出", "申购", "赎回", "贷款", "还款", "利息",
++                         "分期", "工资", "奖金", "红包", "初始存款", "可取余额",
++                         "卖出资金", "用户转账")
++ASSET_IDEM_PREFIXES = ("save:", "deposit:", "invest:", "transfer:", "refund:",
++                       "cleanup:refund:", "withdrawable:", "bank:dep:")
++REFUND_WORDS = ("退款", "退回", "冲正", "撤销", "退还")
++
++KIND_CONSUMPTION = "consumption"
++KIND_BILL = "bill"
++KIND_ASSET = "asset"
++KIND_REFUND = "refund"
++KIND_INCOME = "income"
++
++
++def month_of(now=None):
++    if isinstance(now, _dt.datetime):
++        return now.strftime("%Y-%m")
++    try:
++        return _dt.datetime.fromtimestamp(float(now)).strftime("%Y-%m")
++    except (TypeError, ValueError):
++        return _dt.date.today().strftime("%Y-%m")
++
++
++def _text(row, key):
++    return str((row or {}).get(key) or "")
++
++
++def _delta(row):
++    try:
++        return int((row or {}).get("delta_cents") or 0)
++    except (TypeError, ValueError):
++        return 0
++
++
++def _month_of_ts(ts):
++    try:
++        return _dt.datetime.fromtimestamp(float(ts)).strftime("%Y-%m")
++    except (TypeError, ValueError, OSError):
++        return ""
++
++
++def classify_row(row):
++    """一行 ledger -> income/refund/bill/asset/consumption（与能陪同口径）。"""
++    delta = _delta(row)
++    reason = _text(row, "reason")
++    category = _text(row, "category")
++    idem = _text(row, "idem")
++    if delta > 0:
++        return KIND_REFUND if any(word in reason for word in REFUND_WORDS) else KIND_INCOME
++    if idem.startswith("refund:") or idem.startswith("cleanup:refund:"):
++        return KIND_REFUND
++    if any(word in reason for word in REFUND_WORDS):
++        return KIND_REFUND
++    if category in ASSET_CATEGORIES:
++        return KIND_ASSET
++    if category in BILL_CATEGORIES:
++        return KIND_BILL
++    if idem.startswith(ASSET_IDEM_PREFIXES):
++        return KIND_ASSET
++    if any(reason.startswith(prefix) for prefix in BILL_REASON_PREFIXES):
++        return KIND_BILL
++    if any(reason.startswith(prefix) for prefix in ASSET_REASON_PREFIXES):
++        return KIND_ASSET
++    return KIND_CONSUMPTION
++
++
++def consumption_cents(ledger, month="", now=None):
++    """本月消费（整数分）：唯一计算函数（纯函数，面板/测试共用）。"""
++    target = str(month or "").strip() or month_of(now)
++    total = 0
++    for row in ledger or []:
++        if not isinstance(row, dict):
++            continue
++        if _text(row, "account") not in ("cash", ""):
++            continue
++        ts = _month_of_ts(row.get("ts"))
++        if ts and target and ts != target:
++            continue
++        if classify_row(row) == KIND_CONSUMPTION:
++            total += abs(_delta(row))
++    return total
++
++
++def _amo(plugin):
++    finance = getattr(plugin, "finance", None)
++    getter = getattr(finance, "_amo", None)
++    if callable(getter):
++        try:
++            return getter()
++        except Exception:
++            return None
++    return None
++
++
++def _ledger(plugin, limit=500):
++    finance = getattr(plugin, "finance", None)
++    getter = getattr(finance, "ledger", None)
++    if callable(getter):
++        try:
++            rows = getter(int(limit))
++            if isinstance(rows, (list, tuple)):
++                return [row for row in rows if isinstance(row, dict)]
++        except Exception:
++            pass
++    amo = _amo(plugin)
++    wallet = getattr(amo, "wallet", None) if amo is not None else None
++    getter = getattr(wallet, "ledger", None)
++    if callable(getter):
++        try:
++            return [row for row in (getter(int(limit)) or []) if isinstance(row, dict)]
++        except Exception:
++            return []
++    return []
++
++
++def month_consumption(plugin, month="", now=None):
++    """本月消费：首选能陪 metrics_snapshot()（单一计算函数），旧版降级本地重算。
++
++    返回 {cents, source, month, degraded}；任何失败都不抛（面板/推送不能因它炸）。
++    """
++    target = str(month or "").strip() or month_of(now)
++    out = {"cents": 0, "source": SOURCE_LOCAL, "month": target, "degraded": ""}
++    amo = _amo(plugin)
++    getter = getattr(amo, "metrics_snapshot", None) if amo is not None else None
++    if callable(getter):
++        try:
++            data = getter()
++        except Exception as exc:
++            out["degraded"] = "%s: %s" % (type(exc).__name__, exc)
++            data = None
++        if isinstance(data, dict) and str(data.get("contract") or "") == CONTRACT_NAME:
++            wallet = data.get("wallet") or {}
++            wallet_month = str(wallet.get("month") or "")
++            if not wallet_month or wallet_month == target:
++                out["cents"] = int(wallet.get("month_consumption_cents") or 0)
++                out["source"] = SOURCE_CONTRACT
++                out["degraded"] = ""
++                return out
++            out["degraded"] = "contract month=%s != %s" % (wallet_month, target)
++        elif data is not None:
++            out["degraded"] = "contract mismatch"
++    ledger = _ledger(plugin)
++    out["cents"] = consumption_cents(ledger, target, now)
++    return out
++
++
++def contract_descriptor():
++    return {
++        "contract": CONTRACT_NAME,
++        "version": CONTRACT_VERSION,
++        "role": "consumer",
++        "preferred_source": SOURCE_CONTRACT,
++        "fallback_source": SOURCE_LOCAL,
++        "rules": {
++            "asset_categories": sorted(ASSET_CATEGORIES),
++            "bill_categories": sorted(BILL_CATEGORIES),
++            "refund_words": list(REFUND_WORDS),
++        },
++    }
+
+--- /dev/null
++++ b/Astrbot_amoupup_watch\tests\test_life_state_contract.py
+@@ -0,0 +1,178 @@
++# -*- coding: utf-8 -*-
++"""LifeStateSnapshot 消费端契约测试（task-27）。
++
++守护只能通过 AmoBridge 读快照；这里钉住：
++- 合法快照 -> available，字段取值稳定；
++- 版本不符/字段缺失/调用失败 -> available=False + reason（业务退回旧逻辑，不崩）；
++- 降级日志按 reason 去重（不刷屏）。
++"""
++from __future__ import annotations
++
++import logging
++import sys
++import unittest
++from types import SimpleNamespace
++
++ROOT = __import__("os").path.dirname(__import__("os").path.dirname(__import__("os").path.abspath(__file__)))
++if ROOT not in sys.path:
++    sys.path.insert(0, ROOT)
++
++from core import life_state  # noqa: E402
++
++
++def _snapshot(**overrides):
++    base = {
++        "contract": "amo-life-state",
++        "version": 1,
++        "source": "forever",
++        "generated_at": 1795317120.0,
++        "day": "2026-11-22",
++        "principal": {"umo": "lark:FriendMessage:ou_x", "uid": "ou_x",
++                      "platform": "lark", "scope": "private", "kind": "owner"},
++        "location": {"place": "家", "zone": "home", "activity": "在家歇着",
++                     "at_home": True, "in_shop": False, "event_id": "ev_home"},
++        "current_action": {"action": "在家歇着", "place": "家", "zone": "home",
++                           "source": "schedule"},
++        "schedule": {"current": {"activity": "在家歇着"}, "reason": "covering",
++                     "next": {}, "day": "2026-11-22"},
++        "date_session": {"canonical_present": False, "phase": "", "together": False},
++        "shopping": {"active": True,
++                     "line": "你正在商场试米白色针织开衫，价格 985 元，卡里余额 4072 元",
++                     "mentioned_balance_cents": 407200,
++                     "wallet_balance_cents": 394725, "line_stale": True},
++        "wallet": {"balance_cents": 394725, "withdrawable_cents": 394725,
++                   "month": "2026-11", "month_consumption_cents": 533145},
++        "outfit": {"day": "2026-11-22", "text": "卡其色风衣"},
++        "mood": {"score": 62, "words": ["平和"]},
++        "media": {"photos_today": 2},
++        "consistency": {"ok": False, "issues": [
++            {"code": "shopping_balance_stale", "detail": "4072 vs 3947.25"}]},
++        "degraded": [],
++    }
++    base.update(overrides)
++    return base
++
++
++class SnapshotViewTests(unittest.TestCase):
++    def test_valid_snapshot(self):
++        view = life_state.view(_snapshot())
++        self.assertTrue(view.available)
++        self.assertEqual(view.version, 1)
++        self.assertEqual(view.day, "2026-11-22")
++        self.assertEqual(view.wallet_balance_cents(), 394725)
++        self.assertEqual(view.month_consumption_cents(), 533145)
++        self.assertEqual(view.place(), "家")
++        self.assertFalse(view.in_shop())
++        self.assertTrue(view.at_home())
++        self.assertTrue(view.shopping_stale())
++        self.assertIn("试米白色", view.shopping_line())
++        self.assertEqual(view.photos_today(), 2)
++        self.assertEqual(view.issues()[0]["code"], "shopping_balance_stale")
++
++    def test_contract_mismatch(self):
++        view = life_state.view(_snapshot(contract="other-contract"))
++        self.assertFalse(view.available)
++        self.assertEqual(view.reason, "contract_mismatch")
++        # 降级视图不暴露数值（原文只在 raw 里给排障用）
++        self.assertEqual(view.wallet_balance_cents(), 0)
++        self.assertEqual(view.raw["wallet"]["balance_cents"], 394725)
++
++    def test_version_unsupported(self):
++        view = life_state.view(_snapshot(version=99))
++        self.assertFalse(view.available)
++        self.assertTrue(view.reason.startswith("version_unsupported"))
++
++    def test_fields_missing(self):
++        data = _snapshot()
++        data.pop("wallet")
++        view = life_state.view(data)
++        self.assertFalse(view.available)
++        self.assertTrue(view.reason.startswith("fields_missing"))
++
++    def test_defaults_are_safe(self):
++        view = life_state.SnapshotView(None, False, "not_ready")
++        self.assertEqual(view.wallet_balance_cents(), 0)
++        self.assertEqual(view.place(), "")
++        self.assertIsNone(view.in_shop())
++        self.assertEqual(view.shopping(), {})
++        self.assertEqual(view.get("a.b.c", "x"), "x")
++
++
++class _Finance:
++    def __init__(self, amo):
++        self._amo_obj = amo
++
++    def _amo(self):
++        return self._amo_obj
++
++
++class _AmoWithSnapshot:
++    def __init__(self, payload):
++        self.payload = payload
++
++    def life_state_snapshot(self, *args, **kwargs):
++        return dict(self.payload)
++
++
++class _AmoWithoutSnapshot:
++    pass
++
++
++def _plugin(amo):
++    return SimpleNamespace(finance=_Finance(amo))
++
++
++class ReadTests(unittest.TestCase):
++    def test_read_ok(self):
++        view = life_state.read(_plugin(_AmoWithSnapshot(_snapshot())))
++        self.assertTrue(view.available)
++        self.assertEqual(view.wallet_balance_cents(), 394725)
++
++    def test_read_missing_method_degrades(self):
++        view = life_state.read(_plugin(_AmoWithoutSnapshot()))
++        self.assertFalse(view.available)
++        self.assertEqual(view.reason, "missing")
++
++    def test_read_not_ready_degrades(self):
++        view = life_state.read(_plugin(None))
++        self.assertFalse(view.available)
++        self.assertEqual(view.reason, "not_ready")
++
++    def test_read_invalid_payload_degrades(self):
++        view = life_state.read(_plugin(_AmoWithSnapshot({"version": 2})))
++        self.assertFalse(view.available)
++
++    def test_contract_descriptor(self):
++        descriptor = life_state.contract_descriptor()
++        self.assertEqual(descriptor["contract"], "amo-life-state")
++        self.assertEqual(descriptor["role"], "consumer")
++        self.assertEqual(tuple(descriptor["fields"]), life_state.REQUIRED_FIELDS)
++
++
++class FallbackLogTests(unittest.TestCase):
++    def setUp(self):
++        life_state._WARNED.clear()
++
++    def test_warn_dedupe(self):
++        class _Recorder:
++            def __init__(self):
++                self.messages = []
++
++            def warning(self, message, *args):
++                self.messages.append(message % tuple(args) if args else message)
++
++        recorder = _Recorder()
++        original = life_state.logger
++        life_state.logger = recorder
++        try:
++            life_state._warn_fallback("missing", "a")
++            life_state._warn_fallback("missing", "b")
++            life_state._warn_fallback("other", "c")
++        finally:
++            life_state.logger = original
++        self.assertEqual(len(recorder.messages), 2)
++        self.assertTrue(all("CONTRACT_FALLBACK" in text for text in recorder.messages))
++
++
++if __name__ == "__main__":
++    unittest.main()
+
+--- /dev/null
++++ b/Astrbot_amoupup_watch\tests\test_metrics_consistency.py
+@@ -0,0 +1,227 @@
++# -*- coding: utf-8 -*-
++"""面板口径一致性（task-27）：守护首页 / 生活卡 / 分类小卡只能有一个“本月支出”。
++
++生产事故：首页 ¥473.00（watch.expenses 只含小额日常）、生活卡 ¥16,016.45
++（amo wallet ledger 按 reason 前缀排除，把定期 10,000/基金 500 当支出）。
++修复后两个入口都走 services.metrics.month_consumption()：首选能陪
++metrics_snapshot()（唯一计算函数），旧版能陪时按同一口径本地重算。
++"""
++from __future__ import annotations
++
++import datetime as dt
++import os
++import sys
++import unittest
++from types import SimpleNamespace
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++if ROOT not in sys.path:
++    sys.path.insert(0, ROOT)
++
++from services import metrics  # noqa: E402
++from services.dashboard import dashboard_text  # noqa: E402
++from ui.cards import CardMixin  # noqa: E402
++
++TODAY = dt.date(2026, 11, 18)
++
++
++def _row(idem, delta, reason, category="其他", ts=None, account="cash"):
++    stamp = ts if ts is not None else dt.datetime(2026, 11, 15, 12, 0).timestamp()
++    return {"idem": idem, "account": account, "delta_cents": delta, "reason": reason,
++            "category": category, "ts": stamp}
++
++
++def _ledger():
++    return [
++        _row("meal:1", -1500, "面条", "餐饮"),
++        _row("shop:item", -134997, "买衣服：一条绿色碎花连衣裙", "生活"),
++        _row("rent:2026-11", -185303, "房租", "其他"),
++        _row("bank:dep", -1000000, "存款：定期3个月", "存款"),
++        _row("decision:fundbuy", -50000, "buy_fund", "投资"),
++        _row("social:prepaid", -20000, "下班一起吃饭（预扣，已退回）", "社交"),
++        _row("cleanup:refund:1", 20000, "退款：预扣已退回", "退款"),
++    ]
++
++
++EXPECTED_CENTS = 1500 + 134997
++
++
++class _Amo:
++    def __init__(self, snapshot=None, ledger=None):
++        self._snapshot = snapshot
++        self._ledger = ledger or _ledger()
++
++    def metrics_snapshot(self, *args, **kwargs):
++        if self._snapshot is None:
++            raise AttributeError("no metrics")
++        return dict(self._snapshot)
++
++    def wallet(self):
++        return None
++
++    def life_state_snapshot(self, *args, **kwargs):
++        return {}
++
++
++class _AmoLegacy:
++    """旧版能陪：没有 metrics_snapshot，只有钱包流水。"""
++
++    def __init__(self, ledger=None):
++        self._ledger = ledger or _ledger()
++
++    class _Wallet:
++        def __init__(self, rows):
++            self.rows = rows
++
++        def ledger(self, limit=200):
++            return list(self.rows)
++
++    @property
++    def wallet(self):
++        return self._Wallet(self._ledger)
++
++
++class _ContractAmo:
++    """新能陪：metrics_snapshot 返回契约快照。"""
++
++    def __init__(self, cents=EXPECTED_CENTS, month="2026-11"):
++        self.cents = cents
++        self.month = month
++
++    def metrics_snapshot(self, *args, **kwargs):
++        return {"contract": "amo-metrics", "version": 1, "source": "forever",
++                "wallet": {"balance_cents": 394725, "month": self.month,
++                           "month_consumption_cents": self.cents,
++                           "month_assets_change_cents": 1050000},
++                "photos": {"today": 0}}
++
++    @property
++    def wallet(self):
++        return None
++
++
++class _Finance:
++    def __init__(self, amo, ledger=None):
++        self._amo_obj = amo
++        self._ledger = ledger or _ledger()
++
++    def _amo(self):
++        return self._amo_obj
++
++    def balance_cents(self):
++        return 394725
++
++    def mood(self):
++        return {"word": "平和"}
++
++    def ledger(self, limit=200):
++        return list(self._ledger)
++
++
++class _Repo:
++    def positions(self):
++        return []
++
++    def loans(self):
++        return []
++
++    def expenses(self, period=""):
++        # 旧口径：watch.expenses 合计 473 元（只覆盖小额日常）
++        return [{"amount_cents": 47300}]
++
++    def assets(self):
++        return []
++
++    def assets_of(self, kind):
++        return []
++
++    def settlements(self, month):
++        return []
++
++    def meta_keys(self, prefix):
++        return []
++
++    def meta_get(self, key, default=None):
++        return default
++
++
++class _Social:
++    def __init__(self):
++        self.repo = SimpleNamespace(npcs=lambda: [])
++
++
++class _Media:
++    def is_sick(self):
++        return False
++
++
++class _Life:
++    def salary_cents(self):
++        return 680000
++
++    def summary(self, period):
++        return {"base_cents": 680000, "bonus_cents": 0, "deduction_cents": 0,
++                "net_cents": 680000, "items": []}
++
++    def thrifty_until(self):
++        return 0
++
++
++class _Expense:
++    def month_summary(self):
++        # 分类小卡：watch.expenses 自己的汇总，不许再覆盖 month_expense
++        return {"total_cents": 47300,
++                "categories": [{"key": "food", "label": "餐饮饮食", "amount_cents": 47300}]}
++
++
++class _Plugin(CardMixin):
++    def __init__(self, amo):
++        self.finance = _Finance(amo)
++        self.finance_repo = _Repo()
++        self.finance_life = _Life()
++        self.finance_expense = _Expense()
++        self.config = {"city": "上海"}
++        self.medical = _Media()
++        self.social = _Social()
++
++
++class PanelConsistencyTests(unittest.TestCase):
++    def test_dashboard_and_life_card_use_same_metric(self):
++        plugin = _Plugin(_ContractAmo())
++        card_life, _market = plugin._snapshot_life()
++        self.assertEqual(card_life["month_expense"], EXPECTED_CENTS / 100.0)
++        self.assertEqual(card_life["month_expense_source"], metrics.SOURCE_CONTRACT)
++        text = dashboard_text(plugin)
++        self.assertIn("%.2f" % (EXPECTED_CENTS / 100.0), text)
++        self.assertNotIn("473.00", text)
++
++    def test_legacy_amo_falls_back_to_same_rule(self):
++        plugin = _Plugin(_AmoLegacy())
++        card_life, _market = plugin._snapshot_life()
++        self.assertEqual(card_life["month_expense_source"], metrics.SOURCE_LOCAL)
++        self.assertEqual(round(card_life["month_expense"] * 100), EXPECTED_CENTS)
++        text = dashboard_text(plugin)
++        self.assertIn("%.2f" % (EXPECTED_CENTS / 100.0), text)
++
++    def test_expense_engine_total_does_not_override_month_expense(self):
++        plugin = _Plugin(_ContractAmo())
++        card_life, _market = plugin._snapshot_life()
++        plugin._snapshot_expense(card_life)
++        self.assertEqual(card_life["month_expense"], EXPECTED_CENTS / 100.0)
++        # 分类小卡单列，不能把 473 覆盖回本周消费
++        self.assertEqual(card_life["expense_category_total"], 473.0)
++
++    def test_contract_month_mismatch_falls_back(self):
++        plugin = _Plugin(_ContractAmo(month="2026-10"))
++        metric = metrics.month_consumption(plugin)
++        self.assertEqual(metric["source"], metrics.SOURCE_LOCAL)
++        self.assertEqual(metric["cents"], EXPECTED_CENTS)
++
++    def test_life_block_accepts_explicit_consumption(self):
++        from ui.report import life_block
++        life = life_block([], _ledger(), 680000, TODAY, consumption_cents=12345)
++        self.assertEqual(life["month_expense"], 123.45)
++
++
++if __name__ == "__main__":
++    unittest.main()
+
+--- /dev/null
++++ b/Astrbot_amoupup_photo\tests\test_plugin_principal_quota.py
+@@ -0,0 +1,182 @@
++# -*- coding: utf-8 -*-
++"""跨插件生图 principal 权限/配额/用量契约（task-27）。
++
++生产事故（work/audit/cross_plugin.md P1-4）：generate_images_for_plugin 只在
++event is not None 时校验权限/配额/记用量；能陪两条自动生图路径都不传 event
++（photo_generate.py:294/459），于是谁能在聊天里触发能陪发图，都绕过定格的
++白名单/每日配额/面板统计。
++
++本测试钉住修复后的契约：
++- event=None 但带合法 principal(owner) -> 权限/配额/用量全部生效，usage_recorded=True；
++- principal 坏形状/不受信 caller -> 拒绝，且只给能说出口的文案；
++- kind=system（内部参考图）-> 放行、不占个人配额、不记“她的今日生图”；
++- 旧版调用（无 event 无 principal）-> 过渡期放行但 usage 记 unattributed，
++  contract_miss 计数进面板（滚动升级后清零）。
++"""
++from __future__ import annotations
++
++import pathlib
++import sys
++import tempfile
++import threading
++import types
++import unittest
++
++import _custom_endpoint_helpers as helpers
++
++main_module = helpers.main_module
++OmniDrawPlugin = helpers.OmniDrawPlugin
++
++PRINCIPAL = {"contract": "amo-image-principal", "version": 1,
++             "caller": "Astrbot_amoupup_forever", "kind": "owner",
++             "user_id": "ou_cec66", "scope": "private",
++             "umo": "lark:FriendMessage:ou_cec66"}
++
++
++class _Event:
++    """最小事件：只用于确认 event 优先分支不被 principal 影响。"""
++
++    unified_msg_origin = "lark:FriendMessage:ou_cec66"
++
++    def get_sender_id(self):
++        return "ou_cec66"
++
++    def is_admin(self):
++        return False
++
++
++class PrincipalQuotaTests(unittest.IsolatedAsyncioTestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory(prefix="omnidraw-principal-")
++        self.addCleanup(self.temp.cleanup)
++        self.plugin = self._plugin()
++
++    def _plugin(self):
++        plugin = object.__new__(OmniDrawPlugin)
++        plugin.data_dir = str(pathlib.Path(self.temp.name))
++        plugin.plugin_config = types.SimpleNamespace(
++            enable_daily_limit=True,
++            daily_image_limit=2,
++            max_batch_count=4,
++            enable_checkin=False,
++            checkin_bonus_min=1,
++            checkin_bonus_max=3,
++            usable_users=[], blocked_users=[], unlimited_users=[],
++            unlimited_groups=[], allowed_users=[],
++        )
++        plugin._usage_lock = threading.RLock()
++        plugin._usage_stats = {}
++        plugin._quota_reservations = {}
++        plugin._persist_usage_stats = lambda: None
++        plugin._refresh_from_native_config_if_changed = lambda: None
++        plugin._notice_calls = []
++
++        async def text2img(*args, **kwargs):
++            return {"requested_count": 1, "prompts": ["p"], "results": [object()],
++                    "mode": "text2img", "chain": "text2img"}
++
++        plugin._run_text2img_generation = text2img
++        plugin._run_selfie_generation = text2img
++        plugin._plugin_generation_response = lambda generation: (
++            {"success": True, "message": "ok", "images": [{"url": "x"}]}, [object()])
++        plugin._release_cache_paths = lambda paths: None
++        return plugin
++
++    async def _generate(self, **kwargs):
++        params = {"prompt": "测试生图", "count": 1}
++        params.update(kwargs)
++        return await plugin_generate(self.plugin, **params)
++
++    # ---------- principal 解析 ----------
++    def test_principal_normalization(self):
++        status = self.plugin._normalize_plugin_principal(PRINCIPAL)
++        self.assertIsNotNone(status)
++        self.assertTrue(status["allowed"])
++        self.assertEqual(status["level"], "plugin_owner")
++        self.assertFalse(status["unlimited"])
++
++    def test_untrusted_caller_or_kind_is_invalid(self):
++        self.assertIsNone(self.plugin._normalize_plugin_principal(
++            dict(PRINCIPAL, caller="astrbot_plugin_evil")))
++        self.assertIsNone(self.plugin._normalize_plugin_principal(
++            dict(PRINCIPAL, kind="admin")))
++        self.assertIsNone(self.plugin._normalize_plugin_principal("not-a-dict"))
++
++    def test_blocked_owner_denied(self):
++        self.plugin.plugin_config.blocked_users = ["ou_cec66"]
++        status = self.plugin._normalize_plugin_principal(PRINCIPAL)
++        self.assertFalse(status["allowed"])
++
++    # ---------- 全链路：principal 权限/配额/用量 ----------
++    async def test_owner_principal_records_usage(self):
++        result = await self._generate(principal=PRINCIPAL, record_usage=True)
++        self.assertTrue(result["success"], result)
++        self.assertTrue(result["usage_recorded"])
++        self.assertEqual(result["contract"], "amo-image-principal")
++        self.assertEqual(result["principal"]["kind"], "owner")
++        self.assertEqual(result["principal"]["source"], "plugin")
++        stats = self.plugin._usage_stats
++        self.assertEqual(stats["users"]["ou_cec66"]["count"], 1)
++        self.assertEqual(stats["users"]["ou_cec66"]["source"], "plugin")
++        self.assertEqual(self.plugin._quota_reservations, {})
++
++    async def test_owner_principal_hits_daily_quota(self):
++        await self._generate(principal=PRINCIPAL, record_usage=True)
++        await self._generate(principal=PRINCIPAL, record_usage=True)
++        blocked = await self._generate(principal=PRINCIPAL, record_usage=True)
++        self.assertFalse(blocked["success"])
++        self.assertFalse(blocked["usage_recorded"])
++        self.assertIn("额度", blocked["message"])
++        self.assertEqual(self.plugin._usage_stats["users"]["ou_cec66"]["count"], 2)
++
++    async def test_system_principal_is_unlimited_and_not_counted(self):
++        self.plugin.plugin_config.daily_image_limit = 1
++        await self._generate(principal=PRINCIPAL, record_usage=True)
++        system = await self._generate(
++            principal=dict(PRINCIPAL, kind="system"), record_usage=False)
++        self.assertTrue(system["success"], system)
++        self.assertFalse(system["usage_recorded"])
++        self.assertEqual(self.plugin._usage_stats["users"]["ou_cec66"]["count"], 1)
++
++    async def test_invalid_principal_denied_with_safe_text(self):
++        result = await self._generate(
++            principal={"caller": "astrbot_plugin_evil", "kind": "owner"},
++            record_usage=True)
++        self.assertFalse(result["success"])
++        self.assertFalse(result["usage_recorded"])
++        self.assertIn("老公", result["message"])
++        for word in ("权限", "principal", "event", "配额"):
++            self.assertNotIn(word, result["message"])
++
++    async def test_legacy_call_without_principal_is_flagged(self):
++        result = await self._generate(record_usage=True)
++        self.assertTrue(result["success"], result)
++        self.assertTrue(result["usage_recorded"])
++        self.assertEqual(result["principal"]["source"], "legacy")
++        stats = self.plugin._usage_stats
++        self.assertEqual(stats["users"]["legacy:unattributed"]["count"], 1)
++        self.assertEqual(stats["contract_miss"], 1)
++
++    async def test_usage_page_exposes_sources_and_contract_counts(self):
++        await self._generate(principal=PRINCIPAL, record_usage=True)
++        await self._generate(record_usage=True)
++        page = self.plugin._usage_stats_for_page()
++        self.assertEqual(page["total"], 2)
++        self.assertEqual(page["by_source"].get("plugin"), 1)
++        self.assertEqual(page["by_source"].get("legacy"), 1)
++        self.assertEqual(page["contract_miss"], 1)
++        self.assertEqual(page["principal_denied"], 0)
++
++    async def test_no_principal_and_record_usage_false_does_not_count(self):
++        result = await self._generate(record_usage=False)
++        self.assertTrue(result["success"], result)
++        self.assertFalse(result["usage_recorded"])
++        self.assertEqual(self.plugin._usage_stats.get("total", 0), 0)
++
++
++async def plugin_generate(plugin, **kwargs):
++    return await plugin.generate_images_for_plugin(**kwargs)
++
++
++if __name__ == "__main__":
++    unittest.main()
+
+--- /dev/null
++++ b/Astrbot_amoupup_data\tests\test_panel_metrics.py
+@@ -0,0 +1,63 @@
++# -*- coding: utf-8 -*-
++"""能记面板指标口径（task-27）：聊天只算真实对话、摘要单列。
++
++生产事实：面板「聊天 436」= user 104 + bot 186 + summary 146；真实聊天 290，
++高估 33.5%。修复后 maintenance.stats 同时给 messages（全表，兼容）、
++messages_chat（role in user/bot）、messages_summary（role=summary）。
++"""
++from __future__ import annotations
++
++import os
++import sys
++import unittest
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++TESTS = os.path.dirname(os.path.abspath(__file__))
++for path in (ROOT, TESTS):
++    if path not in sys.path:
++        sys.path.insert(0, path)
++
++import fixtures  # noqa: E402
++
++BOT = "aiocqhttp"
++UMO = "aiocqhttp:FriendMessage:10001"
++
++
++class PanelChatMetricsTests(unittest.TestCase):
++    def test_chat_and_summary_are_separate(self):
++        with fixtures.TempStore() as store:
++            store.messages.add_message(BOT, UMO, "10001", "他", role="user", content="在吗")
++            store.messages.add_message(BOT, UMO, "10001", "他", role="bot", content="在的")
++            # 摘要行由压缩引擎直接写 role=summary，add_message 会把 role 收敛成 user/bot；
++            # 这里按生产形态直接补一行，验证面板口径而不是 add_message 语义。
++            with store.lock:
++                store.conn.execute(
++                    "INSERT INTO messages (umo, uid, name, role, content, created_at, platform, bot_id) "
++                    "VALUES (?,?,?,?,?,?,?,?)",
++                    (UMO, "10001", "他", "summary", "摘要", 1795317000, "aiocqhttp", BOT))
++                store.conn.commit()
++            counts = store.maintenance.stats(BOT)
++            self.assertEqual(counts["messages"], 3)
++            self.assertEqual(counts["messages_chat"], 2)
++            self.assertEqual(counts["messages_summary"], 1)
++
++    def test_chat_count_never_exceeds_total(self):
++        with fixtures.TempStore() as store:
++            counts = store.maintenance.stats(BOT)
++            self.assertEqual(counts["messages"], 0)
++            self.assertEqual(counts["messages_chat"], 0)
++            self.assertEqual(counts["messages_summary"], 0)
++            self.assertLessEqual(counts["messages_chat"], counts["messages"])
++
++    def test_bot_filter_applies_to_split_counts(self):
++        with fixtures.TempStore() as store:
++            store.messages.add_message(BOT, UMO, "10001", "他", role="user", content="a")
++            store.messages.add_message("lark", "lark:FriendMessage:ou_x", "ou_x", "他",
++                                       role="user", content="b")
++            counts = store.maintenance.stats(BOT)
++            self.assertEqual(counts["messages_chat"], 1)
++            self.assertEqual(counts["messages_summary"], 0)
++
++
++if __name__ == "__main__":
++    unittest.main()
+
+--- /dev/null
++++ b/Astrbot_amoupup_data\tests\test_group_umo_single.py
+@@ -0,0 +1,79 @@
++# -*- coding: utf-8 -*-
++"""群会话 ID 唯一归一化（task-27，P1-1）。
++
++审计：代码里同一群存在 3 套归一化口径（入库 normalize_group_umo / 群聊页
++groupKey / 聊天页 sessionLabel），改名用的 key 与查名用的 key 不是同一个；
++一旦有群消息可能出现 2 个群节点 / 改名不生效。
++
++修复后：
++- 后端只有 services.message_engine.normalize_group_umo 一套（入库、迁移、分组）；
++- 面板 JS 只有 normalizeGroupUmo 一套（聊天页分组、群聊页分组、群名查找都走它），
++  groupKey 只是旧名字的别名，不再保留第二套正则。
++"""
++from __future__ import annotations
++
++import io
++import os
++import re
++import sys
++import unittest
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++if ROOT not in sys.path:
++    sys.path.insert(0, ROOT)
++
++from services.message_engine import normalize_group_umo  # noqa: E402
++
++PANEL = os.path.join(ROOT, "views", "dashboard", "index.html")
++
++
++class BackendNormalizeTests(unittest.TestCase):
++    def test_qq_group_with_sender_tail(self):
++        self.assertEqual(normalize_group_umo("aiocqhttp:GroupMessage:123:456"),
++                         "aiocqhttp:GroupMessage:123")
++        self.assertEqual(normalize_group_umo("aiocqhttp:GroupMessage:123_456"),
++                         "aiocqhttp:GroupMessage:123")
++
++    def test_lark_group_id_without_numeric_tail(self):
++        # 飞书群 ID 带字母：只丢 sender 尾段，不截断群 ID 本身
++        self.assertEqual(normalize_group_umo("lark:GroupMessage:oc_abc:ou_x"),
++                         "lark:GroupMessage:oc_abc")
++
++    def test_private_umo_untouched(self):
++        for umo in ("lark:FriendMessage:ou_x", "aiocqhttp:FriendMessage:10001", ""):
++            self.assertEqual(normalize_group_umo(umo), umo)
++
++
++class PanelSingleNormalizeTests(unittest.TestCase):
++    def setUp(self):
++        with io.open(PANEL, encoding="utf-8") as fh:
++            self.html = fh.read()
++
++    def test_panel_has_one_normalizer(self):
++        self.assertEqual(self.html.count("function normalizeGroupUmo"), 1)
++
++    def test_group_regex_appears_only_in_normalizer(self):
++        # 归一化规则只允许出现在 normalizeGroupUmo 里；sessionLabel/groupLabel
++        # 只在归一化后的字符串上取尾段展示（正则带 $ 锚点），不得再实现一套截断。
++        normalize = re.findall(r":GroupMessage:\(\[\^:\]\+\)/", self.html)
++        self.assertEqual(len(normalize), 1,
++                         "群 umo 归一化正则出现了 %d 次" % len(normalize))
++
++    def test_session_tree_uses_normalizer(self):
++        self.assertIn("const key = normalizeGroupUmo(", self.html)
++        self.assertIn('const umo = normalizeGroupUmo(String((item && item.umo) || ""));',
++                      self.html)
++
++    def test_group_label_manual_name_uses_normalized_key(self):
++        self.assertIn('const manual = String(((window._groupNames || {})[umo]) || "").trim();',
++                      self.html)
++
++    def test_old_group_key_is_thin_alias(self):
++        # groupKey 只能是别名，不能有第二套实现（截断逻辑只允许在 normalizeGroupUmo 里）
++        self.assertIn("function groupKey(umo) {", self.html)
++        self.assertEqual(self.html.count("return normalizeGroupUmo(umo);"), 1)
++        self.assertEqual(self.html.count("gid.split"), 1)
++
++
++if __name__ == "__main__":
++    unittest.main()

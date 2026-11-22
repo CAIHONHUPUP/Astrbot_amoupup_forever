@@ -1,0 +1,299 @@
+--- before/amo_proactive.py
++++ after/amo_proactive.py
+@@ -99,4 +99,8 @@
+ SCHEDULE_REMIND_MIN_MINUTES = 10
+ SCHEDULE_REMIND_MAX_MINUTES = 60
++#: 迟到窗口（分钟）：日程已经开始超过这么久就不要再发“快到了”的提醒。
++SCHEDULE_REMIND_LATE_MINUTES = 5
++#: 单飞占位 TTL：防止两个主动决策同时抢到同一条日程。
++SCHEDULE_REMIND_CLAIM_TTL = 180.0
+ 
+ 
+@@ -152,5 +156,12 @@
+ 
+ def _schedule_event_key(row):
+-    return "%s|%s" % (str(row.get("activity") or ""), str(row.get("place") or ""))
++    """日程提醒幂等键：活动｜地点｜开始时间。
++
++    2026-11-22 P0：旧键只有「活动｜地点」，同一天同活动同地点出现两次，
++    第二次会被误判成“已经提醒过”而漏提醒；改期后也会撞旧键。开始时间必须进键。
++    """
++    return "%s|%s|%s" % (str(row.get("activity") or ""),
++                         str(row.get("place") or ""),
++                         str(row.get("start") or "").replace("：", ":"))
+ 
+ 
+@@ -177,15 +188,49 @@
+ 
+ 
++def _reminder_claim_key(day, key):
++    return "schedule_reminder_claim:%s:%s" % (str(day), str(key))
++
++
++def _claim_schedule_reminder(db, day, key):
++    """发送前占位：同一条日程只能有一轮主动决策在生成提醒。"""
++    claim_key = _reminder_claim_key(day, key)
++    token = "%s|%s|%.3f" % (str(day), str(key), now_ts())
++    try:
++        current = db.kv_get(claim_key, {}) or {}
++        if (isinstance(current, dict) and to_float(current.get("at"), 0)
++                and now_ts() - to_float(current.get("at"), 0) < SCHEDULE_REMIND_CLAIM_TTL):
++            return ""
++        db.kv_set(claim_key, {"token": token, "at": now_ts()})
++        mine = db.kv_get(claim_key, {}) or {}
++        if isinstance(mine, dict) and str(mine.get("token") or "") == token:
++            return token
++    except Exception:  # cleanup: 占位失败按“没抢到”，宁可不提醒也不重复提醒
++        return ""
++    return ""
++
++
++def release_schedule_reminder(db, day, key, token=""):
++    """发送失败/作废时释放占位，让下一轮还能提醒。"""
++    claim_key = _reminder_claim_key(day, key)
++    try:
++        current = db.kv_get(claim_key, {}) or {}
++        if not token or (isinstance(current, dict)
++                         and str(current.get("token") or "") == str(token)):
++            db.kv_set(claim_key, {})
++    except Exception:  # cleanup: 释放失败最多等 TTL 过期
++        pass
++
++
+ def schedule_reminder_fact(db, now=None, day="", min_minutes=SCHEDULE_REMIND_MIN_MINUTES,
+-                           max_minutes=SCHEDULE_REMIND_MAX_MINUTES):
++                           max_minutes=SCHEDULE_REMIND_MAX_MINUTES, claim=False):
+     """挑一条 10~60 分钟后开始的日程做提醒；没有就返回 {}。
+ 
+     只认还没提醒过、不是睡觉的那一条；返回的 version 用来在发送前复核
+-    「取消/改期」，避免拿旧快照提醒。
++    「取消/改期」，避免拿旧快照提醒。claim=True 时在返回前原子占位（单飞）。
+     """
+     now = now or _now()
+     day = str(day or today_str())
+     minute = int(now.hour) * 60 + int(now.minute)
+-    best = None
++    candidates = []
+     for row in _schedule_rows(db, day) or []:
+         activity = str(row.get("activity") or "").strip()
+@@ -202,16 +247,22 @@
+         except Exception:  # cleanup: 读不到已提醒标记按未提醒
+             pass
+-        if best is not None and best[0] <= start:
+-            continue
+-        best = (start, {
++        candidates.append((start, {
+             "day": day, "key": key, "version": _schedule_version(db, day),
+             "time": str(row.get("start") or ""), "place": str(row.get("place") or ""),
+             "event": activity, "zone": str(row.get("zone") or ""),
+-        })
+-    return best[1] if best else {}
+-
+-
+-def schedule_fact_current(db, fact):
+-    """发送/追问前复核：日程还在、开始时间没改；读不到就放行（不误杀）。"""
++        }))
++    candidates.sort(key=lambda pair: pair[0])
++    for _start, fact in candidates:
++        if not claim:
++            return fact
++        token = _claim_schedule_reminder(db, day, fact["key"])
++        if token:
++            fact["claim_token"] = token
++            return fact
++    return {}
++
++
++def schedule_fact_current(db, fact, now=None):
++    """发送/追问前复核：日程还在、开始时间没改、还没迟到；读不到就放行（不误杀）。"""
+     if not isinstance(fact, dict) or not str(fact.get("key") or ""):
+         return True
+@@ -224,6 +275,21 @@
+         return False
+     # 同一天同一活动可能有两段（10:00/17:00）：任一段对得上就放行
+-    return any(str(row.get("start") or "") == str(fact.get("time") or "")
+-               for row in same)
++    if not any(str(row.get("start") or "") == str(fact.get("time") or "")
++               for row in same):
++        return False
++    # 迟到窗口：生成/发送之间拖过了开始时间，就别再提醒“快到了”。
++    moment = now or _now()
++    try:
++        start = _schedule_minute(fact.get("time"))
++        if (start >= 0
++                and str(fact.get("day") or today_str()) == moment.strftime("%Y-%m-%d")):
++            now_minute = int(moment.hour) * 60 + int(moment.minute)
++            if now_minute > start + SCHEDULE_REMIND_LATE_MINUTES:
++                logger.info("[amo] 日程提醒已迟到 %d 分钟，放弃发送：%s",
++                            now_minute - start, str(fact.get("event") or "")[:30])
++                return False
++    except (TypeError, ValueError):
++        pass
++    return True
+ 
+ 
+@@ -752,9 +818,11 @@
+         return {name for name, words in groups if any(word in text for word in words)}
+ 
+-    #: 语气样例：只让模型学「怎么说话」，不要求照抄，也不是固定输出
++    #: 语气样例：只让模型学「怎么说话」，不要求照抄，也不是固定输出。
++    #: task-28 P0-4：删掉「你美丽的老婆/你老婆」这种第三人称自称，
++    #: 基础人格唯一口径是「自称我、叫他老公」。
+     FOLLOWUP_STYLE_EXAMPLES = (
+-        "老公你在干啥啊，你美丽的老婆找你都不看看。",
+-        "喂，你老婆在这儿等你呢，忙完瞄一眼嘛。",
+-        "我这么好看的老婆找你，你都不带搭理的。",
++        "老公你在干啥呀，忙完理我一下嘛。",
++        "喂，你倒是看我一眼呀，我等你半天了。",
++        "我这么好看你都不带搭理的，哼。",
+     )
+ 
+@@ -774,9 +842,28 @@
+                         "不要解释、不要旁白、不要括号动作。")
+             samples = "\n".join("- " + line for line in self.FOLLOWUP_STYLE_EXAMPLES)
++            # task-28 P0-6：生成前把「素材原文 + 名单」一起给模型，
++            # 名字/同伴只能从素材里来，不能自己填空（柳如烟→方圆的事故根因）。
++            material = ""
++            try:
++                try:
++                    from .amo_names import ROSTER_LINE as _roster_line
++                except ImportError:
++                    from amo_names import ROSTER_LINE as _roster_line
++                _rows = self._recent(umo, 8) or []
++                _recent_lines = [str(row.get("content") or "")[:120]
++                                 for row in _rows if isinstance(row, dict)]
++                _material = " / ".join([row for row in _recent_lines if row][-5:])
++                material = ("\n你认识的人只有：" + str(_roster_line).replace("你认识的人只有：", "")
++                            + "\n最近的素材原文（只能从这里取人名/同伴/物品，不能自己编）："
++                            + (_material or "（没有新素材）") + "\n")
++            except Exception as _amo_exc:
++                _note_swallowed("amo_proactive._followup_text_live.material", _amo_exc)
++                material = ""
+             prompt = (
+                 "他（老公）还没回你。你上一条主动说的是：“" + str(previous_text or "") + "”\n"
+                 + ("你现在在：" + str(activity) + "\n" if activity else "")
++                + material
+                 + "学下面几句的语气（只学语气，不要照抄，也不要直接重复它们）：\n" + samples + "\n"
+-                + "写一句 20 字内的话：撒娇、小小抱怨他晾着你、可以自称「你美丽的老婆/你老婆」，"
++                + "写一句 20 字内的话：撒娇、小小抱怨他晾着你，自称「我」、叫他「老公」，"
+                   "但别真的生气。\n"
+                   "硬规则：不许编造任何具体事实——天气、新闻、你吃了什么、你看到什么、你在哪里、"
+@@ -787,4 +874,13 @@
+             text = str(await llm.chat(umo, system, prompt, limit=60) or "").strip()
+             text = text.strip('"“”').strip()
++            # 素材里没出现的名单人名不算数（生成阶段就收口，不只靠回复侧）
++            try:
++                try:
++                    from .amo_names import strip_unbacked_names as _strip_names
++                except ImportError:
++                    from amo_names import strip_unbacked_names as _strip_names
++                text = _strip_names(text, str(previous_text or "") + " " + material)
++            except Exception as _amo_exc:
++                _note_swallowed("amo_proactive._followup_text_live.names", _amo_exc)
+             if not text or len(text) > 80 or any(
+                     word in text for word in ("醒醒", "在等你", "你睡了没", "是不是不想理我",
+@@ -1260,4 +1356,34 @@
+                         logger.info("[amo] 生日祝福 -> %s: %s" % (name, text[:120]))
+                         continue
++    #: 今晚已经发过天气提醒后，主动消息里不许再重复的天气话术（11-19 “记得带伞” 3 连）。
++    _WEATHER_REPEAT_WORDS = ("天气", "带伞", "下雨", "下雪", "降温", "升温", "多穿",
++                             "加衣服", "保暖", "雨伞")
++
++    def _weather_repeat_blocked(self, text):
++        """今晚天气提醒已经发过 → 后来的主动/晚安不许再把天气说一遍。
++
++        weather_alert_open 只在当天有效（已由天气提醒侧按日清理），这里只做话题去重。
++        """
++        try:
++            if str(self.db.kv_get("weather_alert_open", "") or "") != today_str():
++                return False
++        except Exception as _amo_exc:
++            _note_swallowed("amo_proactive.weather_repeat.state", _amo_exc)
++            return False
++        return any(word in str(text or "") for word in self._WEATHER_REPEAT_WORDS)
++
++    def _schedule_reminder_switch_enabled(self):
++        """日程提醒开关状态唯一读取点：启动/切换时打一条明确日志。
++
++        配置项 `proactive_schedule_reminder` 默认 False（线上一直是关的，所以
++        “提醒没出来”不是坏了，是没开）。日志把最终生效值说清楚，面板也看得到。
++        """
++        enabled = bool(self.cfg_bool("proactive_schedule_reminder", False))
++        if getattr(self, "_schedule_reminder_switch_logged", None) != enabled:
++            self._schedule_reminder_switch_logged = enabled
++            logger.info("[amo] 日程提醒开关 proactive_schedule_reminder=%s（默认关闭）",
++                        "开启" if enabled else "未开启")
++        return enabled
++
+     def _choose_proactive_kind(self, profile, snap, category=""):
+         relation = profile.get("relation", "普通")
+@@ -1277,5 +1403,5 @@
+             return "comfort"
+         # 日程提醒默认关；打开后把 10~60 分钟内开始的日程排成一次提醒。
+-        if self.cfg_bool("proactive_schedule_reminder", False):
++        if self._schedule_reminder_switch_enabled():
+             if schedule_reminder_fact(self.db, _now()):
+                 return "schedule_reminder"
+@@ -1783,4 +1909,7 @@
+             logger.debug("[amo] 晚安生成失败，本轮跳过")
+             return False
++        if self._weather_repeat_blocked(text):
++            logger.info("[amo] 晚安：今晚已经提醒过天气，不再重复提天气/带伞")
++            return False
+         sent = await self._send_proactive_lines(profile, target_umo, text, kind="goodnight")
+         if not sent:
+@@ -1847,5 +1976,5 @@
+     schedule_fact = {}
+     if kind == "schedule_reminder":
+-        schedule_fact = schedule_reminder_fact(self.db, now, day=day)
++        schedule_fact = schedule_reminder_fact(self.db, now, day=day, claim=True)
+         if not schedule_fact:
+             kind = "greet"
+@@ -2023,7 +2152,10 @@
+         logger.info("[amo] 主动消息：与最近一条主题重复，本轮不发（%s）", repeated[:40])
+         return
+-    # 生成要时间：发送前再复核一次日程，取消/改期后这条旧快照提醒必须作废。
+-    if schedule_fact and not schedule_fact_current(self.db, schedule_fact):
+-        logger.info("[amo] 主动消息：日程在生成期间被取消/改期，这条提醒作废（%s）",
++    if self._weather_repeat_blocked(text):
++        logger.info("[amo] 主动消息：今晚已经提醒过天气，这条不再重复提天气/带伞")
++        return
++    # 生成要时间：发送前再复核一次日程，取消/改期/早过开始时间后这条旧快照提醒必须作废。
++    if schedule_fact and not schedule_fact_current(self.db, schedule_fact, now=now):
++        logger.info("[amo] 主动消息：日程在生成期间被取消/改期或已迟到，这条提醒作废（%s）",
+                     str(schedule_fact.get("event") or "")[:40])
+         try:
+@@ -2032,15 +2164,31 @@
+         except Exception as _amo_exc:
+             _note_swallowed("amo_proactive._proactive_one.schedule_log", _amo_exc)
++        release_schedule_reminder(self.db, day, schedule_fact["key"],
++                                  schedule_fact.get("claim_token") or "")
+         return
++    _reminded_key = ""
+     if schedule_fact:
+         text = _ground_schedule_text(text, schedule_fact)
+         if not text:
+             logger.info("[amo] 主动消息：提醒与日程事实不符，本轮不发")
+-            return
++            release_schedule_reminder(self.db, day, schedule_fact["key"],
++                                      schedule_fact.get("claim_token") or "")
++            return
++        # 2026-11-22：发送前先落幂等标记（含开始时间），并发/重试都不会把同一条
++        # 日程提醒说两遍；发送失败再回滚标记，保证还能补发。
++        _reminded_key = "schedule_reminded:%s:%s" % (day, schedule_fact["key"])
++        self.db.kv_set(_reminded_key, True)
+     sent_umo = await self._send_proactive_lines(profile, target_umo, text, kind=kind)
+     if not sent_umo:
++        if _reminded_key:
++            self.db.kv_set(_reminded_key, False)
++        if schedule_fact:
++            release_schedule_reminder(self.db, day, schedule_fact["key"],
++                                      schedule_fact.get("claim_token") or "")
+         return
+     if schedule_fact:
+-        self.db.kv_set("schedule_reminded:%s:%s" % (day, schedule_fact["key"]), True)
++        # 标记在发送前已经写好（幂等）；这里只释放单飞占位。
++        release_schedule_reminder(self.db, day, schedule_fact["key"],
++                                  schedule_fact.get("claim_token") or "")
+     self._mark_bot_initiated(sent_umo, text)
+     self.db.kv_set("last_channel:%s" % uid, sent_umo)

@@ -14,6 +14,10 @@ _CLAIM = re.compile(r"(买了|买下|买回来|入手了|下单了|花了\s*\d+|
 _TRY = re.compile(r"(试了|试穿|看了看|看中|挺喜欢|很喜欢)")
 _PRICE = re.compile(r"[，,。！!\s]*花(?:了)?\s*\d+(?:\.\d+)?\s*元?")
 _FALLBACK = "我试了试，挺喜欢的，还没买。"
+#: 否定用法不是「已经买了」：不给你买了 / 还没买 / 别买了（task-40 回放 #2231）
+_NEGATED = re.compile(
+    r"(?:不|没|还没|别|不用|不想|不打算|不准备)[^，。！？]{0,6}"
+    r"(?:买了|买下|买回来|入手了|下单了)")
 
 
 def _sentences(text):
@@ -71,14 +75,33 @@ def _has_record(plugin, text="", hours=6):
     return False
 
 
+def _incidental_claim(body, parts):
+    """买/花只是顺带一提（整条消息在讲奶茶/视频/别的），不是「这单我买了」的主句。
+
+    task-40：回放 #2040 整条「公司下午茶又发奶茶了…上午自己还买了一杯…」被换成
+    「我试了试，挺喜欢的，还没买。」，内容全丢。只有「纯消费声明」（短句/带金额/
+    带单品名）才允许换成还没买的固定句；顺带一提的保留原文，账本问题交给消费对账。
+    """
+    filled = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(body or ""))
+    if _amount(body) is not None:
+        return False
+    if len(filled) <= 30:
+        return False
+    return True
+
+
 def rewrite(text, plugin):
     """没消费记录：把「买了/花了」改成「试了还没买」；同一次购物只留一条。"""
     body = str(text or "").strip()
     if not body or not _CLAIM.search(body):
         return body
+    if _NEGATED.search(body):
+        return body
     parts = _sentences(body)
     if _has_record(plugin, body):
         return _keep_one_claim(parts)
+    if _incidental_claim(body, parts):
+        return body
     out = []
     replaced = False
     for sentence in parts:

@@ -43,10 +43,10 @@ except ImportError:  # 直接按文件加载时
         from amo_events import ScheduleChanged
 
 try:  # 事实层统一：一个 event_id 贯穿日程 / 账本 / 块日记 / 记忆
-    from .amo_timeline import ensure_event_id, stamp_event_ids
+    from .amo_timeline import block_id, ensure_event_id, stamp_event_ids
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        from amo_timeline import ensure_event_id, stamp_event_ids
+        from amo_timeline import block_id, ensure_event_id, stamp_event_ids
 
 try:  # 日类型（纯函数）：工作日/周末/节假日
     from .day_types import normalize_day_types, pick_day_type
@@ -118,6 +118,27 @@ def _vehicle_text(item):
     transit = str((item or {}).get("transit") or "")
     mapped = {"subway": "地铁", "bus": "公交", "taxi": "打车", "drive": "开车"}.get(transit)
     return mapped or str((item or {}).get("vehicle") or "")
+
+
+#: 块日记关心的事实字段：只有这些变了才让这一块的日记失效。快照/结算顺带写的
+#: 附加字段（cost_settled / locked / source…）不该把日记打 stale——11-21 23:59
+#: 快照 1 分钟 bump 14 次就是这样制造出的 stale 风暴。
+_DIARY_BLOCK_FIELDS = ("start", "end", "activity", "place", "zone", "category",
+                       "detail", "people", "companions")
+
+
+def _diary_block_signature(row):
+    """块里跟日记正文有关的字段指纹（people 的顺序也会影响措辞，按顺序比）。"""
+    row = row if isinstance(row, dict) else {}
+    out = []
+    for key in _DIARY_BLOCK_FIELDS:
+        value = row.get(key)
+        if isinstance(value, (list, tuple)):
+            value = tuple(str(x) for x in value)
+        else:
+            value = str(value or "")
+        out.append((key, value))
+    return tuple(out)
 
 # ---------------------------------------------------------------- 日程写入收口
 # 纯函数：锁定 / 过去只读 / 写入后体检。由 _commit_schedule_change_locked 调用，
@@ -895,7 +916,23 @@ class ScheduleStateMixin(_MixinBase):
             return {}
 
     def _mark_transit_action(self, rows):
-        """通勤块覆盖当前分钟时，把 current_action 也切到「在路上」，聊天不再说目的地。"""
+        """通勤块覆盖当前分钟时，把 current_action 也切到「在路上」，聊天不再说目的地。
+
+        2026-11-22 task-25：请假/出差硬约束下「road」不是允许 zone，绝不把
+        current_action 切成通勤（否则病假在家聊天却说在地铁上）。
+        """
+        try:
+            try:
+                from .amo_scene_ledger import constraints as _constraints
+            except ImportError:
+                from amo_scene_ledger import constraints as _constraints
+            _allowed = (_constraints(self, today_str()) or {}).get("allowed_zones")
+            if _allowed is not None and "road" not in _allowed:
+                logger.info("[amo] 硬约束下不切通勤 current_action（allowed_zones=%s）",
+                            sorted(_allowed))
+                return
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.mark_transit.constraint", _amo_exc)
         now_min = minutes_now()
         for row in rows or []:
             if not isinstance(row, dict):
@@ -1317,6 +1354,69 @@ class ScheduleStateMixin(_MixinBase):
             pass
         return out
 
+    def _constrain_scene_items(self, day, items):
+        """场景硬约束钳制（2026-11-22 task-25）：病假/事假→家或医院，出差→出差地 zone。
+
+        日程/过渡块/块日记/外部插件（watch 的 add_schedule）全都从
+        commit_schedule_change 这一个落库点进来，所以在这里统一按场景账本钳制：
+        非法地点块改成允许场景（请假在家休息 / 酒店休息），不再让「病假在家却排了
+        公司/通勤」写进 schedule —— schedule 干净了，块日记/大日记才不会被污染。
+        返回 (items, clamped)；无硬约束时原样返回，零额外开销。
+        """
+        try:
+            try:
+                from .amo_scene_ledger import constrain_activity as _constrain
+                from .amo_scene_ledger import constraints as _constraints
+                from .amo_scene_ledger import write as _scene_write
+            except ImportError:
+                from amo_scene_ledger import constrain_activity as _constrain
+                from amo_scene_ledger import constraints as _constraints
+                from amo_scene_ledger import write as _scene_write
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.scene_constraint.import", _amo_exc)
+            return items, []
+        try:
+            cons = _constraints(self, str(day or "")) or {}
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.scene_constraint.read", _amo_exc)
+            return items, []
+        kind = str(cons.get("kind") or "")
+        if not kind:
+            return items, []
+        kept = []
+        clamped = []
+        for row in items or []:
+            if not isinstance(row, dict):
+                kept.append(row)
+                continue
+            try:
+                fixed = _constrain(self, row, str(day or ""))
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.scene_constraint.row", _amo_exc)
+                fixed = row
+            if not isinstance(fixed, dict) or fixed == row:
+                kept.append(row)
+                continue
+            out = dict(row)
+            for key in ("activity", "place", "zone", "category"):
+                if fixed.get(key):
+                    out[key] = fixed.get(key)
+            # 场景被钳掉 = 原来那件事没发生：扣费元数据一起清掉（否则 settle 会按旧 trip/逛街块扣钱）。
+            out.pop("cost", None)
+            out["scene_constraint"] = kind
+            kept.append(out)
+            clamped.append({"start": row.get("start"), "from": row.get("place"),
+                            "to": out.get("place"), "kind": kind})
+            try:
+                _scene_write(self, out, source="schedule_constraint",
+                             reason="病假/事假/出差硬约束钳制")
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.scene_constraint.audit", _amo_exc)
+        if clamped:
+            logger.info("[amo] 场景硬约束：改写 %d 条日程行（%s，day=%s）",
+                        len(clamped), kind, day)
+        return kept, clamped
+
     def _commit_schedule_change_locked(self, day, new_items, old_items=None, source="",
                                        reason="", invalidate_from=None):
         """commit_schedule_change 的锁内实现。"""
@@ -1353,6 +1453,15 @@ class ScheduleStateMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.guard.pre", _amo_exc)
         new_items = self._normalize_schedule_items(new_items, source, day)
+        # 2026-11-22 task-25：落库前统一硬约束——病假/事假/出差期间非法地点块在这里改写，
+        # 块日记/大日记只从这里往下读，不再出现「病假在家却写公司/通勤」。
+        try:
+            new_items, _scene_clamped = self._constrain_scene_items(day, new_items)
+            if _scene_clamped:
+                self._audit_schedule(day, source, "场景硬约束钳制", 0, [],
+                                     old_items, new_items, extra={"scene_clamped": _scene_clamped})
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.scene_constraint.apply", _amo_exc)
         try:
             _jumps = place_continuity_problems(new_items)
             if _jumps:
@@ -1415,6 +1524,12 @@ class ScheduleStateMixin(_MixinBase):
                 except Exception as _amo_exc:
                     _note_swallowed("amo_human_state.commit_schedule_change.event_id_save",
                                     _amo_exc)
+            # 只补 event_id 也算身份变化：旧内容哈希行会变成孤儿，按 diff 清一遍。
+            try:
+                self._sync_block_diaries(day, old_items, new_items,
+                                         self.db.schedule_version(day))
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.commit.block_diary_sync_same", _amo_exc)
             return {
                 "changed": False,
                 "version": self.db.schedule_version(day),
@@ -1452,6 +1567,22 @@ class ScheduleStateMixin(_MixinBase):
         except Exception as _amo_exc:
             saved = False
             _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
+        # P0（2026-11-22）：块日记按 event_id diff 精确失效 + 清孤儿。
+        # 放在落库之后、发布事件之前：事件订阅者只再负责旧整点表和取消任务。
+        try:
+            _diary_sync = self._sync_block_diaries(day, old_items, new_items, version)
+            if (_diary_sync or {}).get("stale"):
+                logger.info(
+                    "[amo] 块日记失效: %d 条（改 %d / 删 %d / 孤儿 %d，day=%s）",
+                    int((_diary_sync or {}).get("stale") or 0),
+                    len((_diary_sync or {}).get("invalidated") or []),
+                    len((_diary_sync or {}).get("orphans") or []),
+                    int((_diary_sync or {}).get("stale") or 0)
+                    - len((_diary_sync or {}).get("orphans") or []),
+                    day,
+                )
+        except Exception as _amo_exc:
+            _note_swallowed("amo_human_state.commit.block_diary_sync", _amo_exc)
         if invalidate_from is not None:
             try:
                 start_hour = max(0, min(23, int(invalidate_from)))
@@ -1744,6 +1875,43 @@ class ScheduleStateMixin(_MixinBase):
             item["cost_settled"] = True
             item["cost_result"] = payload
         return items
+
+    def _changed_block_ids(self, day, old_items, new_items):
+        """日程里「被删 / 内容被改」的块身份（按 event_id 算 diff，不按小时猜）。"""
+        before, after = {}, {}
+        for rows, target in ((old_items, before), (new_items, after)):
+            for row in rows or []:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    target[str(block_id(day, row))] = row
+                except Exception:  # cleanup: 单条坏块不参与 diff
+                    continue
+        changed = {bid for bid in before if bid not in after}
+        for bid, old_row in before.items():
+            new_row = after.get(bid)
+            if new_row is None:
+                continue
+            if _diary_block_signature(old_row) != _diary_block_signature(new_row):
+                changed.add(bid)
+        return changed
+
+    def _sync_block_diaries(self, day, old_items, new_items, version):
+        """按 event_id diff 精确失效块日记 + 清孤儿（日程落库点唯一入口）。
+
+        2026-11-22 P0：以前按 changed_hours 的最小小时粗扫整张块表，既会误杀
+        后面没变的块（stale 风暴），又清不掉被删块留下的孤儿行（11-18 25 条
+        valid 孤儿）。现在只失效「被删/内容变了」的 event_id，并把日程里已经
+        不存在的 id 全部标 stale；快照内容不变时 diff 为空，不产生任何失效。
+        """
+        sync = getattr(self.db, "sync_block_diaries", None)
+        if not callable(sync):
+            return {}
+        changed = self._changed_block_ids(day, old_items, new_items)
+        if not changed:
+            # 身份都没变也要清孤儿（例如升级后旧内容哈希行、手工改库留下的行）
+            return sync(day, new_items, stale_ids=(), version=version)
+        return sync(day, new_items, stale_ids=changed, version=version)
 
     def _publish_schedule_change(self, day, version, source, reason, changed, start_hour):
         # 有事件总线就发 ScheduleChanged（订阅者取消日记任务）；旧实例/单测走兼容分支

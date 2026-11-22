@@ -425,5 +425,50 @@ class SingleSourceTests(unittest.TestCase):
         self.assertIn("fact_timeline.build_pool", pool)
 
 
+class DayScopedFactTests(unittest.TestCase):
+    """P1（2026-11-22）：补写昨天时健康/天气必须读「那一天」，不是生成时刻。"""
+
+    def test_backfill_health_uses_day_snapshot(self):
+        plugin = FakePlugin(items=[MORNING, COOK], health={"status": "健康", "sick": False})
+        sick_since = _dt.datetime(2026, 11, 15, 14, 0).timestamp()
+        sick_until = _dt.datetime(2026, 11, 16, 7, 0).timestamp()
+        plugin.state.health = {"status": "低烧", "sick": True, "note": "身上发烫",
+                               "since": sick_since, "until": sick_until}
+        # 生病当天 15:00 读一次：顺手存下当天快照（真实生产里回复/面板会这么读）
+        today = tl.read_health(plugin, _dt.date(2026, 11, 15),
+                               now=_dt.datetime(2026, 11, 15, 15, 0))
+        self.assertTrue(today["sick"])
+        # 第二天早上 08:10：health_info 已经自动康复、kv 被重置，但仍然要读到昨天生病
+        plugin.state.health = {"status": "健康", "sick": False, "since": 0, "until": 0}
+        backfill = tl.read_health(plugin, _dt.date(2026, 11, 15),
+                                  now=_dt.datetime(2026, 11, 16, 8, 10))
+        self.assertTrue(backfill["sick"], backfill)
+        self.assertEqual("低烧", backfill["status"])
+
+    def test_backfill_pool_has_health_and_weather_facts(self):
+        day = _dt.date(2026, 11, 15)
+        plugin = FakePlugin(items=[MORNING, COOK], health={"status": "低烧", "sick": True,
+                                                          "note": "身上发烫",
+                                                          "since": _dt.datetime(2026, 11, 15, 14, 0).timestamp(),
+                                                          "until": _dt.datetime(2026, 11, 16, 7, 0).timestamp()})
+        plugin.state.weather = {"text": "阴", "tag": "overcast", "temp": 16, "city": "东莞",
+                                "ts": _dt.datetime(2026, 11, 15, 12, 0).timestamp()}
+        pool = asyncio.run(fp.build_fact_pool(plugin, day.isoformat(),
+                                              now=_dt.datetime(2026, 11, 16, 8, 10)))
+        types = [fact["type"] for fact in pool["facts"]]
+        self.assertIn("状态", types)
+        self.assertIn("天气", types)
+        detail = " ".join(fact["detail"] for fact in pool["facts"])
+        self.assertIn("低烧", detail)
+        self.assertIn("阴", detail)
+        prompt = fp.render_prompt(pool)
+        self.assertRegex(prompt, r"(?m)^- \[[^\]]+\] \[天气\]")
+        # 日期口径统一：素材行用目标日做「今日」锚点，不再出现 prose=今天 / fact=[昨日] 打架
+        self.assertIn("[今日]", prompt)
+        self.assertNotIn("[昨日]", prompt)
+        self.assertEqual("2026-11-15", str(pool["meta"]["day"]))
+        self.assertTrue(pool["meta"].get("backfill"))
+
+
 if __name__ == "__main__":
     unittest.main()

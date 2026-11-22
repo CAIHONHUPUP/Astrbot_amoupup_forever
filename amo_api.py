@@ -1017,5 +1017,5 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
         if umo not in known:
             logger.warning("[amo] 拒绝向未知会话发送: %s" % umo)
             return {"code": 1, "msg": "umo 不在已知会话内"}
-        ok = await self._send_to_umo(umo, text)
+        ok = await self._send_to_umo(umo, text, source="admin", kind="api_say")
         return {"code": 0 if ok else 1, "msg": "已发送" if ok else "发送失败"}

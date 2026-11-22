@@ -316,10 +316,12 @@ def pick_pose_for_plan(plan: PhotoPlan, library: Any = None) -> tuple[Any, str]:
         if callable(getter):
             pose = None
             try:
+                # 2026-11-22 task-23：按 scene_key（home_bed/home_sofa/home_bath…）
+                # 选房间池，不再用粗粒度的 base_zone="home"（否则客厅能抽到床姿）。
                 try:
-                    pose = getter(plan.base_zone or plan.scene_key, str(plan.activity or ""))
+                    pose = getter(plan.scene_key or plan.base_zone, str(plan.activity or ""))
                 except TypeError:
-                    pose = getter(plan.base_zone or plan.scene_key)
+                    pose = getter(plan.scene_key or plan.base_zone)
             except TypeError:
                 try:
                     pose = getter()

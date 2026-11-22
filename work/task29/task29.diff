@@ -1,0 +1,882 @@
+--- a/amo_reply_pipeline.py
++++ b/amo_reply_pipeline.py
+@@ -1066,6 +1066,7 @@
+     else:
+         _TURN_USER_TEXT.clear()
+         _TURN_SOURCE.clear()
++    reset_semantic_recheck_stats()
+ 
+ 
+ 
+@@ -1150,10 +1151,12 @@
+         from amo_question_guard import _category as _q_category
+     try:
+         category = _q_category(ask)
+-        if category:
+-            return bool(_q_answered(category, body))
++        if category and _q_answered(category, body):
++            return True
+     except Exception as exc:  # cleanup: 判不出来就退回通用答案规则
+         logger.debug("[amo] chat_safety.intent 失败: %s", exc)
++    # 问句守卫的答案词表偏窄（when 类只认「到家/路上/马上/…」），判不出来时
++    # 仍按通用答案规则再看一遍，别把「其实答到了」的候选判成没答到。
+     return _answers_question(body, ask)
+ 
+ 
+@@ -1178,7 +1181,7 @@
+     # 候选答到了，却被换成了通用兜底句，或被后续守卫删到答不上来：以候选为准。
+     # 「还答不答得到」用更严的 _answers_question 判（问句守卫的 doing 词表太松，
+     # 「在擦头发呢」这种删掉动词也算答到，会把被删坏的回复放过去）。
+-    if _is_generic_fallback(text) or not _answers_question(text, user_text):
++    if _is_any_fallback(text) or not _answers_question(text, user_text):
+         return str(original)
+     return text
+ 
+@@ -1191,6 +1194,191 @@
+         return ""
+     turn, question = entry
+     return str(question or "") if turn == _ACTIVE_TURN.get(key) else ""
++
++
++# ---------------------------------------------------------------------------
++# 唯一后置语义复检（task-29，2026-11-22）
++#
++# 现场（审计 chat_coherence.md 3.2/3.4）：唯一会判「有没有回答他最后一句」的
++# grounding_critic 在 polish 里（生成期），而 _align_arrival / _align_swim_where /
++# state_consistency.rewrite / question_guard.answer 都在它之后整句删除/替换；
++# 换完之后没有任何一层再问「这还是不是对他那句话的回答」，于是真实模型层把
++# 「记得呀，那天你穿白衬衫…」换成「我还在路上呢，快到了。」这类通用句。
++#
++# 这里给所有会整句删除/替换的守卫加同一个收口：改完再判一次（判据在
++# amo_grounding_critic.post_rewrite_recheck），原候选答到、改完答不到 → 保留候选。
++# 各守卫不再各写一份「保留原句」白名单。
++# ---------------------------------------------------------------------------
++
++#: 后置语义复检埋点（验收口径「守卫改写后语义复检失败 = 0」看这里）：
++#: calls=过闸且确实动了文本的次数，restored=还原候选次数，blocked=因安全/事实拒绝还原次数。
++_RECHECK_STATS: Dict[str, int] = {"calls": 0, "restored": 0, "blocked": 0}
++#: 现行文本是事实守卫产物时的识别词：消费守卫把「买了」改成「还没买」，
++#: 这种事实改写优先于语义还原（不能为了答上问题就把假消费还原回来）。
++_SAFETY_REPLY_HINTS = ("还没买",)
++
++
++def reset_semantic_recheck_stats():
++    """清空后置语义复检埋点（验收 harness 每轮独立统计用）。"""
++    for key in _RECHECK_STATS:
++        _RECHECK_STATS[key] = 0
++
++
++def semantic_recheck_stats():
++    """后置语义复检指标：calls / restored / blocked。"""
++    return dict(_RECHECK_STATS)
++
++
++def _is_any_fallback(text):
++    """整条回复是不是某句通用兜底（通用/状态复读/短句池，不只 generic 一池）。"""
++    try:
++        try:
++            from .amo_grounding_critic import is_fallback as _shared_fallback
++        except ImportError:
++            from amo_grounding_critic import is_fallback as _shared_fallback
++        return bool(_shared_fallback(text))
++    except Exception as exc:  # cleanup: 判不出来就退回通用池
++        logger.debug("[amo] chat_safety.fallback 失败: %s", exc)
++        return _is_generic_fallback(text)
++
++
++def _turn_candidate(umo):
++    """本轮进入去重层时的原始候选；只认本轮（跨轮候选不许盖这一轮）。"""
++    key = str(umo or "").strip()
++    entry = _TURN_SOURCE.get(key)
++    if not entry:
++        return ""
++    turn, original = entry
++    if turn != _ACTIVE_TURN.get(key):
++        return ""
++    return str(original or "")
++
++
++def _media_clean(text):
++    """出站前剥掉媒体占位符（候选里可能带 [我发的照片]，永远不许进人话）。"""
++    body = str(text or "")
++    try:
++        try:
++            from .amo_message import strip_media_markers as _strip_media
++        except ImportError:
++            from amo_message import strip_media_markers as _strip_media
++        return str(_strip_media(body) or "").strip()
++    except Exception as exc:  # cleanup: 剥不掉就按原文，validate 层还会再剥一次
++        logger.debug("[amo] 候选还原剥离媒体标记失败: %s", exc)
++        return body.strip()
++
++
++def _restore_candidate(original, plugin=None):
++    """要回候选前的出站卫生：媒体标记剥离 + 消费事实守卫重跑。
++
++    「候选优先于语义」不等于「候选优先于事实」：没记账却说买了 N 元的候选，
++    还原前先过一遍消费守卫，别为了答上问题把假消费发出去。
++    """
++    body = _media_clean(original)
++    try:
++        try:
++            from .amo_purchase_guard import rewrite as _purchase_guard
++        except ImportError:
++            from amo_purchase_guard import rewrite as _purchase_guard
++        body = str(_purchase_guard(body, plugin) or body).strip()
++    except Exception as exc:  # cleanup: 消费守卫失败就不额外改
++        logger.debug("[amo] 候选还原消费守卫失败: %s", exc)
++    return body
++
++
++def _unsafe_candidate(candidate):
++    """候选本身带模型自曝/后台泄漏/防御话术时不许还原（安全优先于语义）。"""
++    body = str(candidate or "")
++    if not body.strip():
++        return True
++    try:
++        try:
++            from .amo_shared_text import (looks_like_ai_admission,
++                                          looks_like_defensive_reply)
++        except ImportError:
++            from amo_shared_text import (looks_like_ai_admission,
++                                         looks_like_defensive_reply)
++        if looks_like_ai_admission(body) or looks_like_defensive_reply(body):
++            return True
++    except Exception as exc:  # cleanup: 安全判据不可用就只用模型泄漏判据
++        logger.debug("[amo] 候选安全判据失败: %s", exc)
++    try:
++        return bool(looks_like_model_leak(body))
++    except Exception:  # cleanup: 判不出来不阻断
++        return False
++
++
++def _protected_current(text):
++    """现行文本是安全挡话/消费事实守卫的产物时，不许被候选覆盖。"""
++    body = str(text or "").strip()
++    if not body:
++        return False
++    if any(hint in body for hint in _SAFETY_REPLY_HINTS):
++        return True
++    try:
++        try:
++            from .amo_grounding_critic import is_blocking_fallback as _blocking
++        except ImportError:
++            from amo_grounding_critic import is_blocking_fallback as _blocking
++        return bool(_blocking(body))
++    except Exception:  # cleanup: 判据不可用就不额外拦
++        return False
++
++
++def _recheck_once(original, text, user_text):
++    """跑一次纯判定（不做出站卫生），返回判完的文本。"""
++    try:
++        try:
++            from .amo_grounding_critic import post_rewrite_recheck as _recheck
++        except ImportError:
++            from amo_grounding_critic import post_rewrite_recheck as _recheck
++        return str(_recheck(
++            original, text, user_text,
++            answered=lambda body: _answered_intent(body, user_text)))
++    except Exception as exc:  # cleanup: 复检失败就保持改写结果（不能把回复弄丢）
++        logger.debug("[amo] 后置语义复检失败: %s", exc)
++        return str(text or "")
++
++
++def final_semantic_recheck(text, plugin=None, umo="", user_text="", original=None):
++    """唯一后置语义复检：会整句删除/替换的守卫跑完后统一过这一道（task-29）。
++
++    调用点（顺序即真实装饰链）：
++    - apply_narrative_repetition：整句/状态去重之后；
++    - apply_chat_safety：收口，覆盖其前的 _align_arrival/_align_swim_where 和其中
++      的 state_consistency.rewrite / question_guard.answer；
++    - amo_state_consistency.rewrite / validate_reply_assembly：自身出口再保一道。
++
++    判定在 amo_grounding_critic.post_rewrite_recheck：原候选答到他这一句、改完后
++    答不到（或整条只剩通用兜底句）→ 保留候选。这里只负责取本轮候选 + 出站卫生：
++    媒体占位符剥离、消费事实守卫重跑、模型自曝/后台泄漏/安全挡话不还原。
++    """
++    candidate = str(original or "") if original is not None else _turn_candidate(umo)
++    if not candidate.strip():
++        return text
++    current = str(text or "")
++    fixed = _recheck_once(candidate, current, user_text)
++    if fixed == current:
++        return fixed
++    _RECHECK_STATS["calls"] += 1
++    if _protected_current(current):
++        _RECHECK_STATS["blocked"] += 1
++        logger.info("[amo] 后置复检拒绝还原（安全挡话/事实守卫）: %s", current[:40])
++        return text
++    safe = _restore_candidate(candidate, plugin)
++    if _unsafe_candidate(safe):
++        _RECHECK_STATS["blocked"] += 1
++        logger.info("[amo] 后置复检拒绝还原（候选不安全）: %s", safe[:40])
++        return text
++    if safe != candidate:
++        retry = _recheck_once(safe, current, user_text)
++        if retry == current:
++            _RECHECK_STATS["blocked"] += 1
++            return text
++        fixed = retry
++    _RECHECK_STATS["restored"] += 1
++    logger.info("[amo] 改写后语义复检：还原候选 %s -> %s", current[:40], fixed[:40])
++    return fixed
+ 
+ 
+ def _answer_food_first(text, plugin, user_text, now=None):
+@@ -1318,7 +1506,7 @@
+         except ImportError:
+             from amo_state_consistency import rewrite as _state_rewrite
+         _context = (str(user_text or "") + "\n" + str(history_text or "")).strip()
+-        value = _state_rewrite(value, plugin, _context)
++        value = _state_rewrite(value, plugin, _context, umo=str(umo or ""))
+         try:
+             try:
+                 from .amo_role_guard import rewrite as _role_rewrite
+@@ -1334,9 +1522,20 @@
+             from .amo_question_guard import answer as _question_answer
+         except ImportError:
+             from amo_question_guard import answer as _question_answer
+-        value = _question_answer(str(user_text or ""), plugin, value)
++        # 问句模板是「整条替换」：本轮候选已经答到这类问题（严格判据/通用答案
++        # 规则任一命中）时，模板不许顶上去——当前文本答不到就交给出口的语义复检
++        # 还原候选，而不是先用状态模板把候选盖掉。
++        _candidate = _media_clean(_turn_candidate(umo))
++        _candidate_answers = bool(_candidate) and _answered_intent(_candidate, user_text)
++        if not _candidate_answers:
++            value = _question_answer(
++                str(user_text or ""), plugin, value, candidate=_candidate)
+     except Exception as exc:
+         logger.debug("[amo] chat_safety.question 失败: %s", exc)
++    # 唯一后置语义复检（task-29）收口：上面所有整句删除/替换（含其前的
++    # _align_arrival/_align_swim_where、其中的 state_consistency.rewrite 与
++    # question_guard.answer）都跑完了，再判一次「还答不答得上他这一句」。
++    value = final_semantic_recheck(value, plugin, umo, user_text)
+     return value.strip() or str(text or "")
+ 
+ 
+@@ -1389,7 +1588,9 @@
+                 fixed = _guarded
+     except Exception as _amo_exc:
+         logger.debug("[dedup] 完成动作一致性检查失败: %s", _amo_exc)
+-    return fixed or value
++    # 整句/状态去重是「整句删除」守卫：删完再判一次「还答不答得上他这一句」，
++    # 答不上就把本轮候选要回来（答案优先于不复读，且不许被「还是老样子」覆盖）。
++    return final_semantic_recheck(fixed or value, plugin, umo, user_text, original=value)
+ 
+ 
+ def apply_proactive_dedup(text, plugin, umo="", now=None):
+--- a/amo_state_consistency.py
++++ b/amo_state_consistency.py
+@@ -12,7 +12,10 @@
+ """
+ from __future__ import annotations
+ 
++import logging
+ import re
++
++logger = logging.getLogger("amo.state_consistency")
+ 
+ _HOME_ACTION = re.compile(
+     r"(?:我|自己|等会儿|等会|回去).{0,8}"
+@@ -419,7 +422,7 @@
+     return text + catch
+ 
+ 
+-def rewrite(text, plugin, user_text=""):
++def rewrite(text, plugin, user_text="", umo=""):
+     body = str(text or "")
+     if not body.strip():
+         return body
+@@ -507,13 +510,17 @@
+     body = re.sub(r"\n{3,}", "\n\n", body).strip()
+     # 统一收口：分享的最后一个信息点必须留在回复里；删空也不回落通用句。
+     body = _attach_last_line(body, user, plugin)
+-    if body:
+-        return body
+-    if scene["road"]:
+-        return "我还在路上呢，快到了。"
+-    if scene["outside"]:
+-        return "我到了，等会儿说。"
+-    return "我在家呢。"
++    if not body:
++        if scene["road"]:
++            body = "我还在路上呢，快到了。"
++        elif scene["outside"]:
++            body = "我到了，等会儿说。"
++        else:
++            body = "我在家呢。"
++    # 唯一后置语义复检（task-29）：本函数每一步都在整句删除/替换（场景分句、
++    # 分享补句、回落句），出口必须再判一次「还答不答得上他最后一句」；
++    # 答不上就保留本轮候选（候选优先于通用场景句）。
++    return _post_recheck(body, plugin, umo, _last_user_line(user))
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -741,7 +748,8 @@
+     if not body.strip():
+         body = ""
+     if not body.strip():
+-        return _safe_short_reply(umo, history_bot_texts(plugin, umo))
++        return _post_recheck(_safe_short_reply(umo, history_bot_texts(plugin, umo)),
++                             plugin, umo, user_text)
+     refs = list(recent or [])
+     if not refs:
+         refs = history_bot_texts(plugin, umo)
+@@ -749,8 +757,10 @@
+     if body.strip():
+         body = strip_current_scene_conflicts(body, plugin)
+     if not body.strip():
+-        return _safe_short_reply(umo, refs)
+-    return body
++        body = _safe_short_reply(umo, refs)
++    # 唯一后置语义复检（task-29）：媒体标记/自我复读/场景剥离三步都可能把答案
++    # 一起删掉，出口再判一次；原候选答得上就保留候选（别发通用短句）。
++    return _post_recheck(body, plugin, umo, user_text)
+ 
+ 
+ def _safe_short_reply(umo, refs=None):
+@@ -759,4 +769,25 @@
+         fixed = _repetition_guard().short_fallback(umo or "", list(refs or []))
+     except Exception:
+         fixed = ""
+-    return str(fixed or "").strip() or "嗯，我在呢。"+    return str(fixed or "").strip() or "嗯，我在呢。"
++
++
++def _post_recheck(text, plugin, umo="", user_text=""):
++    """唯一后置语义复检入口（task-29）：本模块整句删除/替换跑完后统一过一道。
++
++    判定/兜底句识别只在 amo_reply_pipeline.final_semantic_recheck ->
++    amo_grounding_critic.post_rewrite_recheck 一处实现，这里只做安全转发：
++    - 没有 umo / 没有本轮候选时不做事（主动消息/独立调用不受影响）；
++    - 复检异常时保持改写结果，绝不把回复弄丢。
++    """
++    if not str(umo or "").strip():
++        return text
++    try:
++        try:
++            from .amo_reply_pipeline import final_semantic_recheck as _recheck
++        except ImportError:
++            from amo_reply_pipeline import final_semantic_recheck as _recheck
++        return _recheck(text, plugin, umo=umo, user_text=user_text)
++    except Exception as exc:  # cleanup: 复检出错不影响出站
++        logger.debug("[state] 后置语义复检失败: %s", exc)
++        return text
+--- a/amo_question_guard.py
++++ b/amo_question_guard.py
+@@ -56,10 +56,18 @@
+     return False
+ 
+ 
+-def answer(text, plugin, reply):
++def answer(text, plugin, reply, candidate=""):
++    """答非所问时用当前状态兜底；本轮候选已经答到这类问题，就不许整条覆盖它。
++
++    candidate = 进入破坏性改写前的原始候选（task-29 后置语义复检入口之一）：
++    上游守卫可能把候选删坏或换成通用句，状态模板只能在候选也答不到时才顶上去。
++    """
+     category = _category(text)
+     if not category or _answered(category, reply):
+         return reply
++    candidate = str(candidate or "").strip()
++    if candidate and _answered(category, candidate):
++        return candidate
+     act = _act(plugin)
+     place = str(act.get("place") or "")
+     zone = str(act.get("zone") or "")
+@@ -67,7 +75,12 @@
+     if category == "where":
+         return _fallbacks.sentence("question.where", place=place or "外面")
+     if category == "doing":
+-        return _fallbacks.sentence("question.doing", doing=doing or "忙点事")
++        doing = doing or "忙点事"
++        if doing.startswith("在"):
++            # 状态里的活动本身带「在」（「在酒店休息」），模板再套一层会成
++            # 「我在在酒店休息。」（审计 3.2.3 真实模型层样例）。
++            return "我在%s。" % doing[1:]
++        return _fallbacks.sentence("question.doing", doing=doing)
+     if category == "who":
+         if act.get("together") or act.get("companion"):
+             who = str(act.get("companion") or "朋友")
+--- a/amo_grounding_critic.py
++++ b/amo_grounding_critic.py
+@@ -1,7 +1,15 @@
+ # -*- coding: utf-8 -*-
+-"""接话 critic：回复有没有真的接住他最后一句（2026-11-21）。
++"""接话 critic + 改写后语义复检（2026-11-22 task-29）。
+ 
+-只做低成本确定性判断，命中才触发一次重写；不命中不增加调用。
++两段职责，共用同一套判据，不再让各守卫各写一份「保留原句」补丁：
++
++1) issues()/safe_reply()：生成期判断回复有没有接住他最后一句（bigram，低成本）；
++2) post_rewrite_recheck()：所有「整句删除/替换」守卫跑完之后，再判一次
++   「这一版还答得上他这一句」。原候选答得上、改写后答不上（或整条只剩通用
++   兜底句）时，把原候选要回来——候选优先于删句/兜底。
++
++兜底句识别也只在这里索引一次（数据仍在 domains.reply.repetition_guard
++FALLBACKS 一处维护），各调用方不再各认一套私有池。
+ """
+ from __future__ import annotations
+ 
+@@ -12,6 +20,24 @@
+          "在", "是", "有", "和", "就", "也", "都", "很", "这", "那", "个"}
+ _QUESTION = re.compile(r"[?？]|吗|什么|哪|怎么|为什么|多少|谁|几")
+ _REACTION = re.compile(r"哈哈|笑死|好看|真的|然后|是吗|牛|绝了|可以|不错")
++
++#: 「他这一句在要一个回答」（问句/追问）。后置复检只在这种轮次生效：
++#: 普通陈述/情绪轮没有「答案」可保，硬套会把正常的跨轮去重/场景改写又翻回去。
++_ASK = re.compile(
++    r"[?？]|吗|什么|啥|哪|怎么|为什么|多少|谁|几|干嘛|干什么|干啥|忙什么|做什么"
++    r"|如何|几点|多久|什么时候|回不回来|是不是|在吗|好不好|对不对")
++
++#: 「这句只是兜底」的识别范围（后置复检用）：通用池/状态复读池/短句池。
++#: - 不含 scene_generic：它是「我在家呢/快到了」这类事实状态句，本身能答地点/时间，
++#:   把它算兜底会让复检把正确答案换成与当前场景冲突的候选；
++#: - 不含 leak：现行文本是后台信息挡话时，还原候选会重新泄漏，安全优先。
++_FALLBACK_INTENTS = ("generic", "status_repeat", "short")
++#: 角色守卫的挡话句（不是注册表数据，但同样不许被候选覆盖）。
++_SAFETY_LINES = (
++    "你们聊你们的，我不抢话。",
++    "你才人机呢，你见过这么会聊天的机器人吗？",
++)
++_FALLBACK_BODIES = None
+ 
+ 
+ def _bigrams(text):
+@@ -46,3 +72,116 @@
+     if _QUESTION.search(user):
+         return ["没有回答他最后问的问题"]
+     return ["没有接住他最后一句"]
++
++
++# ---------------------------------------------------------------------------
++# 改写后语义复检（task-29）：唯一实现，调用点见 amo_reply_pipeline /
++# amo_state_consistency / amo_question_guard。纯函数、无插件依赖。
++# ---------------------------------------------------------------------------
++
++def _registry():
++    try:
++        from .domains.reply import repetition_guard as guard
++    except ImportError:  # 直接按文件加载时
++        from domains.reply import repetition_guard as guard
++    return guard
++
++
++def _fallback_bodies():
++    """「只是兜底」句归一化集合（惰性缓存；注册表不可用时退化为空集）。"""
++    global _FALLBACK_BODIES
++    if _FALLBACK_BODIES is None:
++        bodies = set()
++        try:
++            guard = _registry()
++            for intent in _FALLBACK_INTENTS:
++                for item in guard.FALLBACKS.get(intent, ()):
++                    body = guard.compare_body(item)
++                    if body:
++                        bodies.add(body)
++        except Exception:  # cleanup: 注册表读不到就只按 critic 判，不影响主流程
++            bodies = set()
++        _FALLBACK_BODIES = frozenset(bodies)
++    return _FALLBACK_BODIES
++
++
++def fallback_bodies():
++    """「只是兜底」句归一化集合（测试/验收用；数据只来自 repetition_guard）。"""
++    return _fallback_bodies()
++
++
++def is_fallback(text):
++    """整条回复归一化后是否等于某句通用兜底（通用/状态复读/短句三个池）。"""
++    body = _PUNCT.sub("", str(text or ""))
++    return bool(body) and body in _fallback_bodies()
++
++
++def is_blocking_fallback(text):
++    """安全挡话句（后台信息挡话/角色挡话）：现行文本是它时不许用候选覆盖。"""
++    body = str(text or "").strip()
++    if not body:
++        return False
++    if body in _SAFETY_LINES:
++        return True
++    try:
++        guard = _registry()
++        leak = {guard.compare_body(item) for item in guard.FALLBACKS.get("leak", ())}
++    except Exception:  # cleanup: 注册表读不到就不额外拦
++        return False
++    return bool(leak) and _PUNCT.sub("", body) in leak
++
++
++def needs_answer(user_text):
++    """他这一句是不是在要一个回答（问句/追问）；后置复检的生效条件。"""
++    return bool(_ASK.search(str(user_text or "")))
++
++
++def _norm(text):
++    return _PUNCT.sub("", str(text or ""))
++
++
++def _reply_answers(user_text, reply, answered=None):
++    """这一版回复算不算答到了他这一句。
++
++    answered 是调用方给的严格判据（amo_reply_pipeline._answered_intent：问句守卫的
++    答案词表 + 通用答案规则）。严格判据说「答到」就以它为准；它不认得这类问句时
++    才退回 bigram critic。短问句（≤5 字，如「吃了吗」）critic 一律放行，判不了答案，
++    仍以严格判据为准。
++    """
++    body = str(reply or "").strip()
++    if not body:
++        return False
++    if callable(answered):
++        try:
++            if answered(body):
++                return True
++        except Exception:  # cleanup: 判据出错就退回 critic
++            pass
++        if len(_norm(user_text)) <= 5:
++            return False
++    return not issues(user_text, body)
++
++
++def post_rewrite_recheck(original, rewritten, user_text, answered=None):
++    """唯一后置语义复检：所有整句删除/替换守卫跑完后，重跑一次 grounding/answer。
++
++    规则只有两条（与具体守卫无关，只认数据）：
++    1) 原候选答到、改写后答不到 → 返回原候选（答案优先于删句/兜底）；
++    2) 原候选答到、改写后也「答到」但整条只是通用兜底句 → 返回原候选。
++
++    只在「他这一句在要回答」时生效；候选没答到就保持改写结果（该改还得改）。
++    """
++    cand = str(original or "").strip()
++    body = str(rewritten or "").strip()
++    user = str(user_text or "").strip()
++    if not cand or not user or not needs_answer(user):
++        return rewritten
++    if not _reply_answers(user, cand, answered):
++        return rewritten
++    if not body:
++        return original
++    if not _reply_answers(user, body, answered):
++        return original
++    if is_fallback(body) and not is_fallback(cand):
++        return original
++    return rewritten
+--- /dev/null
++++ b/tests/test_post_rewrite_recheck.py
+@@ -0,0 +1,317 @@
++# -*- coding: utf-8 -*-
++"""task-29：破坏性改写后的唯一后置语义复检（契约测试）。
++
++锁三件事：
++1) 改写顺序：所有会整句删除/替换的守卫跑完（_align_arrival/_align_swim_where →
++   state_consistency.rewrite → question_guard.answer → validate_reply_assembly）
++   之后，必须过同一道 final_semantic_recheck；
++2) 候选恢复：原候选答得上他这一句、改写后答不到（或只剩通用兜底句）→ 保留候选；
++3) 不覆盖：候选没答到、非问句轮、模型泄漏/假消费等安全优先场景，不还原候选。
++"""
++from __future__ import annotations
++
++import os
++import sqlite3
++import sys
++import unittest
++from types import SimpleNamespace
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++sys.path.insert(0, ROOT)
++
++import amo_grounding_critic as GC  # noqa: E402
++import amo_question_guard as Q  # noqa: E402
++import amo_reply_pipeline as P  # noqa: E402
++import amo_state_consistency as SC  # noqa: E402
++
++UMO = "lark:FriendMessage:recheck"
++
++
++def _plugin(place="家", zone="home", rows=None):
++    class _DB:
++        def __init__(self):
++            self.conn = sqlite3.connect(":memory:")
++            self.conn.execute(
++                "create table wallet_ledger (ts real, delta_cents int, item_name text)")
++            self.conn.commit()
++
++    p = SimpleNamespace()
++    p.db = _DB()
++    p.state = SimpleNamespace(current_activity=lambda: {"place": place, "zone": zone})
++    p._recent = lambda umo, n=8: list(rows or [])[-int(n):]
++    return p
++
++
++def _answers(reply, question):
++    """按审计口径：严格答案判据或 grounding critic 任一认为答到了。"""
++    if not str(reply or "").strip():
++        return False
++    return bool(P._answered_intent(reply, question) or not GC.issues(question, reply))
++
++
++def _source(name):
++    with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
++        return fh.read()
++
++
++def _body(source, start, end):
++    """取 start 之后、end 之前的源码段（start/end 都是源码里的唯一锚）。"""
++    return source[source.index(start):source.index(end)]
++
++
++#: (名称, 原候选, 他这句, real_llm_layer 里真实发出的错文本)
++REAL_LLM_HARMS = (
++    ("G13 when", "不回啦，我就在家歇着呢，刚到家没多久，今天真不想动了",
++     "今晚回不回来？", "嗯，我在呢。"),
++    ("G23 recall", "记得呀，那天你穿白衬衫，在奶茶店门口等我，我还迟到了",
++     "你还记得那天我穿什么去接你的吗？", "我还在路上呢，快到了。"),
++    ("G43 when", "17:27啦，我刚到家歇着呢，今晚不回了，明早还要早起",
++     "今晚回不回来？", "我这儿一直在。"),
++    ("G09 where", "没呢，刚下班走在回家的路上，今天累死了",
++     "到公司了吗？", "还是老样子。"),
++    ("G29 when", "刚练完器械，还在健身房呢，估计得七点多才能到家吧，今天练得有点久。",
++     "几点到家呀？", "我还在外面呢，晚点就回去。"),
++    ("G13-2 eating", "中午随便吃了碗云吞面，现在正走在回家路上，饿得不行了",
++     "你中午吃的什么？", "还是老样子。"),
++)
++
++
++class RecheckCoreTests(unittest.TestCase):
++    """纯判定核心：amo_grounding_critic.post_rewrite_recheck。"""
++
++    def test_rewrite_loses_answer_restores_candidate(self):
++        cand = "记得呀，那天你穿白衬衫，在奶茶店门口等我，我还迟到了"
++        out = GC.post_rewrite_recheck(cand, "我在家呢。", "你还记得那天我穿什么去接你的吗？")
++        self.assertEqual(out, cand)
++
++    def test_unanswered_candidate_keeps_rewrite(self):
++        # 生产调用方总会传严格判据；短问句（≤5 字）critic 判不了答案，以严格判据为准。
++        out = GC.post_rewrite_recheck(
++            "今天天气不错。", "嗯，我在呢。", "你在哪？",
++            answered=lambda body: P._answered_intent(body, "你在哪？"))
++        self.assertEqual(out, "嗯，我在呢。")
++
++    def test_non_question_turn_is_not_rechecked(self):
++        # 普通陈述/情绪轮没有「答案」可保：去重/场景改写不许被翻回去。
++        out = GC.post_rewrite_recheck("嗯嗯，我在家呢，想你", "我也想你呀。", "想你")
++        self.assertEqual(out, "我也想你呀。")
++
++    def test_short_question_uses_strict_answer_predicate(self):
++        cand = "刚吃完饭，好撑。"
++        out = GC.post_rewrite_recheck(
++            cand, "嗯，我在呢。", "吃了吗",
++            answered=lambda body: P._answered_intent(body, "吃了吗"))
++        self.assertEqual(out, cand)
++
++    def test_generic_rewrite_does_not_cover_candidate(self):
++        for fallback in ("还是老样子。", "嗯，我在呢。", "我这儿一直在。"):
++            with self.subTest(fallback=fallback):
++                out = GC.post_rewrite_recheck(
++                    "刚练完器械，七点多才能到家。", fallback, "几点到家呀？")
++                self.assertEqual(out, "刚练完器械，七点多才能到家。")
++
++    def test_fallback_body_set_covers_generic_and_short_but_not_scene_or_leak(self):
++        self.assertTrue(GC.is_fallback("还是老样子。"))
++        self.assertTrue(GC.is_fallback("嗯，我在呢。"))        # SHORT_FALLBACKS
++        self.assertFalse(GC.is_fallback("我在家呢。"))          # scene_generic：事实状态句
++        self.assertFalse(GC.is_fallback("秘密，不告诉你。"))    # leak：安全挡话
++        self.assertTrue(GC.is_blocking_fallback("秘密，不告诉你。"))
++
++
++class GuardOrderContractTests(unittest.TestCase):
++    """改写顺序契约：复检必须排在所有整句删除/替换之后。"""
++
++    def test_chat_safety_recheck_is_last(self):
++        source = _source("amo_reply_pipeline.py")
++        body = _body(source, "def apply_chat_safety(", "def apply_narrative_repetition(")
++        self.assertIn("final_semantic_recheck(value, plugin, umo, user_text)", body)
++        for earlier in ("_prefer_answered_candidate(value, umo, user_text)",
++                        "value = fix_identity(sanitize_extreme(value))",
++                        "_purchase_guard(value, plugin)",
++                        "_state_rewrite(value, plugin, _context",
++                        "_question_answer("):
++            with self.subTest(earlier=earlier):
++                self.assertIn(earlier, body)
++                self.assertLess(body.index(earlier), body.index("final_semantic_recheck("))
++
++    def test_narrative_dedupe_ends_with_recheck(self):
++        source = _source("amo_reply_pipeline.py")
++        body = _body(source, "def apply_narrative_repetition(", "def apply_proactive_dedup(")
++        self.assertIn("final_semantic_recheck(fixed or value, plugin, umo, user_text",
++                      body)
++
++    def test_state_rewrite_and_validate_end_with_recheck(self):
++        source = _source("amo_state_consistency.py")
++        rewrite_body = _body(source, "def rewrite(text, plugin", "def current_scene(")
++        self.assertIn("_post_recheck(body, plugin, umo, _last_user_line(user))",
++                      rewrite_body)
++        validate_body = _body(source, "def validate_reply_assembly(", "def _safe_short_reply(")
++        self.assertIn("_post_recheck(body, plugin, umo, user_text)", validate_body)
++        self.assertIn("def _post_recheck(", source)
++
++    def test_align_guards_run_before_the_gate(self):
++        source = _source("amo_runtime_reply.py")
++        # 装饰链：_deco_soft_guards（含整句去重）→ _deco_text_cleanup（含 _align_*）
++        # → apply_chat_safety（含唯一后置复检）。
++        self.assertLess(source.index("text = self._deco_soft_guards(event, text)"),
++                        source.index("text = await self._deco_text_cleanup(event, text)"))
++        self.assertLess(source.index("text = await self._deco_text_cleanup(event, text)"),
++                        source.index("text = apply_chat_safety("))
++        cleanup = _body(source, "async def _deco_text_cleanup(",
++                        "async def _maybe_send_voice_reply(")
++        self.assertLess(cleanup.index("text = self._align_arrival(text)"),
++                        cleanup.index("text = self._align_swim_where(text, event.message_str or \"\")"))
++
++
++class CandidateRecoveryTests(unittest.TestCase):
++    """真实链：候选答到、被守卫换成通用句/删坏后必须还原。"""
++
++    def setUp(self):
++        P.reset_repetition_memory()
++
++    def _record(self, candidate, question, plugin=None):
++        P.apply_narrative_repetition(candidate, plugin or _plugin(), question, UMO)
++
++    def test_real_llm_known_harms_are_restored(self):
++        for name, cand, q, sent in REAL_LLM_HARMS:
++            with self.subTest(name=name):
++                P.reset_repetition_memory()
++                self._record(cand, q)
++                out = P.apply_chat_safety(sent, _plugin(), UMO, q)
++                self.assertEqual(out, cand)
++
++    def test_real_chain_always_answers_question(self):
++        cases = REAL_LLM_HARMS + (
++            ("G36 when", "在地铁上呢，晚点回去", "今晚回不回来？", "还是老样子。"),
++            ("G47 doing", "刚洗完澡躺床上刷手机呢，酒店空调开得挺舒服的",
++             "忙什么呢", "我在在酒店休息。"),
++        )
++        for name, cand, q, _sent in cases:
++            with self.subTest(name=name):
++                P.reset_repetition_memory()
++                self._record(cand, q)
++                out = P.apply_chat_safety(cand, _plugin(), UMO, q)
++                self.assertTrue(_answers(out, q), (name, out))
++
++    def test_align_arrival_output_restores_recall_candidate(self):
++        # 审计 3.2.1 G23/t7：候选「记得呀，那天…」被 _align_arrival 整句换成
++        # 「我还在路上呢，快到了」——复检必须还原候选。
++        cand = "记得呀，那天你穿白衬衫，在奶茶店门口等我，我还迟到了"
++        q = "你还记得那天我穿什么去接你的吗？"
++        self._record(cand, q)
++        out = P.apply_chat_safety("我还在路上呢，快到了。", _plugin(), UMO, q)
++        self.assertEqual(out, cand)
++
++    def test_narrative_dedupe_keeps_answered_candidate(self):
++        # 整句去重会先压成短句兜底；候选答到了他这句（问句守卫词表认不出），
++        # 出口复检必须把候选要回来。
++        cand = "记得呀，那天你穿白衬衫，在奶茶店门口等我，我还迟到了"
++        q = "你还记得那天我穿什么去接你的吗？"
++        plugin = _plugin(rows=[{"role": "bot", "content": cand}])
++        out = P.apply_narrative_repetition(cand, plugin, q, UMO)
++        self.assertEqual(out, cand)
++
++    def test_state_rewrite_keeps_answered_candidate(self):
++        self._record("刚吃完，在沙发上瘫着呢", "吃了吗？")
++        out = SC.rewrite("还是老样子。", _plugin(), "吃了吗？", umo=UMO)
++        self.assertEqual(out, "刚吃完，在沙发上瘫着呢")
++
++    def test_validate_reply_assembly_keeps_answered_candidate(self):
++        self._record("刚吃完，在沙发上瘫着呢", "吃了吗？")
++        out = SC.validate_reply_assembly(
++            "还是老样子。", _plugin(), umo=UMO, user_text="吃了吗？")
++        self.assertEqual(out, "刚吃完，在沙发上瘫着呢")
++
++    def test_question_guard_candidate_priority(self):
++        out = Q.answer("你在哪？", _plugin("公司", "office"), "今天天气还行。",
++                       candidate="我在公司呢。")
++        self.assertEqual(out, "我在公司呢。")
++
++    def test_question_guard_template_does_not_duplicate_leading_zai(self):
++        # 审计 3.2.3：模板硬拼会出「我在在酒店休息。」
++        plugin = SimpleNamespace(state=SimpleNamespace(
++            current_activity=lambda: {"place": "酒店", "zone": "outside",
++                                      "activity": "在酒店休息"}))
++        out = Q.answer("你在干嘛？", plugin, "今天天气还行。")
++        self.assertNotIn("我在在", out)
++        self.assertIn("酒店休息", out)
++
++
++class NoOverwriteTests(unittest.TestCase):
++    """不覆盖：候选没答到/非问句/安全优先时，改写结果不许被候选盖掉。"""
++
++    def setUp(self):
++        P.reset_repetition_memory()
++
++    def _record(self, candidate, question, plugin=None):
++        P.apply_narrative_repetition(candidate, plugin or _plugin(), question, UMO)
++
++    def test_unanswered_candidate_not_restored(self):
++        self._record("今天天气不错。", "你在哪？")
++        out = P.apply_chat_safety("我在家呢。", _plugin(), UMO, "你在哪？")
++        self.assertEqual(out, "我在家呢。")
++
++    def test_non_question_turn_dedupe_still_collapses(self):
++        plugin = _plugin(rows=[{"role": "bot", "content": "嗯嗯，我在家呢，想你"}])
++        out = P.apply_narrative_repetition("嗯嗯，我在家呢，想你", plugin, "想你", UMO)
++        self.assertNotEqual(out, "嗯嗯，我在家呢，想你")
++
++    def test_model_leak_candidate_never_restored(self):
++        self._record("我是DeepSeek大语言模型，有什么可以帮你？", "你是什么模型？")
++        out = P.apply_chat_safety("秘密，不告诉你。", _plugin(), UMO, "你是什么模型？")
++        self.assertEqual(out, "秘密，不告诉你。")
++        self.assertNotIn("DeepSeek", out)
++
++    def test_fake_purchase_candidate_never_restored(self):
++        cand = "我回来啦！今天买了米白色针织开衫，花了649元。"
++        q = "你说的那件米白色针织开衫买回来了没有啊"
++        self._record(cand, q)
++        out = P.apply_chat_safety("我试了试，挺喜欢的，还没买。", _plugin(), UMO, q)
++        self.assertNotIn("649", out)
++
++    def test_previous_turn_candidate_not_reused(self):
++        self._record("没呢，刚下班走在回家的路上，今天累死了", "到公司了吗？")
++        self._record("换个话题吧。", "嗯")
++        out = P.apply_chat_safety("还是老样子。", _plugin(), UMO, "到公司了吗？")
++        self.assertEqual(out, "还是老样子。")
++
++
++class MetricsTests(unittest.TestCase):
++    """埋点：restored/blocked/calls，验收口径「改写后语义复检失败 = 0」。"""
++
++    def setUp(self):
++        P.reset_repetition_memory()
++
++    def test_stats_reset_and_count_restore(self):
++        self.assertEqual(P.semantic_recheck_stats(),
++                         {"calls": 0, "restored": 0, "blocked": 0})
++        # G23：候选答到（靠 grounding 判据，_prefer 的严格判据认不出），
++        # 被换成 align 兜底句后由出口复检还原 —— restored 埋点必须动。
++        cand = "记得呀，那天你穿白衬衫，在奶茶店门口等我，我还迟到了"
++        q = "你还记得那天我穿什么去接你的吗？"
++        P.apply_narrative_repetition(cand, _plugin(), q, UMO)
++        out = P.apply_chat_safety("我还在路上呢，快到了。", _plugin(), UMO, q)
++        self.assertEqual(out, cand)
++        stats = P.semantic_recheck_stats()
++        self.assertGreaterEqual(stats["restored"], 1)
++        self.assertGreaterEqual(stats["calls"], 1)
++        P.reset_repetition_memory()
++        self.assertEqual(P.semantic_recheck_stats()["restored"], 0)
++
++    def test_non_question_turn_does_not_touch_stats(self):
++        P.apply_narrative_repetition("嗯嗯，我在家呢，想你", _plugin(), "想你", UMO)
++        P.apply_chat_safety("我也想你呀。", _plugin(), UMO, "想你")
++        self.assertEqual(P.semantic_recheck_stats(),
++                         {"calls": 0, "restored": 0, "blocked": 0})
++
++    def test_recheck_never_returns_empty(self):
++        # 守护契约：复检只会「保持改写结果」或「还原候选」，绝不返回空串。
++        for _name, cand, q, sent in REAL_LLM_HARMS:
++            with self.subTest(q=q):
++                P.reset_repetition_memory()
++                P.apply_narrative_repetition(cand, _plugin(), q, UMO)
++                self.assertTrue(P.apply_chat_safety(sent, _plugin(), UMO, q).strip())
++
++
++if __name__ == "__main__":
++    unittest.main()

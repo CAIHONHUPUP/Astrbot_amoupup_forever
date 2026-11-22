@@ -64,9 +64,15 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from photo_view import HEADWEAR_LOCK, SELFIE_NEGATIVE
 
+#: 跨插件生图 principal 调用方标识（task-27，与 photo.plugin 的受信名单一致）
+PLUGIN_CALLER = "Astrbot_amoupup_forever"
+PLUGIN_PRINCIPAL_CONTRACT = "amo-image-principal"
+PLUGIN_PRINCIPAL_VERSION = 1
+
+
 async def _call_omni(omni, args):
-    """调我能永远定格你；旧版不认识 scene_lock/pose_lock/allow_local_refs 时逐个去掉重试。"""
-    removable = ("pose_ref", "scene_lock", "pose_lock", "allow_local_refs")
+    """调我能永远定格你；旧版不认识 scene_lock/pose_lock/allow_local_refs/principal 时逐个去掉重试。"""
+    removable = ("pose_ref", "scene_lock", "pose_lock", "allow_local_refs", "principal")
     while True:
         try:
             return await asyncio.wait_for(
@@ -100,6 +106,35 @@ class PhotoGenerateMixin:
         persona_template_dir: Any
         _PERSONA_VIEW_FILES: Any
         _ensure_png_file: Any
+
+    def _photo_principal(self, kind="owner"):
+        """跨插件生图 principal（v1）：event=None 的自动生图也必须带身份。
+
+        - kind=owner：她自己的照片/自拍，定格侧走权限+每日配额+用量记账；
+        - kind=system：参考图/房间图等内部资产，不占个人配额、不计“今日生图”。
+        uid 取私聊 owner umo 的最后一段，和命令路径共用同一个每日额度计数。
+        """
+        umo = ""
+        for getter_name in ("_first_private_umo",):
+            getter = getattr(self, getter_name, None)
+            if callable(getter):
+                try:
+                    umo = str(getter() or "")
+                except Exception:
+                    umo = ""
+            if umo:
+                break
+        uid = umo.rsplit(":", 1)[-1] if ":" in umo else umo
+        scope = "group" if ":GroupMessage:" in umo else "private"
+        return {
+            "contract": PLUGIN_PRINCIPAL_CONTRACT,
+            "version": PLUGIN_PRINCIPAL_VERSION,
+            "caller": PLUGIN_CALLER,
+            "kind": str(kind or "owner"),
+            "user_id": uid,
+            "scope": scope,
+            "umo": umo,
+        }
 
     def _find_omni(self):
         """握手：找不到返回 None；找到就顺手把三视图自愈进生图插件（幂等）。"""
@@ -291,7 +326,13 @@ class PhotoGenerateMixin:
                 "outfit_count": len(outfit_refs),
                 "refs": len(refs),
             }
+        # task-27：自动生图没有 event，但必须带 principal，定格侧才能校验权限/配额并记账。
+        # 老引擎/测试桩没有 _photo_principal 时不传（定格侧按 legacy_system 放行并计数）。
+        principal = (self._photo_principal("owner")
+                     if callable(getattr(self, "_photo_principal", None)) else None)
         args = {"prompt": prompt, "count": 1, "record_usage": True}
+        if principal is not None:
+            args["principal"] = principal
         # 姿势图单独传给生图插件：它会把姿势放在三视图前面；
         # refs 里也保留一份，旧版生图插件不认识 pose_ref 时仍能拿到姿势参考。
         if selfie and pose_ref:
@@ -456,7 +497,12 @@ class PhotoGenerateMixin:
             ref = self.persona_ref()
             refs = [ref] if ref else []
         refs = [item for item in refs if item]
+        # 内部参考图：principal kind=system，放行但不占个人配额/不计“今日生图”
+        principal = (self._photo_principal("system")
+                     if callable(getattr(self, "_photo_principal", None)) else None)
         args = {"prompt": prompt, "count": 1, "event": None, "record_usage": False}
+        if principal is not None:
+            args["principal"] = principal
         if refs:
             args["refs"] = refs
             args["allow_local_refs"] = True

@@ -187,6 +187,37 @@ class BridgeMixin(_MixinBase):
         if (scope == "group" or group_id) and not (_is_owner(uid) if callable(_is_owner) else False):
             logger.debug("[amo] 群聊记忆已隔离（非主人）: %s" % str(content)[:40])
             return False
+        # 2026-11-22 task-25：摘要/里程碑/记忆写者统一过场景守卫。只改「现在/此刻」的
+        # 地点断言（昨天/以前/说他的句子原样保留），避免「病假在家」被写成「现在在公司」
+        # 再回灌进长期记忆；全句都违规时宁可不写这一条。
+        try:
+            try:
+                from .amo_scene_ledger import guard_memory_text as _guard_memory
+            except ImportError:
+                from amo_scene_ledger import guard_memory_text as _guard_memory
+            _guarded = str(_guard_memory(self, content) or "")
+            if _guarded != str(content or ""):
+                logger.info("[amo] 记忆场景守卫改写：%r -> %r",
+                            str(content or "")[:60], _guarded[:60])
+                if not _guarded.strip():
+                    logger.warning("[amo] 记忆整条与此刻场景冲突，本次不写: %s",
+                                   str(content or "")[:60])
+                    return False
+                content = _guarded
+        except Exception as _amo_exc:
+            _note_swallowed("amo_memory_bridge.BridgeMixin._write_memory_checked.scene_guard",
+                            _amo_exc)
+        try:
+            try:
+                from .amo_memory_ledger import guard_memory_write, record_memory_facts
+            except ImportError:
+                from amo_memory_ledger import guard_memory_write, record_memory_facts
+            content, _guard = guard_memory_write(
+                self, uid, content, kind=kind, subject=subject, source="memory")
+            if not content:
+                return False
+        except Exception as _amo_exc:
+            _note_swallowed("amo_memory_bridge.BridgeMixin._write_memory_checked.guard", _amo_exc)
         hub = self._memory_hub()
         level = to_int(tier, 1)
         importance = 0.75 if level >= 2 else (0.55 if level == 1 else 0.35)
@@ -201,6 +232,14 @@ class BridgeMixin(_MixinBase):
                 logger.warning("[amo] 记忆写入异常: %s" % exc)
                 result = {"ok": False}
             if isinstance(result, dict) and result.get("ok"):
+                try:
+                    record_memory_facts(
+                        self, uid, content,
+                        memory_id=int((result or {}).get("memory_id") or 0),
+                        source="memory",
+                    )
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_memory_bridge.BridgeMixin._write_memory_checked.facts", _amo_exc)
                 return True
             logger.warning(
                 "[amo] 记忆没写进去（%s）: %s" % ((result or {}).get("reason", "?"), str(content)[:40])
@@ -215,6 +254,10 @@ class BridgeMixin(_MixinBase):
                 _note_swallowed("amo_memory_bridge.BridgeMixin._write_memory_checked", _amo_exc)
                 result = False
             if result:
+                try:
+                    record_memory_facts(self, uid, content, source="memory")
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_memory_bridge.BridgeMixin._write_memory_checked.facts", _amo_exc)
                 return True
         return False
 
@@ -228,6 +271,17 @@ class BridgeMixin(_MixinBase):
         content = re.sub(r"\s+", " ", str(content or "")).strip()
         if not content:
             return False
+        try:
+            try:
+                from .amo_memory_ledger import guard_memory_write, record_memory_facts
+            except ImportError:
+                from amo_memory_ledger import guard_memory_write, record_memory_facts
+            content, _guard = guard_memory_write(
+                self, uid, content, kind=kind, subject=subject, source="memory")
+            if not content:
+                return False
+        except Exception as _amo_exc:
+            _note_swallowed("amo_memory_bridge.BridgeMixin._external_memory_write.guard", _amo_exc)
         hub = self._memory_hub()
         if hub is not None and hub.writable():
             level = to_int(tier, 1)
@@ -238,6 +292,10 @@ class BridgeMixin(_MixinBase):
                     scope=str(scope or "private"), group_id=str(group_id or ""),
                     subject=str(subject or "user"),
                 ))
+                try:
+                    record_memory_facts(self, uid, content, source="memory")
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_memory_bridge.BridgeMixin._external_memory_write.facts", _amo_exc)
                 logger.debug("[amo] 记忆已交给能力层: %s" % content[:40])
                 return True
             except Exception as exc:

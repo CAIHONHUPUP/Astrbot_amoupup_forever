@@ -1,0 +1,119 @@
+counts {"bot_messages": 184, "before_bad": 10, "before_clean": 174, "fixed": 9, "persistent": 1, "clean_untouched": 41, "clean_rewritten": 130, "clean_dropped": 3, "clean_new_problem": 3}
+==== fixed ====
+-- #2003 2026-11-19 12:49:33 drop=:
+  raw: （把手机放下，皱眉） 这软件今天跟我较劲，一直报错。 不是我不给你看，是真出不来。等它好了我第一张就给你。
+  fin: 不是我不给你看，是真出不来。等它好了我第一张就给你。
+-- #2014 2026-11-19 13:03:51 drop=:
+  raw: （看了看手机，眉头皱起来） 又断了，这网络连接超时了。 真没骗你，就是出不来图。这事先放一放，我先干活了，晚点再说。
+  fin: 真没骗你，就是出不来图。这事先放一放，我先干活了，晚点再说。
+-- #2023 2026-11-19 13:35:19 drop=:
+  raw: （又拿起手机点开拍了一张，盯着屏幕等） 成没成啊……
+  fin: 成没成啊…
+-- #2024 2026-11-19 13:37:13 drop=:
+  raw: （把手机一撂，整个人靠回椅背） 这回连权限都没了，说我没权限用这个。 真不是我不给，是它不让我拍。
+  fin: 真不是我不给，是它不让我拍。
+-- #2136 2026-11-20 11:24:39 drop=:
+  raw: 哦，是方圆讲的，说“为什么程序员分不清万圣节和圣诞节”，因为 Oct 31 等于 Dec 25。 我笑到被隔壁工位看了两眼。
+  fin: 我笑到被隔壁看了两眼。就是刚才那件事，晚安了，明天再找你玩 睡觉咯，老婆。
+-- #2144 2026-11-20 11:28:11 drop=:
+  raw: 收到你后来说的那句了。 图卡住了还没出来，等我再发一次。 没让我脱光就够意思了？
+  fin: 没让我脱光就够意思了？
+-- #2149 2026-11-20 11:37:02 drop=:
+  raw: （耳朵有点热，把手机往桌上扣了一下又拿起来）
+  fin: 别盯着看啦。
+-- #2159 2026-11-20 17:33:25 drop=:
+  raw: 软件又崩了，看不到估值，今天先不买啦～
+  fin: 唔…这个先不说了，陪我聊点别的嘛。
+-- #2278 2026-11-22 09:00:15 drop=:
+  raw: 【日记质检】昨天有 4 条日记对不上：待重写 4 条；已标记重写，详情在面板。
+  fin: 唔…这个先不说了，陪我聊点别的嘛。
+==== persistent ====
+-- #2078 2026-11-19 17:40:33 drop=:
+  raw: （把毯子拉高，盖到肩膀，只露出脸） 我跟你说过了，不行。 你再说下去，我就要关视频去看电视了。
+  fin: 我跟你说过了，不行。 你再说下去，我就要关视频去看电视了。
+==== clean_dropped ====
+-- #2197 2026-11-21 09:01:19 drop=addressee:
+  raw: [我发的照片] 自拍
+  fin: 
+-- #2280 2026-11-22 09:00:53 drop=addressee:
+  raw: [我发的照片] 自拍
+  fin: 
+-- #2284 2026-11-22 10:01:08 drop=addressee:
+  raw: [我发的照片] 自拍
+  fin: 
+==== clean_rewritten (130 total, first 30) ====
+-- #1968 2026-11-19 12:02:06 stages_changed=['text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: 中午吃了饭。（在公司食堂端着餐盘，刚找着位子坐下） 酸辣土豆丝啊，下饭是真下饭。 我这儿也刚打上饭，菜还挺热的。
+  fin: 中午吃了饭。 酸辣土豆丝啊，下饭是真下饭。 我这儿也刚打上饭，菜还挺热的。
+-- #1970 2026-11-19 12:03:09 stages_changed=['persona']
+  raw: （扒拉了两口饭，边嚼边打字） 你吃饭倒是快，我这才刚开始。
+  fin: 你吃饭倒是快，我这才刚开始。
+-- #1972 2026-11-19 12:03:38 stages_changed=['text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （把最后两口饭扒完，放下筷子） 行，那我慢慢吃完再上去。 下午好好上班，别一直熬着。
+  fin: 行，那我慢慢吃完再上去。 下午好好忙活，别一直熬着。
+-- #1974 2026-11-19 12:04:06 stages_changed=['text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （低头看了看食堂桌子下面的鞋，笑着摇头） 又来。 上午不是给你看过了。
+  fin: 又来。 上午不是给你看过了。
+-- #1976 2026-11-19 12:04:39 stages_changed=['soft_guards', 'rewrite_reply', 'text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （把手机往桌上一放，笑了一下） 就因为是你老婆才总跟你要啊。 行吧，等我回工位坐下就发你一张。
+  fin: 就因为是我才总跟你要啊。 行吧，等我回坐下就发你一张。
+-- #1978 2026-11-19 12:06:26 stages_changed=['persona']
+  raw: （低头看了看桌子底下，笑出声） 行行行，现在给你拍。 （把鞋脱了一只，脚往椅子横杆上一搭）
+  fin: 行行行，现在给你拍。
+-- #1981 2026-11-19 12:10:01 stages_changed=['persona']
+  raw: （把脚收回来，弯下腰穿鞋） 那你看也看了，嘴还这么甜。 行吧，就算你会说话。
+  fin: 那你看也看了，嘴还这么甜。 行吧，就算你会说话。
+-- #1985 2026-11-19 12:34:13 stages_changed=['persona']
+  raw: （把餐盘端起来，往回收处走） 什么等我干啥。不是你自己说要看脚的嘛。
+  fin: 什么等我干啥。不是你自己说要看脚的嘛。
+-- #1987 2026-11-19 12:34:35 stages_changed=['text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （把餐盘放回去，走回工位坐下） 刚吃饭那会儿不是拍过了？鞋都脱了。再拍就真成习惯了，行吧，等我坐下。
+  fin: 刚吃饭那会儿不是拍过了？鞋都脱了。再拍就真成习惯了，行吧，等我坐下。
+-- #1988 2026-11-19 12:36:42 stages_changed=['persona']
+  raw: （对着手机摆弄了一会儿） 哎，这网有点卡，我先穿上鞋。
+  fin: 哎，这网有点卡，我先穿上鞋。
+-- #1990 2026-11-19 12:37:54 stages_changed=['text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （把鞋穿好，起身回工位，顺手把手机举起来） 不是拍不出来，是刚才一直没弄好。等我坐下来再拍，一张就够了吧？
+  fin: 不是拍不出来，是刚才一直没弄好。等我坐下来再拍，一张就够了吧？
+-- #1992 2026-11-19 12:38:16 stages_changed=['text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （坐回工位，把鞋脱了，脚往椅子横杆上一搭，举起手机） 行行行，这总行了吧。
+  fin: 行行行，这总行了吧。
+-- #1995 2026-11-19 12:40:10 stages_changed=['persona']
+  raw: （笑着把鞋往上提了提） 你还挺会安慰人。行了，穿上了，这回真收工。
+  fin: 你还挺会安慰人。行了，穿上了，这回真收工。
+-- #1997 2026-11-19 12:40:28 stages_changed=['soft_guards', 'rewrite_reply', 'text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （笑着往椅子背上一靠，声音压低） 这大白天的，在吃饭呢。隔着手机又摸不着，要摸晚上过来。
+  fin: 这大白天的，待会儿吃饭呢。隔着手机又摸不着，要摸晚上过来。
+-- #1999 2026-11-19 12:40:57 stages_changed=['persona']
+  raw: （眼睛弯起来，故意压低声音） 想得美。到时候再说，看我心情。
+  fin: 想得美。到时候再说，看我心情。
+-- #2001 2026-11-19 12:49:11 stages_changed=['persona']
+  raw: （把脚又往椅子横杆上一搭，叹了口气） 行吧，最后一个了啊。
+  fin: 行吧，最后一个了啊。
+-- #2002 2026-11-19 12:49:19 stages_changed=['persona']
+  raw: （举着手机摆了摆角度） 哎，图没出来，什么毛病。等我一下，再试一次。
+  fin: 哎，图没出来，什么毛病。等我一下，再试一次。
+-- #2005 2026-11-19 12:50:49 stages_changed=['persona']
+  raw: （又举起手机试了一下） 再试一回，这回要是还不行我可就真没招了。
+  fin: 再试一回，这回要是还不行我可就真没招了。
+-- #2006 2026-11-19 12:51:44 stages_changed=['validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （把手机往桌上一放，叹了口气）还是不行，这回真是出不来图了。不是我不给看，是它死活不愿意。
+  fin: 还是不行，这回真是出不来图了。是它死活不愿意。
+-- #2009 2026-11-19 12:54:53 stages_changed=['soft_guards', 'rewrite_reply', 'text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （举起手机又试了一下，没动静） 还是不行，真的，试都试腻了。 等我下班回去再弄，行吧。
+  fin: 还是不行，真的，试都试腻了。
+-- #2013 2026-11-19 13:02:51 stages_changed=['persona']
+  raw: （脱了鞋，脚趾在椅子横杆上轻轻蜷了蜷） 行，最后一张，拍完我就得干活了。
+  fin: 行，最后一张，拍完我就得干活了。
+-- #2016 2026-11-19 13:04:41 stages_changed=['persona']
+  raw: （拿起手机又点了一下，屏幕转了两下） 还是不行，真没辙了。 我下午还得干活，图的事等它自己好了再说吧。
+  fin: 还是不行，真没辙了。 我下午还得干活，图的事等它自己好了再说吧。
+-- #2018 2026-11-19 13:10:12 stages_changed=['persona']
+  raw: （把手机扣在桌上） 不试了，真不试了，这破图我举了一中午。 你歇会儿吧，我先干活，不然下午得被季博达念。
+  fin: 不试了，真不试了，这破图我举了一中午。 你歇会儿吧，我先干活，不然下午得被同事念。
+-- #2020 2026-11-19 13:11:21 stages_changed=['persona']
+  raw: （叹了口气，还是把手机又举起来） 行行行，最后最后一次啊。
+  fin: 行行行，最后一次啊。
+-- #2021 2026-11-19 13:12:13 stages_changed=['soft_guards', 'rewrite_reply', 'text_cleanup', 'chat_safety', 'send_pipeline', 'strip_media', 'addressee', 'anti_nag', 'purchase', 'validate_assembly', 'tech_terms', 'segment_repeat', 'persona']
+  raw: （看了眼屏幕，直接放下了手机） 还是断，真的不行。 不是我不想给你看，是它连图上不去。等晚上我回去再给你补一张，行不行。
+  fin: 还是断，真的不行。 不是我不想给你看，是它连图上不去。

@@ -259,6 +259,19 @@ def scene_for(activity, kind=""):
     return scene or place or "日常"
 
 
+def fitting_room_scene(activity=None):
+    """逛街 pending 时的照片场景：商场试衣间（不是家里客厅）。
+
+    自动照片只要绑定到「正在逛街试衣」这个事件，背景就必须是商场/试衣间，
+    避免出现「家里客厅自拍 + 商场文案」。
+    """
+    activity = _activity_dict(activity)
+    anchor = place_of(activity)
+    if _is_specific(anchor):
+        return "%s的商场试衣间里，落地试衣镜、帘子和挂钩上的衣服，暖色灯光" % anchor
+    return "商场的试衣间里，落地试衣镜、帘子和挂钩上的衣服，暖色灯光"
+
+
 def has_place_hint(text):
     """这句话里他自己说了地点吗（说了就不拿日程地点覆盖）。"""
     text = str(text or "")

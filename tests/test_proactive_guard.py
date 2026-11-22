@@ -151,6 +151,36 @@ class ComposeTaskTests(unittest.TestCase):
         self.assertIn("一只猫", compose_task(kind="share", name="宝", interesting_event="一只猫"))
         self.assertNotIn("None", compose_task(kind="share", name="宝"))
 
+    def test_schedule_reminder_carries_time_place_event(self):
+        task = compose_task(
+            kind="schedule_reminder",
+            name="family",
+            schedule_time="14:00",
+            schedule_place="医院",
+            schedule_event="复诊拿药",
+        )
+        for fact in ("14:00", "医院", "复诊拿药"):
+            self.assertIn(fact, task)
+        self.assertIn("别编别的日程", task)
+
+    def test_schedule_reminder_without_facts_does_not_invent(self):
+        task = compose_task(kind="schedule_reminder", name="family")
+        self.assertIn("日程还没确认", task)
+        self.assertNotIn("你突然想起", task)
+
+    def test_schedule_reminder_beats_unanswered_branch(self):
+        task = compose_task(
+            kind="schedule_reminder",
+            name="family",
+            unanswered_text="在吗",
+            unanswered_seconds=5.0,
+            schedule_time="09:30",
+            schedule_event="开会",
+        )
+        self.assertIn("09:30", task)
+        self.assertNotIn("先自然回应这句话", task)
+
+
 
 class NearDuplicateTests(unittest.TestCase):
     def test_identical_texts(self):

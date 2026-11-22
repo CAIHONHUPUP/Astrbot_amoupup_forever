@@ -49,23 +49,31 @@ class RandomPoseTests(unittest.TestCase):
         self.assertEqual("couple", usage_of({"name": "合拍", "usage": "couple"}))
 
     def test_couple_usage_picks_couple_pose(self):
+        # 合拍姿势也要过黑名单：成人向"双人缠绵"这类不进池，正常的并肩姿势可以。
         poses = [{"name": "站姿", "note": "站直", "usage": "selfie"},
-                 {"name": "双人靠肩", "note": "双人", "usage": "couple"}]
+                 {"name": "并肩靠头", "note": "两个人并肩看镜头", "usage": "couple"},
+                 {"name": "双人缠绵", "note": "（双人姿势，自拍不用）双人缠绵"}]
         lib = self._library(poses)
-        self.assertEqual("双人靠肩", lib.random_pose("home", usage="couple")["name"])
-        self.assertEqual("站姿", lib.random_pose("home", usage="selfie")["name"])
+        self.assertEqual("并肩靠头", lib.random_pose("home_bed", usage="couple")["name"])
+        self.assertEqual("站姿", lib.random_pose("home_bed", usage="selfie")["name"])
 
     def test_hint_prefers_matching_pose(self):
-        poses = [{"name": "站姿", "note": "站直看镜头"},
-                 {"name": "躺姿", "note": "躺在床上侧躺"}]
+        # 2026-11-22 task-23：姿势按房间分池，床姿只在 home_bed（不能再拿 "home"
+        # 泛指客厅，否则客厅照会随机到床姿）。这里用卧室池验证 hint 命中。
+        poses = [{"name": "站姿", "note": "站直看镜头", "room": "living"},
+                 {"name": "躺姿", "note": "躺在床上侧躺", "room": "bedroom"}]
         lib = self._library(poses)
-        self.assertEqual("躺姿", lib.random_pose("home", "躺着拍")["name"])
+        self.assertEqual("躺姿", lib.random_pose("home_bed", "躺着拍")["name"])
+        self.assertEqual("站姿", lib.random_pose("home_sofa")["name"])
 
     def test_private_pose_only_at_home(self):
-        poses = [{"name": "趴床", "note": "趴在床上"},
-                 {"name": "站姿", "note": "站直看镜头"}]
+        # 公共场景不再从姿势库取姿势（由场景规则给固定姿势），床姿只在卧室池。
+        poses = [{"name": "趴床", "note": "趴在床上", "room": "bedroom"},
+                 {"name": "站姿", "note": "站直看镜头", "room": "living"}]
         lib = self._library(poses)
-        self.assertEqual("站姿", lib.random_pose("mall")["name"])
+        self.assertIsNone(lib.random_pose("mall"))
+        self.assertEqual("站姿", lib.random_pose("home_sofa")["name"])
+        self.assertEqual("趴床", lib.random_pose("home_bed")["name"])
 
 
 if __name__ == "__main__":

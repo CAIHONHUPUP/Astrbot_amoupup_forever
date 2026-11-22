@@ -61,6 +61,12 @@ except ImportError:
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         import amo_date_session as _ds
 
+try:  # 餐饮扣费唯一入口（餐次实例/价目表/日程块都在 amo_food_cost 里收口）
+    from . import amo_food_cost as _food_cost
+except ImportError:
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_food_cost as _food_cost
+
 
 def _hour_end_ts(hour, now=None):
     """这一小时结束的时间戳（current_action 的有效期边界）。"""
@@ -70,6 +76,59 @@ def _hour_end_ts(hour, now=None):
         return start.timestamp() + 3600
     except (TypeError, ValueError):
         return now_ts() + 3600
+
+
+def _scene_constrain_plan(plugin, plan, day, now=None):
+    """按场景账本硬约束钳制 JIT 计划（2026-11-22 task-25，模块级便于无宿主测试）。
+
+    病假/事假 → 家/医院；出差 → 出差地相关 zone。钳完再走一次账本写入审计，
+    保证「到点即时决策」不会在请假日记里写出公司/通勤（唯一场景源是
+    amo_scene_ledger，这里不再自己猜）。
+    """
+    plan = dict(plan or {})
+    try:
+        try:
+            from . import amo_scene_ledger as _ledger
+        except ImportError:
+            import amo_scene_ledger as _ledger
+    except Exception as exc:
+        _note_swallowed("amo_state_jit.scene_ledger.import", exc)
+        return plan
+    try:
+        activity = {"activity": plan.get("action"), "place": plan.get("place"),
+                    "zone": plan.get("zone"), "category": plan.get("category")}
+        fixed = _ledger.constrain_activity(plugin, activity, day, now)
+        if isinstance(fixed, dict) and any(
+                str(fixed.get(key) or "") != str(activity.get(key) or "")
+                for key in ("activity", "place", "zone")):
+            plan["action"] = fixed.get("activity") or plan.get("action")
+            plan["place"] = fixed.get("place") or plan.get("place")
+            plan["zone"] = fixed.get("zone") or plan.get("zone")
+            plan["category"] = fixed.get("category") or plan.get("category")
+            plan["_scene_clamped"] = str(fixed.get("_reason") or "hard_constraint")
+            # 场景被钳掉 = 原来那件事没发生：扣费/餐费元数据一起清掉，不能「人在家请假还扣逛街钱」。
+            plan["cost_cents"] = 0
+            plan.pop("cost", None)
+            logger.info("[amo] JIT 场景硬约束：%s -> %s（%s）",
+                        activity.get("place"), plan.get("place"),
+                        plan["_scene_clamped"])
+        written = _ledger.write(
+            plugin, {"activity": plan.get("action"), "place": plan.get("place"),
+                     "zone": plan.get("zone"), "category": plan.get("category")},
+            source="jit", reason="JIT 到点决策", now=now)
+        if isinstance(written, dict) and not written.get("ok"):
+            # 钳制后仍不合法（脏 zone/未知约束）：按约束类型给兜底场景，绝不写公司/通勤。
+            kind = str((_ledger.constraints(plugin, day, now) or {}).get("kind") or "")
+            if kind in ("sick_leave", "leave"):
+                plan.update({"action": "请假在家休息", "place": "家",
+                             "zone": "home", "category": "rest"})
+            else:
+                plan.update({"action": "在酒店休息", "place": "酒店房间",
+                             "zone": "hotel", "category": "rest"})
+            plan["_scene_clamped"] = "ledger_reject"
+    except Exception as exc:
+        _note_swallowed("amo_state_jit.scene_constrain", exc)
+    return plan
 
 
 class JitStateMixin(_MixinBase):
@@ -560,6 +619,11 @@ class JitStateMixin(_MixinBase):
                 "activity": plan.get("action"), "place": plan.get("place"),
                 "zone": plan.get("zone"), "category": plan.get("category"),
                 "source": "jit", "happened": True}
+        # 餐费已按餐次实例扣过：这次落库的块必须沿用同一个 event_id，
+        # 账本/日程/日记才指向同一顿饭，微型事件再来也只会复用这个块。
+        _paid_instance = str(plan.get("_paid_instance") or "")
+        if _paid_instance:
+            item["event_id"] = _paid_instance
         if str(plan.get("category") or "") == "sleep" and hour == 23:
             item["activity"] = "入睡"
             item["open_sleep"] = True
@@ -567,6 +631,12 @@ class JitStateMixin(_MixinBase):
                                           "at": now_ts()})
         committed, plan = self._jit_commit(day, hour, item, plan, cost, paid)
         self._jit_persist(day, hour, plan, flag, committed)
+        if committed and _paid_instance:
+            try:
+                _food_cost.coalesce_meal_blocks(
+                    self.p, day, slot=str(plan.get("_paid_slot") or ""))
+            except Exception as exc:
+                _note_swallowed("amo_human_state.jit_tick.coalesce_meal", exc)
         return item
 
     def _jit_plan_for_hour(self, now, hour, day):
@@ -650,22 +720,61 @@ class JitStateMixin(_MixinBase):
         except Exception as exc:
             _note_swallowed("amo_human_state.py.2179", exc)
         plan["place"] = self._jit_place_of(plan)
+        # 2026-11-22 task-25：病假/事假/出差硬约束在落库前统一钳制（唯一场景源）。
+        plan = _scene_constrain_plan(self, plan, day, now)
         cost = int(plan.get("cost_cents") or 0)
         paid = False
+        paid_idem = ""
+        paid_instance = ""
+        paid_slot = ""
         if cost:
+            # 本函数只做扣费，不写场景/日程块（场景由 Timeline/commit 写）。
+            # 餐饮类必须走 pay_food：JIT 自己 wallet.debit 会造出 jit:<day>:<hour>
+            # 这种和餐次实例无关的幂等键，导致同一顿被 JIT/微型事件各扣一次。
             try:
-                paid = bool(self.p.wallet.debit(cost, str(plan.get("action") or "花销"),
-                                                "jit:%s:%02d" % (day, hour)))
+                _plan_text = str(plan.get("action") or "")
+                _is_meal_cost = (str(plan.get("category") or "") == "meal"
+                                 or any(word in _plan_text for word in (
+                                     "吃", "饭", "粥", "面条", "外卖", "夜宵", "宵夜",
+                                     "烧烤", "泡面", "蛋糕")))
+                if _is_meal_cost and _food_cost.looks_like_food({"text": _plan_text}):
+                    result = _food_cost.pay_food(
+                        self.p, str(plan.get("action") or "吃饭"),
+                        str(plan.get("action") or "吃饭"), source="jit",
+                        now=now, amount=cost, ensure_block=False)
+                    paid = bool(result.get("charged"))
+                    paid_idem = str(result.get("idem") or "")
+                    paid_instance = str(result.get("instance_id") or "")
+                    paid_slot = str(result.get("slot") or "")
+                    if not paid and str(result.get("reason") or "") in (
+                            "duplicate", "duplicate_slot"):
+                        # 这一顿已经被别的入口扣过：保留「吃过了」的事实，不重复扣，
+                        # 也别改成“没舍得花钱”，更不能再补一个 meal 块。
+                        plan = {"action": "这顿已经吃过了，不重复吃了",
+                                "place": str(plan.get("place") or "家"),
+                                "zone": str(plan.get("zone") or "home"),
+                                "category": "life", "cost_cents": 0, "diary": ""}
+                        cost = 0
+                else:
+                    paid = bool(self.p.wallet.debit(
+                        cost, str(plan.get("action") or "花销"),
+                        "jit:%s:%02d" % (day, hour)))
+                    paid_idem = "jit:%s:%02d" % (day, hour)
             except Exception:
                 paid = False
-            if not paid:
+            if cost and not paid:
                 plan = {"action": "没舍得花钱，先忍一忍", "place": "家", "zone": "home",
                         "category": "rest", "cost_cents": 0, "diary": ""}
+                paid_idem = ""
+                paid_instance = ""
+            plan["_paid_idem"] = paid_idem
+            plan["_paid_instance"] = paid_instance
+            plan["_paid_slot"] = paid_slot
         return plan, cost, paid
 
     def _jit_commit(self, day, hour, item, plan, cost, paid):
         # 落库；失败且已扣钱就原路退款（ref 指向原扣款 idem）
-        jit_idem = "jit:%s:%02d" % (day, hour)
+        jit_idem = str(plan.get("_paid_idem") or ("jit:%s:%02d" % (day, hour)))
         committed = True
         try:
             timeline = Timeline(self)
@@ -713,13 +822,26 @@ class JitStateMixin(_MixinBase):
         # current_action 反映「她此刻在干嘛」：即使没落库，也要写退款后的兜底动作
         self.db.kv_set("current_action", {"action": plan.get("action"),
                                           "place": plan.get("place"),
+                                          "zone": plan.get("zone"),
+                                          "category": plan.get("category"),
                                           "at": now_ts(),
                                           "until": _hour_end_ts(hour),
-                                          "hour": hour})
+                                          "hour": hour,
+                                          "source": "jit"})
         if not committed:
             return
         self.db.kv_set(flag, True)
         diary = str(plan.get("diary") or "")
+        if diary:
+            # 记忆写者加场景守卫：日记只写「此刻允许的地方」，病假/出差绝不留公司/通勤。
+            try:
+                try:
+                    from .amo_scene_ledger import guard_memory_text as _guard_memory
+                except ImportError:
+                    from amo_scene_ledger import guard_memory_text as _guard_memory
+                diary = str(_guard_memory(self, diary) or diary)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_jit.persist.scene_guard", _amo_exc)
         if diary:
             try:
                 self.db.kv_set("jit_diary:%s:%02d" % (day, hour), diary)

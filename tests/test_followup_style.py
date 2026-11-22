@@ -56,7 +56,9 @@ class FollowupStyleTests(unittest.TestCase):
         prompt = plugin.llm.prompts[0]
         self.assertIn("只学语气", prompt)
         self.assertIn("不要照抄", prompt)
-        self.assertIn("老公你在干啥啊", prompt)   # 语气样例
+        # task-28 P0-4 删掉「你美丽的老婆/你老婆」第三人称自称后，语气样例跟着换成单一口径；
+        # 这里钉的是「prompt 里确实带了语气样例」，不是旧样例的逐字文本。
+        self.assertIn("老公你在干啥呀", prompt)   # 语气样例
 
     def test_prompt_forbids_fabricated_facts(self):
         plugin, _text = self._run("老公你在干啥呀，你老婆等你半天了。")
@@ -74,6 +76,19 @@ class FollowupStyleTests(unittest.TestCase):
         line = "老公你在干啥呀，你老婆等你半天了。"
         _plugin, text = self._run(line)
         self.assertEqual(line, text)
+
+    def test_prompt_avoids_previous_followup(self):
+        """上一句追问进 prompt：别把同一个问题再问一遍。"""
+        plugin = _Plugin("老公你在干啥呀，你老婆等你半天了。")
+        plugin.db.kv_set("proactive_followup_last_u1", "你忙完了没？")
+        asyncio.run(plugin._followup_text_live("umo", "u1", "greet", "在干嘛"))
+        self.assertIn("你忙完了没？", plugin.llm.prompts[0])
+        self.assertIn("别再问同一件事", plugin.llm.prompts[0])
+
+    def test_synonym_question_is_merged(self):
+        """同一条里连问两遍同一个意思只留一句（和主动消息同一条规则）。"""
+        _plugin, text = self._run("你忙完了没？忙完了吗？")
+        self.assertEqual("你忙完了没？", text)
 
 
 if __name__ == "__main__":

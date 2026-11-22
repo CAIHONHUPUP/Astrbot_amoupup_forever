@@ -159,6 +159,9 @@ def compose_task(
     duplicate_hint="",
     dialect_style="",
     dialect_enabled=False,
+    schedule_time="",
+    schedule_place="",
+    schedule_event="",
 ):
     """组装主动消息的任务描述。
 
@@ -168,12 +171,18 @@ def compose_task(
     ``dialect_style`` / ``dialect_enabled`` 跟着插件的方言开关走：关掉方言
     （或语种选了普通话）时不能再逼模型说「贵州话」，否则早上会突然冒出
     「巴适」这种口音。
+
+    ``schedule_time`` / ``schedule_place`` / ``schedule_event`` 是日程提醒的事实：
+    传了就把时间/地点/事件原样写进任务，模型不用猜，也就不会编错日程。
     """
     name = str(name or "你")
     recent_bot = [item for item in (recent_bot_texts or []) if str(item or "").strip()]
     window = max(1, int(_to_float(window_seconds, UNANSWERED_WINDOW_SECONDS)))
     dialect_style = str(dialect_style or "").strip()
     dialect_hint = "带一点" + dialect_style + "方言，" if (dialect_enabled and dialect_style) else ""
+    schedule_time = str(schedule_time or "").strip()
+    schedule_place = str(schedule_place or "").strip()
+    schedule_event = str(schedule_event or "").strip()
 
     if kind == "goodnight":
         task = "已经很晚了，你要去睡觉了，给恋人" + name + "发一条晚安，提一句太晚了/早点睡，带上称呼，1 句，亲昵自然。"
@@ -181,6 +190,21 @@ def compose_task(
         task = "你刚起床/刚醒，给恋人" + name + "发早安，问一句还没起来吗/醒了没，带上爱称，1 句。"
     elif kind == "lunch":
         task = "到午饭时间了，问恋人" + name + "今天中午吃啥，" + dialect_hint + "1 句，自然。"
+    elif kind == "schedule_reminder":
+        if schedule_time or schedule_place or schedule_event:
+            task = (
+                "日程提醒：你" + (schedule_time + " " if schedule_time else "")
+                + ("在" + schedule_place + "，" if schedule_place else "")
+                + ("要做的是" + schedule_event if schedule_event else "有一件日程")
+                + "。给恋人" + name + "发一条提醒，只说这一件事："
+                + ("时间说" + schedule_time + "，" if schedule_time else "")
+                + ("地点说" + schedule_place + "，" if schedule_place else "")
+                + ("事情说" + schedule_event + "，" if schedule_event else "")
+                + "照这些事实说，别编别的日程，别提已经取消或改期的安排，1 句，自然。"
+            )
+        else:
+            task = ("日程还没确认：先别告诉" + name + "具体的时间、地点或安排，也别编日程；"
+                    "1 句自然的话。")
     elif unanswered_text and 0 <= _to_float(unanswered_seconds) <= window:
         task = (
             "用户最后一条消息是：“" + _clip(unanswered_text, 60) + "”，你还没回过。"

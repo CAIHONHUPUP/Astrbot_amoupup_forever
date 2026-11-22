@@ -189,8 +189,73 @@ def today_str() -> str:
     return _now().date().isoformat()
 
 
-def weekday_cn() -> str:
-    return "一二三四五六日"[_now().date().weekday()]
+_WEEKDAY_CN = "一二三四五六日"
+_WEEKDAY_FULL = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+
+
+def _as_date(day: Any = None) -> date:
+    """date/datetime/ISO 字符串 → date；空值取“现在”，坏值也取“现在”。"""
+    if isinstance(day, datetime):
+        return day.date()
+    if isinstance(day, date):
+        return day
+    text = str(day or "").strip()
+    if text:
+        try:
+            return date.fromisoformat(text[:10])
+        except (TypeError, ValueError) as _amo_exc:
+            _note_swallowed("amo_shared._as_date", _amo_exc)
+    return _now().date()
+
+
+def weekday_cn(day: Any = None) -> str:
+    """星期几的单字（一~日）。不传 day 时取“现在”——新代码应显式传 target_day。"""
+    return _WEEKDAY_CN[_as_date(day).weekday()]
+
+
+def weekday_name(day: Any = None) -> str:
+    """星期几的完整中文（星期一~星期日）。"""
+    return _WEEKDAY_FULL[_as_date(day).weekday()]
+
+
+def day_label(day: Any = None) -> dict:
+    """某一天的唯一日期标签：星期 / 节气 / 节日全部由 day_meta 这一处生成。
+
+    返回结构（稳定契约）：
+      date / weekday / weekday_full / solar_term / holiday / label / rest / text。
+    text 是可直接写进日记或提醒的整行标签，例如
+    「2026年11月21日 星期六 周末」「2026年11月22日 星期日 小雪」。
+
+    补写跨天时串日（11-21 的日记写成「星期六 小雪」，而小雪在 11-22）就是因为
+    调用方各自用生成时刻的 day_meta/星期拼标签；之后所有日期标签必须走本函数。
+    """
+    target = _as_date(day)
+    meta = day_meta(target.isoformat())
+    weekday = _WEEKDAY_FULL[target.weekday()]
+    solar_term = str(meta.get("solar_term") or "").strip()
+    holiday = str(meta.get("holiday") or "").strip()
+    label = str(meta.get("label") or "").strip()
+    for item in (holiday, solar_term):
+        if item and item not in label:
+            label = (label + " · " + item) if label else item
+    parts = ["%d年%02d月%02d日" % (target.year, target.month, target.day), weekday]
+    if label:
+        parts.append(label)
+    return {
+        "date": target.isoformat(),
+        "weekday": _WEEKDAY_CN[target.weekday()],
+        "weekday_full": weekday,
+        "solar_term": solar_term,
+        "holiday": holiday,
+        "label": label,
+        "rest": bool(meta.get("rest")),
+        "text": " ".join(parts),
+    }
+
+
+def day_label_text(day: Any = None) -> str:
+    """day_label(day) 的整行标签（快捷方式）。"""
+    return day_label(day)["text"]
 
 
 def minutes_now() -> int:

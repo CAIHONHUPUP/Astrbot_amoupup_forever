@@ -28,6 +28,12 @@ from plugin_fakes import WalletFakeDB  # noqa: E402
 DAY = "2026-11-17"
 REST = {"start": "22:00", "end": "23:00", "activity": "休息", "place": "家",
         "zone": "home", "category": "sleep"}
+HOTEL_REST = {"start": "21:00", "end": "24:00", "activity": "在酒店休息",
+              "place": "内蒙古自治区·呼和浩特·酒店", "zone": "hotel", "category": "rest"}
+COMMUTE = {"start": "21:40", "end": "22:30", "activity": "坐地铁回家", "place": "路上",
+           "zone": "road", "category": "commute", "source": "transit_block"}
+PLAYGROUND = {"start": "21:00", "end": "24:00", "activity": "在园里看夜场巡游",
+              "place": "东莞·游乐园", "zone": "playground", "category": "play"}
 
 
 def at(hour, minute):
@@ -281,9 +287,12 @@ class AutonomyTests(unittest.TestCase):
 
     def test_removing_health_gate_would_allow_entry_snack(self):
         plugin = FakePlugin(rows=[REST], sick=True)
-        with mock.patch.object(fe, "_health", return_value={"status": "健康", "sick": False}):
+        # 2026-11-22：健康门收口到 amo_food_cost（pay_food 统一查 sick_status），
+        # 只去掉宵夜领域入口的 _health 不再能绕开扣费门。
+        with mock.patch.object(fe, "_health", return_value={"status": "健康", "sick": False}), \
+                mock.patch.object(fc, "sick_status", return_value=False):
             result = run(plugin, at(22, 10), roll=0)
-        self.assertTrue(result.get("charged"), "去掉健康门就会吃——反向证明门在生效")
+        self.assertTrue(result.get("charged"), "两道健康门都去掉就会吃——反向证明门在生效")
 
 
 class FailureAndWindowTests(unittest.TestCase):
@@ -351,6 +360,62 @@ class NightOnceTests(unittest.TestCase):
         self.assertFalse(second.get("eat"))
         self.assertEqual("already_eaten", second.get("skipped"))
         self.assertEqual(1, len(spend_rows(plugin)), "同一晚只扣一次宵夜")
+
+
+class SnackPlaceFollowTests(unittest.TestCase):
+    """R13：宵夜块的 place/zone 跟随当前地点，不许写死「家」、不许劈开通勤。"""
+
+    def test_snack_at_hotel_keeps_hotel_place(self):
+        plugin = FakePlugin(rows=[HOTEL_REST])
+        result = run(plugin, at(22, 10), roll=0)
+        self.assertTrue(result.get("eat"), result)
+        rows = plugin.state.schedule[DAY]
+        self.assertEqual([(r["start"], r["end"]) for r in rows],
+                         [("21:00", "22:10"), ("22:10", "22:30"), ("22:30", "24:00")])
+        snack = rows[1]
+        self.assertIn("宵夜", snack["activity"])
+        self.assertEqual(snack["place"], HOTEL_REST["place"])
+        self.assertEqual(snack["zone"], "hotel")
+        self.assertNotEqual(snack["place"], "家")
+        self.assertEqual(spend_rows(plugin)[0]["ref"],
+                         "block:%s 22:10-22:30" % result["block_id"])
+
+    def test_snack_at_playground_keeps_playground_place(self):
+        plugin = FakePlugin(rows=[PLAYGROUND])
+        result = run(plugin, at(22, 10), roll=0)
+        self.assertTrue(result.get("eat"), result)
+        snack = plugin.state.schedule[DAY][1]
+        self.assertEqual((snack["place"], snack["zone"]),
+                         (PLAYGROUND["place"], "playground"))
+
+    def test_snack_on_road_does_not_split_commute(self):
+        plugin = FakePlugin(rows=[COMMUTE])
+        result = run(plugin, at(22, 10), roll=0)
+        self.assertTrue(result.get("eat"), result)
+        rows = plugin.state.schedule[DAY]
+        self.assertEqual(len(rows), 1, "通勤块不能被宵夜劈成两截: %r" % (rows,))
+        merged = rows[0]
+        self.assertEqual((merged["start"], merged["end"]), ("21:40", "22:30"))
+        self.assertEqual((merged["place"], merged["zone"]), ("路上", "road"))
+        self.assertIn("宵夜", merged["activity"])
+        self.assertIn("来源 late_snack", merged["detail"])
+        self.assertEqual(spend_rows(plugin)[0]["ref"],
+                         "block:%s 21:40-22:30" % result["block_id"])
+        self.assertEqual(result["block_id"], amo_timeline.block_id(DAY, merged))
+
+    def test_snack_place_uses_zone_fallback_when_place_empty(self):
+        plugin = FakePlugin(rows=[dict(HOTEL_REST, place="")])
+        result = run(plugin, at(22, 10), roll=0)
+        self.assertTrue(result.get("eat"), result)
+        snack = plugin.state.schedule[DAY][1]
+        self.assertEqual((snack["place"], snack["zone"]), ("酒店房间", "hotel"))
+
+    def test_snack_at_home_still_home(self):
+        plugin = FakePlugin(rows=[REST])
+        result = run(plugin, at(22, 10), roll=0)
+        self.assertTrue(result.get("eat"), result)
+        snack = plugin.state.schedule[DAY][1]
+        self.assertEqual((snack["place"], snack["zone"]), ("家", "home"))
 
 
 class WeeklyCapTests(unittest.TestCase):

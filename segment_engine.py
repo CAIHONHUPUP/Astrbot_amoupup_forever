@@ -14,6 +14,12 @@ import time
 import json
 import re
 import unicodedata
+
+try:  # 唯一发送出口（2026-11-22 task-16）：chat 批互斥 + outbound_log
+    from . import amo_outbound as _outbound
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_outbound as _outbound
 from typing import List, Optional, Tuple
 
 from astrbot.api.event import AstrMessageEvent
@@ -187,6 +193,50 @@ class SegmentEngine:
         except Exception as exc:
             logger.debug(f"[分段] 记录回复失败: {exc}")
 
+    # ---- 回复拼装前统一校验（2026-11-22 task-15，10:32 真实 P0）----
+    #
+    # 现场：模型把上一条自己发的商场句和更早的媒体占位符一起复读进正文，
+    # 分段引擎按规则拆成 2 段发出去。这里在切段之前统一收口，顺序固定：
+    # 媒体占位符 -> 自我复读分句 -> 当前场景冲突，然后再分段/分段去重。
+    def _validate_assembly(self, text, event):
+        """拼装前校验：媒体标记、自我复读、当前场景（纯确定性，不调模型）。"""
+        plugin = getattr(self, "plugin", None)
+        if plugin is None:
+            return text
+        try:
+            try:
+                from .amo_state_consistency import validate_reply_assembly as _validate
+            except ImportError:
+                from amo_state_consistency import validate_reply_assembly as _validate
+            return _validate(
+                text, plugin,
+                umo=str(getattr(event, "unified_msg_origin", "") or ""),
+                user_text=str(getattr(event, "message_str", "") or ""),
+            )
+        except Exception as exc:
+            logger.debug(f"[分段] 拼装前校验失败: {exc}")
+            return text
+
+    def _dedupe_assembly(self, segments, event):
+        """分段去重：后段和最近说过的话/本轮前面的段重复就整段不发。"""
+        plugin = getattr(self, "plugin", None)
+        rows = [str(item or "") for item in (segments or ()) if str(item or "").strip()]
+        if plugin is None or not rows:
+            return rows
+        try:
+            try:
+                from .amo_state_consistency import dedupe_reply_segments as _dedupe
+            except ImportError:
+                from amo_state_consistency import dedupe_reply_segments as _dedupe
+            deduped = _dedupe(
+                rows, plugin=plugin,
+                umo=str(getattr(event, "unified_msg_origin", "") or ""),
+            )
+            return deduped or rows
+        except Exception as exc:
+            logger.debug(f"[分段] 分段去重失败: {exc}")
+            return rows
+
     async def handle_segment_reply(self, event: AstrMessageEvent, quote_id=None, group=False, force=False):
         """拦截 LLM 回复，执行分段并逐条发送。返回 True 表示已接管发送。
 
@@ -208,6 +258,25 @@ class SegmentEngine:
         if not raw_text:
             return False
 
+        # 拼装前统一校验（task-15）：先去掉媒体占位符/自我复读/当前场景冲突，
+        # 再切段。校验后的文本同时用于存档和记忆，避免下一轮又被喂回来。
+        original_text = raw_text
+        try:
+            raw_text = self._validate_assembly(raw_text, event)
+        except Exception as _amo_exc:
+            _note_swallowed("segment_engine.SegmentEngine.handle_segment_reply.validate", _amo_exc)
+        if not raw_text:
+            return False
+        if raw_text != original_text:
+            # 任何交回核心/回退的路径也必须带校验后的文本：否则原文里的媒体占位符
+            # 或旧商场断言会绕过本引擎，在核心发送阶段原样漏出去。
+            try:
+                kept = [comp for comp in result.chain if not isinstance(comp, Plain)]
+                kept.append(Plain(raw_text))
+                result.chain = kept
+            except Exception as _amo_exc:
+                _note_swallowed("segment_engine.SegmentEngine.handle_segment_reply.chain", _amo_exc)
+
         if self._should_skip(raw_text):
             return False
 
@@ -218,9 +287,41 @@ class SegmentEngine:
                 # 后面的 chain.clear() 会先把回复清空、然后 for 一次都不跑，
                 # 消息永久丢失（force 分支还会 IndexError）。交回核心按原文发。
                 return False
+            try:
+                segments = self._dedupe_assembly(segments, event)
+            except Exception as _amo_exc:
+                _note_swallowed("segment_engine.SegmentEngine.handle_segment_reply.dedupe", _amo_exc)
+            if not segments:
+                segments = [raw_text]
+            # task-28 P0-3/P0-4/P0-6：聊天分段出站前统一语义卫生
+            # （动作旁白/禁语/系统口吻/精确数字/没素材的人名），整段只剩动作就不发。
+            try:
+                try:
+                    from .amo_persona_guard import prepare_outbound as _prepare_outbound
+                except ImportError:
+                    from amo_persona_guard import prepare_outbound as _prepare_outbound
+                _umo_guard = str(getattr(event, "unified_msg_origin", "") or "")
+                _guarded = []
+                for _segment in segments:
+                    _clean, _reason = _prepare_outbound(
+                        self.plugin, _umo_guard, _segment, "chat")
+                    if _clean:
+                        _guarded.append(_clean)
+                    else:
+                        logger.info("[amo] 分段出站拦截（%s）：%s", _reason, str(_segment)[:40])
+                if _guarded:
+                    segments = _guarded
+                else:
+                    # 整条都被守卫吃掉（只剩动作旁白）：给一句人话，别把原文交回核心发。
+                    segments = ["嗯，我在呢。"]
+            except Exception as _amo_exc:
+                _note_swallowed("segment_engine.SegmentEngine.handle_segment_reply.persona", _amo_exc)
 
-            if len(segments) <= 1 and quote_id is None and not force:
-                # 即使只有一段，也要先按字数等待打字时间；返回 False 让 AstrBot 自己发。
+            if (len(segments) <= 1 and quote_id is None and not force
+                    and segments[0].strip() == raw_text.strip()):
+                # 没改动的一段回复：按原路径交回核心发（只补打字等待/记忆）。
+                # 改过（媒体占位符/复读/场景被收口）就必须由本引擎发，否则
+                # runtime_reply 会把 result.chain 还原成未校验的原文再发一遍。
                 await self._wait_segment(event, segments[0], "", 0.0)
                 await self._set_typing(event, False)
                 self._remember_bot_text(event, raw_text)
@@ -242,21 +343,28 @@ class SegmentEngine:
 
             last_sent_at = 0.0
             sent = 0
+            umo = str(getattr(event, "unified_msg_origin", "") or "")
+            # chat 批登记：期间非 chat 推送进 deferred，绝不插进分段中间（11-19 20:00 天气插队）。
+            _batch = _outbound.begin_chat_batch(self.plugin, umo, "chat:%s" % time.monotonic())
             await self._wait_segment(event, segments[0], "", 0.0)
-            for i, segment in enumerate(segments):
-                if i > 0:
-                    await self._wait_segment(event, segment, segments[i - 1], last_sent_at)
-                chain = MessageChain()
-                if i == 0 and quote_id is not None and group:
-                    try:
-                        chain.chain.append(Reply(id=quote_id))
-                    except Exception as _amo_exc:
-                        _note_swallowed("segment_engine.SegmentEngine.handle_segment_reply", _amo_exc)
-                chain.message(segment)
-                await event.send(chain)
-                sent += 1
-                last_sent_at = time.monotonic()
-                await self._set_typing(event, False)
+            try:
+                for i, segment in enumerate(segments):
+                    if i > 0:
+                        await self._wait_segment(event, segment, segments[i - 1], last_sent_at)
+                    chain = MessageChain()
+                    if i == 0 and quote_id is not None and group:
+                        try:
+                            chain.chain.append(Reply(id=quote_id))
+                        except Exception as _amo_exc:
+                            _note_swallowed("segment_engine.SegmentEngine.handle_segment_reply", _amo_exc)
+                    chain.message(segment)
+                    await event.send(chain)
+                    _outbound.note_chat(self.plugin, umo, segment, _batch)
+                    sent += 1
+                    last_sent_at = time.monotonic()
+                    await self._set_typing(event, False)
+            finally:
+                _outbound.end_chat_batch(self.plugin, umo, _batch)
             await self._set_typing(event, False)
 
             await self._save_to_conversation_history(event, full_segmented_text)

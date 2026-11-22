@@ -1,0 +1,554 @@
+[
+ {
+  "plan": "office_early",
+  "time": "08:03",
+  "user": "你在干嘛呢？",
+  "candidate": "写代码呢，你呢？",
+  "sent": "",
+  "log": [
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "",
+    "out": ""
+   },
+   {
+    "step": "chat_safety_out",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "pipeline.run",
+    "in": "写代码呢，你呢？",
+    "out": "{'text': '写代码呢，你呢？', 'applied': ['send.clean', 'send.names', 'send.zone_guard', 'send.photo_claim', 'send.wardrobe', 'send.privacy', 'send.status_dedup', 'send.date_context', 'send.immersion', 'send.t"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('写代码呢，你呢？', '')"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('写代码呢，你呢？', '')"
+   },
+   {
+    "step": "validate_assembly",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "strip_tech_terms",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "dedupe_segments",
+    "in": "['写代码呢，你呢？']",
+    "out": "['写代码呢，你呢？']"
+   },
+   {
+    "step": "segment_repeat_guard",
+    "in": "写代码呢，你呢？",
+    "out": "写代码呢，你呢？"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('写代码呢，你呢？', '')"
+   },
+   {
+    "step": "gateway.send",
+    "in": "写代码呢，你呢？",
+    "out": "False"
+   },
+   {
+    "step": "send_ok",
+    "in": "",
+    "out": "False"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "",
+    "out": ""
+   },
+   {
+    "step": "pipeline.run",
+    "in": "在写代码呀。",
+    "out": "{'text': '在写代码呀。', 'applied': ['send.clean', 'send.names', 'send.zone_guard', 'send.photo_claim', 'send.wardrobe', 'send.privacy', 'send.status_dedup', 'send.date_context', 'send.immersion', 'send.tra"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('在写代码呀。', '')"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('在写代码呀。', '')"
+   },
+   {
+    "step": "validate_assembly",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "strip_tech_terms",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "dedupe_segments",
+    "in": "['在写代码呀。']",
+    "out": "['在写代码呀。']"
+   },
+   {
+    "step": "segment_repeat_guard",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('在写代码呀。', '')"
+   },
+   {
+    "step": "gateway.send",
+    "in": "在写代码呀。",
+    "out": "False"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "爬山呢，你呢？",
+    "out": "爬山呢，你呢？"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "爬山呢，你呢？",
+    "out": "爬山呢，你呢？"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "",
+    "out": ""
+   },
+   {
+    "step": "pipeline.run",
+    "in": "我在景区爬山。",
+    "out": "{'text': '我在景区爬山。', 'applied': ['send.clean', 'send.names', 'send.zone_guard', 'send.photo_claim', 'send.wardrobe', 'send.privacy', 'send.status_dedup', 'send.date_context', 'send.immersion', 'send.tr"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "validate_assembly",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "strip_tech_terms",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "dedupe_segments",
+    "in": "['我在景区爬山。']",
+    "out": "['我在景区爬山。']"
+   },
+   {
+    "step": "segment_repeat_guard",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "gateway.send",
+    "in": "我在景区爬山。",
+    "out": "True"
+   }
+  ]
+ },
+ {
+  "plan": "office_early",
+  "time": "08:03",
+  "user": "你在干嘛呢？",
+  "candidate": "在写代码呀。",
+  "sent": "",
+  "log": [
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "",
+    "out": ""
+   },
+   {
+    "step": "chat_safety_out",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "pipeline.run",
+    "in": "在写代码呀。",
+    "out": "{'text': '在写代码呀。', 'applied': ['send.clean', 'send.names', 'send.zone_guard', 'send.photo_claim', 'send.wardrobe', 'send.privacy', 'send.status_dedup', 'send.date_context', 'send.immersion', 'send.tra"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('在写代码呀。', '')"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('在写代码呀。', '')"
+   },
+   {
+    "step": "validate_assembly",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "strip_tech_terms",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "dedupe_segments",
+    "in": "['在写代码呀。']",
+    "out": "['在写代码呀。']"
+   },
+   {
+    "step": "segment_repeat_guard",
+    "in": "在写代码呀。",
+    "out": "在写代码呀。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('在写代码呀。', '')"
+   },
+   {
+    "step": "gateway.send",
+    "in": "在写代码呀。",
+    "out": "False"
+   },
+   {
+    "step": "send_ok",
+    "in": "",
+    "out": "False"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "爬山呢，你呢？",
+    "out": "爬山呢，你呢？"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "爬山呢，你呢？",
+    "out": "爬山呢，你呢？"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "",
+    "out": ""
+   },
+   {
+    "step": "pipeline.run",
+    "in": "我在景区爬山。",
+    "out": "{'text': '我在景区爬山。', 'applied': ['send.clean', 'send.names', 'send.zone_guard', 'send.photo_claim', 'send.wardrobe', 'send.privacy', 'send.status_dedup', 'send.date_context', 'send.immersion', 'send.tr"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "validate_assembly",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "strip_tech_terms",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "dedupe_segments",
+    "in": "['我在景区爬山。']",
+    "out": "['我在景区爬山。']"
+   },
+   {
+    "step": "segment_repeat_guard",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "gateway.send",
+    "in": "我在景区爬山。",
+    "out": "True"
+   }
+  ]
+ },
+ {
+  "plan": "scenic_trip",
+  "time": "11:00",
+  "user": "你在干嘛呢？",
+  "candidate": "爬山呢，你呢？",
+  "sent": "我在景区爬山。",
+  "log": [
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "爬山呢，你呢？",
+    "out": "爬山呢，你呢？"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "爬山呢，你呢？",
+    "out": "爬山呢，你呢？"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "",
+    "out": ""
+   },
+   {
+    "step": "chat_safety_out",
+    "in": "爬山呢，你呢？",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "pipeline.run",
+    "in": "我在景区爬山。",
+    "out": "{'text': '我在景区爬山。', 'applied': ['send.clean', 'send.names', 'send.zone_guard', 'send.photo_claim', 'send.wardrobe', 'send.privacy', 'send.status_dedup', 'send.date_context', 'send.immersion', 'send.tr"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "anti_nag.rewrite",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "purchase_guard.rewrite",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "strip_media_markers",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "validate_assembly",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "strip_tech_terms",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "dedupe_segments",
+    "in": "['我在景区爬山。']",
+    "out": "['我在景区爬山。']"
+   },
+   {
+    "step": "segment_repeat_guard",
+    "in": "我在景区爬山。",
+    "out": "我在景区爬山。"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "addressee.enforce",
+    "in": "<sim_env.SimPlugin object at 0x0000027649397200>",
+    "out": "('我在景区爬山。', '')"
+   },
+   {
+    "step": "gateway.send",
+    "in": "我在景区爬山。",
+    "out": "True"
+   },
+   {
+    "step": "send_ok",
+    "in": "",
+    "out": "True"
+   }
+  ]
+ }
+]

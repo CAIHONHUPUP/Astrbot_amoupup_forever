@@ -119,5 +119,105 @@ class DiaryDigestE2ETests(unittest.TestCase):
             self.assertTrue(host.db.kv_get("episodic_memory"))
 
 
+class _SeedDB:
+    def __init__(self):
+        self.kv = {}
+        self.schedule = {}
+
+    def kv_get(self, key, default=None):
+        return self.kv.get(key, default)
+
+    def kv_set(self, key, value):
+        self.kv[key] = value
+
+    def get_schedule(self, day):
+        return list(self.schedule.get(day) or [])
+
+    def schedule_version(self, day):
+        return 0
+
+
+class _SeedState:
+    def __init__(self, day, rows):
+        self.schedule = {day: list(rows or [])}
+        self.weather = {}
+        self.health = {"status": "健康", "sick": False}
+
+    def health_info(self):
+        return dict(self.health)
+
+
+class _SeedWallet:
+    def ledger(self, limit=200):
+        return []
+
+
+class SeedHost(ScheduleMixin):
+    def __init__(self, day, rows):
+        self.db = _SeedDB()
+        self.db.schedule[day] = list(rows or [])
+        self.state = _SeedState(day, rows)
+        self.wallet = _SeedWallet()
+        self.wardrobe = None
+        self._last_umo = "test:private:1"
+
+    def cfg_str(self, key, default=""):
+        return default
+
+    def cfg_int(self, key, default=0):
+        return default
+
+    def cfg_bool(self, key, default=False):
+        return bool(default)
+
+
+class DayDigestSeedTests(unittest.TestCase):
+    """P0（2026-11-22）：大日记定稿后要把当天事实折成 day_digest，并且真的调用
+    生产写入方 note_recent_topic（不能只从 episodic_memory 读、没人写）。"""
+
+    DAY = "2026-11-17"
+    ROWS = [
+        {"start": "09:00", "end": "12:00", "activity": "上班", "place": "公司",
+         "category": "work", "zone": "work"},
+        {"start": "12:00", "end": "13:00", "activity": "在公司食堂吃午饭", "place": "公司",
+         "category": "meal", "zone": "work"},
+        {"start": "20:00", "end": "22:00", "activity": "看剧", "place": "家",
+         "category": "rest", "zone": "home"},
+    ]
+
+    def _host(self):
+        import amo_feature_api
+        import types
+        host = SeedHost(self.DAY, self.ROWS)
+        host.note_recent_topic = types.MethodType(
+            amo_feature_api.FeatureApiMixin.note_recent_topic, host)
+        return host
+
+    def test_seed_day_digest_writes_digest_with_day_attribution(self):
+        import amo_schedule
+        host = self._host()
+        asyncio.run(amo_schedule._seed_day_digest(host, dt.date.fromisoformat(self.DAY)))
+        digest = host.db.kv_get("day_digest:" + self.DAY, "")
+        self.assertTrue(digest, host.db.kv)
+        self.assertIn("公司", digest)
+        # 折完后当天条目从缓冲里清掉（fold_day 消费），不无限堆
+        self.assertEqual([], host.db.kv_get("episodic_memory", []))
+
+    def test_seed_day_digest_merges_without_writer(self):
+        # 没有 note_recent_topic（旧宿主/测试替身）也要能写，口径一致
+        import amo_schedule
+        host = SeedHost(self.DAY, self.ROWS)
+        asyncio.run(amo_schedule._seed_day_digest(host, dt.date.fromisoformat(self.DAY)))
+        self.assertTrue(host.db.kv_get("day_digest:" + self.DAY, ""))
+
+    def test_seed_day_digest_is_idempotent(self):
+        import amo_schedule
+        host = self._host()
+        host.db.kv_set("day_digest:" + self.DAY, "已有的 digest")
+        asyncio.run(amo_schedule._seed_day_digest(host, dt.date.fromisoformat(self.DAY)))
+        self.assertEqual("已有的 digest", host.db.kv_get("day_digest:" + self.DAY))
+        self.assertEqual([], host.db.kv_get("episodic_memory", []))
+
+
 if __name__ == "__main__":
     unittest.main()

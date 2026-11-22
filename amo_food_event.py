@@ -271,10 +271,6 @@ async def late_snack_tick(plugin, now=None, roll=None, say=None):
     if cash < amount:
         _kv_set(plugin, slot_key, "no_money")
         return {"ok": True, "eat": True, "skipped": "no_money", "decision": decision}
-    if _food.recent_duplicate(plugin.wallet, food, now=now):
-        _kv_set(plugin, slot_key, "duplicate")
-        return {"ok": True, "eat": True, "skipped": "duplicate",
-                "food": food, "decision": decision}
     if _food.late_snack_spent(plugin, now=now):
         _kv_set(plugin, slot_key, "duplicate")
         return {"ok": True, "eat": True, "skipped": "duplicate",
@@ -284,37 +280,34 @@ async def late_snack_tick(plugin, now=None, roll=None, say=None):
     if proactive and willing and not _kv_get(plugin, "late_snack_push:" + day, False):
         pushed = await _push(plugin, "我饿了，想点个%s当宵夜。" % food)
         _kv_set(plugin, "late_snack_push:" + day, True)
-    block = _place_block(plugin, day, hour, now, food, amount, pushed)
-    if not block.get("ok"):
-        _kv_set(plugin, slot_key, "no_block")
-        _audit(plugin, audit_key, {"eat": True, "skipped": "no_block", "block": block})
-        return {"ok": True, "eat": True, "skipped": "no_block",
-                "food": food, "decision": decision}
-    bid = str(block.get("block_id") or "")
-    if bid and _kv_get(plugin, "late_snack_block:" + bid, False):
-        return {"ok": True, "eat": True, "skipped": "block_charged", "block_id": bid}
-    idem = "late_snack:%s:%s:%s" % (day, hour, bid[:8])
-    ref = "block:%s %s-%s" % (bid, block.get("start"), block.get("end"))
+    # 宵夜扣费也走唯一入口：餐次实例 meal:<day>:late 管 45 分钟去重/价目表/日程块，
+    # 这里不再自己 ensure_block_window + wallet.debit（否则宵夜和晚餐各切一块、各扣一笔）。
     try:
-        paid = bool(plugin.wallet.debit(
-            amount, "夜宵：%s" % food, idem, ref=ref, category="餐饮",
-            sub_category="夜宵", item_name=food, trigger_reason="饿了想吃宵夜"))
+        result = _food.pay_food(
+            plugin, food, "夜宵：%s" % food, source="late_snack", now=now,
+            amount=amount, allow_night=True, minutes=BLOCK_MINUTES)
     except Exception as exc:
         logger.warning("[amo] 宵夜扣款异常: %r", exc)
-        paid = False
-    if not paid:
-        _kv_set(plugin, slot_key, "charge_failed")
-        _audit(plugin, audit_key, {"eat": True, "skipped": "charge_failed",
-                                   "block_id": bid, "amount": amount})
-        return {"ok": True, "eat": True, "skipped": "charge_failed",
-                "block_id": bid, "decision": decision}
+        result = {"ok": False, "charged": False, "reason": "exception", "block_id": "",
+                  "idem": ""}
+    if not result.get("charged"):
+        reason = str(result.get("reason") or "charge_failed")
+        _kv_set(plugin, slot_key, "duplicate" if reason in ("duplicate", "duplicate_slot")
+                else ("no_block" if reason == "no_block" else "charge_failed"))
+        _audit(plugin, audit_key, {"eat": True, "skipped": reason,
+                                   "block_id": result.get("block_id") or "",
+                                   "amount": amount})
+        return {"ok": True, "eat": True, "skipped": reason,
+                "block_id": result.get("block_id") or "", "decision": decision}
+    bid = str(result.get("block_id") or "")
+    idem = str(result.get("idem") or "")
     if bid:
         _kv_set(plugin, "late_snack_block:" + bid, True)
     _kv_set(plugin, slot_key, "eat")
     _mark_eaten(plugin, now)
     _audit(plugin, audit_key, {"eat": True, "charged": amount, "food": food,
-                               "block_id": bid, "block": [block.get("start"), block.get("end")],
-                               "idem": idem, "ref": ref, "pushed": pushed,
+                               "block_id": bid, "idem": idem, "pushed": pushed,
+                               "instance_id": result.get("instance_id") or "",
                                "decision": decision})
     try:
         plugin.add_hunger("amo", 15)
@@ -328,5 +321,5 @@ async def late_snack_tick(plugin, now=None, roll=None, say=None):
     # 大日记已定 B 方案（次日 08:00 写昨天）：这里不标 stale、不强刷当天。
     # 23:30 的宵夜由次日早上写昨天自然包含；00:00 后算第二天，写进第二天的日记。
     return {"ok": True, "eat": True, "charged": amount, "food": food, "block_id": bid,
-            "block": {"start": block.get("start"), "end": block.get("end")},
-            "pushed": pushed, "idem": idem, "decision": decision}
+            "pushed": pushed, "idem": idem,
+            "instance_id": result.get("instance_id") or "", "decision": decision}

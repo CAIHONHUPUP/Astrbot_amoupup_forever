@@ -815,6 +815,59 @@ class ReverseVerificationTests(unittest.TestCase):
         self.assertNotIn("send.immersion.dup", result["applied"])
 
 
+class _DedupRecentPlugin:
+    """只实现读近聊的最小插件（role=bot 的行按时间从旧到新）。"""
+
+    def __init__(self, lines):
+        self.rows = [{"role": "bot", "content": str(line)} for line in lines]
+
+    def _recent(self, umo, count=8):
+        return list(self.rows)[-int(count):]
+
+
+class AnswerKeptAfterDedupTests(unittest.TestCase):
+    """整句复读删句不能把对他的回答一起删掉（现场：只剩「你呢？」）。"""
+
+    def setUp(self):
+        pipeline.reset_repetition_memory()
+
+    def test_whole_sentence_repeat_keeps_eaten_answer(self):
+        plugin = _DedupRecentPlugin(["刚吃完饭，好撑。"])
+        out = pipeline.apply_narrative_repetition(
+            "刚吃完饭，好撑。你呢？", plugin, "吃了吗", "dedup:answer")
+        self.assertIn("吃完", out)
+        self.assertNotEqual(out.strip(), "你呢？")
+
+    def test_segment_guard_keeps_answer_after_narrative(self):
+        umo = "dedup:seg-answer"
+        pipeline.reset_repetition_memory(umo)
+        plugin = _DedupRecentPlugin(["刚吃完饭，好撑。"])
+        fixed = pipeline.apply_narrative_repetition(
+            "刚吃完饭，好撑。你呢？", plugin, "吃了吗", umo)
+        self.assertIn("吃完", fixed)
+        # send 阶段还会再跑一次分段去重：不能把刚保住的答案再删掉
+        segment = pipeline.apply_segment_repeat_guard(fixed, plugin, umo)
+        self.assertIn("吃完", segment)
+
+    def test_whole_sentence_repeat_keeps_when_return_answer(self):
+        plugin = _DedupRecentPlugin(["17:00差不多到家。"])
+        raw = "17:00差不多到家。"
+        question = "几点到家呀？"
+        out = pipeline.apply_narrative_repetition(raw, plugin, question, "dedup:when")
+        # 「答案优先于通用兜底」现在只在 apply_chat_safety 收口裁决一次：
+        # 去重层可以先把状态复读压成兜底句，最后一道守卫按候选有没有答到点上还原。
+        final = pipeline.apply_chat_safety(out, plugin, "dedup:when", question)
+        self.assertIn("17:00", final)
+        self.assertIn("到家", final)
+
+    def test_emotion_repeat_without_answer_still_collapsed(self):
+        plugin = _DedupRecentPlugin(["嗯嗯，我在家呢，想你"])
+        out = pipeline.apply_narrative_repetition(
+            "嗯嗯，我在家呢，想你", plugin, "想你", "dedup:emo")
+        self.assertNotEqual(out, "嗯嗯，我在家呢，想你")
+        self.assertIn("想你", out)
+
+
 if __name__ == "__main__":
     unittest.main()
 

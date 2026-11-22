@@ -268,7 +268,11 @@ class CommandMixin(_MixinBase):
             or not self.state.schedule_context(today_str())
         ):
             self._spawn(self.state.ensure_schedule(umo))
-        snap = self.state.snapshot()
+        try:  # task-30：面板/命令读的「此刻」也走场景账本（含请假/出差硬约束）
+            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        except ImportError:
+            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        snap = _snap_with_scene(self)
         activity = 0.0
         threshold = {"value": 0.0, "base": 0.0, "absolute": 0.0}
         if self.heartflow is not None:
@@ -489,7 +493,11 @@ class CommandMixin(_MixinBase):
 
     async def _cmd_mood(self, event, args, uid):
         """原 _handle_command 的「mood」分支，逐行搬来。"""
-        snap = self.state.snapshot()
+        try:  # task-30：心情面板也读账本快照，跟 /status 同一口径
+            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        except ImportError:
+            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        snap = _snap_with_scene(self)
         lines = ["🎨 陪伴的十维心情"]
         for key, value in snap["mood"].items():
             bar = "█" * int(round(value / 10)) + "░" * (10 - int(round(value / 10)))
@@ -734,7 +742,26 @@ class CommandMixin(_MixinBase):
         content = " ".join(args[1:]).strip()
         if not content:
             return "用法：/amo say 内容"
-        await event.send(MessageChain([Comp.Plain(content)]))
+        # task-16：管理员代说也走统一出口（source=admin，受频控/日志约束）。
+        sender = getattr(self, "_send_to_umo", None)
+        if callable(sender):
+            sent = await sender(str(getattr(event, "unified_msg_origin", "") or ""),
+                                content, source="admin")
+            if not sent:
+                return ""
+        else:
+            # 兜底直发：媒体占位符不是人话，至少在这里剥一次（task-23 全出口 strip）。
+            try:
+                try:
+                    from .amo_message import strip_media_markers as _strip_media
+                except ImportError:
+                    from amo_message import strip_media_markers as _strip_media
+                content = _strip_media(content)
+            except Exception:  # cleanup: 兜底/降级，保持原行为
+                pass
+            if not content:
+                return ""
+            await event.send(MessageChain([Comp.Plain(content)]))
         return ""
 
     async def _cmd_clean(self, event, args, uid):

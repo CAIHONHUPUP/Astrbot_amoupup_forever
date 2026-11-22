@@ -49,9 +49,16 @@ def read_metadata_name():
     raise AssertionError("metadata.yaml 缺少 name 字段")
 
 
+#: 不参与命名契约的目录：work/ 是审计/仿真/临时快照（会把整仓拷进去，
+#: 例如 work/audit/_scratch/repo_pin），和 test_source_guard 一样跳过，
+#: 否则临时快照里的历史 amo_compat.py 会让命名契约误红。
+SKIP_DIR_NAMES = {"__pycache__", "work"}
+
+
 def iter_py_files():
     for path in ROOT.rglob("*.py"):
-        if "__pycache__" in path.parts:
+        rel_parts = path.relative_to(ROOT).parts
+        if any(part in SKIP_DIR_NAMES for part in rel_parts):
             continue
         yield path
 

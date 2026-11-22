@@ -661,6 +661,9 @@ _THING_SUFFIX = frozenset(
 )
 
 
+#: 不像人名的字：地点/方位/助词/动作词。foreign_names 会把「家刷剧」「家看剧」
+#: 这类「地点+动词」当候选，人名不会带这些字（2026-11-22 复跑「一个人在一个朋友、刷手机」）。
+_NON_NAME_CHARS = frozenset("家在一的了着过上下里外来去回跟和与把被给对向从到再又还就才也都")
 #: 长得像「姓+名」、其实是常用词：人名兜底不许换（「终于说」≠ 有人叫终于）。
 _NOT_PERSON_WORDS = frozenset("""
 终于 马上 后来 本来 原来 当然 果然 居然 突然 忽然 已经 曾经 直接 真正 其实
@@ -680,6 +683,9 @@ def looks_like_person_name(name):
         return False
     if text in _NOT_PERSON_WORDS:
         return False
+    # 人名不会带地点/方位/助词/动作字（「家刷剧」「家发呆」这类直接排除）。
+    if any(char in _NON_NAME_CHARS for char in text):
+        return False
     # 人名不会带物品/数量/形容类字（「家店贵」「牛肉粉」「文档」这类整词直接排除）。
     if any(char in _THING_SUFFIX for char in text[1:]):
         return False
@@ -698,7 +704,7 @@ def safe_interaction_line(day="", seed=""):
             import datetime as _dt
             index = _dt.date.fromisoformat(text[:10]).toordinal() % len(lines)
             return lines[index]
-        except (ImportError, TypeError, ValueError):
+        except (ImportError, TypeError, ValueError):  # cleanup: 日期解析失败走哈希轮换
             pass
     token = str(seed or day or "").encode("utf-8", "ignore")
     if token:
@@ -874,3 +880,250 @@ def sanitize_diary(text, address="老公", together=False):
         cleaned = _FABRICATED.sub("好想" + address, cleaned)
     cleaned = cleaned.replace("挂了电话", "")
     return cleaned
+
+# ---------------- 大日记收尾守卫（2026-11-22）：做饭证据 / 场景过渡 ----------------
+#
+# 两条都是「生成层/守卫层」的确定性补强，不是放宽核对器：
+# 1) 当天素材里没有做饭证据（没有「做饭/炒/煮/下厨/蒸/煎」这类块活动），
+#    日记却写「煎了两根油条/炒了两个菜」——把强做饭断言改成不声称做饭的说法；
+# 2) 相邻两句都写了地点、地点组不交叉、后一句又没有过渡词——补一个「后来，」，
+#    让场景切换读起来不是瞬移。
+# 核对器（work/sim/diary_checks.py）的判定口径（地点组、过渡词、过去/未来句）
+# 与这里保持一致；核对器仍是独立实现，不会 import 本文件。
+
+#: 场景地点组（与核对器同一张词表：核对器先判，本守卫必须至少同样敏感）
+_SCENE_GROUPS = (
+    ("home", ("家里", "家中", "在家", "到家", "回家", "出租屋", "客厅", "卧室", "沙发",
+              "厨房", "阳台", "被窝", "床上", "躺床", "卫生间", "浴室", "屋里", "家门")),
+    ("office", ("写字楼", "办公室", "会议室", "工位", "公司", "单位", "办公桌")),
+    ("mall", ("商场", "专柜", "逛街", "超市", "步行街", "试衣间", "购物袋")),
+    ("restaurant", ("咖啡店", "咖啡馆", "奶茶店", "小吃街", "餐厅", "饭店", "饭馆",
+                    "食堂", "小馆", "面馆", "粉店", "火锅店", "牛肉粉", "咖啡")),
+    ("road", ("车上", "车里", "打车", "出租车", "网约车", "地铁", "公交", "车厢",
+              "路上", "开车", "电动车", "小电驴", "站台")),
+    ("street", ("街上", "街边", "街头", "路边", "外面", "户外")),
+    ("scenic", ("游乐园", "动物园", "植物园", "风景区", "爬山", "海边", "沙滩",
+                "景区", "景点", "公园", "山上", "古镇")),
+    ("hotel", ("酒店", "宾馆", "民宿", "旅馆", "客栈")),
+    ("hospital", ("医院", "诊所", "挂号", "候诊", "输液", "药店")),
+    ("gym", ("健身房", "跑步机")),
+    ("school", ("图书馆", "教室", "学校", "宿舍", "操场")),
+)
+_SCENE_WORD_GROUP = {}
+for _scene_group, _scene_words in _SCENE_GROUPS:
+    for _scene_word in _scene_words:
+        _SCENE_WORD_GROUP.setdefault(_scene_word, _scene_group)
+_SCENE_WORDS = sorted(_SCENE_WORD_GROUP, key=len, reverse=True)
+
+#: 过渡词（与核对器 connectors 同一张表；只在这个表里没有词时才补）
+_SCENE_TRANSITIONS = ("然后", "后来", "接着", "之后", "下午", "晚上", "中午", "早上",
+                      "出门", "回家", "到家", "到了", "路上", "从", "等", "再", "才",
+                      "就", "过了")
+
+
+def scene_groups(text):
+    """一句话里出现的地点组（按词表，和核对器同口径）。"""
+    value = str(text or "")
+    groups = set()
+    for word in _SCENE_WORDS:
+        if word in value:
+            groups.add(_SCENE_WORD_GROUP[word])
+    return groups
+
+
+def add_scene_transitions(text):
+    """相邻句换地点却没有过渡词时，在后一句前补「后来，」（只补连接词，不加事实）。"""
+    value = str(text or "")
+    if not value:
+        return value
+    added = 0
+    out = []
+    previous = set()
+    for sentence in _sentences(value):
+        if not sentence.strip():
+            out.append(sentence)
+            continue
+        groups = scene_groups(sentence)
+        if (groups and previous and not (groups & previous)
+                and not any(word in sentence for word in _SCENE_TRANSITIONS)):
+            sentence = "后来，" + sentence.lstrip()
+            added += 1
+            groups = scene_groups(sentence)
+        out.append(sentence)
+        if groups:
+            previous = groups
+    if added:
+        logger.info("[DIARY_GUARD] scene_transition added=%d", added)
+    return "".join(out)
+
+
+#: 做饭证据词：当天日程块/账本/素材里出现过任意一个，就不算「无证据做饭」。
+_COOK_EVIDENCE_WORDS = ("做饭", "炒", "煮", "下厨", "蒸", "煎", "炖", "炸", "烤",
+                        "焖", "煲", "洗碗")
+#: 没有做饭证据时，把核对器会判成「强动作」的做饭断言换掉（不声称今天做饭）。
+_COOK_CLAIM_REPLACEMENTS = (
+    ("下厨", "进厨房"),
+    ("做饭", "弄饭"),
+    ("炒菜", "弄菜"),
+    ("炒了", "吃了"),
+    ("蒸了", "吃了"),
+    ("煎了", "吃了"),
+)
+_PAST_MARKERS = ("昨天", "前天", "以前", "之前", "上次", "那次", "当年", "小时候",
+                 "前阵子", "前两天", "去年")
+_FUTURE_MARKERS = ("明天", "后天", "下次", "改天", "以后", "将来", "要是", "如果",
+                   "回头", "等有空", "等放假", "希望", "打算", "准备去", "有机会")
+_REFLECTIVE_MARKERS = ("想起", "想到", "梦到", "听说", "记得", "回忆", "刷到", "看到")
+
+
+def _cook_clause_muted(clause):
+    """过去/未来/回忆句不算「今天做饭」的断言（与核对器 _claim_context 同口径）。"""
+    text = str(clause or "")
+    return any(marker in text for marker in
+               (_PAST_MARKERS + _FUTURE_MARKERS + _REFLECTIVE_MARKERS))
+
+
+def strip_ungrounded_cooking(text, facts_text=""):
+    """当天素材没有做饭证据时，去掉日记里的强做饭断言。返回清洗后的正文。"""
+    value = str(text or "")
+    if not value:
+        return value
+    evidence = str(facts_text or "")
+    if any(word in evidence for word in _COOK_EVIDENCE_WORDS):
+        return value
+    hits = 0
+    out = []
+    for part in re.split(r"([，,。！？!?；;\n])", value):
+        if not part:
+            continue
+        if part in "，,。！？!?；;\n":
+            out.append(part)
+            continue
+        clause = part
+        if not _cook_clause_muted(clause):
+            for old, new in _COOK_CLAIM_REPLACEMENTS:
+                if old in clause:
+                    clause = clause.replace(old, new)
+                    hits += 1
+        out.append(clause)
+    if hits:
+        logger.info("[DIARY_GUARD] ungrounded_cooking stripped=%d", hits)
+    return "".join(out)
+
+#: 跨天复读守卫：整句在别的日子出现过就删掉（同一句连看几天会像模板）。
+_REPEAT_MIN_BODY = 8
+
+
+def sentence_body(sentence):
+    """句子去掉标点空白后的正文（和核对器模板指标同口径）。"""
+    return re.sub(r"[，,。！？!?；;\s]", "", str(sentence or ""))
+
+
+def strip_repeated_sentences(text, previous_texts, day=""):
+    """删掉和前一天/前两天完全相同的整句（模板复读），其余句子原样保留。"""
+    value = str(text or "")
+    if not value:
+        return value
+    previous = [str(item or "") for item in (previous_texts or ()) if str(item or "")]
+    if not previous:
+        return value
+    known = set()
+    for old in previous:
+        for sentence in _sentences(old):
+            body = sentence_body(sentence)
+            if len(body) >= _REPEAT_MIN_BODY:
+                known.add(body)
+    if not known:
+        return value
+    out = []
+    dropped = 0
+    for sentence in _sentences(value):
+        body = sentence_body(sentence)
+        if len(body) >= _REPEAT_MIN_BODY and body in known:
+            dropped += 1
+            continue
+        out.append(sentence)
+    if dropped:
+        logger.info("[DIARY_GUARD] repeated_sentence stripped=%d day=%s", dropped, day)
+        cleaned = "".join(out).strip()
+        return cleaned if len(cleaned) >= 10 else value
+    return value
+
+
+#: 加班断言（核对器 OVERTIME_RE 的同一批强说法）；日程没有加班证据时改成不声称加班。
+#: 「熬到十点才睡」这种作息句不算加班，这里不动它，只处理落点是走/下班/收工的句子。
+_OVERTIME_REPLACEMENTS = (
+    ("还在公司", "还在单位忙"),
+    ("晚下班", "下班晚了点"),
+    ("加班", "多忙了会儿"),
+    ("加到", "忙到"),
+)
+
+
+def strip_ungrounded_overtime(text, has_overtime=False):
+    """当天 18:30 后没有非居家/加班块时，去掉日记里的加班断言，避免写成加班。"""
+    value = str(text or "")
+    if not value or has_overtime:
+        return value
+    hits = 0
+    out = []
+    for part in re.split(r"([，,。！？!?；;\n])", value):
+        if not part:
+            continue
+        if part in "，,。！？!?；;\n":
+            out.append(part)
+            continue
+        clause = part
+        for old, new in _OVERTIME_REPLACEMENTS:
+            if old in clause:
+                clause = clause.replace(old, new)
+                hits += 1
+        # 「忙到/熬到十点才走」这类才字句：去掉「才」，不再声称加班晚走
+        clause = re.sub(r"(忙到[^，。！？；;]{0,4}点)才(?=[走下班离回家出收])",
+                        r"\1", clause)
+        clause = re.sub(r"(熬到[^，。！？；;]{0,4}点)才(?=[走下班离回家出收])",
+                        r"\1", clause)
+        out.append(clause)
+    if hits:
+        logger.info("[DIARY_GUARD] ungrounded_overtime stripped=%d", hits)
+    return "".join(out)
+
+
+#: 消费断言：没有账本/消费事实时日记不能声称花钱（核对器 fabricated/spend）。
+_SPEND_EVIDENCE_WORDS = ("消费", "账单", "付款", "花了")
+_SPEND_CLAIM_REPLACEMENTS = (
+    (re.compile(r"花了(?:多少|不少|很多|点|[0-9一二三四五六七八九十百千]+)[^，。！？；]{0,4}钱"),
+     "也没花什么钱"),
+    (re.compile(r"花了(?=[0-9一二三四五六七八九十百千])"), "用了"),
+    (re.compile(r"心疼[^，。！？；]{0,6}钱"), "有点舍不得"),
+    (re.compile(r"花钱"), "花什么钱"),
+    (re.compile(r"账单"), "开销"),
+    (re.compile(r"付款"), "付了钱"),
+    (re.compile(r"消费了"), "用了一些"),
+)
+
+
+def strip_ungrounded_spending(text, facts_text=""):
+    """当天素材/账本里没有消费事实时，去掉日记里的花钱断言（仍可写「没花什么钱」）。"""
+    value = str(text or "")
+    if not value:
+        return value
+    if any(word in str(facts_text or "") for word in _SPEND_EVIDENCE_WORDS):
+        return value
+    hits = 0
+    out = []
+    for part in re.split(r"([，,。！？!?；;\n])", value):
+        if not part:
+            continue
+        if part in "，,。！？!?；;\n":
+            out.append(part)
+            continue
+        clause = part
+        for pattern, replacement in _SPEND_CLAIM_REPLACEMENTS:
+            if pattern.search(clause):
+                clause = pattern.sub(replacement, clause)
+                hits += 1
+        out.append(clause)
+    if hits:
+        logger.info("[DIARY_GUARD] ungrounded_spending stripped=%d", hits)
+    return "".join(out)

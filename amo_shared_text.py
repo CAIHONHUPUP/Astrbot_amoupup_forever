@@ -585,6 +585,103 @@ def looks_like_model_leak(text: Any) -> bool:
     return True
 
 
+
+# ---------------------------------------------------------------------------
+# 出站技术词黑名单（2026-11-22 task-26）
+#
+# 现场（work/audit/cross_plugin.md §3.1）：聊天里出现过「可能是服务器那边卡住了」
+# 「一直报错」「网络连接超时了」「说我没权限用这个」「详情在面板」。生成侧把工具
+# 返回/异常当台词，发送侧旧守卫 looks_like_model_leak 只认模型名/插件名，且只对
+# <=60 字生效。这里补一张统一的「不能说给人听」的技术词表 + 出口清洗：
+# - chat：删掉命中技术词的分句；整条都不可说时换成一句角色化短句；
+# - 系统通知 / push：整条只剩技术话时直接不发（返回 ""），不再让运维口吻进聊天；
+# - 照片 caption：命中就丢说明、只发图（不把半句话硬切出去）。
+# 词表是唯一事实源：聊天、主动、push、命令、照片说明都调这里，不许各写一份。
+# ---------------------------------------------------------------------------
+
+#: 一眼就是工程后台的词：命中即整句不可说。
+TECH_HARD_TERMS = (
+    "服务器", "后台", "接口", "报错", "超时", "权限", "面板", "异常", "重试",
+    "网络连接", "数据库", "日志", "错误码", "节点", "降级", "软件", "系统",
+    "traceback", "timeout", "exception", "api key", "error code",
+)
+
+#: 「失败 / 卡住」日常也可能说（减肥失败、门卡住了）：只有同句带技术上下文才算后台话。
+TECH_SOFT_TERMS = ("失败", "卡住")
+_TECH_CONTEXT_RE = re.compile(
+    r"(?:图|照片|拍|发|加载|连接|请求|工具|生成|运行|出图|上传|下载|"
+    r"消息|服务|页面|模型|接口|网络)"
+)
+
+#: 整条只剩技术话时的角色化兜底（按来源区分；push/system/command 直接不发）。
+TECH_FALLBACKS = {
+    "chat": "唔…这个先不说了，陪我聊点别的嘛。",
+    "photo": "这张没拍好，等我重拍，好不好？",
+    "system": "",
+    "push": "",
+    "command": "",
+}
+
+_SENTENCE_KEEP_RE = re.compile(r"[^。！？!?\n]*(?:[。！？!?]+|\n|$)")
+
+
+def _tech_hits(text: Any, include_soft: bool = True) -> list:
+    """一句/一段话里命中的技术词（硬词全算，软词要有技术上下文）。"""
+    body = str(text or "")
+    if not body:
+        return []
+    lowered = body.lower()
+    hits = [word for word in TECH_HARD_TERMS if word in lowered]
+    if not hits and include_soft:
+        for word in TECH_SOFT_TERMS:
+            if word in body and _TECH_CONTEXT_RE.search(body):
+                hits.append(word)
+    return hits
+
+
+def looks_like_tech_talk(text: Any) -> bool:
+    """这句话里有没有不该对用户说的后台/工程词。"""
+    return bool(_tech_hits(text))
+
+
+def strip_tech_terms(text: Any, source: str = "chat", kind: str = "") -> str:
+    """删掉命中技术词的分句；剩下的都是人话才返回，全命中时按来源兜底/不发。
+
+    - source=photo 或 kind 含 caption/photo：命中就整条 caption 丢掉（返回 ""）；
+    - source=chat（默认）：全命中返回一句角色化短句；
+    - source=system/push/command：全命中返回 ""（宁可不发，也不把后台话发出去）。
+    """
+    body = str(text or "")
+    if not body.strip():
+        return body
+    src = str(source or "chat").strip().lower()
+    name = str(kind or "").strip().lower()
+    # 命令/管理员通道只用硬词（「统计：发 3｜失败 0」这种正常统计不该被删）。
+    include_soft = src not in ("command", "admin")
+    if src == "photo" or "caption" in name or name in ("photo", "draw"):
+        return "" if _tech_hits(body, include_soft) else body
+    kept = []
+    for match in _SENTENCE_KEEP_RE.finditer(body):
+        sentence = match.group(0)
+        if not sentence:
+            continue
+        if sentence.strip() and _tech_hits(sentence, include_soft):
+            continue
+        kept.append(sentence)
+    fixed = "".join(kept).strip()
+    fixed = re.sub(r"\n{3,}", "\n\n", fixed)
+    if fixed:
+        return fixed
+    if src in ("system", "push", "command", "admin"):
+        return ""
+    return TECH_FALLBACKS.get(src, TECH_FALLBACKS["chat"])
+
+
+def sanitize_caption(text: Any) -> str:
+    """照片说明：命中技术词就整条丢（图照发），不切半句。"""
+    return strip_tech_terms(text, source="photo", kind="caption")
+
+
 def typing_delay_ms(text: Any, base: int = 700, per_char: int = 400, cap: int = 20000) -> int:
     """按回复字数模拟打字时间，越长的回复停顿越久；标点再补一点。"""
     clean = re.sub(r"\s+", "", str(text or ""))

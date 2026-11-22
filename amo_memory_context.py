@@ -62,6 +62,47 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
     _MixinBase = object
 
 
+def _media_helpers():
+    """媒体占位记录的读写口径（唯一定义在 amo_message，避免两套正则）。"""
+    try:
+        try:
+            from .amo_message import is_media_record as _is_record
+            from .amo_message import strip_media_markers as _strip
+        except ImportError:
+            from amo_message import is_media_record as _is_record
+            from amo_message import strip_media_markers as _strip
+        return _is_record, _strip
+    except Exception:
+        return (lambda text: False), (lambda text: str(text or ""))
+
+
+def _ledger_helpers():
+    """记忆事实账本的口径（唯一定义在 amo_memory_ledger，避免两套过滤）。"""
+    try:
+        try:
+            from .amo_memory_ledger import filter_recalled, format_memory_text
+        except ImportError:
+            from amo_memory_ledger import filter_recalled, format_memory_text
+        return filter_recalled, format_memory_text
+    except Exception:
+        return (lambda plugin, uid, rows: list(rows or [])), (lambda text: str(text or ""))
+
+
+def _clean_context_message(row):
+    """记忆注入前清洗一行：媒体占位记录整行不要，正文里的标记剥掉。"""
+    if not isinstance(row, dict):
+        return row
+    is_media_record, strip_media_markers = _media_helpers()
+    content = str(row.get("content") or "")
+    if is_media_record(content):
+        return None
+    cleaned = strip_media_markers(content)
+    if cleaned != content:
+        row = dict(row)
+        row["content"] = cleaned
+    return row
+
+
 def memory_subject(item):
     """记忆主体：优先 subject 字段；旧记忆按 bot_ 前缀 kind 兜底，默认 user。"""
     row = item if isinstance(item, dict) else {}
@@ -138,6 +179,11 @@ class RecallContextMixin(MemoryRerankMixin, _MixinBase):
         label = str(result.get("label") or "")
         if not label:
             return ""
+        # 媒体占位记录不是聊天原话：时间回看里剔除，避免模型把它当可复读文本。
+        messages = [
+            clean for clean in (_clean_context_message(row) for row in messages)
+            if clean is not None
+        ]
         return _render_time_block(label, messages, max_lines=max(1, int(limit)))
     async def _cross_platform_context(self, event, uid):
         """同一个人的其他平台（QQ / 飞书）说过什么，拼成一段给提示词用。"""
@@ -189,7 +235,13 @@ class RecallContextMixin(MemoryRerankMixin, _MixinBase):
                 continue
             if not item_platform and str(item.get("uid") or "") == str(uid):
                 continue
-            text = str(item.get("content") or "").strip().replace("\n", " ")
+            raw_text = str(item.get("content") or "").strip().replace("\n", " ")
+            if not raw_text:
+                continue
+            _is_media_record, _strip_media = _media_helpers()
+            if _is_media_record(raw_text):
+                continue
+            text = _strip_media(raw_text)
             if not text:
                 continue
             label = item.get("label") or item.get("platform") or "别的平台"
@@ -276,13 +328,23 @@ class RecallContextMixin(MemoryRerankMixin, _MixinBase):
 
         unique = []
         seen = set()
+        _is_media_record, _strip_media = _media_helpers()
         for item in memories:
             content = str(item.get("content", "")).strip()
+            if not content or _is_media_record(content):
+                continue
+            content = _strip_media(content)
             key = re.sub(r"[\s，。！？!?、；;：:]+", "", content).lower()
             if not key or key in seen:
                 continue
             seen.add(key)
             unique.append(item)
+        # task-28：系统/运维词零进提示词；同一件商品只保留一个 active 状态（新 supersede 旧）
+        try:
+            filter_recalled, _format_memory_text = _ledger_helpers()
+            unique = filter_recalled(self, uid, unique)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_memory.HumanCorePlugin._recall.ledger", _amo_exc)
         # 每轮只重排一次：先在候选池里挑，再按 limit 截断（候选 ≤ limit 时不调模型）
         cap = max(1, int(limit or self.cfg_int("memory_recall_limit", 6)))
         pool = unique[:max(cap, self.cfg_int("memory_rerank_candidates", 10))]
@@ -306,9 +368,12 @@ class RecallContextMixin(MemoryRerankMixin, _MixinBase):
 
 
 def _recall_format(self, item, lines, memories):
+    _is_media_record, _strip_media = _media_helpers()
     for item in memories:
         source = str(item.get("source") or "")
         subject = memory_subject(item)
+        if _is_media_record(item.get("content")):
+            continue
         if source == "amo_data":
             label = "记忆"
         elif source == "companion":
@@ -322,7 +387,13 @@ def _recall_format(self, item, lines, memories):
             prefix = "[bot] "
         # 老记忆里常有"今天/昨晚/刚才"这种相对说法：注入时补一个记录日期，
         # 免得她把 11-04 的事当成"昨晚"（用户反馈过一次）。
-        body = str(item.get("content", ""))
+        body = _strip_media(item.get("content", ""))
+        # task-28：精确余额/价格/等待分钟只以大概数注入（「卡里还有4072」→「卡里还有四千多」）
+        try:
+            _filter_recalled, format_memory_text = _ledger_helpers()
+            body = format_memory_text(body)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_memory.HumanCorePlugin._recall_format", _amo_exc)
         # 单条记忆先截断：一条 4000 字摘要会吃光 1200 字注入预算，
         # 后面的记忆一条都进不去（线上实测过，3 条长摘要召回次数全库最高）。
         item_cap = self.cfg_int("memory_item_max_chars", 240)

@@ -34,5 +34,34 @@ class EpisodicFoldTests(unittest.TestCase):
         self.assertEqual([], keep)
 
 
+class NoteRecentTopicDayTests(unittest.TestCase):
+    """P0（2026-11-22）：note_recent_topic 必须能把事实记在指定那一天（补写昨天用）。"""
+
+    class _DB:
+        def __init__(self):
+            self.kv = {}
+
+        def kv_get(self, key, default=None):
+            return self.kv.get(key, default)
+
+        def kv_set(self, key, value):
+            self.kv[key] = value
+
+    class _Host:
+        def __init__(self):
+            self.db = NoteRecentTopicDayTests._DB()
+
+    def test_note_recent_topic_accepts_day(self):
+        from amo_feature_api import FeatureApiMixin
+        host = self._Host()
+        FeatureApiMixin.note_recent_topic(host, "今天去了商场", day="2026-11-05",
+                                          key="day:2026-11-05:0")
+        items = host.db.kv_get("episodic_memory", [])
+        self.assertEqual(1, len(items))
+        self.assertEqual("2026-11-05", items[0]["day"])
+        digest, keep = fold_day(items, "2026-11-05", time.time())
+        self.assertIn("商场", digest)
+
+
 if __name__ == "__main__":
     unittest.main()

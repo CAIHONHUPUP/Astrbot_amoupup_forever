@@ -1,0 +1,23 @@
+seed 20261121 code_snap be940dca136dff96 sha 9996fd7367cf7888 prod_same=True blocked={"amo_db_init": 0, "sqlite": 0}
+seed 20261201 code_snap be940dca136dff96 sha 9996fd7367cf7888 prod_same=True blocked={"amo_db_init": 0, "sqlite": 0}
+seed 20261202 code_snap be940dca136dff96 sha 9996fd7367cf7888 prod_same=True blocked={"amo_db_init": 0, "sqlite": 0}
+seed 20261203 code_snap be940dca136dff96 sha 9996fd7367cf7888 prod_same=True blocked={"amo_db_init": 0, "sqlite": 0}
+code snapshots identical: True
+current hashes: {
+ "amo_state_consistency.py": "97127ca6a1427549",
+ "tone_guard.py": "89659d29759a8239",
+ "reply_fact_guard.py": "54bf9903a20715a3",
+ "place_guard.py": "2e85d04e3f1fd593",
+ "amo_reply_pipeline.py": "e234e489eb443001",
+ "amo_diary_guard.py": "05e0142695a9ac5c",
+ "amo_runtime_reply.py": "6a14de726569419f",
+ "amo_message.py": "df9a64e98e79db2a",
+ "amo_current_action.py": "7f067db87870d033",
+ "amo_addressee_guard.py": "e92c1283bc0ce2b0",
+ "amo_persona_guard.py": "f0b50c0a96a15ae1",
+ "amo_question_guard.py": "be1fcd2c2036994d",
+ "amo_shared_text.py": "1bda3e8084ef474b",
+ "domains/reply/repetition_guard.py": "5f9b642af240c9c4",
+ "amo_memory_ledger.py": "a9975959078a320d",
+ "amo_outbound.py": "d1c153a29e1ea680"
+}

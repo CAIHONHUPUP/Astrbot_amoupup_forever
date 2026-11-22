@@ -343,11 +343,29 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         return "photo_count:%s" % day
 
     def today_count(self):
+        """今天已发照片数：kv 计数和媒体账本取最大值（2026-11-22 task-23）。
+
+        以前只有自动分享会写 photo_count:day，send_photo 工具链路和外部
+        generate_selfie 完全不计数，于是 11-19 单日 10 张也能说 cap=4。现在三条
+        链路都记账，配额以账本为准（账本坏了才退回 kv 计数）。
+        """
+        cache_count = 0
         try:
-            return int(self.plugin.db.kv_get(self._count_key(today_str()), 0) or 0)
+            cache_count = int(self.plugin.db.kv_get(self._count_key(today_str()), 0) or 0)
         except Exception as _amo_exc:
             _note_swallowed("photo_engine.PhotoEngine.today_count", _amo_exc)
-            return 0
+            cache_count = 0
+        ledger_count = 0
+        try:
+            try:
+                from . import amo_media as _media
+            except ImportError:
+                import amo_media as _media
+            ledger_count = int(_media.photo_count(self.plugin, today_str()) or 0)
+        except Exception as _amo_exc:
+            _note_swallowed("photo_engine.PhotoEngine.today_count.ledger", _amo_exc)
+            ledger_count = 0
+        return max(cache_count, ledger_count)
 
     def _bump_count(self):
         try:

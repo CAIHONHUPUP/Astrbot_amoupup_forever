@@ -21,7 +21,10 @@ from __future__ import annotations
 from typing import Any
 
 import hashlib
+import logging
 import re
+import threading
+import traceback
 
 try:  # 线上走 AstrBot 日志
     from astrbot.api import logger
@@ -355,3 +358,236 @@ def plugin_health(plugin, name="Astrbot_amoupup_forever", version="",
     return health_snapshot(name, version=version, db=schema,
                            jobs=getattr(plugin, "jobs", None), counts=counts,
                            started_at=started_at, now=now)
+
+# ---------------------------------------------------------------------------
+# 日志脱敏（2026-11-22 task-26）
+#
+# 现场（work/audit/cross_plugin.md §5.3）：生产 astrbot.log 有 23 行明文
+# Bearer sk-…，1,061 行 open_id，117 行完整生图 prompt。来源是 provider 异常
+# traceback 把 headers（Authorization）当局部变量打了出来。这里补一层**进程级**
+# logging.Filter：
+# - 覆盖 forever / watch / data / photo 的 logger：不只装在某一个 logger 上，
+#   而是装到「当前所有 logger 的 handler + 之后新加的 handler」，同一个 AstrBot
+#   进程里哪个插件打日志都会被脱敏；
+# - 覆盖 record.msg / record.args / 已格式化的 exc_text；异常 traceback 里带密钥
+#   时折成脱敏后的文本（不丢栈，只丢明文）；
+# - install_log_redaction() 幂等，可重复调用；RedactionFilter 可单独用于测试。
+# ---------------------------------------------------------------------------
+
+#: 脱敏占位符（单向：不含原文，也无法还原）
+REDACTED = "<redacted>"
+
+#: 凭据类规则：(名字, 正则, 替换)。顺序有意义：先按 header 整段吃掉，
+#: 再兜底 Bearer / sk- 裸串，最后按 key=value 形式吃。
+_SECRET_PATTERNS = (
+    ("authorization", re.compile(
+        r"(?i)\b((?:authorization|x-api-key)\b[\"']?\s*[:=]\s*[\"']?)"
+        r"(?:(?:Bearer|Basic|Token)\s+)?[A-Za-z0-9._\-+/=]{4,}"),
+     r"\1" + REDACTED),
+    ("bearer", re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._\-+/=]{6,}"), r"\1" + REDACTED),
+    ("sk", re.compile(r"\bsk-[A-Za-z0-9_\-]{6,}"), "sk-" + REDACTED),
+    ("api_key", re.compile(
+        r"(?i)\b(api[_-]?key\b[\"']?\s*[:=]\s*[\"']?)[^\"'\s,;}\]]+"),
+     r"\1" + REDACTED),
+    ("token", re.compile(
+        r"(?i)\b((?:access_|refresh_)?token\b[\"']?\s*[:=]\s*[\"']?)[^\"'\s,;}\]]+"),
+     r"\1" + REDACTED),
+    ("secret", re.compile(
+        r"(?i)\b((?:client_)?secret\b[\"']?\s*[:=]\s*[\"']?)[^\"'\s,;}\]]+"),
+     r"\1" + REDACTED),
+    ("password", re.compile(
+        r"(?i)\b(?:password|passwd)\b[\"']?\s*[:=]\s*[\"']?[^\"'\s,;}\]]+"),
+     "password=" + REDACTED),
+)
+
+#: 日志字段名（dict key）命中即整值脱敏：headers 以 dict 形式进日志时没有 "=" 可匹配。
+_SENSITIVE_LOG_KEYS = (
+    "authorization", "api_key", "apikey", "api-key", "token", "secret",
+    "password", "passwd", "open_id", "openid", "cookie", "session",
+)
+
+#: open_id 规则：默认脱敏，可用 open_id=False 关闭（任务里写作“可选脱敏”）。
+_OPEN_ID_PATTERNS = (
+    ("open_id", re.compile(r"\bou_[A-Za-z0-9]{6,}"), "ou_" + REDACTED),
+    ("open_id", re.compile(
+        r"(?i)\b(open_?id\b[\"']?\s*[:=]\s*[\"']?)[A-Za-z0-9_\-]{6,}"),
+     r"\1" + REDACTED),
+)
+
+
+def redact_text(value, open_id=True, stats=None):
+    """把一段文本里的凭据 / open_id 就地脱敏；幂等，绝不抛。
+
+    stats 可选：dict，命中时按规则名累加次数（脚本统计用，只记次数不记值）。
+    """
+    text = value if isinstance(value, str) else ("" if value is None else str(value))
+    if not text:
+        return text
+    for name, pattern, repl in _SECRET_PATTERNS:
+        try:
+            text, count = pattern.subn(repl, text)
+        except Exception:  # pragma: no cover - 正则本身不会失败
+            count = 0
+        if count and stats is not None:
+            stats[name] = int(stats.get(name, 0)) + count
+    if open_id:
+        for name, pattern, repl in _OPEN_ID_PATTERNS:
+            try:
+                text, count = pattern.subn(repl, text)
+            except Exception:  # pragma: no cover
+                count = 0
+            if count and stats is not None:
+                stats[name] = int(stats.get(name, 0)) + count
+    return text
+
+
+def _redact_value(value, open_id=True):
+    """递归脱敏 logging record 的 msg / args（保留容器类型，%d 等格式不受影响）。"""
+    if isinstance(value, str):
+        return redact_text(value, open_id=open_id)
+    if isinstance(value, tuple):
+        return tuple(_redact_value(item, open_id) for item in value)
+    if isinstance(value, list):
+        return [_redact_value(item, open_id) for item in value]
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            safe_key = redact_text(key, open_id=open_id) if isinstance(key, str) else key
+            key_text = str(key or "").lower()
+            if any(word in key_text for word in _SENSITIVE_LOG_KEYS):
+                out[safe_key] = REDACTED
+            else:
+                out[safe_key] = _redact_value(item, open_id)
+        return out
+    return value
+
+
+class RedactionFilter(logging.Filter):
+    """进程级日志脱敏过滤器：凭据 / Authorization / token / open_id 不出日志。"""
+
+    def __init__(self, redact_open_id=True):
+        super().__init__("amo-log-redaction")
+        self.redact_open_id = bool(redact_open_id)
+
+    def filter(self, record):
+        try:
+            record.msg = _redact_value(record.msg, self.redact_open_id)
+            if record.args:
+                record.args = _redact_value(record.args, self.redact_open_id)
+            if getattr(record, "exc_text", None):
+                record.exc_text = redact_text(
+                    record.exc_text, open_id=self.redact_open_id)
+            self._fold_redacted_exception(record)
+        except Exception:  # pragma: no cover - 日志脱敏不能反过来弄挂业务  # cleanup: 兜底/降级，保持原行为
+            pass
+        return True
+
+    def _fold_redacted_exception(self, record):
+        """异常栈里带密钥时，折成一条脱敏后的文本；没命中就保持原样。"""
+        exc_info = getattr(record, "exc_info", None)
+        if not exc_info:
+            return
+        try:
+            raw = "".join(traceback.format_exception(*exc_info))
+        except Exception:  # pragma: no cover
+            return
+        fixed = redact_text(raw, open_id=self.redact_open_id)
+        if fixed == raw:
+            return
+        try:
+            message = record.getMessage()
+        except Exception:  # pragma: no cover
+            message = str(record.msg)
+        # AstrBot 的 logger 把 record.exc_info 直接交给 loguru（不会读 exc_text），
+        # 所以把脱敏后的栈并进 msg，再清掉 exc_info：信息不丢，明文不落盘。
+        record.msg = (message + "\n" + fixed).rstrip()
+        record.args = ()
+        record.exc_info = None
+        record.exc_text = None
+
+
+_REDACTION_LOCK = threading.Lock()
+_REDACTION_FILTER = None
+_REDACTION_INSTALLED = False
+_REDACTION_PATCHED = False
+_ORIGINAL_ADD_HANDLER = None
+
+
+def _ensure_redaction_filter(redact_open_id=True):
+    global _REDACTION_FILTER
+    if _REDACTION_FILTER is None:
+        _REDACTION_FILTER = RedactionFilter(redact_open_id=redact_open_id)
+    else:
+        _REDACTION_FILTER.redact_open_id = bool(redact_open_id)
+    return _REDACTION_FILTER
+
+
+def _attach_redaction(target, filter_obj):
+    """把一个 logger 或 handler 接上过滤器；已接过的跳过（幂等）。"""
+    try:
+        if any(isinstance(item, RedactionFilter) for item in target.filters):
+            return
+        target.addFilter(filter_obj)
+    except Exception:  # pragma: no cover - logging 对象异常不影响启动  # cleanup: 兜底/降级，保持原行为
+        pass
+
+
+def _patch_logger_add_handler(filter_obj):
+    """之后新加的 handler（别的插件/核心建的 logger）也自动接上过滤器。"""
+    global _REDACTION_PATCHED, _ORIGINAL_ADD_HANDLER
+    if _REDACTION_PATCHED:
+        return
+    _ORIGINAL_ADD_HANDLER = logging.Logger.addHandler
+
+    def _add_handler(self, hdlr):
+        try:
+            _attach_redaction(hdlr, filter_obj)
+        except Exception:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
+            pass
+        return _ORIGINAL_ADD_HANDLER(self, hdlr)
+
+    logging.Logger.addHandler = _add_handler
+    _REDACTION_PATCHED = True
+
+
+def install_log_redaction(redact_open_id=True, force=False):
+    """把脱敏过滤器装到当前进程的**所有** logger / handler 上（幂等）。
+
+    覆盖范围是进程级的：forever / watch / data / photo 四个插件共用同一个
+    AstrBot 进程，谁之后新建 logger，都会经 addHandler 钩子接上过滤器。
+    返回 True 表示本次真的装了一遍，False 表示之前已经装过。
+    """
+    global _REDACTION_INSTALLED
+    with _REDACTION_LOCK:
+        if _REDACTION_INSTALLED and not force:
+            _ensure_redaction_filter(redact_open_id)
+            return False
+        filter_obj = _ensure_redaction_filter(redact_open_id)
+        _patch_logger_add_handler(filter_obj)
+        targets = [logging.getLogger()]
+        try:
+            for _name, obj in list(logging.Logger.manager.loggerDict.items()):
+                if isinstance(obj, logging.Logger):
+                    targets.append(obj)
+        except Exception:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
+            pass
+        # 显式点名四个插件 + AstrBot 核心 logger：即使还没建也会建出来接上，
+        # 之后 LogManager.GetLogger 复用的就是同一个对象。
+        for name in ("astrbot", "astrbot.api", "astrbot.plugin",
+                     "Astrbot_amoupup_forever", "Astrbot_amoupup_watch",
+                     "Astrbot_amoupup_data", "Astrbot_amoupup_photo"):
+            try:
+                targets.append(logging.getLogger(name))
+            except Exception:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
+                pass
+        for logger_obj in targets:
+            _attach_redaction(logger_obj, filter_obj)
+            for hdlr in list(getattr(logger_obj, "handlers", ()) or ()):
+                _attach_redaction(hdlr, filter_obj)
+        _REDACTION_INSTALLED = True
+        return True
+
+
+def redaction_installed():
+    """当前进程是否已装脱敏过滤器（/status 与测试用）。"""
+    return bool(_REDACTION_INSTALLED)

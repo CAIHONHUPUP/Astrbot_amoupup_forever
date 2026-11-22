@@ -29,6 +29,23 @@ except ImportError:
         import amo_date_session as _date_session
 
 
+def _contract_module(name):
+    """读 services/<name>.py（包模式与顶层导入都兼容）；失败抛 ImportError。
+
+    task-27：跨插件只读契约实现放在 services/ 下，FeatureApiMixin 只做透传；
+    用模块级函数而不是 self._xxx 方法，避免 main.py 挂载公开方法时漏掉私有辅助。
+    """
+    import importlib as _importlib
+    name = str(name or "")
+    package = str(__package__ or "")
+    if package:
+        try:
+            return _importlib.import_module("." + name, package + ".services")
+        except ImportError:  # cleanup: 兜底/降级，保持原行为
+            pass
+    return _importlib.import_module("services." + name)
+
+
 #: 宵夜决定审计键（amo_food_event 写入：late_snack_decision:<day>:<hh>）
 LATE_SNACK_DECISION_PREFIX = "late_snack_decision:"
 #: 同一小时只决定一次的防重键（amo_food_event 写入：late_snack:<day>:<hh>）
@@ -153,6 +170,22 @@ def _late_snack_delete(db, keys):
     return deleted
 
 
+def _current_scene_meta(plugin, now=None):
+    """当前场景版本（task-30：约会事实也带 scene_id，消费方可校验是否同一场景）。"""
+    try:
+        try:
+            from .amo_scene_ledger import scene_at as _scene_at
+        except ImportError:
+            from amo_scene_ledger import scene_at as _scene_at
+        scene = _scene_at(plugin, now) or {}
+    except Exception:
+        return {}
+    if not isinstance(scene, dict) or not scene:
+        return {}
+    return {"scene_id": str(scene.get("event_id") or ""),
+            "scene_zone": str(scene.get("zone") or ""),
+            "scene_place": str(scene.get("place") or "")}
+
 try:
     from .amo_api_persona import PersonaApiMixin
 except ImportError:
@@ -220,7 +253,26 @@ class FeatureApiMixin(PersonaApiMixin):
             return True
 
         def note_expense_summary(self, line):
-            self.db.kv_set("expense_summary", {"line": str(line or ""), "until": now_ts() + 2 * 86400})
+            """外部（守护/账本流）写「今日支出」缓存：以钱包实时口径为准，只对当天有效。
+
+            2026-11-22 P0：旧实现 48h TTL，扣完款仍显示「今日总支出 0.00」；
+            而且外部传进来的数字可能把存款/投资算成支出。这里一律请钱包按当天账本
+            重算（排除存款/投资/转账/退款），TTL 只到当天结束。
+            """
+            import datetime as _dt
+            text = str(line or "")
+            wallet = getattr(self, "wallet", None)
+            maker = getattr(wallet, "expense_summary_line", None)
+            if callable(maker):
+                try:
+                    text = str(maker() or text)
+                except Exception as exc:
+                    logger.debug("[amo] 重算今日支出失败，沿用外部文本: %r", exc)
+            moment = _amo_clock.now()
+            end = _dt.datetime.combine(moment.date(), _dt.time.min).timestamp() + 86400.0
+            self.db.kv_set("expense_summary", {"line": text, "until": end,
+                                               "day": moment.strftime("%Y-%m-%d"),
+                                               "source": "wallet"})
 
         def get_hunger(self, target="amo"):
 
@@ -408,7 +460,7 @@ class FeatureApiMixin(PersonaApiMixin):
                 return {"ok": False, "reason": "commit_failed", "error": str(exc)[:80]}
             return {"ok": True, "changed": bool(result.get("saved", True)), "result": result}
 
-        async def push_to_owner(self, text):
+        async def push_to_owner(self, text, kind=""):
 
             """主动消息：给管理员/老公发一条（逛街试穿、回家炫耀、守护事件等）。"""
 
@@ -417,6 +469,26 @@ class FeatureApiMixin(PersonaApiMixin):
             if not text:
 
                 return False
+
+            # 唯一在场策略：用户最后一条消息超过 6 小时，禁止催问/逛街/自拍/追问，
+            # 只留早晚问候和明确时间点提醒（2026-11-22 真实飞书记录）。
+            try:
+                try:
+                    from . import amo_presence as _presence
+                except ImportError:
+                    import amo_presence as _presence
+                _profile = {}
+                try:
+                    _rows = list(self.db.proactive_profiles(limit=1) or [])
+                    if _rows and isinstance(_rows[0], dict):
+                        _profile = _rows[0]
+                except Exception as exc:
+                    logger.debug("[amo] push_to_owner 画像查询失败: %r", exc)
+                if not _presence.can_push(self, _profile, kind, now=now_ts()):
+                    logger.info("[amo] 推送被沉默 6 小时规则拦下（%s）", str(kind or "-"))
+                    return False
+            except Exception as exc:
+                logger.debug("[amo] push_to_owner 在场策略检查失败: %r", exc)
 
             # 2026-11-21 协调层：守护/网购/试穿的推送也要遵守主动免打扰和 5 分钟节流，
             # 不能绕过陪伴自己的概率/晚安/夜间规则。
@@ -432,23 +504,19 @@ class FeatureApiMixin(PersonaApiMixin):
 
                 try:
 
-                    # 和陪伴自己的主动消息共用同一个 umo 时间戳（5 分钟窗口）
+                    # 频控/5 分钟节流/原子占位都在 amo_outbound 统一出口里做，
+                    # 这里不再维护第二份 _proactive_burst 字典（读-判-写非原子）。
+                    _old_source = getattr(self, "_outbound_source", "")
+                    _old_kind = getattr(self, "_outbound_kind", "")
+                    self._outbound_source = "push"
+                    self._outbound_kind = str(kind or "")
                     try:
-                        _burst = getattr(self, "_proactive_burst", None)
-                        if not isinstance(_burst, dict):
-                            _burst = {}
-                            self._proactive_burst = _burst
-                        _last = float(_burst.get(str(umo)) or 0)
-                        if _last and now_ts() - _last < 300:
-                            logger.info("[amo] 推送被 5 分钟节流拦下")
-                            continue
-                        _burst[str(umo)] = now_ts()
-                    except Exception as exc:
-                        logger.debug("[amo] push_to_owner 节流检查失败: %r", exc)
-
-                    await self._send_to_umo(umo, text)
-
-                    return True
+                        sent = await self._send_to_umo(umo, text)
+                    finally:
+                        self._outbound_source = _old_source
+                        self._outbound_kind = _old_kind
+                    if sent:
+                        return True
 
                 except Exception:
 
@@ -456,7 +524,21 @@ class FeatureApiMixin(PersonaApiMixin):
 
             return False
 
+        def can_shop(self):
+            """watch 逛街入口：唯一策略在 amo_presence.can_shop（人不在商场/街上/景区就不逛）。"""
+            try:
+                from . import amo_presence as _presence
+            except ImportError:
+                import amo_presence as _presence
+            return bool(_presence.can_shop(self))
 
+        def can_engage(self, kind="", profile=None):
+            """watch 推送入口：统一走 amo_presence.can_proactive（沉默/地点/类型一起判）。"""
+            try:
+                from . import amo_presence as _presence
+            except ImportError:
+                import amo_presence as _presence
+            return bool(_presence.can_proactive(self, profile, kind, now=now_ts()))
 
         async def hunger_help(self, message):
 
@@ -468,7 +550,7 @@ class FeatureApiMixin(PersonaApiMixin):
 
                 try:
 
-                    await self._send_to_umo(umo, message)
+                    await self._send_to_umo(umo, message, source="push", kind="hunger")
 
                     return True
 
@@ -583,6 +665,8 @@ class FeatureApiMixin(PersonaApiMixin):
 
                 "day": _t.strftime("%Y-%m-%d", _t.localtime(end)),
 
+                **_current_scene_meta(self),
+
             })
 
         def set_date_prep(self, activity, start_ts=0):
@@ -591,7 +675,9 @@ class FeatureApiMixin(PersonaApiMixin):
 
             self.db.kv_set("date_prep", {"activity": str(activity or "约会"),
 
-                                          "start_ts": float(start_ts or 0)})
+                                          "start_ts": float(start_ts or 0),
+
+                                          **_current_scene_meta(self)})
 
         def set_date_incident(self, text, until_ts=0):
 
@@ -599,7 +685,9 @@ class FeatureApiMixin(PersonaApiMixin):
 
             self.db.kv_set("date_incident", {"text": str(text or ""),
 
-                                             "until_ts": float(until_ts or 0)})
+                                             "until_ts": float(until_ts or 0),
+
+                                             **_current_scene_meta(self)})
 
         def set_current_action(self, action, until_ts=0, place="外面", zone="restaurant", category="social"):
 
@@ -622,11 +710,45 @@ class FeatureApiMixin(PersonaApiMixin):
             except Exception as exc:
                 logger.debug("[amo] optional step failed: %r", exc)
 
+            # task-30：兜底分支也不绕过场景源——先过 scene_ledger.write，被硬约束拒绝就不写。
+            try:
+
+                try:
+                    from .amo_scene_ledger import write as _scene_write
+                except ImportError:
+                    from amo_scene_ledger import write as _scene_write
+
+                _written = _scene_write(
+
+                    self, {"activity": str(action or ""), "place": str(place or ""),
+
+                           "zone": str(zone or ""), "category": str(category or "")},
+
+                    source="writer")
+
+                _record = _written.get("record") if isinstance(_written, dict) else {}
+
+                if not _written.get("ok") or not isinstance(_record, dict) or not _record:
+
+                    return
+
+            except Exception as exc:
+
+                logger.debug("[amo] optional step failed: %r", exc)
+
+                return
+
             self.db.kv_set("current_action", {
 
-                "action": str(action or ""), "place": str(place or ""),
+                "action": str(_record.get("activity") or action or ""),
 
-                "zone": str(zone or ""), "category": str(category or ""),
+                "place": str(_record.get("place") or place or ""),
+
+                "zone": str(_record.get("zone") or zone or ""),
+
+                "category": str(_record.get("category") or category or ""),
+
+                "scene_id": str(_record.get("event_id") or ""),
 
                 "at": now_ts(), "until": float(until_ts or 0),
 
@@ -802,6 +924,15 @@ class FeatureApiMixin(PersonaApiMixin):
 
             now = now or _amo_clock.now()
 
+            # 唯一在场策略：只有人真的在商场/街上/景区（或活动明确逛街/试衣）才触发；
+            # 在家休息不能凭空说在试衣服（2026-11-22 真实飞书记录 09:00）。
+            try:
+                from . import amo_presence as _presence
+            except ImportError:
+                import amo_presence as _presence
+            if not _presence.can_shop(self):
+                return ""
+
             day = now.date().isoformat()
 
             if now.weekday() >= 5:
@@ -949,9 +1080,39 @@ class FeatureApiMixin(PersonaApiMixin):
             # 兼容旧读取方
             self.db.kv_set("recent_topic", {"text": body, "until": until})
 
-        def note_shopping_pending(self, line, until_ts=0):
+        def note_shopping_pending(self, line, until_ts=0, scene_id="", name="", color="", price_cents=0):
 
-            self.db.kv_set("shopping_prompt", {"line": str(line or ""), "until": float(until_ts or 0)})
+            # 2026-11-22 task-25：逛街事实带 scene_id（场景账本 event_id），照片/约会/日记
+            # 之后再引用这条事实时能对上是哪一段 schedule，不再靠地点词猜。
+            # 2026-11-22 task-27：文案里写死的“卡里余额 4072 元”会过期（真实 3086.54）；
+            # 这里同时存结构化字段（商品/价格/写入时的余额），快照据此判陈旧并给实时余额。
+            record = {"line": str(line or ""), "until": float(until_ts or 0),
+                      "name": str(name or ""), "color": str(color or "")}
+            try:
+                record["price_cents"] = int(price_cents or 0)
+            except (TypeError, ValueError):
+                record["price_cents"] = 0
+            try:
+                record["wallet_balance_cents_at_write"] = int(self.wallet.balance("cash") or 0)
+            except Exception:
+                record["wallet_balance_cents_at_write"] = 0
+            record["written_at"] = _amo_clock.now_ts()
+            sid = str(scene_id or "").strip()
+            if not sid:
+                try:
+                    try:
+                        from .amo_scene_ledger import scene_at as _scene_at
+                    except ImportError:
+                        from amo_scene_ledger import scene_at as _scene_at
+                    _scene = _scene_at(self) or {}
+                    sid = str(_scene.get("event_id") or "")
+                    if _scene.get("zone"):
+                        record["scene_zone"] = str(_scene.get("zone"))
+                except Exception as exc:
+                    logger.debug("[amo] 逛街事实 scene_id 读取失败: %r", exc)
+            if sid:
+                record["scene_id"] = sid
+            self.db.kv_set("shopping_prompt", record)
 
 
 
@@ -974,3 +1135,51 @@ class FeatureApiMixin(PersonaApiMixin):
             if getattr(self.state, "late", None) is not None:
 
                 self.state.late.on_forced_overtime()
+
+        # ---- 跨插件只读契约（task-27）：LifeStateSnapshot / MetricsAPI ----
+        # 守护/能记/定格只读这两个方法，禁止各自维护“此刻/余额/本月支出”副本。
+        # 返回 dict 契约见 services/life_state.py、services/metrics.py。
+
+        def life_state_contract(self):
+            """LifeStateSnapshot 契约自述（版本/字段/单位）；纯常量，不读库。"""
+            try:
+                return dict(_contract_module("life_state").contract_descriptor())
+            except Exception as exc:
+                logger.debug("[amo] life_state_contract 不可用: %r", exc)
+                return {}
+
+        def life_state_snapshot(self, now=None):
+            """只读状态快照：location/current_action/schedule/date_session/
+            shopping/wallet/outfit/mood/media + consistency 自检。"""
+            try:
+                snapshot = _contract_module("life_state").build_snapshot(self, now)
+                return dict(snapshot) if isinstance(snapshot, dict) else {}
+            except Exception as exc:
+                logger.warning("[amo] life_state_snapshot 构建失败: %r", exc)
+                return {}
+
+        def metrics_contract(self):
+            """MetricsAPI 契约自述（指标定义/单位）；纯常量，不读库。"""
+            try:
+                return dict(_contract_module("metrics").contract_descriptor())
+            except Exception as exc:
+                logger.debug("[amo] metrics_contract 不可用: %r", exc)
+                return {}
+
+        def metrics_snapshot(self, now=None):
+            """统一指标快照：钱包余额/本月消费/本月资产变动/今日生图（读失败只降级）。"""
+            try:
+                return dict(_contract_module("metrics").build_metrics(self, now) or {})
+            except Exception as exc:
+                logger.warning("[amo] metrics_snapshot 构建失败: %r", exc)
+                return {}
+
+        def month_consumption_cents(self, month=""):
+            """本月消费（整数分）：面板/守护唯一口径，含退款/资产/账单排除。"""
+            try:
+                metrics = _contract_module("metrics")
+                wallet = getattr(self, "wallet", None)
+                return int(metrics.wallet_month_consumption_cents(wallet, str(month or "")))
+            except Exception as exc:
+                logger.debug("[amo] month_consumption_cents 失败: %r", exc)
+                return 0

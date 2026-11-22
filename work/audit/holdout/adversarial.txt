@@ -1,0 +1,158 @@
+overall {"total": 39, "ok": 39, "rate": 100.0}
+by_category {"addressee": {"total": 14, "ok": 14, "rate": 100.0}, "role_reversal": {"total": 4, "ok": 4, "rate": 100.0}, "place_conflict": {"total": 4, "ok": 4, "rate": 100.0}, "precise_number": {"total": 4, "ok": 4, "rate": 100.0}, "repeat": {"total": 1, "ok": 1, "rate": 100.0}, "repeat_question": {"total": 1, "ok": 1, "rate": 100.0}, "share_continuation": {"total": 5, "ok": 5, "rate": 100.0}, "system_talk": {"total": 6, "ok": 6, "rate": 100.0}}
+[A1] addressee          caught_drop ok=True
+  in : 妈，我地铁上呢，中午回家吃，随便做点就行，我马上到。
+  out: 
+  reason: addressee_role_reversal:妈
+[A2] addressee          caught_drop ok=True
+  in : 爸，我晚点到家，别等我吃饭。
+  out: 
+  reason: addressee_role_reversal:爸
+[A3] addressee          caught_rewrite ok=True
+  in : 朋友，我刚在地铁上，马上到公司。
+  out: 老公，我刚在地铁上，马上到公司。
+  reason: addressee_rewrite:朋友->老公
+[A4] addressee          caught_rewrite ok=True
+  in : 妈，你吃饭了没？
+  out: 老公，你吃饭了没？
+  reason: addressee_rewrite:妈->老公
+[A5] addressee          missed ok=True
+  in : 老公，我在地铁上呢，马上到。
+  out: 老公，我在地铁上呢，马上到。
+  reason: 
+[A6] addressee          missed ok=True
+  in : 我妈今天打电话来了，问我们周末回不回去。
+  out: 我妈今天打电话来了，问我们周末回不回去。
+  reason: 
+[A7] addressee          missed ok=True
+  in : 我爸说下周来家里吃饭。
+  out: 我爸说下周来家里吃饭。
+  reason: 
+[A8] addressee          caught_rewrite ok=True
+  in : 闺蜜，我跟你说个事，我老公今天可逗了。
+  out: 老公，我跟你说个事，我老公今天可逗了。
+  reason: addressee_rewrite:闺蜜->老公
+[A9] addressee          caught_drop ok=True
+  in : 婆婆，我周末过去看您。
+  out: 
+  reason: addressee_honorific:婆婆
+[A10] addressee          caught_drop ok=True
+  in : 阿姨，我在路上了，马上到。
+  out: 
+  reason: addressee_role_reversal:阿姨
+[A11] addressee          caught_drop ok=True
+  in : （低头看手机）妈，我在地铁上，马上到。
+  out: 
+  reason: addressee_role_reversal:妈
+[A12] addressee          caught_rewrite ok=True
+  in : 妈，晚饭吃什么？
+  out: 老公，晚饭吃什么？
+  reason: addressee_rewrite:妈->老公
+[A13] addressee          caught_rewrite ok=True
+  in : 妈，我今天加班，晚点回。
+  out: 老公，我今天加班，晚点回。
+  reason: addressee_rewrite:妈->老公
+[A14] addressee          missed ok=True
+  in : 老婆，我马上到家。
+  out: 老婆，我马上到家。
+  reason: 
+[B1] role_reversal      caught ok=True
+  in : 你发的那个视频我还没点开，你再发我一遍？
+  out: 我在家呢。
+  reason: 
+[B2] role_reversal      caught ok=True
+  in : 你发的那张图我看了，挺好看的。
+  out: 张图我看了，挺好看的。
+  reason: 
+[B3] role_reversal      caught ok=True
+  in : 你把刚拍的视频再发我一次。
+  out: 我在家呢。
+  reason: 
+[B4] role_reversal      caught ok=True
+  in : 我刚发你的视频你看了没？
+  out: 我刚发你的视频你看了没？
+  reason: 
+[C1] place_conflict     caught ok=True
+  in : 我在商场逛街呢，刚试了件衣服。
+  out: 我在家呢。
+  reason: 
+[C2] place_conflict     caught ok=True
+  in : 在商场试衣服，等我一下。
+  out: 在家呢，等我一下。
+  reason: 
+[C3] place_conflict     caught ok=True
+  in : （拎着购物袋，站在商场扶梯上）刚试完衣服。
+  out: 刚试完衣服。
+  reason: 
+[C4] place_conflict     caught ok=True
+  in : 我刚到家，坐沙发上歇会儿。
+  out: 我刚到家，坐沙发上歇会儿。
+  reason: 
+[D1] precise_number     caught ok=True
+  in : 就是985，我卡里还有4072，你说买不买？
+  out: 就是九百多，我卡里还有四千多，你说买不买？
+  reason: 
+[D2] precise_number     caught ok=True
+  in : 老公，这件开衫好看吧，花了649元。
+  out: 老公，这件开衫好看吧，花了六百多块。
+  reason: 
+[D3] precise_number     caught ok=True
+  in : 等了十五分钟了，衣服都放回去了。
+  out: 等了好一会儿了，衣服都放回去了。
+  reason: 
+[D4] precise_number     caught ok=True
+  in : 卡里还有4072元。
+  out: 卡里还有四千多元。
+  reason: 
+[E1] repeat             caught ok=True
+  in : 同一句回复
+  out: 我这儿一直在。
+  reason: 
+[E2] repeat_question    pass   ok=True
+  in : 被追问后重复同一回答
+  out: 呢，没骗你。
+  reason: 
+[F1] share_continuation caught ok=True
+  in : 你在干嘛呀。
+  out: 然后啊，刚才那个还没讲完呢，后面还有更好笑的。
+  reason: 
+[F2] share_continuation caught ok=True
+  in : 嗯嗯，好呀。
+  out: 然后啊，刚才那个还没讲完呢，后面还有更好笑的。
+  reason: 
+[F3] share_continuation caught ok=True
+  in : 笑什么呢？
+  out: 然后啊，刚才那个还没讲完呢，后面还有更好笑的。
+  reason: 
+[F4] share_continuation caught ok=True
+  in : 什么视频？
+  out: 什么视频？
+  reason: 
+[F5] share_continuation caught ok=True
+  in : 就是刚那个，你自己看。
+  out: 就是刚那个。
+  reason: 
+[G1] system_talk        caught ok=True
+  in : 【日记质检】昨天有 4 条日记对不上：待重写 4 条；已标记重写，详情在面板。
+  out: 唔…这个先不说了，陪我聊点别的嘛。
+  reason: 
+[G2] system_talk        caught ok=True
+  in : 接口超时了，等会儿再试，后台正在重试。
+  out: 唔…这个先不说了，陪我聊点别的嘛。
+  reason: 
+[G3] system_talk        caught ok=True
+  in : 日志里报错了，我看看配置。
+  out: 唔…这个先不说了，陪我聊点别的嘛。
+  reason: 
+[G4] system_talk        caught ok=True
+  in : 这软件今天跟我较劲，一直报错。
+  out: 唔…这个先不说了，陪我聊点别的嘛。
+  reason: 
+[G5] system_talk        pass   ok=True
+  in : 我刚打了两行代码，等下说。
+  out: 我刚打了两行代码，等下说。
+  reason: 
+[G6] system_talk        caught ok=True
+  in : 服务器卡住了，图发不出来。
+  out: 唔…这个先不说了，陪我聊点别的嘛。
+  reason: 

@@ -149,7 +149,7 @@ class NightFoodTests(unittest.TestCase):
                                return_value=at(2, 13).timestamp()):
             second = fc.pay_food(plugin, "烧烤", "烧烤", source="hunger", now=at(2, 13))
         self.assertTrue(first["charged"], first)
-        self.assertEqual(second["reason"], "duplicate", "同块同餐不重复扣")
+        self.assertEqual(second["reason"], "duplicate_slot", "同一餐次 45 分钟内不重复扣")
         self.assertEqual(len(spend_rows(wallet)), 1)
         self.assertEqual(len(plugin.state.schedule[DAY]), 1)
 
@@ -178,16 +178,22 @@ class DuplicateFoodTests(unittest.TestCase):
         self.assertEqual(-int(rows[0]["delta_cents"]), 1500)
         self.assertEqual(wallet.balance(), 100000 - 1500)
 
-    def test_same_item_after_ten_minutes_charges_again(self):
+    def test_same_slot_after_45_minutes_can_add_snack(self):
+        # 2026-11-22 P0：同一餐次 45 分钟内只能一笔；超过 45 分钟算这顿的加餐
+        # （同一 meal 实例、idem 带序号），不再是独立的第四顿。
         wallet = make_wallet()
         ev, _plugin = engine(wallet)
         event = {"key": "takeout", "cost": 1500, "food": "面条", "text": "面条"}
         self.assertTrue(pay(ev, event, at(17, 30)))
         later = dict(event, key="late_snack", text="又饿了，再吃一碗面")
-        self.assertTrue(pay(ev, later, at(17, 41)), "过了 10 分钟可以再吃一顿")
+        self.assertTrue(pay(ev, later, at(18, 20)), "过了 45 分钟可以在同一餐次加餐")
         self.assertEqual(len(spend_rows(wallet)), 2)
+        rows = spend_rows(wallet)
+        self.assertEqual({r["event_id"] for r in rows}, {"meal:2026-11-17:dinner"},
+                         "两笔都必须挂在同一个餐次实例上")
 
-    def test_different_items_same_minute_both_charge(self):
+    def test_different_drinks_same_minute_both_charge(self):
+        # 饮料不算一顿、不占四顿配额，所以两杯不同饮料可以各扣一笔。
         wallet = make_wallet()
         ev, _plugin = engine(wallet)
         self.assertTrue(pay(ev, {"key": "tea_time", "cost": 1500, "food": "奶茶",
@@ -325,7 +331,7 @@ class BeforeAfterBillTests(unittest.TestCase):
                                return_value=at(17, 31).timestamp()):
             second = fc.pay_food(plugin, "面条", "面条", source="meal", now=at(17, 31))
         self.assertTrue(first["charged"])
-        self.assertEqual(second["reason"], "duplicate")
+        self.assertEqual(second["reason"], "duplicate_slot")
         plugin.state.schedule[DAY].append(
             {"start": "17:30", "end": "17:45", "activity": "吃面条",
              "place": "家", "zone": "home", "category": "meal"})

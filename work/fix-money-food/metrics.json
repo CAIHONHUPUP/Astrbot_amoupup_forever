@@ -1,0 +1,128 @@
+﻿{
+  "production_readonly": {
+    "accounts": {
+      "cash": {
+        "ledger_sum_cents": 561357,
+        "balance_cents": 394725,
+        "delta_cents": 166632
+      },
+      "withdrawable": {
+        "ledger_sum_cents": 2095104,
+        "balance_cents": 394725,
+        "delta_cents": 1700379
+      }
+    },
+    "anomalies": [
+      {
+        "kind": "account_mismatch",
+        "account": "cash",
+        "ledger_sum_cents": 561357,
+        "balance_cents": 394725,
+        "delta_cents": 166632
+      },
+      {
+        "kind": "account_mismatch",
+        "account": "withdrawable",
+        "ledger_sum_cents": 2095104,
+        "balance_cents": 394725,
+        "delta_cents": 1700379
+      },
+      {
+        "kind": "refund_without_debit",
+        "detail": "退款找不到原扣款",
+        "ref": "social:accept:soc-2026-11-15-437a1ca9",
+        "refs": [
+          "social:accept:soc-2026-11-15-437a1ca9",
+          "social:accept:soc-2026-11-15-0e686ec8",
+          "social:accept:soc-2026-11-15-1fdb9264",
+          "social:accept:soc-2026-11-15-e57ece7b",
+          "social:accept:soc-2026-11-15-1f8e91af",
+          "social:accept:soc-2026-11-15-1df49cd8"
+        ],
+        "count": 6,
+        "amount_cents": 165132,
+        "idems": [
+          "refund:social:accept:soc-2026-11-15-437a1ca9",
+          "refund:social:accept:soc-2026-11-15-0e686ec8",
+          "refund:social:accept:soc-2026-11-15-1fdb9264",
+          "refund:social:accept:soc-2026-11-15-e57ece7b",
+          "refund:social:accept:soc-2026-11-15-1f8e91af",
+          "refund:social:accept:soc-2026-11-15-1df49cd8"
+        ],
+        "ts": [
+          1794749715.4407651,
+          1794749715.4407651,
+          1794749715.4407651,
+          1794749715.4407651,
+          1794749715.4407651,
+          1794749715.4407651
+        ],
+        "minute": 29912495
+      }
+    ],
+    "meal_stats_production": {
+      "2026-11-15": {
+        "餐费笔数": 7,
+        "不同餐次实例": 7,
+        "≤45min 同餐次重复对": 0
+      },
+      "2026-11-16": {
+        "餐费笔数": 9,
+        "不同餐次实例": 9,
+        "≤45min 同餐次重复对": 4
+      }
+    },
+    "meal_blocks_production": {
+      "2026-11-15": 6,
+      "2026-11-16": 9
+    },
+    "ledger_rows": 98
+  },
+  "new_rules_simulation": {
+    "尝试扣款": 11,
+    "实际扣款": 6,
+    "被拦": [
+      {
+        "time": "08:00",
+        "item": "豆浆和包子",
+        "reason": "duplicate_slot"
+      },
+      {
+        "time": "12:00",
+        "item": "家常菜",
+        "reason": "duplicate_slot"
+      },
+      {
+        "time": "12:09",
+        "item": "清淡外卖",
+        "reason": "duplicate_slot"
+      },
+      {
+        "time": "18:10",
+        "item": "外卖",
+        "reason": "duplicate_slot"
+      },
+      {
+        "time": "22:30",
+        "item": "泡面",
+        "reason": "duplicate_slot"
+      }
+    ],
+    "餐次实例": [
+      "meal:2026-11-16:breakfast",
+      "meal:2026-11-16:dinner",
+      "meal:2026-11-16:late",
+      "meal:2026-11-16:lunch"
+    ],
+    "日程 meal 块": 4,
+    "≤45min 同餐次已扣重复对": 0,
+    "账本与账户对账": true
+  },
+  "reminder": {
+    "weather 占位可重入": true,
+    "schedule 幂等键": "复诊拿药|医院|15:10",
+    "schedule 第二次占位被拦": true,
+    "schedule 迟到 3 分放行": true,
+    "schedule 迟到 20 分拦下": true
+  }
+}

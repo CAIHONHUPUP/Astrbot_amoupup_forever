@@ -30,6 +30,8 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:
         from infra.config import load_config
 
+import re
+
 from typing import Any
 
 
@@ -266,11 +268,26 @@ def _guard_line(rule: dict) -> str:
     return positive + "；" + "；".join(negative)
 
 
+#: 参考图库的分类前缀（"上半身单人·可爱系：" 之类）不是动作描述，进提示词前剥掉。
+_CATALOG_PREFIX_RE = re.compile(r"^（[^）]*）")
+_CATALOG_HEADS = ("系", "单人", "双人", "缠绵", "特殊")
+
+
+def clean_pose_note(note: Any) -> str:
+    """去掉图库分类前缀，只留真正的姿势描述。"""
+    raw = str(note or "").strip()
+    text = _CATALOG_PREFIX_RE.sub("", raw).strip()
+    head, sep, tail = text.partition("：")
+    if sep and any(word in head for word in _CATALOG_HEADS):
+        text = tail.strip()
+    return text or raw
+
+
 def pose_text(pose: Any) -> str:
     """姿势 dict → 提示词片段（和 pose_library.pose_line 同格式，避免互相 import）。"""
     pose = pose if isinstance(pose, dict) else {}
     name = str(pose.get("name") or "").strip()
-    note = str(pose.get("note") or "").strip()
+    note = clean_pose_note(pose.get("note"))
     if not name:
         return ""
     return "姿势：" + name + (("（" + note + "）") if note else "")

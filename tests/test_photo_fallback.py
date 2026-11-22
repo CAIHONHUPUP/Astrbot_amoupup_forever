@@ -116,18 +116,35 @@ class ActivityFallbackTests(unittest.TestCase):
         self.assertTrue(activity.get("zone"))
         self.assertIn("category", activity)
 
-    def test_stale_slot_when_hour_not_covered(self):
+    def test_stale_slot_within_30_minutes_continues(self):
         import amo_human_state
         original = amo_human_state.minutes_now
         try:
-            # 固定“当前分钟”为 03:00；日程只排 00:00-01:00 → 这小时没覆盖，应走 stale_slot
-            amo_human_state.minutes_now = lambda *a, **k: 180
+            # 01:20：上一块 00:00-01:00 刚结束 20 分钟，允许延续
+            amo_human_state.minutes_now = lambda *a, **k: 80
             self.state.schedule = {today_str(): [_slot(0, "很久以前的事", "家", "home", "rest")]}
             activity, reason = self.state.current_activity_info()
         finally:
             amo_human_state.minutes_now = original
         self.assertEqual(reason, "stale_slot")
         self.assertEqual(activity["_source"], "stale_slot")
+
+    def test_gap_over_30_minutes_is_unknown(self):
+        import amo_human_state
+        original = amo_human_state.minutes_now
+        try:
+            # 03:00：上一块 00:00-01:00 已结束 120 分钟，按 task-17 不许再沿用旧块
+            amo_human_state.minutes_now = lambda *a, **k: 180
+            self.state.schedule = {today_str(): [_slot(0, "很久以前的事", "家", "home", "rest")]}
+            activity, reason = self.state.current_activity_info()
+        finally:
+            amo_human_state.minutes_now = original
+        # 上游 current_activity_info 的原因串仍写 stale_slot（迁移点），
+        # 但块本身已标 gap_unknown / zone=unknown，读侧按“地点未知”处理。
+        self.assertIn(reason, ("gap_unknown", "stale_slot"))
+        self.assertEqual(activity["_source"], "gap_unknown")
+        self.assertEqual(activity["zone"], "unknown")
+        self.assertFalse(activity.get("place"))
 
 
 if __name__ == "__main__":

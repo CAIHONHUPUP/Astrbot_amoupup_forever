@@ -3,7 +3,7 @@
 
 钉住的回归：
 - 第二天 10:00 / 15:00 / 21:00 开机都补写昨天，不限制 08:00-08:30；
-- 连续缺 3 天按日期顺序补，最多 7 天；
+- 自动补写只允许 T+1（目标日=昨天）；更早的缺日只记 diary_skipped，不生成正文；
 - 事实门：只改「和事实矛盾」的；只是遗漏（没提宵夜/某顿饭）不重写；
 - 日记「上班」+ 生病/医院日程 → 矛盾；「早早睡了」/「没吃东西」+ 23:30 宵夜 → 矛盾；
 - 「在家」+ 日程在公司/医院 → 矛盾；「没生病/好了」+ health sick → 矛盾；
@@ -202,20 +202,33 @@ class DiaryMorningBTests(unittest.TestCase):
 
     # ---------- 连续缺多天按序补 ----------
 
-    def test_downtime_backfill_caps_at_seven_days(self):
+    def test_downtime_backfills_only_t1_and_records_skipped(self):
         self.plugin.db.kv_set("diary_last_day", "2026-11-09")
         self.run_at(datetime.datetime(2026, 11, 18, 10, 0))
-        self.assertEqual(
-            [day.isoformat() for day in self.generated],
-            ["2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14",
-             "2026-11-15", "2026-11-16", "2026-11-17"],
-        )
+        # 目标日只能是昨天（T+1）；更早的缺日不生成正文，只记 skipped 审计。
+        self.assertEqual([day.isoformat() for day in self.generated], ["2026-11-17"])
+        for skipped in ("2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13",
+                        "2026-11-14", "2026-11-15", "2026-11-16"):
+            record = self.plugin.db.kv_get("diary_skipped:" + skipped)
+            self.assertIsInstance(record, dict, skipped)
+            self.assertEqual(record.get("reason"), "out_of_window")
+            self.assertEqual(record.get("window_days"), 1)
+        # 幂等：再跑一轮不会重复生成、也不会重复写 skipped。
+        self.generated.clear()
+        self.run_at(datetime.datetime(2026, 11, 18, 11, 0))
+        self.assertEqual(self.generated, [])
 
-    def test_stopped_three_days_backfills_in_order(self):
+    def test_stopped_three_days_writes_only_yesterday(self):
         self.plugin.db.kv_set("diary_last_day", "2026-11-14")
         self.run_at(datetime.datetime(2026, 11, 18, 9, 0))
         self.assertEqual([day.isoformat() for day in self.generated],
-                         ["2026-11-15", "2026-11-16", "2026-11-17"])
+                         ["2026-11-17"])
+        self.assertEqual(
+            (self.plugin.db.kv_get("diary_skipped:2026-11-15") or {}).get("reason"),
+            "out_of_window")
+        self.assertEqual(
+            (self.plugin.db.kv_get("diary_skipped:2026-11-16") or {}).get("reason"),
+            "out_of_window")
 
     # ---------- 已写且一致 / 矛盾 ----------
 
@@ -370,6 +383,81 @@ class DiaryMorningBTests(unittest.TestCase):
         self.assertIn("第二天开机后自动补写", text)
         self.assertIn("几点都行", text)
         self.assertNotIn("08:00–08:30 自动写", text)
+
+
+class _CapturingLLM:
+    """记录大日记提示词的假模型（P1/P2 提示词口径断言用）。"""
+
+    def __init__(self, reply):
+        self.reply = str(reply or "")
+        self.prompts = []
+        self.calls = 0
+
+    async def persona(self, umo):
+        return ""
+
+    async def chat_raw(self, umo, system, prompt):
+        self.calls += 1
+        self.prompts.append(str(prompt))
+        return self.reply
+
+
+class DiaryPromptFactTests(unittest.TestCase):
+    """P1（2026-11-22）：补写昨天时健康/天气/日期口径必须进提示词，且不再暗示平淡。"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="amo-diary-prompt-")
+        self._saved = {}
+        for name in ("astrbot.core.utils", "astrbot.core.utils.astrbot_path"):
+            self._saved[name] = sys.modules.get(name)
+            module = types.ModuleType(name)
+            module.__path__ = []
+            sys.modules[name] = module
+        path_module = types.ModuleType("astrbot.core.utils.astrbot_path")
+        path_module.get_astrbot_data_path = lambda: self.tmp
+        sys.modules["astrbot.core.utils.astrbot_path"] = path_module
+        self.plugin = FakePlugin(self.tmp, {"location_rules_enabled": True})
+        self.plugin._data_mem = lambda: None
+        self.plugin._last_umo = "test:private:1"
+        self.plugin._first_private_umo = lambda: "test:private:1"
+        self.plugin.llm = _CapturingLLM("今天去了公司上班，中午在公司吃了饭。")
+
+    def tearDown(self):
+        try:
+            self.plugin.db.conn.close()
+        except Exception:
+            pass
+        for name, module in self._saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+    def test_backfill_prompt_has_day_facts_and_single_date_frame(self):
+        target = date(2026, 11, 17)
+        lunch = {"start": "12:00", "end": "13:00", "activity": "在公司食堂吃午饭",
+                 "place": "公司", "category": "meal", "zone": "work"}
+        self.plugin.db.save_schedule(target.isoformat(), [WORK_BLOCK, lunch])
+        noon = datetime.datetime.combine(target, datetime.time(12, 0)).timestamp()
+        self.plugin.state.weather = {"text": "阴", "tag": "overcast", "temp": 16,
+                                     "city": "东莞", "ts": noon}
+        gen_now = datetime.datetime(2026, 11, 18, 8, 10)
+        with mock.patch.object(amo_schedule, "_now", return_value=gen_now):
+            text = asyncio.run(self.plugin._generate_daily_diary(target))
+        self.assertTrue(text)
+        prompt = self.plugin.llm.prompts[-1]
+        # P1 天气：素材包必须有天气事实
+        self.assertRegex(prompt, r"(?m)^- \[[^\]]+\] \[天气\]")
+        self.assertIn("阴", prompt)
+        # P1 日期口径：prose=今天 + facts=[昨日] 不再打架；时间规则说清「今天」指目标日
+        self.assertIn("[今日]", prompt)
+        self.assertNotIn("[昨日]", prompt)
+        self.assertIn("已经过完的 2026-11-17", prompt)
+        self.assertIn("一律是 2026-11-17", prompt)
+        self.assertIn("2026-11-18 及以后", prompt)
+        # P2 平淡暗示：有日程事实时不再写「非常平淡」
+        self.assertNotIn("非常平淡", prompt)
+        self.assertIn("没有聊天和块小日记记录", prompt)
 
 
 if __name__ == "__main__":

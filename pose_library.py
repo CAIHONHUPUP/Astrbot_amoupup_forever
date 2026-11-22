@@ -61,6 +61,101 @@ LEGACY_REF_DIR_NAME = "pose_refs"
 MAX_POSES = 60
 _SAFE_RE = re.compile(r'[\\/:*?"<>|\r\n]+')
 
+#: 姿势白名单（2026-11-22 task-23）：只有这张表里的姿势会进自动随机池，
+#: 名字 → 房间池（bedroom/living/bath/any）。来源是 11-12 用户选的 9+3 个种子
+#: 里安全的那些，加上从参考图库批量导入的 300 条里审核通过的「可爱/标准」系；
+#: 成人向（挤胸/性感/开腿/顶胯/缠绵…）和杂技（倒立/桥式/团身/劈叉…）一律不进池。
+#: MAX_POSES=60 是硬上限：加载/导入/保存都按它截断。
+APPROVED_POSES = {
+    # ---- 卧室：坐在/侧坐在床上的日常自拍（种子） ----
+    "手放腿上坐正": "bedroom",
+    "跪坐背挺直": "bedroom",
+    "正坐看手机": "bedroom",
+    "背坐看镜头": "bedroom",
+    "双脚交叉坐": "bedroom",
+    "单手撑床": "bedroom",
+    "侧坐伸腿拍脚": "bedroom",
+    "趴床翘脚": "bedroom",
+    # ---- 客厅：坐着抬脚（种子） ----
+    "沙发抬脚": "living",
+    # ---- 上半身可爱系手势：不挑房间 ----
+    "胸前双手比心": "any",
+    "头顶双臂比心": "any",
+    "脸侧手指比心": "any",
+    "下巴下比双V": "any",
+    "辣妹V（手背朝外比V）": "any",
+    "握拳贴脸（撒娇）": "any",
+    "兔耳手势": "any",
+    "招财猫猫爪手势": "any",
+    "咆哮手势（嗷呜）": "any",
+    "嘘——（食指抵唇）": "any",
+    "歪头＋手遮单眼（眨眼风）": "any",
+    "飞吻": "any",
+    "双掌托腮（花苞手势）": "any",
+    "食指戳脸": "any",
+    "萌袖风・双手掩口": "any",
+    "拜托手势（双手合十）": "any",
+    "抱紧自己・害羞姿势": "any",
+    "手指取景框": "any",
+    "将发丝挽至耳后": "any",
+    "双手捧脸": "any",
+    "敬礼姿势": "any",
+    "手指镜头": "any",
+    "打哈欠伸懒腰（单手掩口）": "any",
+    "从双手指缝间窥视": "any",
+    # ---- 标准系坐/站/蹲：客厅与日常居家 ----
+    "站立・双手扶腰": "living",
+    "站立・回眸顾盼": "living",
+    "站立・双臂上举伸展": "living",
+    "站立・单手抚后脑": "living",
+    "站立・发丝飘扬": "living",
+    "站立・踮脚双臂V字": "living",
+    "蹲姿・手扶膝": "living",
+    "蹲姿・托腮": "living",
+    "蹲姿・手抚发": "living",
+    "蹲姿・回头": "living",
+    "蹲姿・踮脚双手触地": "living",
+    "女孩坐・双手扶腿": "living",
+    "侧坐・双腿斜向右侧": "living",
+    "侧坐・手扶脸颊": "living",
+    "女孩坐・手抚颈侧": "living",
+    "女孩坐・双手后撑": "living",
+    "后仰坐・单膝立起": "living",
+    "双腿斜伸・手扶腰": "living",
+    "双肘支撑斜倚坐": "living",
+    "手抚脚踝": "living",
+    "握脚踝・单膝立起": "living",
+    "单手支撑・双腿斜向前伸": "living",
+    "伸腿・侧肘支撑坐": "living",
+    "正坐・撩发": "living",
+    "单膝立起・手抚发": "living",
+}
+
+#: 成人向/杂技/私密词：名字或描述里出现就永远不进自动池（白名单之外的双保险）。
+BANNED_WORDS = (
+    "挤胸", "事业线", "性感", "大胆", "揉胸", "捧胸", "抚胸", "托胸", "遮胸",
+    "胸伏", "胸贴", "沟壑", "臀", "胯", "开腿", "M字", "V字开腿", "劈叉",
+    "横叉", "倒立", "桥式", "团身", "仰翻", "猫式", "四肢着地", "骑乘", "后入",
+    "传教士", "缠绵", "双人", "贴身", "肩带", "大腿内侧", "腋下", "解挂钩",
+    "遮掩", "顶胯", "邀约", "勾引", "撩拨", "自慰", "真空", "透视",
+    "含住", "舔", "特殊", "欲",
+)
+
+#: zone → 允许的姿势房间池。空/公共场景不在表里 = 不用姿势库（规则姿势更贴场景）。
+ZONE_ROOMS = {
+    "home_bed": ("bedroom",),
+    "home_sofa": ("living",),
+    "home_meal": ("living",),
+    "home_desk": ("living",),
+    "home_generic": ("living",),
+    "home": ("living",),
+    "home_bath": ("bath",),
+    "home_kitchen": ("bath",),
+}
+#: 房间中文名（日志用）。
+ROOM_LABELS = {"bedroom": "卧室", "living": "客厅", "bath": "浴室",
+               "kitchen": "厨房", "any": "通用"}
+
 #: 内置姿势：(名字, 画面描述)。描述会直接进自拍提示词，写得越具体越不容易走形。
 #: 2026-11-12 用户指定：只保留这 9 个（对着参考图里的 9 个姿势）。
 SEED_POSES = (
@@ -160,6 +255,160 @@ def usage_of(pose):
     return "couple" if "双人" in str(data.get("note") or "") else "selfie"
 
 
+# ---------------------------------------------------------------- 白名单/房间池
+
+#: 参考图库批量导入时带的分类前缀（"上半身单人·挤胸・强调事业线系：" 之类）。
+#: 它只是图库目录名，不是动作描述；判断内容安全/写提示词前先剥掉，避免把
+#: "性感系/挤胸系" 这种分类词带进提示词。
+_CATALOG_PREFIX_RE = re.compile(r"^（[^）]*）")
+_CATALOG_HEADS = ("系", "单人", "双人", "缠绵", "特殊")
+
+
+def clean_pose_note(note):
+    """去掉图库分类前缀，只留真正的姿势描述（旧格式/自由文本原样返回）。"""
+    raw = str(note or "").strip()
+    text = _CATALOG_PREFIX_RE.sub("", raw).strip()
+    head, sep, tail = text.partition("：")
+    if sep and any(word in head for word in _CATALOG_HEADS):
+        text = tail.strip()
+    return text or raw
+
+
+def pose_text_of(pose):
+    """名字 + 清洗后的描述拼一起（白名单/房间判定与提示词同口径）。"""
+    data = pose if isinstance(pose, dict) else {}
+    return str(data.get("name") or "") + "：" + clean_pose_note(data.get("note"))
+
+
+def is_banned_pose(pose):
+    """成人向/杂技姿势：名字或描述命中黑名单词就不许进自动池。"""
+    body = pose_text_of(pose)
+    return any(word in body for word in BANNED_WORDS)
+
+
+def room_of_text(pose):
+    """按词判断姿势属于哪个房间（只给面板新加的、没有 whitelist 标签的姿势兜底）。"""
+    body = pose_text_of(pose)
+    if any(word in body for word in ("床", "被窝", "枕", "躺", "趴", "卧")):
+        return "bedroom"
+    if any(word in body for word in ("沙发", "客厅", "茶几")):
+        return "living"
+    if any(word in body for word in ("浴室", "洗手台", "镜子", "洗澡", "洗漱")):
+        return "bath"
+    if any(word in body for word in ("厨房", "灶台", "做饭")):
+        return "kitchen"
+    if any(word in body for word in ("街", "户外", "地铁", "公园", "景点")):
+        return "outdoor"
+    return "any"
+
+
+def pose_room(pose):
+    """姿势所属房间池：白名单优先，其次显式 approved 的按描述分，其余 None。"""
+    data = pose if isinstance(pose, dict) else {}
+    name = str(data.get("name") or "").strip()
+    if name in APPROVED_POSES:
+        return APPROVED_POSES[name]
+    if data.get("approved") and not is_banned_pose(data):
+        return str(data.get("room") or "") or room_of_text(data)
+    return ""
+
+
+def zone_rooms(zone):
+    """zone → 允许的姿势房间池；公共/未知场景返回空 tuple（不用姿势库）。"""
+    return tuple(ZONE_ROOMS.get(str(zone or "").strip(), ()))
+
+
+def approved_poses(poses, limit=MAX_POSES):
+    """把姿势列表过一遍白名单 + 黑名单，返回 ≤MAX_POSES 的自动池副本（带 room）。
+
+    库里一条白名单姿势都没有时（测试桩/极简库）退回「非黑名单」旧行为，
+    否则全新安装只有种子、没有白名单标签时会一张都选不出来。
+    """
+    items = []
+    explicit = []
+    fallback = []
+    for pose in list(poses or []):
+        if not isinstance(pose, dict):
+            continue
+        name = str(pose.get("name") or "").strip()
+        if not name:
+            continue
+        # 先剥图库分类前缀再判黑名单：分类名里的「性感系」不算姿势本身性感。
+        item = dict(pose)
+        item["note"] = clean_pose_note(item.get("note"))
+        if is_banned_pose(item):
+            continue
+        room = pose_room(item)
+        if not room:
+            # 没有白名单标签、也不是面板显式批准的：只在「一个白名单都没有」的
+            # 极简库（单测桩/全新安装）里按描述分房间兜底，绝不混进生产池。
+            fallback_room = room_of_text(item)
+            item["room"] = fallback_room
+            item["approved"] = False
+            fallback.append(item)
+            continue
+        item["room"] = room
+        item["approved"] = True
+        items.append(item)
+        if str(name) in APPROVED_POSES:
+            explicit.append(item)
+    if explicit:
+        return explicit[:max(1, int(limit or MAX_POSES))]
+    if items:
+        return items[:max(1, int(limit or MAX_POSES))]
+    return fallback[:max(1, int(limit or MAX_POSES))]
+
+
+def pose_fits_zone(pose, zone):
+    """这个姿势能不能用在这个 zone（合拍/显式点姿势时校验）。"""
+    room = pose_room(pose)
+    if not room:
+        return False
+    rooms = zone_rooms(zone)
+    if not rooms:
+        return False
+    return room == "any" or room in rooms
+
+
+def allowed_foot_poses(poses, limit=MAX_POSES):
+    """拍脚专用池同样只留白名单里的姿势（M字/开腿/挤胸这些不再进）。"""
+    approved = {str(item.get("name") or "") for item in approved_poses(poses, limit)}
+    return [dict(pose) for pose in list(poses or [])
+            if isinstance(pose, dict) and str(pose.get("name") or "") in approved
+            and is_foot_pose(pose.get("name"))]
+
+
+def trim_poses_data(data, limit=MAX_POSES):
+    """把整份 poses.json 收敛成白名单 ≤limit 条（迁移脚本用；纯函数不改磁盘）。
+
+    返回 (新 data, 被移除的姿势名列表)。白名单按 APPROVED_POSES 顺序排，
+    保留原有 id/created_at/usage 等字段，并写入 approved/room 便于面板展示。
+    """
+    payload = dict(data or {})
+    original = [pose for pose in (payload.get("poses") or []) if isinstance(pose, dict)]
+    by_name = {str(pose.get("name") or "").strip(): pose for pose in original}
+    kept, removed = [], []
+    for name, room in APPROVED_POSES.items():
+        if len(kept) >= max(1, int(limit or MAX_POSES)):
+            break
+        pose = by_name.get(name)
+        if pose is None:
+            continue
+        item = dict(pose)
+        item["note"] = clean_pose_note(item.get("note"))
+        item["approved"] = True
+        item["room"] = room
+        kept.append(item)
+    kept_names = {str(pose.get("name") or "").strip() for pose in kept}
+    for pose in original:
+        name = str(pose.get("name") or "").strip()
+        if name and name not in kept_names:
+            removed.append(name)
+    payload["poses"] = kept
+    payload.setdefault("version", 1)
+    return payload, removed
+
+
 #: 旧种子（2026-11-12 之前那批）；升级时从库里删掉，同时删掉它们的参考图
 OLD_SEED_NAMES = (
     "比耶", "托腮", "撩头发", "歪头笑", "抿嘴笑", "眯眼笑", "嘟嘴", "咬唇", "回眸",
@@ -234,6 +483,34 @@ class PoseLibrary:
     def _empty(self):
         return {"version": self.VERSION, "seed_version": 0, "poses": []}
 
+    def _limit_poses(self, poses):
+        """MAX_POSES 硬上限：白名单姿势优先保留，其余按原顺序补到 60 条。"""
+        items = [dict(pose) for pose in (poses or []) if isinstance(pose, dict)
+                 and str(pose.get("name") or "").strip()]
+        preferred = [pose for pose in items
+                     if str(pose.get("name") or "").strip() in APPROVED_POSES]
+        preferred_names = {str(pose.get("name") or "").strip() for pose in preferred}
+        rest = [pose for pose in items
+                if str(pose.get("name") or "").strip() not in preferred_names]
+        kept, seen = [], set()
+        for pose in preferred + rest:
+            name = str(pose.get("name") or "").strip()
+            if name in seen:
+                continue
+            seen.add(name)
+            kept.append(pose)
+            if len(kept) >= MAX_POSES:
+                break
+        return kept
+
+    def allowed_poses(self):
+        """自动随机池：白名单 + 黑名单过滤后的姿势（≤MAX_POSES）。"""
+        return approved_poses(self.poses(), MAX_POSES)
+
+    def allowed_foot_poses(self):
+        """拍脚专用池（同样只留白名单里的姿势）。"""
+        return allowed_foot_poses(self.poses(), MAX_POSES)
+
     def _load(self):
         with self._lock:
             if self._data is not None:
@@ -256,6 +533,14 @@ class PoseLibrary:
                 data = self._merge_seed(data)
                 data["seed_version"] = self.SEED_VERSION
                 self._save(data)
+            # 2026-11-22 task-23：MAX_POSES 在加载处强制执行（以前只有 add/save_all
+            # 截断，批量导入的 300 条照样全进 home 池）。白名单姿势排前面优先保留。
+            before = len(data.get("poses") or [])
+            data["poses"] = self._limit_poses(data.get("poses") or [])
+            if before > MAX_POSES:
+                logger.warning("[amo] 姿势库超过上限：%d → %d（MAX_POSES=%d，"
+                               "白名单外的多余条目本次加载不再进池）",
+                               before, len(data["poses"]), MAX_POSES)
             self._data = data
             return data
 
@@ -330,14 +615,18 @@ class PoseLibrary:
     def snapshot(self):
         poses = []
         for pose in self.poses():
+            room = pose_room(pose)
             poses.append({
                 "id": str(pose.get("id") or ""),
                 "name": str(pose.get("name") or ""),
                 "note": str(pose.get("note") or ""),
                 "has_ref": self.has_ref(pose),
+                "room": room,
+                "approved": bool(room),
             })
         with_ref = len([p for p in poses if p["has_ref"]])
-        return {"poses": poses, "count": len(poses), "with_ref": with_ref}
+        return {"poses": poses, "count": len(poses), "with_ref": with_ref,
+                "max": MAX_POSES}
 
     #: 描述里带这些词 = 床/跪/抬腿/翘臀类私密姿势，只能在卧室/客厅沙发用
     BED_WORDS = ("床", "被窝", "枕", "趴坐", "跪", "抬腿", "翘臀", "蹲坐")
@@ -350,21 +639,36 @@ class PoseLibrary:
         return any(word in text for word in self.BED_WORDS)
 
     def random_pose(self, zone=None, hint="", usage="selfie"):
-        """按场景随机挑一个姿势；hint（此刻在做什么/请求）命中的优先。
+        """从「当前房间池」随机挑一个姿势（2026-11-22 task-23 白名单版）。
 
-        - 私密居家（home / home_bed / home_sofa）才允许 9 种床姿；
-        - 浴室/厨房/户外/办公等只允许非床姿，全被剔除时返回 None；
-        - 同一天不连续用同一个姿势：先剔掉上一次用过的，再从剩下的里随机。
+        - 只用 APPROVED_POSES 白名单里、且没命中成人/杂技黑名单的姿势；
+        - 按 zone 分池：home_bed→卧室，home_sofa/home_meal/home_desk→客厅，
+          home_bath→浴室，通用手势（any）到哪都用；
+        - 公共/未知场景（road/mall/office/…）返回 None，由场景规则给姿势，
+          不再把床姿套到地铁/商场；
+        - 同一天不连续用同一个姿势：先剔掉上一次用过的，再随机。
         """
-        poses = [p for p in self.poses() if str(p.get("name") or "").strip()]
-        if not poses:
-            logger.info("[amo] 姿势库是空的，本次用通用姿势文字")
+        approved = self.allowed_poses()
+        if not approved:
+            logger.info("[amo] 姿势库没有可用的白名单姿势，本次用通用姿势文字")
             return None
         key = str(zone or "").strip()
-        private = (not key) or key in self.PRIVATE_ZONES
-        allowed = poses if private else [p for p in poses if not self.is_private_pose(p)]
-        # 双人姿势不能当自拍姿势用；合拍时才用 couple
-        allowed = [p for p in allowed if usage_of(p) in (str(usage or "selfie"), "both")]
+        if not key:
+            # 没有场景信息（面板/显式调用）：全白名单池
+            pool = approved
+        else:
+            rooms = zone_rooms(key)
+            if not rooms:
+                logger.info("[amo] 场景 %s 不用姿势库（公共/未知场景，按规则姿势）", key)
+                return None
+            pool = [pose for pose in approved
+                    if pose.get("room") == "any" or pose.get("room") in rooms]
+        usage = str(usage or "selfie")
+        pool = [pose for pose in pool if usage_of(pose) in (usage, "both")]
+        if not pool:
+            logger.info("[amo] 场景 %s 没有合适的白名单姿势（room=%s），本次用通用姿势",
+                        key or "未知", ",".join(zone_rooms(key)) or "-")
+            return None
         _hint = str(hint or "").strip()
         if _hint:
             words = [w for w in re.split(r"[，,。！？\s、/]+", _hint) if len(w) >= 2]
@@ -373,19 +677,18 @@ class PoseLibrary:
             def _score(pose):
                 text = str(pose.get("name") or "") + str(pose.get("note") or "")
                 return sum(1 for word in words if word in text)
-            scored = [(_score(pose), pose) for pose in allowed]
+            scored = [(_score(pose), pose) for pose in pool]
             best = max((score for score, _pose in scored), default=0)
             if best > 0:
-                allowed = [pose for score, pose in scored if score == best]
-        if not allowed:
-            logger.info("[amo] 场景 %s 没有合适的姿势图（床姿不套用），本次用通用姿势", key or "未知")
-            return None
+                pool = [pose for score, pose in scored if score == best]
         last = str(getattr(self, "_last_pose_name", "") or "")
-        pool = [p for p in allowed if str(p.get("name") or "") != last] or allowed
-        chosen = dict(random.choice(pool))
+        pick_from = [p for p in pool if str(p.get("name") or "") != last] or pool
+        chosen = dict(random.choice(pick_from))
         self._last_pose_name = str(chosen.get("name") or "")
-        logger.info("[amo] 姿势选择：%s（zone=%s，候选 %d 个%s）", self._last_pose_name,
-                    key or "-", len(pool), "，避开上一次" if last and last != self._last_pose_name else "")
+        logger.info("[amo] 姿势选择：%s（zone=%s room=%s，候选 %d 个，白名单 %d 条%s）",
+                    self._last_pose_name, key or "-", chosen.get("room") or "-",
+                    len(pick_from), len(approved),
+                    "，避开上一次" if last and last != self._last_pose_name else "")
         return chosen
 
     # ---------- 修改 ----------
@@ -401,9 +704,13 @@ class PoseLibrary:
                 return {"ok": False, "msg": "姿势最多 %d 个，先删几个" % MAX_POSES}
             if any(str(p.get("name") or "").strip() == name for p in data.get("poses") or []):
                 return {"ok": False, "msg": "已经有「%s」这个姿势了" % name}
-            data["poses"].append({
-                "id": _new_id(), "name": name, "note": note, "created_at": _now_ts(),
-            })
+            candidate = {"id": _new_id(), "name": name, "note": note,
+                         "created_at": _now_ts()}
+            if is_banned_pose(candidate):
+                return {"ok": False, "msg": "这个姿势的描述不适合放进自动池"}
+            candidate["approved"] = True
+            candidate["room"] = APPROVED_POSES.get(name) or room_of_text(candidate)
+            data["poses"].append(candidate)
             if not self._save(data):
                 return {"ok": False, "msg": "保存失败，看日志"}
             return {"ok": True, "msg": "已添加"}
@@ -451,12 +758,19 @@ class PoseLibrary:
             poses = []
             for name, note in cleaned:
                 base = old.get(name) or {}
-                poses.append({
+                item = {
                     "id": str(base.get("id") or _new_id()),
                     "name": name,
                     "note": note or str(base.get("note") or ""),
                     "created_at": float(base.get("created_at") or _now_ts()),
-                })
+                }
+                # 2026-11-22 task-23：面板保存也过白名单——命中成人/杂技词的条目不进自动池。
+                if is_banned_pose(item):
+                    item["approved"] = False
+                else:
+                    item["approved"] = True
+                    item["room"] = APPROVED_POSES.get(name) or room_of_text(item)
+                poses.append(item)
             data["poses"] = poses
             if not self._save(data):
                 return {"ok": False, "msg": "保存失败，看日志"}
@@ -611,10 +925,10 @@ async def ensure_batch(plugin, poses, force=False):
 
 
 def pose_line(pose):
-    """姿势 → 提示词里的一小段。"""
+    """姿势 → 提示词里的一小段（图库分类前缀先剥掉，只留动作）。"""
     pose = pose if isinstance(pose, dict) else {}
     name = str(pose.get("name") or "").strip()
-    note = str(pose.get("note") or "").strip()
+    note = clean_pose_note(pose.get("note"))
     if not name:
         return ""
     return "姿势：" + name + (("（" + note + "）") if note else "")

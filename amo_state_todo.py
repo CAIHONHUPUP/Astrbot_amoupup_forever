@@ -14,15 +14,23 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
     from .amo_state_common import (
+        _now,
         minutes_now,
         today_str,
     )
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from amo_state_common import (
+            _now,
             minutes_now,
             today_str,
         )
+
+try:  # 餐饮扣款唯一入口（餐次实例/价目表/日程块都在 amo_food_cost 里收口）
+    from . import amo_food_cost as _food_cost
+except ImportError:
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        import amo_food_cost as _food_cost
 
 
 try:  # 日类型（纯函数）：工作日/周末/节假日
@@ -178,9 +186,20 @@ class ScheduleTodoMixin(_MixinBase):
             cost = 0
         paid = False
         if cost:
+            # 本函数只做扣费，不写场景/日程块。餐饮类待办（饭局/约会吃饭）必须走
+            # pay_food：否则会造 todo:<day>:<start> 这种和餐次实例无关的幂等键，
+            # 同一顿被待办 + 微型事件/三餐各扣一次。
             try:
-                paid = bool(self.p.wallet.debit(
-                    cost, action, "todo:%s:%s" % (anchor.get("day"), anchor.get("start"))))
+                _food_like = (str(anchor.get("category") or "") in ("meal", "social", "date")
+                              and _food_cost.looks_like_food({"text": action}))
+                if _food_like:
+                    result = _food_cost.pay_food(
+                        self.p, action, action, source="todo", now=_now(), amount=cost)
+                    paid = bool(result.get("charged"))
+                else:
+                    paid = bool(self.p.wallet.debit(
+                        cost, action,
+                        "todo:%s:%s" % (anchor.get("day"), anchor.get("start"))))
             except Exception:
                 paid = False
             if not paid:

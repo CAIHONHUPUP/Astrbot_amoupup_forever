@@ -1,0 +1,536 @@
+{
+ "seed_base": 20261121,
+ "inject": true,
+ "critic": true,
+ "groups_requested": 50,
+ "elapsed_sec": 0.4,
+ "run_errors": [],
+ "totals": {
+  "total_turns": 500,
+  "groups": 50,
+  "turns_per_group": 10,
+  "turns_meeting_min_rounds": true,
+  "raw_clean_turns": 270,
+  "final_clean_turns": 500,
+  "raw_pass_rate": 54.0,
+  "final_pass_rate": 100.0,
+  "groups_all_turns_pass": 50,
+  "groups_with_failure": 0,
+  "raw_problem_counts": {
+   "miss_last_line": 156,
+   "place_out_says_home": 101,
+   "opener_repeat": 39,
+   "object_swap": 30,
+   "place_home_says_road": 27,
+   "asks_user_to_look": 19
+  },
+  "final_problem_counts": {},
+  "guard_effect": {
+   "fixed": 230,
+   "damaged": 0,
+   "persistent": 0,
+   "clean": 270
+  },
+  "by_scene": {
+   "mall": {
+    "turns": 114,
+    "final_clean": 114
+   },
+   "road": {
+    "turns": 100,
+    "final_clean": 100
+   },
+   "home": {
+    "turns": 117,
+    "final_clean": 117
+   },
+   "noodle": {
+    "turns": 80,
+    "final_clean": 80
+   },
+   "office": {
+    "turns": 89,
+    "final_clean": 89
+   }
+  },
+  "by_topic_kind": {
+   "image": {
+    "turns": 184,
+    "final_clean": 184
+   },
+   "video": {
+    "turns": 198,
+    "final_clean": 198
+   },
+   "thing": {
+    "turns": 118,
+    "final_clean": 118
+   }
+  },
+  "by_intent": {
+   "what": {
+    "turns": 100,
+    "final_clean": 100
+   },
+   "where": {
+    "turns": 100,
+    "final_clean": 100
+   },
+   "next": {
+    "turns": 100,
+    "final_clean": 100
+   },
+   "pretty": {
+    "turns": 100,
+    "final_clean": 100
+   },
+   "laugh": {
+    "turns": 100,
+    "final_clean": 100
+   }
+  },
+  "reply_fallback": {
+   "safe_reply_turns": 0,
+   "empty_guard_turns": 0,
+   "guard_fallback_turns": 0
+  },
+  "critic": {
+   "first_hit_turns": 87,
+   "retry_still_hit_turns": 55,
+   "safe_fallback_turns": 55
+  },
+  "share_ledger": {
+   "noted_turns": 120,
+   "prompt_injected_turns": 120,
+   "prompt_nonpending_turns": 0,
+   "prompt_stale_topic_turns": 0
+  }
+ },
+ "groups": [
+  {
+   "group": 0,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 1,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 2,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 3,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 4,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 5,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 6,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 7,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 8,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 9,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 10,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 11,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 12,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 13,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 14,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 15,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 16,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 17,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 18,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 19,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 20,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 21,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 22,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 23,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 24,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 25,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 26,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 27,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 28,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 29,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 30,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 31,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 32,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 33,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 34,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 35,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 36,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 37,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 38,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 39,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 40,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 41,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 42,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 43,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 44,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 45,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 46,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 47,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 48,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  },
+  {
+   "group": 49,
+   "turns": 10,
+   "failed": 0,
+   "passed": true,
+   "codes": []
+  }
+ ],
+ "code_fingerprint": {
+  "amo_reply_pipeline.py": {
+   "sha256_16": "a1ea1d2d89671760",
+   "bytes": 87042,
+   "mtime": 1795326950
+  },
+  "amo_state_consistency.py": {
+   "sha256_16": "b5984b7941f7fca6",
+   "bytes": 52476,
+   "mtime": 1795326691
+  },
+  "amo_share_ledger.py": {
+   "sha256_16": "a943eb8aaa1ab961",
+   "bytes": 6477,
+   "mtime": 1795314337
+  },
+  "amo_grounding_critic.py": {
+   "sha256_16": "e5e33bdc4f9d7cf0",
+   "bytes": 10500,
+   "mtime": 1795325975
+  },
+  "amo_llm_service.py": {
+   "sha256_16": "396c465c040dd20d",
+   "bytes": 33651,
+   "mtime": 1795320715
+  },
+  "amo_prompt_registry.py": {
+   "sha256_16": "2c109571c45a934d",
+   "bytes": 44326,
+   "mtime": 1795319080
+  },
+  "reply_fact_guard.py": {
+   "sha256_16": "d815effdb346a27e",
+   "bytes": 38372,
+   "mtime": 1795326010
+  },
+  "tone_guard.py": {
+   "sha256_16": "89659d29759a8239",
+   "bytes": 10885,
+   "mtime": 1795276133
+  },
+  "amo_proactive.py": {
+   "sha256_16": "6ba14917599239eb",
+   "bytes": 110280,
+   "mtime": 1795324366
+  },
+  "amo_question_guard.py": {
+   "sha256_16": "65c13d5bf7aff6cc",
+   "bytes": 6729,
+   "mtime": 1795326100
+  }
+ },
+ "meta": {
+  "sim_day": "2026-11-21",
+  "note": "share_sim FakePlugin 内存桩，未开生产库"
+ },
+ "headline": {
+  "seed_base": 20261121,
+  "inject": true,
+  "groups_passed": 50,
+  "groups": 50,
+  "group_pass_rate": 100.0,
+  "final_pass_rate": 100.0,
+  "raw_pass_rate": 54.0,
+  "final_clean_turns": 500,
+  "total_turns": 500,
+  "guard_effect": {
+   "fixed": 230,
+   "damaged": 0,
+   "persistent": 0,
+   "clean": 270
+  },
+  "final_problem_counts": {},
+  "run_errors": 0
+ }
+}

@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import re
+
 try:
     from . import clock as _amo_clock
 except ImportError:
@@ -14,6 +16,50 @@ except ImportError:
 
 _TTL = 2 * 3600
 _ANIMALS = ("猫", "狗", "兔", "鸟", "仓鼠")
+
+# 分享的「开场/续聊元信息」和场景括号都不是信息点本身：
+#   「老公我刚刷到一个猫的视频，一只橘猫卡住了」->「一只橘猫卡住了」
+#   「刚才那个兔还有后续，它听见零食袋的声音」->「它听见零食袋的声音」
+#   「（在面馆等面）」这种场景括号直接摘掉。
+_PAREN = re.compile(r"[（(][^）)]*[）)]")
+_META = re.compile(
+    r"^(?:老公[，,]?\s*)?(?:我)?(?:"
+    r"刚才那个[^，。！？\n]{1,12}?(?:还有后续|的事|的视频|的图)[，,]?"
+    r"|(?:刚刷到|刚刚刷到|刚看到|刷到)(?:一个|一件事|一件|个)?"
+    r"[^，。！？\n]{0,16}?(?:视频|图片|照片|图|事)[，,]?"
+    r"|你快看这个(?:视频|图片|图)[，,]?"
+    r"|快看这个(?:视频|图片|图)[，,]?"
+    r"|给你看(?:这个|一个|个)?[^，。！？\n]{0,10}?(?:视频|图片|照片|图|事)[，,]?"
+    r"|刚看了个[^，。！？\n]{1,12}?[，,]"
+    r"|刚听说了个[^，。！？\n]{1,12}?[，,]"
+    r")")
+#: 回复里不能出现的「让她叫他自己看」类短语，接话时从信息点里剔掉，避免二次违规。
+_ROLE_WORDS = ("你发的", "你那个视频", "你那个图", "你再发", "发我看看", "你翻上去",
+               "你自己看", "你再看一遍", "给你看看", "给你看", "快看", "刚刷到")
+
+
+def last_info(text):
+    """分享的最后一个信息点：她真正在说的那句描述（不含开场/续聊/场景括号）。
+
+    台账入账时记一份，聊天守卫接话时也用它，保证「分享的最后一个信息点」
+    在两个环节里是同一个定义，不按样例各写一套。
+    """
+    body = _PAREN.sub("", str(text or "")).strip()
+    # 「老公，楼下奶茶店排队…」这类事情分享没有视频/图等开场，先摘掉称呼。
+    body = re.sub(r"^(?:老公|亲爱的)[，,]?\s*", "", body)
+    body = _META.sub("", body).strip()
+    body = re.sub(r"^[，,；;、\s]+", "", body)
+    parts = [part for part in re.split(r"(?<=[。！？!?\n])", body) if part.strip()]
+    if parts:
+        body = parts[-1].strip() if len(parts) > 1 else body.strip()
+    # 取最后一个信息点，但别让结尾的重复开场/角色反转把信息点带歪。
+    clauses = [clause for clause in re.split(r"(?<=[，,；;])", body) if clause.strip()]
+    clauses = [clause for clause in clauses
+               if not any(word in clause for word in _ROLE_WORDS)]
+    if clauses:
+        body = "".join(clauses).strip()
+    body = re.sub(r"[，,；;]\s*$", "", body).strip()
+    return body[-48:] if len(body) > 48 else body
 
 
 def _kv(plugin):
@@ -42,7 +88,8 @@ def note(plugin, text, media=False, now=None):
     body = str(text or "").strip()
     if not body:
         return {}
-    entry = {"topic": _topic(body), "text": body[:60], "at": float(now or _amo_clock.now_ts()),
+    entry = {"topic": _topic(body), "text": body[:60], "info": last_info(body),
+             "at": float(now or _amo_clock.now_ts()),
              "media": bool(media), "pending": True}
     try:
         db.kv_set("share_ledger", entry)
@@ -64,6 +111,22 @@ def last(plugin, now=None):
     if float(entry.get("at") or 0) + _TTL < float(now or _amo_clock.now_ts()):
         return {}
     return entry
+
+
+def recent_info(plugin, now=None):
+    """最近一条分享的最后一个信息点。
+
+    聊天守卫用它接住「然后呢/什么视频/在哪」这类话：注意这里只看 2 小时 TTL，
+    不看 pending——pending 在「他刚回应」那一刻就被 mark_reacted 清掉了，
+    但同一件事往往还要再聊一两句，信息点仍然要保留。
+    """
+    entry = last(plugin, now)
+    if not entry:
+        return ""
+    info = str(entry.get("info") or "").strip()
+    if info:
+        return info
+    return last_info(entry.get("text"))
 
 
 def mark_reacted(plugin):

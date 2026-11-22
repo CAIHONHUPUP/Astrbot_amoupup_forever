@@ -6,7 +6,39 @@
 """
 from __future__ import annotations
 
+from datetime import date as _date
+
 _BAD_WEATHER_WORDS = ("雨", "雪", "雷", "冰雹", "大风", "沙尘")
+
+#: JIT 是 domains 叶子（只许标准库），所以星期文案在域内自查；
+#: 日期标签的公共函数在 amo_shared_time.day_label，域外调用方应以 target_day 传入。
+_WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+
+
+def _target_weekday(target_day):
+    """target_day（date/datetime/ISO 字符串）→ 0-6；解析失败返回 None。"""
+    if target_day is None:
+        return None
+    try:
+        if hasattr(target_day, "weekday"):
+            return int(target_day.weekday())
+        return int(_date.fromisoformat(str(target_day)[:10]).weekday())
+    except (TypeError, ValueError):
+        return None
+
+
+def _weekday_label(weekday, weekday_label=""):
+    """星期几的中文短标签；没有可信的 target_day/weekday 时返回空串，绝不硬编码。"""
+    text = str(weekday_label or "").strip()
+    if text:
+        return text
+    try:
+        index = int(weekday)
+    except (TypeError, ValueError):
+        return ""
+    if 0 <= index <= 6:
+        return _WEEKDAY_LABELS[index]
+    return ""
 
 def _is_bad_weather(weather_text="", weather_temp=None):
     body = str(weather_text or "")
@@ -90,11 +122,21 @@ def _slack_day_plan(hour):
 
 def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, weekday=None, sick_action=None,
              mood_value=0, leave_day=False, rest_day=None, weather_text="", weather_temp=None,
-             period_phase="", day_type_id=""):
-    """到点即时决策：只给一个当前动作，不排未来。"""
+             period_phase="", day_type_id="", target_day=None, weekday_label=""):
+    """到点即时决策：只给一个当前动作，不排未来。
+
+    target_day：这次 JIT 的「目标日」（date/datetime/ISO 字符串）。给了就从它推星期，
+    不再让调用方另算一份，日记文案也不会再写死「周一早上」。weekday 仍兼容旧调用
+    （有 target_day 时以 target_day 为准）。
+    """
     hour = int(hour)
     hunger = float(hunger)
     cash_cents = int(cash_cents)
+    if target_day is not None:
+        _derived_weekday = _target_weekday(target_day)
+        if _derived_weekday is not None:
+            weekday = _derived_weekday
+    day_weekday_label = _weekday_label(weekday, weekday_label)
     if rest_day is None:
         is_workday = weekday is not None and int(weekday) < 5
     else:
@@ -182,7 +224,9 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, we
         # 工作日法则：07-09 必须出门/通勤，09-18 物理位置默认公司，不能在家发呆。
         if hour == 7:
             return {"action": "急急忙忙洗漱，准备出门", "place": "家", "zone": "home",
-                    "category": "life", "cost_cents": 0, "diary": "周一早上，得赶紧出门。"}
+                    "category": "life", "cost_cents": 0,
+                    "diary": ((day_weekday_label + "早上，得赶紧出门。")
+                              if day_weekday_label else "早上，得赶紧出门。")}
         if hour == 8:
             return {"action": "下楼买早餐，边走边吃去地铁站", "place": "路上", "zone": "road",
                     "category": "commute", "cost_cents": 0, "diary": "边赶路边吃，别迟到。"}

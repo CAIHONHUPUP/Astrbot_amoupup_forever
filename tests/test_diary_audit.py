@@ -320,6 +320,8 @@ class NotifyTests(AuditBase):
         return report
 
     def test_notify_sends_once_after_hour(self):
+        # 2026-11-22：日记质检默认不推飞书（diary_audit_push=False），这里显式打开验证推送路径。
+        self.plugin.config["diary_audit_push"] = True
         self._seed_report(hard=2, warn=1)
         sent = asyncio.run(audit.notify(self.plugin, self.now))
         self.assertTrue(sent)
@@ -349,6 +351,28 @@ class NotifyTests(AuditBase):
     def test_notify_disabled_by_config(self):
         self.plugin.config["diary_audit_notify"] = False
         self._seed_report()
+        self.assertFalse(asyncio.run(audit.notify(self.plugin, self.now)))
+        self.assertEqual(self.plugin.owner_messages, [])
+
+    def test_concurrent_notify_sends_once(self):
+        """09:00 日记质检双发：两个并发 notify 只能有一条 owner 消息。"""
+        self.plugin.config["diary_audit_push"] = True
+        self._seed_report(hard=2, warn=1)
+
+        async def both():
+            return await asyncio.gather(
+                audit.notify(self.plugin, self.now),
+                audit.notify(self.plugin, self.now),
+            )
+
+        results = asyncio.run(both())
+        self.assertEqual(sum(1 for item in results if item), 1, results)
+        self.assertEqual(len(self.plugin.owner_messages), 1)
+
+    def test_notify_push_off_by_default(self):
+        """2026-11-22 真实飞书：09:00 日记质检系统口吻推送 → 默认必须不推。"""
+        self._seed_report(hard=2, warn=1)
+        self.assertNotIn("diary_audit_push", self.plugin.config)
         self.assertFalse(asyncio.run(audit.notify(self.plugin, self.now)))
         self.assertEqual(self.plugin.owner_messages, [])
 

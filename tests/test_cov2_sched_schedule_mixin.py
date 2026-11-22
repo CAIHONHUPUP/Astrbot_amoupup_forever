@@ -232,7 +232,7 @@ class Host(ScheduleMixin):
     def _recent(self, umo, limit):
         return list(self.recent_rows)
 
-    async def _send_to_umo(self, umo, text):
+    async def _send_to_umo(self, umo, text, source=None, kind=""):
         self.sent.append((umo, text))
         return self.send_ok
 
@@ -711,7 +711,7 @@ class MaybeAlertTests(Base):
                          ["qq:private:u1", "qq:private:u2"])
         self.assertTrue(any("换下一个" in m for _, m in self.logger.records))
 
-    async def _flaky_send(self, umo, text):
+    async def _flaky_send(self, umo, text, source=None, kind=""):
         self.host.sent.append((umo, text))
         return umo != "qq:private:u1"
 
@@ -977,6 +977,9 @@ class TimeRuleTests(Base):
 
     def test_time_rules_sleeping_and_errors(self):
         self.host.state.snapshot = lambda: {"activity": {"category": "sleep"}}
+        # task-30：日记的「此刻」改读场景账本（snapshot_with_scene），账本源也要是睡觉，
+        # 否则账本给出 current_activity 的 work 会让这条断言失去意义。
+        self.host.state.current = {"activity": "睡觉", "place": "家", "category": "sleep"}
         self.host.db.kv["pending_delivery"] = None
         with mock.patch.object(sched, "_now", lambda: dt.datetime(2026, 11, 18, 23, 0)):
             text = sched._diary_time_rules(self.host, None)

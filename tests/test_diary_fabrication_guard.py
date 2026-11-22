@@ -101,6 +101,25 @@ class DeterministicGuardTests(unittest.TestCase):
             out = ScheduleEngine._sanitize_hour_diary(FABRICATED, NO_CHAT_FACTS)
         self.assertIn("提醒我多喝水", out)
 
+    def test_safe_line_rotates_across_days(self):
+        # P2（2026-11-22）：兜底句按日期轮换，连续两天不再复读同一句。
+        text = "他今天在微信上提醒我多喝水，我就顺手倒了杯温水。"
+        outs = set()
+        for day in ("2026-11-06", "2026-11-07", "2026-11-08"):
+            out = guard.strip_fabricated_interaction(text, "", False, day=day)
+            self.assertNotIn("提醒我", out)
+            outs.add(out)
+        self.assertEqual(3, len(outs), outs)
+        # 不给 day 的旧调用方保持原固定句（兼容测试/旧路径）
+        self.assertIn("想起他以前叮嘱过", guard.strip_fabricated_interaction(text, "", False))
+
+    def test_food_and_file_words_are_not_scrubbed_as_names(self):
+        # P2（2026-11-22）：人名兜底不能把「文档/牛肉粉」换成「一个朋友」。
+        for text in ("上午整理文档、写周报", "吃了一个牛肉粉", "终于下班了",
+                     "是这家店贵，我没舍得买"):
+            self.assertEqual(text, guard.scrub_names_guarded(text), text)
+        self.assertIn("一个朋友", guard.scrub_names_guarded("今天和李雨桐吃饭"))
+
     def test_hour_diary_prompt_has_no_copyable_example(self):
         # 块日记的提示词在 schedule_diary._diary_prompt（同一个根因）。
         import inspect

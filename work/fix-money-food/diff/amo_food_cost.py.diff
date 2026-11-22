@@ -1,0 +1,442 @@
+--- before/amo_food_cost.py
++++ after/amo_food_cost.py
+@@ -40,4 +40,19 @@
+ NIGHT_END_HOUR = 6
+ DEDUPE_MINUTES = 10
++#: 一天最多四顿：早/午/晚/宵夜。宵夜横跨 21:00-次日 05:00，00:00-05:00 归前一天的宵夜。
++MAX_MEALS_PER_DAY = 4
++#: 同一餐次（同一个 meal 实例）45 分钟内只允许一笔扣款；超过 45 分钟属于加餐，仍挂在同一实例上。
++SLOT_DEDUPE_MINUTES = 45
++#: 餐次窗口（当天分钟；宵夜窗口跨零点，>24:00 的部分表示次日凌晨）。
++MEAL_SLOT_WINDOWS = {
++    "breakfast": (5 * 60, 10 * 60),
++    "lunch": (10 * 60, 15 * 60),
++    "dinner": (16 * 60, 21 * 60),
++    "late": (21 * 60, 29 * 60),
++}
++MEAL_SLOT_ORDER = ("breakfast", "lunch", "dinner", "late")
++SLOT_LABELS = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "late": "夜宵"}
++#: 餐块时长（分钟）。
++MEAL_BLOCK_MINUTES = 15
+ 
+ #: 日常餐饮固定价（分）；price_book.json 有同 item 的 v1 行时以表为准。
+@@ -377,6 +392,186 @@
+ 
+ 
++# ---------------- 餐次实例：一天最多四顿的唯一身份 ----------------
++def meal_instance_id(day, slot):
++    """餐次实例 ID（幂等/event_id/日程块共用）：meal:<day>:<slot>。"""
++    day = str(day or "").strip()
++    slot = str(slot or "").strip()
++    if not day or slot not in MEAL_SLOT_WINDOWS:
++        return ""
++    return "meal:%s:%s" % (day, slot)
++
++
++def parse_meal_instance(value):
++    """meal:<day>:<slot> → (day, slot)；不是餐次实例返回 ("", "")。"""
++    parts = str(value or "").strip().split(":")
++    if len(parts) == 3 and parts[0] == "meal" and parts[2] in MEAL_SLOT_WINDOWS:
++        return parts[1], parts[2]
++    return "", ""
++
++
++def _instance_of_row(row):
++    """账本行属于哪个餐次实例：优先 event_id，其次旧格式 idem=meal:<day>:<slot>:<seq>。"""
++    row = row or {}
++    event = str(row.get("event_id") or "")
++    if event.startswith("meal:"):
++        return event
++    idem = str(row.get("idem") or "")
++    if idem.startswith("meal:"):
++        parts = idem.split(":")
++        if len(parts) >= 3:
++            return ":".join(parts[:3])
++    return ""
++
++
++def meal_slot_at(now=None):
++    """此刻属于哪一顿：返回 (target_day, slot, instance_id)。
++
++    宵夜窗口 21:00-次日 05:00；00:00-05:00 归**前一天**的宵夜，保证「一天最多四顿」
++    不会被零点切成第五顿。15:00-16:00 是加餐空档，返回 ("", "", "")：不占四顿配额。
++    """
++    now = now or _amo_clock.now()
++    minute = int(now.hour) * 60 + int(now.minute)
++    day = now.date()
++    if minute < 5 * 60:
++        day = day - _dt.timedelta(days=1)
++        minute += 24 * 60
++    for slot in MEAL_SLOT_ORDER:
++        start, end = MEAL_SLOT_WINDOWS[slot]
++        if start <= minute < end:
++            day_text = day.isoformat()
++            return day_text, slot, meal_instance_id(day_text, slot)
++    return "", "", ""
++
++
++def _wallet_ledger_rows(plugin, limit=200):
++    """只读钱包流水（坏的/非 dict 行直接跳过，不阻断吃饭）。"""
++    wallet = getattr(plugin, "wallet", None)
++    if wallet is None:
++        return []
++    try:
++        return [row for row in (wallet.ledger(limit) or []) if isinstance(row, dict)]
++    except Exception as exc:
++        logger.debug("[amo] 读钱包流水失败，按空处理: %r", exc)
++        return []
++
++
++def meal_instance_rows(plugin, instance_id):
++    """某个餐次实例已经扣过的流水（只读，按时间升序）。"""
++    instance = str(instance_id or "").strip()
++    if not instance:
++        return []
++    day, slot = parse_meal_instance(instance)
++    if not day:
++        return []
++    prefix = instance + ":"
++    out = []
++    for row in _wallet_ledger_rows(plugin):
++        if int(row.get("delta_cents") or 0) >= 0:
++            continue
++        idem = str(row.get("idem") or "")
++        if str(row.get("event_id") or "") == instance or idem == instance or idem.startswith(prefix):
++            out.append(row)
++    out.sort(key=lambda row: float(row.get("ts") or 0))
++    return out
++
++
++def meal_charged(plugin, instance_id):
++    """这个餐次实例是不是已经扣过款。"""
++    return bool(meal_instance_rows(plugin, instance_id))
++
++
++def meal_instances_today(plugin, day):
++    """今天已经吃了哪几顿：{slot: [rows]}（只读账本，按实例去重）。"""
++    day_text = str(day or "")
++    out = {}
++    for row in _wallet_ledger_rows(plugin):
++        if int(row.get("delta_cents") or 0) >= 0:
++            continue
++        instance = _instance_of_row(row)
++        inst_day, slot = parse_meal_instance(instance)
++        if inst_day != day_text or slot not in MEAL_SLOT_WINDOWS:
++            continue
++        out.setdefault(slot, []).append(row)
++    return out
++
++
++def _slot_of_block_minute(minute):
++    """日程块开始分钟 → 餐次 slot（0-5 点按宵夜算；15-16 空档返回空串）。"""
++    value = int(minute)
++    if value < 5 * 60:
++        value += 24 * 60
++    for slot in MEAL_SLOT_ORDER:
++        start, end = MEAL_SLOT_WINDOWS[slot]
++        if start <= value < end:
++            return slot
++    return ""
++
++
++def coalesce_meal_blocks(plugin, day, slot=""):
++    """同一餐次只保留一个餐块：重叠/首尾相接的 meal 块合并成一个。
++
++    扣费入口已经保证「一个实例一个块」；这里是给旧数据/并发写留下的重复餐块做收口，
++    只合并彼此重叠或首尾相接的块，中间夹着别的块（睡眠/通勤）时绝不硬吞。
++    """
++    state = getattr(plugin, "state", None)
++    if state is None:
++        return {"ok": False, "reason": "no_schedule", "merged": 0}
++    day = str(day or "")
++    rows = schedule_rows(state, day)
++    if not rows:
++        return {"ok": True, "merged": 0}
++    groups, others = {}, []
++    for row in rows:
++        if str(row.get("category") or "") != "meal":
++            others.append(row)
++            continue
++        begin = _minute_of(row.get("start"))
++        row_slot = _slot_of_block_minute(begin) if begin is not None else ""
++        if not row_slot or (slot and row_slot != slot):
++            others.append(row)
++            continue
++        groups.setdefault(row_slot, []).append(row)
++    merged = 0
++    for group in groups.values():
++        if len(group) < 2:
++            others.extend(group)
++            continue
++        group.sort(key=lambda row: _minute_of(row.get("start")) or 0)
++        current = dict(group[0])
++        for nxt in group[1:]:
++            cur_end = _minute_of(current.get("end"))
++            nxt_start = _minute_of(nxt.get("start"))
++            nxt_end = _minute_of(nxt.get("end"))
++            if cur_end is None or nxt_start is None or nxt_end is None or nxt_start > cur_end:
++                others.append(current)
++                current = dict(nxt)
++                continue
++            current["end"] = _text_of(max(cur_end, nxt_end))
++            note = str(nxt.get("detail") or "").strip()
++            if note and note not in str(current.get("detail") or ""):
++                old = str(current.get("detail") or "").strip()
++                current["detail"] = ("%s；%s" % (old, note)) if old else note
++            if not str(current.get("event_id") or "").startswith("meal:"):
++                candidate = str(nxt.get("event_id") or "")
++                if candidate.startswith("meal:"):
++                    current["event_id"] = candidate
++            merged += 1
++        others.append(current)
++    if not merged:
++        return {"ok": True, "merged": 0}
++    others.sort(key=lambda row: _minute_of(row.get("start"))
++                if _minute_of(row.get("start")) is not None else 24 * 60)
++    if not _save_block_rows(state, day, others, rows, "meal_coalesce", "同一餐次只保留一个块"):
++        return {"ok": False, "reason": "save_failed", "merged": 0}
++    try:
++        state.schedule[day] = others
++    except Exception as exc:
++        logger.debug("[amo] 回写 schedule 快照失败: %r", exc)
++    logger.info("[amo] 同一餐次重复餐块已合并 day=%s merged=%d", day, merged)
++    return {"ok": True, "merged": merged}
++
++
+ def ensure_block_window(plugin, day, start, end, activity, detail="", category="meal",
+-                        source="food_spend", reason="餐饮落日程"):
++                        source="food_spend", reason="餐饮落日程", instance_id=""):
+     """在 day 的日程里为核心窗口 [start,end) 落一个块；覆盖块切成「前段/中段/后段」。
+ 
+@@ -398,4 +593,25 @@
+     rows = schedule_rows(state, day)
+     body = str(activity or "宵夜")
++    instance = str(instance_id or "").strip()
++    if instance:
++        # 同一餐次实例永远复用同一个块：先按 event_id 找，跨时段也不再切新块。
++        for row in rows:
++            if str(row.get("event_id") or "") != instance:
++                continue
++            note = str(detail or "").strip()
++            old_detail = str(row.get("detail") or "").strip()
++            if note and note not in old_detail:
++                row["detail"] = ("%s；%s" % (old_detail, note)) if old_detail else note
++                kept = list(rows)
++                if not _save_block_rows(state, day, kept, rows, source, reason):
++                    return {"ok": False, "reason": "save_failed"}
++                try:
++                    state.schedule[day] = kept
++                except Exception as exc:
++                    logger.debug("[amo] 回写 schedule 快照失败: %r", exc)
++            return {"ok": True, "block_id": _block_id_for(day, row), "day": day,
++                    "start": str(row.get("start") or ""), "end": str(row.get("end") or ""),
++                    "activity": str(row.get("activity") or ""), "reused": True,
++                    "instance_id": instance}
+     for row in rows:
+         a, b = _minute_of(row.get("start")), _minute_of(row.get("end"))
+@@ -403,8 +619,10 @@
+             continue
+         text = str(row.get("activity") or "")
+-        if str(row.get("category") or "") == "meal" and (body in text or "宵夜" in text or "夜宵" in text):
++        # 饭点里已经有了 meal 块（不管文案怎么写）就复用，不能一次消费切一个新块。
++        if str(row.get("category") or "") == "meal":
+             return {"ok": True, "block_id": _block_id_for(day, row), "day": day,
+                     "start": str(row.get("start") or ""), "end": str(row.get("end") or ""),
+-                    "activity": text, "reused": True}
++                    "activity": text, "reused": True,
++                    "instance_id": str(row.get("event_id") or "")}
+     (place, zone), covering = _current_place_zone(rows, begin, finish)
+     # R13：在途吃宵夜——不切通勤块，把宵夜并进当前块，地点跟原地（路上/车站）。
+@@ -433,4 +651,6 @@
+                "source": str(source or "food_spend"), "appointment": True,
+                "detail": str(detail or "")}
++    if instance:
++        new_row["event_id"] = instance
+     kept, inserted = [], False
+     for row in rows:
+@@ -471,9 +691,12 @@
+     if not inserted:
+         kept.append(new_row)
+-        # 全新块没有父 id 可继承：显式拿一个新 event_id，返回的 block_id 才能
+-        # 写进账本 ref（H4 只解析 block:ev_<id>）。
+-        fresh = _new_event_id()
+-        if fresh:
+-            new_row["event_id"] = fresh
++        # 全新块没有父 id 可继承：显式拿一个 event_id（餐次实例优先），返回的
++        # block_id 才能写进账本 ref（H4 只解析 block:ev_<id>）。
++        if instance:
++            new_row["event_id"] = instance
++        else:
++            fresh = _new_event_id()
++            if fresh:
++                new_row["event_id"] = fresh
+     kept.sort(key=lambda row: _minute_of(row.get("start"))
+               if _minute_of(row.get("start")) is not None else 24 * 60)
+@@ -498,6 +721,8 @@
+     end = min(24 * 60, start + max(1, int(minutes)))
+     activity = "吃%s（宵夜）" % label if in_night(now) else "吃%s" % label
++    _day, _slot, instance = meal_slot_at(now)
+     result = ensure_block_window(plugin, now.strftime("%Y-%m-%d"), _text_of(start),
+-                                 _text_of(end), activity, str(reason or ""))
++                                 _text_of(end), activity, str(reason or ""),
++                                 instance_id=instance)
+     return bool(result.get("ok"))
+ 
+@@ -818,8 +1043,16 @@
+ 
+ def pay_food(plugin, item, reason, source="meal", now=None, amount=None, idem=None,
+-             allow_night=False):
+-    """餐饮扣款唯一入口：夜间跳过扣款、10 分钟内同物去重、金额走价目表。
+-
+-    返回 {ok, charged, reason, amount, idem}；夜间是「叙述但不扣钱」，ok=True。
++             allow_night=False, instance_id="", ensure_block=True, minutes=None):
++    """餐饮扣款唯一入口：JIT/微型事件/宵夜/日程都必须走这里。
++
++    规则（2026-11-22 P0）：
++    - 一天最多四顿：餐次实例 meal:<day>:<slot>（早/午/晚/宵夜，宵夜跨零点归前一天）；
++    - 同一餐次实例 45 分钟内只允许一笔；超时再扣算「同一实例的加餐」，idem 带序号，
++      账本 event_id 始终是实例 ID，日程块也只复用同一个；
++    - 金额只来自价目表（price_for）；调用方给了 amount 就用调用方的固定值；
++    - 餐点消费先落/复用日程块；夜间（00:00-06:00）必须有块才允许扣钱；
++    - 15:00-16:00 加餐空档不占四顿配额，只做 10 分钟同物去重。
++
++    返回 {ok, charged, reason, amount, idem, instance_id, slot, day, block_id}。
+     """
+     now = now or _amo_clock.now()
+@@ -827,30 +1060,116 @@
+     wallet = getattr(plugin, "wallet", None)
+     if wallet is None:
+-        return {"ok": False, "charged": False, "reason": "no_wallet", "amount": 0, "idem": ""}
++        return {"ok": False, "charged": False, "reason": "no_wallet", "amount": 0,
++                "idem": "", "instance_id": "", "slot": "", "day": "", "block_id": ""}
+     if (sick_status(plugin) and late_snack_hours(now)
+             and not sick_food_allowed({"text": item, "food": item})):
+         logger.info("[amo] 生病期间禁止宵夜/夜间加餐，跳过扣款：%s", item)
+-        return {"ok": False, "charged": False, "reason": "sick", "amount": 0, "idem": ""}
+-    if in_night(now) and not allow_night:
+-        if not ensure_food_block(plugin, item, now, reason):
+-            logger.warning("[amo] 夜间餐饮找不到/补不上日程块，拒绝扣款：%s", item)
+-            return {"ok": False, "charged": False, "reason": "no_block",
+-                    "amount": 0, "idem": ""}
+-    if recent_duplicate(wallet, item, now=now):
+-        logger.warning("[amo] %d 分钟内重复餐饮已拦截：%s", DEDUPE_MINUTES, item)
+-        return {"ok": False, "charged": False, "reason": "duplicate",
+-                "amount": 0, "idem": ""}
++        return {"ok": False, "charged": False, "reason": "sick", "amount": 0,
++                "idem": "", "instance_id": "", "slot": "", "day": "", "block_id": ""}
++    day, slot, auto_instance = meal_slot_at(now)
++    instance = str(instance_id or auto_instance or "").strip()
++    if instance:
++        inst_day, inst_slot = parse_meal_instance(instance)
++        if not inst_day:
++            instance = ""
++        else:
++            day, slot = inst_day, inst_slot
++    block_day = now.strftime("%Y-%m-%d")
++    # 饮料（奶茶/果茶/咖啡）不算“一顿”，不占四顿配额、不切餐块。
++    is_drink = item in DRINK_WORDS or any(word in item for word in DRINK_WORDS)
++    if is_drink:
++        instance, slot = "", ""
++    # 加餐空档/饮料：不占四顿、不切餐块，仍走价目表 + 10 分钟同物去重。
++    if not instance:
++        if recent_duplicate(wallet, item, now=now):
++            logger.warning("[amo] %d 分钟内重复餐饮已拦截：%s", DEDUPE_MINUTES, item)
++            return {"ok": False, "charged": False, "reason": "duplicate", "amount": 0,
++                    "idem": "", "instance_id": "", "slot": "", "day": day, "block_id": ""}
++        price = int(amount if amount is not None else price_for(item))
++        if price <= 0:
++            return {"ok": False, "charged": False, "reason": "no_price", "amount": 0,
++                    "idem": "", "instance_id": "", "slot": "", "day": day, "block_id": ""}
++        charge_idem = idem or food_idem(source, item, now)
++        try:
++            paid = bool(wallet.debit(price, str(reason or item), charge_idem,
++                                     category="餐饮", sub_category="加餐",
++                                     item_name=item, trigger_reason=str(reason or "")))
++        except Exception as exc:
++            logger.warning("[amo] 餐饮扣款异常: %r", exc)
++            return {"ok": False, "charged": False, "reason": "exception", "amount": price,
++                    "idem": charge_idem, "instance_id": "", "slot": "", "day": day,
++                    "block_id": ""}
++        if not paid:
++            return {"ok": False, "charged": False, "reason": "no_money", "amount": price,
++                    "idem": charge_idem, "instance_id": "", "slot": "", "day": day,
++                    "block_id": ""}
++        return {"ok": True, "charged": True, "reason": "", "amount": price,
++                "idem": charge_idem, "instance_id": "", "slot": "", "day": day,
++                "block_id": ""}
++    previous = meal_instance_rows(plugin, instance)
++    if previous:
++        last_ts = float(previous[-1].get("ts") or 0)
++        if float(now.timestamp()) - last_ts <= SLOT_DEDUPE_MINUTES * 60:
++            logger.warning("[amo] 同一餐次 %d 分钟内重复扣款已拦截：%s（%s）",
++                           SLOT_DEDUPE_MINUTES, item, instance)
++            return {"ok": False, "charged": False, "reason": "duplicate_slot",
++                    "amount": 0, "idem": str(previous[-1].get("idem") or ""),
++                    "instance_id": instance, "slot": slot, "day": day,
++                    "block_id": "", "reused": True}
++        seq = len(previous)
++    else:
++        seq = 0
+     price = int(amount if amount is not None else price_for(item))
+     if price <= 0:
+-        return {"ok": False, "charged": False, "reason": "no_price", "amount": 0, "idem": ""}
+-    idem = idem or food_idem(source, item, now)
+-    try:
+-        paid = bool(wallet.debit(price, str(reason or item), idem))
++        return {"ok": False, "charged": False, "reason": "no_price", "amount": 0,
++                "idem": "", "instance_id": instance, "slot": slot, "day": day,
++                "block_id": ""}
++    block = {}
++    if ensure_block and slot:
++        start_min = int(now.hour) * 60 + int(now.minute)
++        span = max(1, int(minutes if minutes is not None else MEAL_BLOCK_MINUTES))
++        end_min = min(24 * 60, start_min + span)
++        label = SLOT_LABELS.get(slot, "吃饭")
++        activity = ("吃%s（宵夜）" % item) if slot == "late" else ("吃%s" % item)
++        detail = "%s %.2f 元｜来源 %s" % (label, price / 100.0, source)
++        block = ensure_block_window(plugin, block_day, _text_of(start_min), _text_of(end_min),
++                                    activity, detail, category="meal", source=source,
++                                    reason="餐饮落日程", instance_id=instance)
++        if not block.get("ok"):
++            # 日程层存在（可写块）或夜间时，扣款必须有块；极简假件没有日程写入能力才放行。
++            state = getattr(plugin, "state", None)
++            writable = any(callable(getattr(state, name, None)) for name in
++                           ("commit_schedule_change", "apply_schedule", "save_day"))
++            if in_night(now) or writable:
++                logger.warning("[amo] 餐饮找不到/补不上日程块，拒绝扣款：%s", item)
++                return {"ok": False, "charged": False, "reason": "no_block", "amount": 0,
++                        "idem": "", "instance_id": instance, "slot": slot, "day": day,
++                        "block_id": ""}
++            block = {}
++    charge_idem = str(idem or ("%s:%d" % (instance, seq)))
++    ref = ""
++    if block.get("block_id"):
++        ref = "block:%s %s-%s" % (block.get("block_id"),
++                                  block.get("start") or _text_of(start_min),
++                                  block.get("end") or _text_of(end_min))
++    sub_category = SLOT_LABELS.get(slot, "餐饮") if seq == 0 else (
++        SLOT_LABELS.get(slot, "餐饮") + "加餐")
++    try:
++        paid = bool(wallet.debit(price, str(reason or item), charge_idem, ref=ref,
++                                 category="餐饮", sub_category=sub_category,
++                                 item_name=item, trigger_reason=str(reason or ""),
++                                 event_id=instance))
+     except Exception as exc:
+         logger.warning("[amo] 餐饮扣款异常: %r", exc)
+-        return {"ok": False, "charged": False, "reason": "exception",
+-                "amount": price, "idem": idem}
++        return {"ok": False, "charged": False, "reason": "exception", "amount": price,
++                "idem": charge_idem, "instance_id": instance, "slot": slot, "day": day,
++                "block_id": str(block.get("block_id") or "")}
+     if not paid:
+-        return {"ok": False, "charged": False, "reason": "no_money",
+-                "amount": price, "idem": idem}
+-    return {"ok": True, "charged": True, "reason": "", "amount": price, "idem": idem}
++        return {"ok": False, "charged": False, "reason": "no_money", "amount": price,
++                "idem": charge_idem, "instance_id": instance, "slot": slot, "day": day,
++                "block_id": str(block.get("block_id") or "")}
++    if ensure_block and slot:
++        coalesce_meal_blocks(plugin, block_day, slot=slot)
++    return {"ok": True, "charged": True, "reason": "", "amount": price,
++            "idem": charge_idem, "instance_id": instance, "slot": slot, "day": day,
++            "block_id": str(block.get("block_id") or "")}

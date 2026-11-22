@@ -1198,10 +1198,11 @@ class AmoDB:
         return record["status"] == "valid" and bool(str(record.get("text") or "").strip())
 
     def mark_diaries_stale(self, day, from_hour, version=None):
-        """把某天 from_hour 及以后的小日记标成 stale，不物理删除。
+        """把某天 from_hour 及以后的旧整点表小日记标成 stale，不物理删除。
 
         旧文本保留，供生成失败时兜底显示；下一次读取/调度会按当前版本重算。
-        返回被标记的行数。
+        返回被标记的行数。块级小日记不在这里按小时粗扫：身份是 event_id，
+        由 sync_block_diaries 在日程落库点按 diff 精确失效 + 清孤儿。
         """
         with self.lock:
             params = [now_ts(), str(day), str(from_hour)]
@@ -1213,11 +1214,9 @@ class AmoDB:
             cur = self.conn.execute(sql, params)
             self.conn.commit()
             marked = int(cur.rowcount or 0)
-        # 块级小日记同步失效：改了这一小时及以后的日程，对应块缓存必须重算。
-        try:
-            self.mark_block_diaries_stale(day, from_hour, version)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_db.AmoDB.mark_diaries_stale.block", _amo_exc)
+        # 块级小日记不在这一步按小时粗扫（2026-11-22 P0 修）：改一块会把这一小时
+        # 之后所有块日记一起打 stale（11-21 快照 1 分钟 14 次 bump → stale 风暴）。
+        # 块日记身份是 event_id，由 sync_block_diaries 在日程落库点按 diff 精确失效。
         return marked
 
     def clear_diaries(self, day):
@@ -1338,12 +1337,112 @@ class AmoDB:
                 )
             self.conn.commit()
 
+    def _current_block_ids(self, day, items):
+        """当前日程里的块身份集合（event_id 优先，旧数据退回内容哈希）。"""
+        try:
+            from .amo_state_common import block_id as _bid
+        except ImportError:  # 直接按文件加载时
+            from amo_state_common import block_id as _bid
+        ids = set()
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                ids.add(str(_bid(day, item)))
+            except Exception:  # cleanup: 单条坏块不影响整体核对
+                continue
+        return ids
+
     def block_diary_is_valid(self, day, block_id, version=None):
-        """这一块是否已经有一条有效缓存（只看 status + 正文，和旧表一致）。"""
+        """这一块是否已经有一条有效缓存：status + 正文 + 块还在 + 身份/窗口对得上。
+
+        2026-11-22 P0：以前只看 status+正文。日程删块/改块后旧 id 的行永远是
+        valid，补写调度以为「这块写过了」，于是 11-18 攒下 25 条孤儿日记。
+        现在依次校验：
+        - 记录存在、status=valid、正文非空；
+        - version 给了时，日记不能写于更晚的日程版本（回滚/时间倒流不算缓存）；
+        - 当天日程表读得到时，块身份必须还在，且记录的 start/end 与当前块一致；
+          读不到日程（老库/纯规则假件）就退回旧口径，不误杀。
+        """
         record = self.get_block_diary_record(day, block_id)
         if not record:
             return False
-        return record["status"] == "valid" and bool(str(record.get("text") or "").strip())
+        if record["status"] != "valid" or not str(record.get("text") or "").strip():
+            return False
+        if version is not None:
+            try:
+                if int(record.get("version") or 0) > int(version or 0):
+                    return False
+            except (TypeError, ValueError):  # cleanup: 兜底/降级，保持原行为
+                pass
+        items = self.get_schedule(day)
+        if items is None:  # 没有 schedule 表/行：无法核对块存在性，保持旧行为
+            return True
+        try:
+            from .amo_state_common import block_id as _bid
+        except ImportError:  # 直接按文件加载时
+            from amo_state_common import block_id as _bid
+        wanted = str(block_id or "")
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                same = str(_bid(day, item)) == wanted
+            except Exception:  # cleanup: 单条坏块不影响核对
+                continue
+            if not same:
+                continue
+            if str(record.get("start") or "") and str(item.get("start") or "") \
+                    and str(record["start"]) != str(item["start"]):
+                return False
+            if str(record.get("end") or "") and str(item.get("end") or "") \
+                    and str(record["end"]) != str(item["end"]):
+                return False
+            return True
+        return False
+
+    def sync_block_diaries(self, day, current_items, stale_ids=(), version=None):
+        """按当前日程精确失效块日记：指定 event_id 失效 + 孤儿行清成 stale。
+
+        日程落库点唯一调用（commit_schedule_change）。「孤儿」= 块日记的
+        block_id 已经不在当前日程里（块被删/被换身份/旧内容哈希）。只标 stale、
+        不删正文（生成失败还能兜底，人工也能审计），frozen/archived 不动。
+        返回 {"stale": 标了几条, "orphans": [...], "invalidated": [...]}。
+        """
+        day = str(day or "")
+        ids = self._current_block_ids(day, current_items)
+        exact = {str(x) for x in (stale_ids or ()) if str(x or "").strip()}
+        if not ids and not exact:
+            return {"stale": 0, "orphans": [], "invalidated": []}
+        orphans = []
+        with self.lock:
+            try:
+                rows = self.conn.execute(
+                    "SELECT block_id, status FROM block_diary WHERE day=?",
+                    (day,),
+                ).fetchall()
+            except sqlite3.Error:
+                return {"stale": 0, "orphans": [], "invalidated": []}
+            for row in rows:
+                bid = str(row["block_id"] or "")
+                if not bid or bid in ids:
+                    continue
+                if str(row["status"] or "valid") in ("stale", "frozen", "archived"):
+                    continue
+                orphans.append(bid)
+            targets = set(orphans) | exact
+            marked = 0
+            for bid in sorted(targets):
+                cur = self.conn.execute(
+                    "UPDATE block_diary SET status='stale', invalidated_at=? "
+                    "WHERE day=? AND block_id=? "
+                    "AND status NOT IN ('stale', 'frozen', 'archived')",
+                    (now_ts(), day, bid),
+                )
+                marked += int(cur.rowcount or 0)
+            self.conn.commit()
+        return {"stale": marked, "orphans": sorted(orphans),
+                "invalidated": sorted(bid for bid in exact if bid in ids)}
 
     def mark_block_diaries_stale(self, day, from_start, version=None):
         """把某天 from_start 及以后开始的块日记标 stale（不删正文，供失败兜底）。"""

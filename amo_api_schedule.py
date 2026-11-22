@@ -440,7 +440,11 @@ class ScheduleApiMixin(_MixinBase):
                     continue
         self.state.save()
         self._status_cache = None  # 心情变了，下一次 /status 必须重算
-        return {"code": 0, "data": self.state.snapshot()}
+        try:  # task-30：mood_update 返回的快照也走场景账本（只改 activity，形状不变）
+            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        except ImportError:
+            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
+        return {"code": 0, "data": _snap_with_scene(self)}
 
     def _kick_schedule_titles(self, day):
         """后台补 4 字小标题：同一日期 5 分钟最多一次，GET 不等 LLM。"""

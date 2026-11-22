@@ -261,11 +261,18 @@ async def run_turn(plugin, user_text, candidate, now, umo, b_mode=False, activit
         except Exception:  # cleanup: harness 兜底，守卫失败不拦链路
             pass
     # 6) 完整 send 阶段（clean/人名/地点/居家服/隐私/约会/极端/过渡/交通/后台泄漏）
+    # 2026-11-22 task-35：聊天轮的 source 必须是 chat。旧代码不传 source，_send_to_umo
+    # 按 fail-closed 当 push 走 OutboundGateway 的主动频控/去重，第 2 轮起被 drop；
+    # 而 sent 又取 context.sent[-1]，于是把上一轮的发送当成这一轮的发送（假复读）。
     sent = ""
+    before = len(plugin.context.sent)
     try:
-        ok = await plugin._send_to_umo(umo, text)
-        sent = plugin.context.sent[-1] if plugin.context.sent else ""
-        if not ok and not sent:
+        await plugin._send_to_umo(umo, text, source="chat")
+        if len(plugin.context.sent) > before:
+            sent = plugin.context.sent[-1]
+        else:
+            # 被收件人/人格/技术词等发送阶段守卫丢弃或进 deferred：没有新的出站消息，
+            # 用本轮处理后的文本做离线验收口径（旧代码这里会误取上一轮残留）。
             sent = text
     except Exception as exc:
         sent = text
@@ -315,10 +322,12 @@ async def run_proactive_turn(plugin, candidate, now, umo, b_mode=False, activity
     except Exception:  # cleanup: harness 兜底，守卫失败不拦链路
         pass
     sent = ""
+    before = len(plugin.context.sent)
     try:
-        ok = await plugin._send_to_umo(umo, text)
-        sent = plugin.context.sent[-1] if plugin.context.sent else ""
-        if not ok and not sent:
+        await plugin._send_to_umo(umo, text)
+        if len(plugin.context.sent) > before:
+            sent = plugin.context.sent[-1]
+        else:
             sent = text
     except Exception:
         sent = text

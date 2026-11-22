@@ -1,0 +1,404 @@
+--- before/amo_question_guard.py
++++ after/amo_question_guard.py
+@@ -12,11 +12,21 @@
+ except ImportError:  # 直接按文件加载时
+     from domains.reply import repetition_guard as _fallbacks
+ 
+-_WHERE = re.compile(r"在哪|哪里|什么地方|哪个地方")
+-_DOING = re.compile(r"在干嘛|干嘛呢|做什么|干啥|忙什么")
+-_WHO = re.compile(r"跟谁|和谁|一个人吗|谁在一起")
+-_WHEN = re.compile(r"几点回|什么时候回|多久回|几点到家|什么时候到家|你到家了吗|你什么时候回来")
+-_EATEN = re.compile(r"吃了吗|吃了没|吃饭了吗|吃过了吗")
++# 意图词表按「问的是哪类事实」归纳，不绑定某一句样例；同一意图下面是这种问法
++# 的常见口语集合（含「你在家吗 / 到公司了吗 / 你是不是在偷懒」这类是非问），
++# 只要落进同一意图，后面的答案判据和状态兜底都复用同一套。
++_WHERE = re.compile(
++    r"在哪|哪里|什么地方|哪个地方|在不在家|你在家吗|你到家了吗|到家了吗"
++    r"|到(?:公司|单位|家|商场|学校|医院|酒店|健身房|景区|机场)了吗|到了没")
++_DOING = re.compile(
++    r"在干嘛|干嘛呢|干嘛呀|做什么|干啥|忙什么|忙啥|在忙|忙吗|忙不忙|偷懒|摸鱼")
++_WHO = re.compile(
++    r"跟谁|和谁|一个人吗|谁在一起|有人吗|旁边有|身边有|有没有人")
++_WHEN = re.compile(
++    r"几点回|什么时候回|多久回|几点到家|什么时候到家|你到家了吗|你什么时候回来"
++    r"|回不回来|回不回家|回来吗|回家吗|到家吗|什么时候能回|几点能回")
++_EATEN = re.compile(
++    r"吃了吗|吃了没|吃饭了吗|吃饭了没|吃过了吗|吃的什么|吃什么|吃啥")
+ 
+ _PLACES = ("家", "公司", "商场", "路上", "地铁", "医院", "餐厅", "学校", "机场",
+            "抖音", "B站", "b站", "微博", "小红书", "网上", "店里")
+@@ -29,15 +39,33 @@
+         return {}
+ 
+ 
++#: 第三人称作主语的陈述不是「问她本人」：例如「我同事今天摸鱼一整天」里出现了
++#: doing 词表里的「摸鱼」，但那是在说同事，不是问她此刻在干嘛（task-36 G36/t1）。
++_THIRD_SUBJECTS = ("同事", "他", "她", "朋友", "闺蜜", "领导", "我妈", "我爸",
++                   "家里人", "同学", "室友", "大家", "人家", "别人")
++
++
++def _asks_her(body, match):
++    """命中意图词的那一句是不是在问她本人（第三人称作主语且没提「你」就不算）。"""
++    prefix = str(body or "")[:match.start()]
++    if any(word in prefix for word in _THIRD_SUBJECTS) and not re.search(r"你|您", body):
++        return False
++    return True
++
++
+ def _category(text):
+     body = str(text or "")
+     for name, pattern in (("where", _WHERE), ("doing", _DOING), ("who", _WHO),
+                           ("when", _WHEN), ("eaten", _EATEN)):
+-        if pattern.search(body):
+-            # 「我妈问我们什么时候回去」是转述，不是他现在问
+-            if name == "when" and "问" in body and not re.search(r"你|您", body):
+-                continue
+-            return name
++        match = pattern.search(body)
++        if not match:
++            continue
++        # 「我妈问我们什么时候回去」是转述，不是他现在问
++        if name == "when" and "问" in body and not re.search(r"你|您", body):
++            continue
++        if not _asks_her(body, match):
++            continue
++        return name
+     return ""
+ 
+ 
+--- before/amo_state_consistency.py
++++ after/amo_state_consistency.py
+@@ -234,13 +234,28 @@
+     return len(re.sub(r"[^\u4e00-\u9fff]", "", str(line or "")))
+ 
+ 
++#: 他这句是不是在问「她此刻在干什么/在哪/跟谁/几点回/吃没吃」：这类问句由状态链
++#: 回答（question_guard / 事实视图），不按「分享的后续追问」接话。否则历史里一条
++#: 带「刷到/视频/图」的旧分享会把一句正常提问改写成「就是事的事，……」（task-36）。
++_STATE_ASK = re.compile(
++    r"你在哪|你现在在哪|在哪呢|在哪呀|哪呢|哪里呀|在家吗|在公司吗|在不在家"
++    r"|到(?:公司|单位|家|商场|学校|医院|酒店|健身房|景区|机场)了吗|到了没"
++    r"|在干嘛|干嘛呢|干嘛呀|干什么呢|做什么|干啥|忙什么|忙啥|在忙|忙吗|忙不忙|偷懒|摸鱼"
++    r"|跟谁|和谁|一个人吗|旁边有人|有人吗|身边有|谁在一起"
++    r"|几点回|什么时候回|多久回|回不回来|回不回家|几点到家|什么时候到家"
++    r"|你到家了吗|你什么时候回来|吃了吗|吃了没|吃饭了没|吃过了吗|吃的什么|吃什么")
++
++
+ def _reply_demand(line):
+     """他最后一句要她怎么接：笑/夸/是什么/在哪/后续；不是这五类就不抢话。
+ 
+     分享语境里这类话都很短（「哈哈哈」「好看」「然后呢」「什么视频」「在哪」），
+     长问句（「你中午吃的什么」）不按分享接话处理，避免拿旧分享乱答。
++    问「她此刻状态」的是非问（在干嘛/在哪/几点回/吃了吗…）也走状态链，不抢话。
+     """
+     body = str(line or "")
++    if _STATE_ASK.search(body):
++        return ""
+     chars = _line_chars(body)
+     if chars <= 6 and any(word in body for word in _DEMAND_NEXT):
+         return "next"
+@@ -369,7 +384,8 @@
+ # place（唯一场景源），不编、不猜；不是问地点就不补。
+ # ---------------------------------------------------------------------------
+ _ASK_WHERE = re.compile(
+-    r"在哪|在哪里|在哪儿|什么地方|哪个地方|在家吗|在家么|在不在家|在家不|到了吗|到了没")
++    r"在哪|在哪里|在哪儿|什么地方|哪个地方|在家吗|在家么|在不在家|在家不|到了吗|到了没"
++    r"|到(?:公司|单位|家|商场|学校|医院|酒店|健身房|景区|机场)了吗|到(?:公司|单位|家)了没")
+ #: 「在哪」答案里的地点词（与 amo_question_guard 的 where 口径一致）
+ _WHERE_WORDS = ("家", "公司", "商场", "路上", "地铁", "公交", "餐厅", "咖啡店", "医院",
+                 "学校", "店里", "外面", "这边", "那边", "工位", "健身房", "景区", "酒店",
+@@ -514,7 +530,9 @@
+             return "真的。" if (carried or not info) else "真的，%s。" % info
+         return "也太可爱了吧。" if (carried or not info) else "%s，也太可爱了吧。" % info
+     if demand == "what":
+-        head = "就是%s的%s" % (label, _share_kind(anchor, label, info))
++        # 认不出具体对象时 label 是「事」：不能说成「就是事的事」，说「就是刚才那件事」。
++        head = ("就是刚才那件事" if label == "事"
++                else "就是%s的%s" % (label, _share_kind(anchor, label, info)))
+         return head + "。" if (carried or not info) else head + "，%s。" % info
+     if demand == "where":
+         source = _place_source(plugin)
+@@ -860,6 +878,35 @@
+     return "".join(kept).strip(), dropped
+ 
+ 
++def _keep_segment_answer(before, fixed, umo=""):
++    """分段整句去重把「他这一问」的答案删掉了，就保留删前的那段（答案优先于不复读）。
++
++    task-36 G09/t5：「忙什么呢」的回答「在健身房练器械。你呢？」被分段整句去重删成
++    「你呢？」，答非所问。问句取本轮登记的那句（跨轮旧问题不参与）。
++    """
++    body = str(fixed or "").strip()
++    question = _turn_ask(umo, "")
++    if not question:
++        return fixed
++    # 「在哪」类问句交给出口的 _ensure_where_answer：它按当前 scene 补地点，比把
++    # 含旧地点的整段还回来更安全（「刚到家歇会儿」这种复读句不该留下）。
++    if _ASK_WHERE.search(question):
++        return fixed
++    try:
++        try:
++            from .amo_reply_pipeline import _answers_question as _answers
++        except ImportError:
++            from amo_reply_pipeline import _answers_question as _answers
++        if body and _answers(body, question):
++            return fixed
++        if _answers(str(before or ""), question):
++            return str(before or "").strip()
++        return fixed
++    except Exception as exc:  # cleanup: 判据不可用就保持去重结果
++        logger.debug("[state] 分段答案保留判据失败: %s", exc)
++        return fixed
++
++
+ def dedupe_reply_segments(segments, refs=None, plugin=None, umo=""):
+     """分段去重：后段和最近说过的话/本轮前面的段重复，就整段不发。
+ 
+@@ -876,6 +923,7 @@
+         if not segment.strip():
+             continue
+         fixed, _dropped = drop_repeated_clauses(segment, refs + out)
++        fixed = _keep_segment_answer(segment, fixed, umo)
+         if not fixed.strip():
+             # 整段都是复读：丢掉；若它是唯一一段，调用方会回退到校验后的整条文本。
+             continue
+@@ -925,6 +973,9 @@
+     if not body.strip():
+         return _post_recheck(_safe_short_reply(umo, history_bot_texts(plugin, umo)),
+                              plugin, umo, user_text)
++    # 删句前先留一份：删句/场景剥离把「他这一问」的答案删掉时，问句守卫可以把
++    # 删前的这句答案要回来（task-36 G09/t5：「忙什么呢」的答案被整句去重删成「你呢？」）。
++    before_dedup = body
+     refs = list(recent or [])
+     if not refs:
+         refs = history_bot_texts(plugin, umo)
+@@ -955,6 +1006,17 @@
+     # 唯一后置语义复检（task-29）：媒体标记/自我复读/场景剥离三步都可能把答案
+     # 一起删掉，出口再判一次；原候选答得上就保留候选（别发通用短句）。
+     body = _post_recheck(body, plugin, umo, user_text)
++    # 删句/场景剥离可能把「他这一问」的答案整句删掉、只剩通用短句：走 reply_pipeline
++    # 的出口补答（问句守卫唯一实现），把删前的正文当 candidate —— 它答到了就原样
++    # 还回来（答案优先于不复读），没答到才用状态模板补一句（task-36 G43/t6·t9）。
++    try:
++        try:
++            from .amo_reply_pipeline import complete_deleted_answer as _complete_answer
++        except ImportError:
++            from amo_reply_pipeline import complete_deleted_answer as _complete_answer
++        body = _complete_answer(body, plugin, umo, user_text, candidate=before_dedup)
++    except Exception as exc:  # cleanup: 问句补答失败保持删句结果
++        logger.debug("[state] 出口问句补答失败: %s", exc)
+     # 他问「在哪/在家吗」而地点答案被整句去重删掉 → 用 scene_at 的当前地点补一句，
+     # 不能把 where 问句发成一句没有地点的「在啊，……」（G36/t10）。
+     return _ensure_where_answer(body, plugin, user_text, umo)
+--- before/reply_fact_guard.py
++++ after/reply_fact_guard.py
+@@ -80,6 +80,9 @@
+ #: 地点词后面的方位/指示后缀：改口要连它一起换，不能只换地点词（否则「在家上」）
+ _LOCALIZER_SUFFIXES = ("里面", "上面", "这边", "那边", "附近", "旁边", "里头",
+                        "楼下", "楼上", "门口", "里", "上", "中", "内")
++#: 能跟在地点后面、换地点时还保留的方位词（「我在家这边躲雨」→「我在咖啡店这边躲雨」）。
++#: 「上/里」这类不是指示方位，换地点时必须连旧地点一起删掉，否则会拼出「在家上改周报」。
++_ORIENT_SUFFIXES = ("这边", "那边", "附近", "旁边")
+ 
+ #: 出现在地点词前面说明是「从某处离开/过来」，不是此刻所在
+ _ORIGIN_PREFIXES = ("从", "离开")
+@@ -119,10 +122,15 @@
+     "在开会", "上班", "加班", "开会",
+ )
+ 
+-#: 加班/会议类的口语 edge 写法（不在上面那张短词表里，但同样说明「此刻在工作」）
++#: 进行式的「此刻在工作」口语写法：睡觉/休息/生病/吃饭/逛街时说这个也肯定是矛盾
++_WORK_PRESENT_CLAIMS = (
++    "还在改方案", "在改方案", "改方案",
++    "还在赶方案", "在赶方案", "赶方案", "对着电脑改",
++)
++#: 近过去的工作说法（刚开完会）：work/commute 下同样按此刻改；sleep/health 下
++#: 可以解释成刚发生，保留原文（不把时间语义改坏）
+ _WORK_EDGE_CLAIMS = (
+-    "刚开完会", "开完会", "还在改方案", "在改方案", "改方案",
+-    "还在赶方案", "在赶方案", "赶方案",
++    "刚开完会", "开完会",
+ )
+ 
+ #: 「在做饭」类说法：办公室/餐厅/路上说这个同样是活动矛盾
+@@ -244,15 +252,22 @@
+ 
+ 
+ def _split_place_clause(clause, word):
+-    """地点词 -> (前缀, 去掉「上/里/这边」等后缀后的后续)。"""
++    """地点词 -> (前缀, 去掉「上/里/这边」等后缀后的后续, 被去掉的方位后缀)。
++
++    方位后缀要单独带出来：换地点时可以丢掉它，但「我在家这边躲雨」这种
++    「地点+方位词+动作」结构，丢掉方位词会把「在哪」的答案一起删掉，
++    所以由 _place_orient_variants 保留（task-36）。
++    """
+     index = clause.find(word)
+     lead = clause[:index]
+     tail = clause[index + len(word):]
+-    for local in _LOCALIZER_SUFFIXES:
+-        if tail.startswith(local):
+-            tail = tail[len(local):]
++    local = ""
++    for suffix in _LOCALIZER_SUFFIXES:
++        if tail.startswith(suffix):
++            local = suffix
++            tail = tail[len(suffix):]
+             break
+-    return lead, tail.lstrip()
++    return lead, tail.lstrip(), local
+ 
+ 
+ def _place_target(activity, zone):
+@@ -287,6 +302,20 @@
+         "人就在%s%s" % (target, tail),
+         "还在%s%s" % (target, tail),
+         "已经在%s%s" % (target, tail),
++    ))
++
++
++def _place_orient_variants(target, local, tail, subject=""):
++    """「我在<错地点>这边<动作>」→「我在<正确地点>这边<动作>」：只换地点，保留方位词。"""
++    who = subject or ""
++    here = "%s%s" % (local, tail)
++    first = ("%s在%s%s" % (who, target, here)) if who else ("在%s%s" % (target, here))
++    return _unique((
++        first,
++        ("%s就在%s%s" % (who, target, here)) if who else ("就在%s%s" % (target, here)),
++        "这会儿在%s%s" % (target, here),
++        ("%s还在%s%s" % (who, target, here)) if who else ("还在%s%s" % (target, here)),
++        "人就在%s%s" % (target, here),
+     ))
+ 
+ 
+@@ -372,7 +401,7 @@
+         return clause, []
+     if not _claimish(clause, word):
+         return clause, []
+-    lead, tail = _split_place_clause(clause, word)
++    lead, tail, local = _split_place_clause(clause, word)
+     target = _place_target(activity, zone)
+     reason = "日程此刻在%s（zone=%s，category=%s）" % (
+         str(activity.get("place") or target), zone or "?",
+@@ -427,6 +456,10 @@
+         variants = _place_empty_tail_variants("我" if "我" in lead else "", target)
+     elif tail.startswith(_QUANTIFIER_TAILS) and not tail.startswith("一起"):
+         variants = _place_quantifier_variants(target, tail)
++    elif local in _ORIENT_SUFFIXES and tail:
++        # 「我在家这边躲雨」→「我在咖啡店这边躲雨」：换地点、保留方位词，
++        # 不能删成「我在躲雨」把「在哪」的答案删掉（task-36）。
++        variants = _place_orient_variants(target, local, tail, "我" if "我" in lead else "")
+     elif _looks_like_activity(tail):
+         variants = _place_activity_variants(target, tail, "我" if "我" in lead else "")
+     else:
+@@ -452,7 +485,8 @@
+         words = list(_SLEEP_CLAIMS) + list(_COOK_CLAIMS)
+         if category == "commute":
+             # 在路上说「在开会/在加班/刚开完会/还在改方案」同样是活动矛盾
+-            words += list(_WORK_CLAIMS) + list(_WORK_EDGE_CLAIMS)
++            words += (list(_WORK_CLAIMS) + list(_WORK_EDGE_CLAIMS)
++                      + list(_WORK_PRESENT_CLAIMS))
+         claims = [(word, target) for word in words]
+         reason = "日程此刻是%s（category=%s），不能说在睡觉/做饭%s" % (
+             str(activity.get("activity") or category), category,
+@@ -462,7 +496,7 @@
+         target = {"sleep": "在睡觉", "meal": "在吃饭", "rest": "在休息"}.get(category, "")
+         if not target:
+             target = "在医院" if zone == "hospital" else "在家歇着"
+-        words = list(_WORK_CLAIMS)
++        words = list(_WORK_CLAIMS) + list(_WORK_PRESENT_CLAIMS)
+         if category == "meal":
+             # 吃饭时不会「还在开会/改方案」；但睡觉/休息/生病时「刚开完会」很可能是
+             # 刚发生的事（近过去），硬改成「刚在睡觉」会把时间语义改坏，保留原文。
+@@ -479,7 +513,7 @@
+         doing = doing.lstrip("正在")
+         target = "在" + (doing or "忙")
+         claims = [(word, target) for word in (
+-            *_WORK_CLAIMS, *_WORK_EDGE_CLAIMS, *_COOK_CLAIMS,
++            *_WORK_CLAIMS, *_WORK_EDGE_CLAIMS, *_WORK_PRESENT_CLAIMS, *_COOK_CLAIMS,
+             "在逛街", "逛街", "在健身", "健身",
+             "在买菜", "买菜", "在看电影", "看电影")]
+         reason = "日程此刻是%s（category=%s），不能换成别的活动" % (doing or category, category)
+--- before/amo_reply_pipeline.py
++++ after/amo_reply_pipeline.py
+@@ -688,6 +688,12 @@
+     if not context.get("activity") and not (view or {}).get("events"):
+         # 只有视图完全没有事实（老库/极简 fake）才退回日程快照；真实路径只读视图
+         context["activity"] = _current_activity(plugin)
++    # 视图有事件、但 now 落在两个日程块之间的空档（例如早上第一块 09:00 之前）时
++    # 也没有 current：同样补位，否则事实守卫拿着空 activity 空转，动作矛盾会漏到
++    # 出站（task-36 G46/t1）。补位只读 state.current_activity（和 prompt 快照同一个
++    # 「此刻」），不读账本、不改事实。
++    if not context.get("activity"):
++        context["activity"] = _current_activity(plugin)
+     # 约会/旅游只读 kv，不走 amo_date_session.load / amo_trip.load：
+     # 那两个会自动迁移/收尾（会落库），守卫在发送前不该有副作用。
+     # 新键优先；没有 phase 时只读回退到老键（同样不迁移、不落库）。
+@@ -1036,7 +1042,8 @@
+                 r"在医院|在健身房|在学校|这边|到了|到家|出门|外面|地铁|公交|车上|"
+                 r"家|公司|商场|餐厅|医院")),
+     (re.compile(r"几点|什么时候|多久|回不回来"),
+-     re.compile(r"\d|马上|快了|晚点|一会儿|下班|到家|回去")),
++     re.compile(r"\d|马上|快了|晚点|一会儿|下班|到家|回去"
++                r"|在家|已经在家|这就回|接着回|这就来")),
+     (re.compile(r"干嘛|做什么|忙什么|干什么|偷懒"),
+      re.compile(r"上班|加班|开会|睡|休息|吃|做饭|逛|追剧|看|写|改|收拾|玩|练|"
+                 r"健身|刷|忙|瘫|窝|躺|做")),
+@@ -1357,7 +1364,11 @@
+     if not candidate.strip():
+         return text
+     current = str(text or "")
+-    fixed = _recheck_once(candidate, current, user_text)
++    # 本轮他真正问的那句以登记表为准：send 阶段传进来的 user_text 可能已经过期
++    # （扫近聊取到的是更早的 user 行），用它复检会把「其实答到了」的回复判成没答到
++    # （task-36 G09/t5：「忙什么呢」被记成上一轮的「路上堵死了」）。
++    question = _turn_question(umo) or str(user_text or "")
++    fixed = _recheck_once(candidate, current, question)
+     if fixed == current:
+         return fixed
+     _RECHECK_STATS["calls"] += 1
+@@ -1371,7 +1382,7 @@
+         logger.info("[amo] 后置复检拒绝还原（候选不安全）: %s", safe[:40])
+         return text
+     if safe != candidate:
+-        retry = _recheck_once(safe, current, user_text)
++        retry = _recheck_once(safe, current, question)
+         if retry == current:
+             _RECHECK_STATS["blocked"] += 1
+             return text
+@@ -1379,6 +1390,25 @@
+     _RECHECK_STATS["restored"] += 1
+     logger.info("[amo] 改写后语义复检：还原候选 %s -> %s", current[:40], fixed[:40])
+     return fixed
++
++
++def complete_deleted_answer(text, plugin=None, umo="", user_text="", candidate=""):
++    """整句删除/替换后出口补答：他这一问的答案被删掉/只剩兜底时补回来。
++
++    问句守卫是「答到点上」的唯一实现（含状态兜底模板）；删句层（分段去重/场景剥离）
++    不该为了补答再复制一份模板，统一从这里进。candidate 传删句前的正文：它答到了
++    就把答案原样要回来（答案优先于不复读），没答到才用状态模板补一句。
++    """
++    try:
++        try:
++            from .amo_question_guard import answer as _question_answer
++        except ImportError:
++            from amo_question_guard import answer as _question_answer
++        return _question_answer(_turn_question(umo) or str(user_text or ""), plugin,
++                                text, candidate=str(candidate or ""))
++    except Exception as exc:  # cleanup: 补答失败保持删句结果，绝不影响出站
++        logger.debug("[amo] 出口问句补答失败: %s", exc)
++        return text
+ 
+ 
+ def _answer_food_first(text, plugin, user_text, now=None):
+@@ -1412,6 +1442,10 @@
+     只跑确定性改写，不调模型：极端/暴力词 → 身份 → 人名 → 消费 → 反催问。
+     """
+     value = str(text or "")
++    # 本轮他真正问的那句以登记表为准（apply_narrative_repetition 已登记）：调用方
++    # 传进来的 user_text 在 send/复检路径上可能是上一轮的旧问句，用它补答会把这一轮
++    # 改成上一轮的答案（task-36 回归：send 阶段扫近聊取到更早的 user 行）。
++    user_text = _turn_question(umo) or str(user_text or "")
+     if not value.strip():
+         try:
+             try:

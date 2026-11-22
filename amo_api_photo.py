@@ -466,7 +466,13 @@ class PhotoApiMixin(_MixinBase):
                 return False
 
             async def send(self, chain):
-                await plugin.context.send_message(umo, chain)
+                # task-16：面板画图测试也走统一出口，不再 context.send_message 直发。
+                sender = getattr(plugin, "_send_media_to_umo", None)
+                if callable(sender):
+                    parts = list(getattr(chain, "chain", None) or [chain])
+                    await sender(umo, parts, source="photo", kind="draw_test")
+                else:
+                    await plugin.context.send_message(umo, chain)
 
         plan = engine.decide(_FakeEvent(), reply)
         if not plan:

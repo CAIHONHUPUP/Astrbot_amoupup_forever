@@ -476,6 +476,41 @@ def _no_office_allowed(plugin, now=None):
     return now.hour >= WORK_END_HOUR or now.hour < WORK_START_HOUR
 
 
+def _hard_constraint_block(plugin, to_place, now=None):
+    """场景账本硬约束：请假/事假/出差期间不允许的目的地，返回约束类型（空=放行）。
+
+    2026-11-22 task-25：JIT/过渡写者不再自己判「病假不去公司」——病假/事假/出差
+    的唯一事实源是 amo_scene_ledger.constraints()。请假只能在家/医院；出差日
+    不能凭空回家。返回非空时调用方必须放弃这次过渡/到达块。
+    """
+    place = str(to_place or "").strip()
+    if not place:
+        return ""
+    now = _now(now)
+    try:
+        try:
+            from .amo_scene_ledger import constraints as _scene_constraints
+        except ImportError:
+            from amo_scene_ledger import constraints as _scene_constraints
+        cons = _scene_constraints(plugin, now.strftime("%Y-%m-%d") if now else None, now)
+    except Exception as exc:
+        logger.debug("[amo] 场景硬约束读取失败: %s", exc)
+        return ""
+    kind = str((cons or {}).get("kind") or "")
+    if not kind:
+        return ""
+    zone = str(zone_for_place(place) or "")
+    allowed_zones = cons.get("allowed_zones")
+    if allowed_zones is not None and zone and zone not in allowed_zones:
+        return kind
+    allowed_places = cons.get("allowed_places")
+    if allowed_places is not None and place and place not in allowed_places:
+        return kind
+    if kind == "trip" and zone == "home":
+        return kind
+    return ""
+
+
 def start(plugin, kind, to_place="", activity="", category="", minutes=None,
           now=None, from_place="", emotion="", then_kind="", then_activity="",
           then_minutes=0):
@@ -485,6 +520,11 @@ def start(plugin, kind, to_place="", activity="", category="", minutes=None,
     to_place = str(to_place or "")
     if _office_place(to_place) and _no_office_allowed(plugin, now):
         logger.warning("[amo] 病假/夜间不安排去公司：to=%s hour=%s kind=%s", to_place, now.hour, kind)
+        return None
+    _scene_block = _hard_constraint_block(plugin, to_place, now)
+    if _scene_block:
+        logger.warning("[amo] 场景硬约束（%s）不允许去 %s，过渡不启动（kind=%s）",
+                       _scene_block, to_place, kind)
         return None
     state = getattr(plugin, "state", None)
     current_data = _kv_get(plugin, STATE_KEY, {}) or {}
@@ -617,11 +657,14 @@ def _ensure_blocks(plugin, data, now, readonly=False):
         _kv_set(plugin, STATE_KEY, data)
         return
     now = _now(now)
-    if _office_place(data.get("to")) and _no_office_allowed(plugin, now):
+    _blocked = (_office_place(data.get("to")) and _no_office_allowed(plugin, now))
+    _scene_block = _hard_constraint_block(plugin, data.get("to"), now)
+    if _blocked or _scene_block:
         if readonly:
             return  # GET 纯只读：这里只跳过，不取消、不写库
-        logger.warning("[amo] 取消去公司的过渡（病假/夜间/工作日下班后）：to=%s hour=%s",
-                       data.get("to"), now.hour)
+        logger.warning("[amo] 取消过渡（%s）：to=%s hour=%s",
+                       _scene_block or "病假/夜间/工作日下班后", data.get("to"),
+                       now.hour if now is not None else "-")
         data["cancelled"] = True
         data["blocks_written"] = True
         _kv_set(plugin, STATE_KEY, {})
@@ -746,9 +789,10 @@ def finish(plugin, transition=None, stage=None, now=None):
     """到达：写到达块、记一条事实、清状态。"""
     data = transition if isinstance(transition, dict) else (_kv_get(plugin, STATE_KEY, {}) or {})
     now = _now(now)
-    if _office_place(data.get("to")) and _no_office_allowed(plugin, now):
-        logger.warning("[amo] 到站后不写公司活动块（病假/夜间/工作日下班后）：to=%s hour=%s",
-                       data.get("to"), now.hour)
+    _scene_block = _hard_constraint_block(plugin, data.get("to"), now)
+    if (_office_place(data.get("to")) and _no_office_allowed(plugin, now)) or _scene_block:
+        logger.warning("[amo] 到站后不写活动块（%s）：to=%s hour=%s",
+                       _scene_block or "病假/夜间/工作日下班后", data.get("to"), now.hour)
         _kv_set(plugin, STATE_KEY, {})
         _kv_set(plugin, "activity_now", {})
         _drop_future_transit(plugin, now)
@@ -819,6 +863,15 @@ def finish(plugin, transition=None, stage=None, now=None):
         })
         logger.info("[amo] 到达后进入活动块：%s（%d 分钟）", activity_text, duration)
     fact = "折腾了%d分钟才到%s。" % (elapsed, to_place) if to_place else "折腾了%d分钟才忙完。" % elapsed
+    # 记忆写者统一过场景守卫：到达事实不能再带「此刻不在的地方」（病假/出差硬约束）。
+    try:
+        try:
+            from .amo_scene_ledger import guard_text as _scene_guard_text
+        except ImportError:
+            from amo_scene_ledger import guard_text as _scene_guard_text
+        fact = str(_scene_guard_text(plugin, fact, now) or fact)
+    except Exception as _amo_exc:
+        logger.debug("[amo] 到达事实场景守卫失败: %s", _amo_exc)
     _kv_set(plugin, "transit:last", {"to": to_place, "elapsed": elapsed,
                                      "fact": fact, "at": _amo_clock.now_ts()})
     try:

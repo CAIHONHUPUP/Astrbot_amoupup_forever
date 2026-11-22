@@ -1,0 +1,47 @@
+[
+ {
+  "user": "你在干嘛呢？",
+  "cand": "在写代码呀。",
+  "final": "在写代码呀。",
+  "send_ok": true,
+  "persona_after": "刚才走神了一下，你再说一遍？",
+  "persona_reason": "",
+  "stages": {
+   "raw": "在写代码呀。",
+   "soft": "在写代码呀。",
+   "rewrite": "在写代码呀。",
+   "cleanup": "在写代码呀。",
+   "chat_safety": "在写代码呀。"
+  }
+ },
+ {
+  "user": "你在干嘛呢？",
+  "cand": "写代码呢，你呢？",
+  "final": "写代码呢，你呢？",
+  "send_ok": true,
+  "persona_after": "刚才走神了一下，你再说一遍？",
+  "persona_reason": "",
+  "stages": {
+   "raw": "写代码呢，你呢？",
+   "soft": "写代码呢，你呢？",
+   "rewrite": "写代码呢，你呢？",
+   "cleanup": "写代码呢，你呢？",
+   "chat_safety": "写代码呢，你呢？"
+  }
+ },
+ {
+  "user": "在吗",
+  "cand": "我刚打了两行代码，等下说。",
+  "final": "我刚打了两行代码，等下说。",
+  "send_ok": true,
+  "persona_after": "刚才走神了一下，你再说一遍？",
+  "persona_reason": "",
+  "stages": {
+   "raw": "我刚打了两行代码，等下说。",
+   "soft": "我刚打了两行代码，等下说。",
+   "rewrite": "我刚打了两行代码，等下说。",
+   "cleanup": "我刚打了两行代码，等下说。",
+   "chat_safety": "我刚打了两行代码，等下说。"
+  }
+ }
+]

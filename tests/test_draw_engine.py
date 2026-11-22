@@ -474,7 +474,12 @@ class RunTests(unittest.TestCase):
 
     def test_manual_disabled(self):
         engine, _ = engine_for({"draw_enable": False})
-        self.assertIn("未开启", engine.manual(FakeEvent("一碗面"), "一碗面"))
+        text = engine.manual(FakeEvent("一碗面"), "一碗面")
+        self.assertTrue(text.strip())
+        # task-26：工具返回不再说「画图功能未开启（draw_enable=false）」这类工程话，
+        # 改成角色化短句（权限/配置串只进日志，不进聊天）。
+        self.assertNotIn("未开启", text)
+        self.assertNotIn("draw_enable", text)
 
 
 if __name__ == "__main__":
