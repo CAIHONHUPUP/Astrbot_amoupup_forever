@@ -400,22 +400,6 @@ async def send(plugin, umo, text, *, source=None, kind="", batch_id="",
         return False
     src = normalize_source(source)
     stamp = _now_ts(now)
-    # task-32：收件人/角色反转唯一守卫（唯一定义在 amo_addressee_guard，persona_guard
-    # 那条出口也会调用同一条规则）。11:31 真实样例就是从 watch 的 request_push 进来、
-    # 在这里以 source=push 落 outbound_log 的，所以先在这里用 src 记原因。
-    try:
-        try:
-            from .amo_addressee_guard import enforce as _addressee_enforce
-        except ImportError:
-            from amo_addressee_guard import enforce as _addressee_enforce
-        body, addr_reason = _addressee_enforce(plugin, umo, body, source=src)
-        if not body:
-            _log(plugin, umo, source=src, kind=kind, text=str(text or ""),
-                 batch=batch_id, dedupe_key=dedupe_key, decision="drop",
-                 reason=addr_reason or "addressee", at=stamp)
-            return False
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
     # task-28：统一出口语义卫生（动作旁白/系统词/禁语/报账数字/姓名 grounding）。
     # 放在去重/频控之前：被守卫吃掉的文本不占频控窗口，也不会进 deferred。
     try:
