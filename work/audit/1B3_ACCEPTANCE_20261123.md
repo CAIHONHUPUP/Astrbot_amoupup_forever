@@ -7,7 +7,7 @@
 
 - 已落地 7 项（阶段 0、3a-2、3a-2b×2、三函数合并、3b C1、3c 阶段 1）+ 1 项回归修复（「他说」归因）。
 - **3b 的 2+7 与 C2 已按「退化只回滚该项」回滚**：删固定句会让 `tests/test_immersion_acceptance.py` 的三条产品验收变红，属口径冲突，需产品决策。
-- 当前全量门禁：**6383 passed / 0 failed / 7 skipped / 282 subtests**，strict mypy 0，pyflakes clean，silent 0，schema 277，routes 119，unittest ok，freeze 0。
+- 当前全量门禁（HEAD `29ea710`）：**6390 passed / 0 failed / 7 skipped / 282 subtests**，strict mypy 0，pyflakes clean，silent 0，schema 277，routes 119，unittest ok，freeze 0。
 - 四件套：daily 614/614、share 500/100%（damaged 0、persistent 0）、remind 240/240（leaked 0）、adversarial 39/39、生产回放 184 条 exit 0（persistent 2、旁白 0）。
 
 ## 1. 已落地项与证据
@@ -22,6 +22,7 @@
 | 3b C1：purchase/anti_nag/short_reply 删 11 句固定句 | `770202b` | 6365/0；四件套全绿 |
 | 3c 阶段 1：禁语整句重写 + 残片丢句 + 中性兜底 | `bf0ac3e` | 6375/0（immersion 全绿：emotion_keep 0.9655、空回复 0/906） |
 | 「他说」归因修复 | `f93b330` | 6383/0；转述前缀保留，地点矛盾仍消除 |
+| 群聊称呼串台修复（群聊只删称呼不改「老公」） | `29ea710` | 6390/0；私聊零改动，对抗 39/39 |
 | 文档 | `4bb5fa9`、`8c252d9`、`1bc6539` | 状态/回滚原因/累计清单 |
 
 每项均独立 commit，验证方式一致：`python work/audit/_scratch/verify_item.py --tag <tag>`
@@ -54,6 +55,6 @@
 
 1. v2 地点识别：`zone_for_place("河北省·石家庄·酒店")` 因「石家庄」含「家」被判 home；「楼下小馆」未知地点不派生过渡。
 2. v2 借时上界：23:50 尾部 7 分钟空档会被压成 1 分钟碎片。
-3. 群聊称呼：群 umo 下 `owner_names()` 为空，把「朋友们，晚安。」改成「老公，晚安。」（既有，删 S2 前后相同）。
+3. ~~群聊称呼串台~~ 已在 `29ea710` 修复（群聊只删首句称呼，不改写成「老公」）。
 4. 「听说你在商场呢」仍由黑名单 force_rewrite 改成「听说你在外面呢」（第二人称遗留，非 B 路径）。
 5. 回放 `persistent 2` 是既有基线（记忆元信息类），非本阶段引入。
