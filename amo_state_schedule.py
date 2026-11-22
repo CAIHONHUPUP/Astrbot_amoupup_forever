@@ -795,7 +795,7 @@ class ScheduleStateMixin(_MixinBase):
         new_items = kept_items
         # A1（2026-11-22）：自动生成来源不许写社交块进来（朋友只手动/聊天出现）。
         # 人/约会/外部写入不受限；被剥掉的块记日志与审计，便于灰度期核对。
-        _social_stripped = []
+        _social_stripped: list[Any] = []
         try:
             from .schedule_social_a1 import strip_auto_social as _strip_social
         except ImportError:
@@ -1523,20 +1523,20 @@ class ScheduleStateMixin(_MixinBase):
                 new_items, day=day, zone_mapper=_obs.zone_mapper(),
                 forbidden_names=_obs.forbidden_names(self.db), auto_sources=_auto)
             _new_counts = _engine.count_defects(_new_defects)
-            _introduced = {code: _new_counts[code] - _old_counts[code]
+            _validate_gate = {code: _new_counts[code] - _old_counts[code]
                            for code in _engine.METRIC_KEYS
                            if _new_counts[code] > _old_counts[code]}
             # 只拦「自动生成来源」新引入的缺陷；人/面板/约会/财务的写入只记指标与审计，
             # 不阻断（人类可以坚持自己的安排，自动生成必须零缺陷）。
             _blocking = str(source or "") in _auto
-            if _introduced and _blocking:
+            if _validate_gate and _blocking:
                 _version = self.db.schedule_version(day)
                 logger.warning("[amo] 日程 validate 拒绝写入(%s)：%s", source or "-",
-                               _introduced)
+                               _validate_gate)
                 try:
-                    self._audit_schedule(day, source, "validate 拒绝: %s" % _introduced,
+                    self._audit_schedule(day, source, "validate 拒绝: %s" % _validate_gate,
                                          _version, [], old_items, new_items,
-                                         rejected=[code for code in _introduced])
+                                         rejected=[code for code in _validate_gate])
                 except Exception as _amo_exc:
                     _note_swallowed("amo_state_schedule.audit.validate_reject", _amo_exc)
                 try:
@@ -1545,7 +1545,7 @@ class ScheduleStateMixin(_MixinBase):
                     _note_swallowed("amo_state_schedule.metrics.validate_reject", _amo_exc)
                 return {"changed": False, "version": _version,
                         "changed_hours": [], "cancelled": [], "saved": False,
-                        "rejected": _introduced}
+                        "rejected": _validate_gate}
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.validate_gate", _amo_exc)
         try:

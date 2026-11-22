@@ -19,7 +19,7 @@ except ImportError:  # 直接按文件加载时
     try:
         from amo_observability import note as _note
     except ImportError:  # 单测/独立运行
-        def _note(_name: str, _exc: BaseException) -> None:
+        def _note(scope, exc=None):
             return None
 
 try:

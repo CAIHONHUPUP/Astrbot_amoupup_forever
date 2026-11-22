@@ -19,7 +19,7 @@ except ImportError:  # 直接按文件加载时
     try:
         from amo_observability import note as _note
     except ImportError:  # 单测/独立运行
-        def _note(_name: str, _exc: BaseException) -> None:
+        def _note(scope, exc=None):
             return None
 
 SOCIAL_CATEGORIES = ("social", "date")
@@ -68,7 +68,8 @@ def strip_auto_social(
     """
     if str(source or "") not in AUTO_SOURCES:
         # 非自动来源：原样返回，连 dict 都不复制（调用方可能依赖行对象身份/共享引用）。
-        return list(rows or ()), []
+        kept_rows: list[Any] = list(rows or ())
+        return kept_rows, []
     kept: list[dict[str, Any]] = []
     removed: list[dict[str, Any]] = []
     for row in rows or ():

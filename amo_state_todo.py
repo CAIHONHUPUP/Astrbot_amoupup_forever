@@ -73,6 +73,7 @@ class ScheduleTodoMixin(_MixinBase):
         _merge_quiet_slots: Any
         _row_provenance: Any
         _schedule_provenance: Any
+        _schedule_view_items: Any
         p: Any
         schedule: Any
 
