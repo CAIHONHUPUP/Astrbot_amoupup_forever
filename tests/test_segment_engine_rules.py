@@ -73,6 +73,19 @@ class SymbolTests(unittest.TestCase):
         self.assertEqual(segments[0], "第一段文字")
         self.assertEqual(segments[1], "第二段文字")
 
+    def test_force_split_keeps_paired_symbols_whole(self):
+        # 模型把动作旁白写成跨行：「（听到这句话，\n嘴角一下翘起来）」。强制换行
+        # 切分也必须尊重成对符号，否则会切出「（听到这句话，」+「嘴角…）」两段残句。
+        seg = engine(force_split_symbols=["\n"], merge_short_tail=False,
+                     protect_paired_symbols=True)
+        text = "（听到这句话，\n嘴角一下翘起来）我也想你了"
+        self.assertEqual([text], seg.segment_text_by_rules(text))
+
+    def test_force_split_without_protection_still_splits(self):
+        seg = engine(force_split_symbols=["\n"], merge_short_tail=False,
+                     protect_paired_symbols=False)
+        self.assertEqual(2, len(seg.segment_text_by_rules("第一段\n第二段")))
+
     def test_keep_symbol_true(self):
         segments = engine(max_length=10, min_length=5, merge_short_tail=False).segment_text_by_rules(
             "今天天气不错。我们出去走走吧。")

@@ -1,0 +1,997 @@
+{
+  "generated_at": "2026-11-22T10:27:33.371Z",
+  "scope": "production outbound rewrite/fallback guards",
+  "method": "read-only scan of current working tree",
+  "counts": {
+    "total": 38,
+    "tier": {
+      "safety": 17,
+      "symptom": 8,
+      "style": 13
+    },
+    "recommendation": {
+      "keep": 16,
+      "downgrade": 10,
+      "merge": 11,
+      "delete": 1
+    },
+    "wave": {
+      "w3": 14,
+      "w2": 10,
+      "w1": 14
+    }
+  },
+  "entries": [
+    {
+      "id": "amo_persona_guard.strip_action_narration",
+      "file": "amo_persona_guard.py",
+      "line": 87,
+      "loc": "amo_persona_guard.py:87",
+      "tier": "safety",
+      "trigger": "任意出站文本含成对括号（全角/半角，内容<=60字）或分段后残留孤括号；整条只有动作时返回空串",
+      "action": "删括号动作；整条只剩动作=丢弃不发；孤括号片段丢到括回/开括号前",
+      "fixed": [],
+      "call_sites": [
+        "amo_persona_guard.prepare_outbound:407",
+        "amo_persona_guard.sanitize_candidate:465",
+        "amo_rewrite_safety._comparable:265",
+        "amo_message._strip_action_narration:67 -> _send_to_umo:1146,1160"
+      ],
+      "overrides": "在 neutralize_forbidden/金额/人名之前；segment_engine 逐段 prepare_outbound 会再跑一次（幂等）",
+      "overlaps": [
+        "amo_voice._ACTION_RE:58（TTS 独立正则）",
+        "amo_state_consistency.rewrite:616-622（场景括号删除）",
+        "segment_engine._merge_action_segments:473"
+      ],
+      "frequency": "回放 101/176 带旁白 -> 0（replay_prod.json counts）；memory_persona.md:21 56.5%；2026-11-22 17:58 线上孤括号 1 条",
+      "risk": "中：跨行硬切会产生孤括号（已加出口不变量）；纯动作消息丢弃（预期）",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_persona_guard.neutralize_forbidden(_SELF_THIRD/_DROP_SENTENCE)",
+      "file": "amo_persona_guard.py",
+      "line": 47,
+      "loc": "amo_persona_guard.py:47",
+      "tier": "symptom",
+      "trigger": "命中 FORBIDDEN_PHRASES（你美丽的老婆/你们男人/收到你后来/收到你那句/这有啥好笑的/我哪生气了/别给我扣帽子）",
+      "action": "5 条整句丢弃；3 条子串替换",
+      "fixed": [
+        "你美丽的老婆->我",
+        "你老婆->我",
+        "你们男人->你"
+      ],
+      "call_sites": [
+        "amo_persona_guard.prepare_outbound:419",
+        "amo_persona_guard.sanitize_candidate:480"
+      ],
+      "overrides": "strip_action/humanize 之后、金额/人名之前",
+      "overlaps": [
+        "prompt persona_packs forbidden 列表",
+        "amo_role_guard._SELF_DENIAL:12"
+      ],
+      "frequency": "回放 forbidden_strip 14/176；holdout_report.md:263 固定改写是最大误伤源",
+      "risk": "高：子串替换留残句（#2271 儿半天了、#2272 看一眼嘛、#2274 也不来哄哄）",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "amo_persona_guard._humanize_system_sentences",
+      "file": "amo_persona_guard.py",
+      "line": 350,
+      "loc": "amo_persona_guard.py:350",
+      "tier": "safety",
+      "trigger": "system_word_hit 命中且 source=chat",
+      "action": "拉丁后台词替换 + 按分句删系统句；删空给固定句",
+      "fixed": [
+        "刚才走神了一下，你再说一遍？"
+      ],
+      "call_sites": [
+        "amo_persona_guard.prepare_outbound:416",
+        "amo_persona_guard.sanitize_candidate:479"
+      ],
+      "overrides": "整条命中且 source!=chat 时 prepare_outbound 直接丢弃",
+      "overlaps": [
+        "amo_shared_text.strip_tech_terms:617"
+      ],
+      "frequency": "回放 system_strip 6/176；change_source tech_terms 5/176",
+      "risk": "低；固定句偏机械",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_persona_guard.prepare_outbound",
+      "file": "amo_persona_guard.py",
+      "line": 382,
+      "loc": "amo_persona_guard.py:382",
+      "tier": "safety",
+      "trigger": "所有出站（chat/主动/push/提醒/外部推送）",
+      "action": "总闸：媒体->collapse->旁白->系统词->禁语->金额->人名->收件人；reason 非空=丢弃",
+      "fixed": [
+        "刚才走神了一下，你再说一遍？（系统句删空）"
+      ],
+      "call_sites": [
+        "amo_outbound.send:426（gateway）",
+        "segment_engine.handle_segment_reply:306（逐段）",
+        "amo_message._send_now:997"
+      ],
+      "overrides": "gateway 在 addressee 之后、去重/频控之前；分段路径每段各过一次",
+      "overlaps": [
+        "sanitize_candidate:446（重复实现）",
+        "addressee（本函数再转一次，另有 4 个调用点）",
+        "anti_nag/purchase 对 push 再跑"
+      ],
+      "frequency": "回放 change_source persona 68/176；线上每条 1-3 次",
+      "risk": "中：双实现漂移；重复调用 CPU 成本",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_persona_guard.sanitize_candidate",
+      "file": "amo_persona_guard.py",
+      "line": 446,
+      "loc": "amo_persona_guard.py:446",
+      "tier": "symptom",
+      "trigger": "仅候选还原时对候选做安全改写",
+      "action": "媒体->旁白->技术词->系统句->禁语->金额->人名->anti_nag->purchase->addressee",
+      "fixed": [],
+      "call_sites": [
+        "amo_reply_pipeline.recover_rewrite_damage:1463（lambda）"
+      ],
+      "overrides": "只在 restore 分支执行（recover:438）",
+      "overlaps": [
+        "prepare_outbound（同顺序，缺 source!=chat 整条丢弃）",
+        "guard_candidate:522"
+      ],
+      "frequency": "未测（restore 约 6-8/176，无独立计数）",
+      "risk": "中：两份实现漂移",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_persona_guard.guard_candidate",
+      "file": "amo_persona_guard.py",
+      "line": 522,
+      "loc": "amo_persona_guard.py:522",
+      "tier": "safety",
+      "trigger": "候选还原前安全探针",
+      "action": "对候选跑 apply_fact_guard 返回守卫形态",
+      "fixed": [],
+      "call_sites": [
+        "amo_reply_pipeline.recover_rewrite_damage:1464（guard=lambda）"
+      ],
+      "overrides": "被 amo_rewrite_safety._candidate_unsafe 使用",
+      "overlaps": [
+        "amo_reply_pipeline.apply_fact_guard:935"
+      ],
+      "frequency": "未测",
+      "risk": "低",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_persona_guard.safe_reply",
+      "file": "amo_persona_guard.py",
+      "line": 234,
+      "loc": "amo_persona_guard.py:234",
+      "tier": "style",
+      "trigger": "critic 两次都没接住（生成期）",
+      "action": "按情绪/是否分享过返回固定安全句",
+      "fixed": [
+        "我在呢，先别急，慢慢跟我说。",
+        "我刚说过的呀，就是刚才跟你提的那个，你别逗我。",
+        "我记混了，你再说一遍？"
+      ],
+      "call_sites": [
+        "amo_llm_service._compose_reply:385"
+      ],
+      "overrides": "优先于 grounding.safe_reply（or 兜底）",
+      "overlaps": [
+        "amo_grounding_critic.safe_reply:85"
+      ],
+      "frequency": "未测（二次失败才触发）",
+      "risk": "低；固定句机械",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "amo_persona_guard.ground_names",
+      "file": "amo_persona_guard.py",
+      "line": 279,
+      "loc": "amo_persona_guard.py:279",
+      "tier": "safety",
+      "trigger": "ROSTER 名字在回复出现但近 8 条上下文没出现",
+      "action": "替换为同圈层中性称呼",
+      "fixed": [
+        "妈妈->我妈",
+        "爸爸->我爸",
+        "柳如烟/白凝冰->朋友",
+        "季博达/方圆->同事",
+        "沈幼微->表姐",
+        "其他->有人"
+      ],
+      "call_sites": [
+        "amo_persona_guard.prepare_outbound:423",
+        "amo_persona_guard.sanitize_candidate:491"
+      ],
+      "overrides": "金额之后、收件人之前",
+      "overlaps": [
+        "_restore_candidate 只做 purchase，不做 names（还原路径可能漏人名）"
+      ],
+      "frequency": "回放 persona 68 条含 #2134/#2163/#2175/#2231 人名替换",
+      "risk": "低；亲属豁免",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_rewrite_safety.recover",
+      "file": "amo_rewrite_safety.py",
+      "line": 415,
+      "loc": "amo_rewrite_safety.py:415",
+      "tier": "symptom",
+      "trigger": "source=chat；候选 TTL 180s；现行命中 FALLBACKS 或 is_multi_pool；候选 sanitize/probe 安全；damage_reasons 非空；非后台话术",
+      "action": "整条替换为安全改写后的候选；候选不安全时多池场景退守卫形态",
+      "fixed": [],
+      "call_sites": [
+        "amo_reply_pipeline.recover_rewrite_damage:1461",
+        "-> apply_chat_safety:1606",
+        "-> validate_reply_assembly:1067",
+        "-> dedupe_reply_segments:982"
+      ],
+      "overrides": "final_semantic_recheck 之后；send 阶段 validate/dedupe 各再跑一次",
+      "overlaps": [
+        "_prefer_answered_candidate:1170",
+        "final_semantic_recheck:1350",
+        "amo_grounding_critic.post_rewrite_recheck:212"
+      ],
+      "frequency": "回放 restore 6-8/176（#2281/#2223/#2040/#2138/#2249，见 replay_prod.txt）；无独立计数",
+      "risk": "中高：可能还原重复句（#2223 repeat_exact）；一轮调用 3 次；判据复杂",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_rewrite_safety.damage_reasons",
+      "file": "amo_rewrite_safety.py",
+      "line": 273,
+      "loc": "amo_rewrite_safety.py:273",
+      "tier": "symptom",
+      "trigger": "candidate/current 差异 14 类（fixed_cover/multi_pool/unbalanced/dup/fragment/place_swap/word_removed/big_shrink…）",
+      "action": "只判定不改写",
+      "fixed": [],
+      "call_sites": [
+        "amo_rewrite_safety.recover:467,470",
+        "should_recover:336"
+      ],
+      "overrides": "recover 唯一判据",
+      "overlaps": [
+        "repetition_guard.is_fixed_rewrite/is_multi_pool"
+      ],
+      "frequency": "未测（按 restore 间接）",
+      "risk": "低；合并后保留为检测器",
+      "recommendation": "keep",
+      "wave": 1
+    },
+    {
+      "id": "amo_state_consistency.dedupe_reply_segments",
+      "file": "amo_state_consistency.py",
+      "line": 937,
+      "loc": "amo_state_consistency.py:937",
+      "tier": "style",
+      "trigger": "分段与最近 bot 文本/本轮前段重复（子句级 drop_repeated_clauses）",
+      "action": "整段丢弃；全删空且问 where 补地点句；最后调用 recover 还原候选",
+      "fixed": [
+        "动态 where 句（我在X呢）"
+      ],
+      "call_sites": [
+        "segment_engine._dedupe_assembly:231",
+        "amo_message._send_to_umo:1133"
+      ],
+      "overrides": "validate_reply_assembly 之后、逐段 prepare_outbound 之前",
+      "overlaps": [
+        "apply_narrative_repetition:1610",
+        "apply_segment_repeat_guard:1709",
+        "tone_guard.guard:215"
+      ],
+      "frequency": "daily 复读注入 204/修回 173；未单独计数",
+      "risk": "中：删段可能删答案，靠 recover/recheck 救",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_state_consistency.validate_reply_assembly",
+      "file": "amo_state_consistency.py",
+      "line": 991,
+      "loc": "amo_state_consistency.py:991",
+      "tier": "safety",
+      "trigger": "所有发送前（segment_engine 拼装前 + _send_to_umo）",
+      "action": "媒体->子句去重->场景剥离->收件人->post_recheck->补答->recover->ensure_where",
+      "fixed": [
+        "_safe_short_reply：short 池 + 嗯，我在呢。",
+        "我还在路上呢，快到了/我到了/我在家呢"
+      ],
+      "call_sites": [
+        "amo_message._send_to_umo:1110",
+        "segment_engine._validate_assembly:211"
+      ],
+      "overrides": "send 阶段在 addressee/anti_nag 之前，segment 之前",
+      "overlaps": [
+        "dedupe_reply_segments（子句去重重复）",
+        "recover:1067",
+        "addressee:1035",
+        "complete_deleted_answer:1057"
+      ],
+      "frequency": "回放 change_source validate_assembly 6/176",
+      "risk": "中：一个函数串 8 件事；重复 recover/recheck",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_state_consistency.rewrite",
+      "file": "amo_state_consistency.py",
+      "line": 607,
+      "loc": "amo_state_consistency.py:607",
+      "tier": "safety",
+      "trigger": "scene road/outside/home 冲突、角色反转、重复分享、硬拼煮面句、笑点反问",
+      "action": "删冲突分句/括号/角色反转分句；换固定场景句；分享开头软化；动物纠对象",
+      "fixed": [
+        "我还在路上呢，快到了",
+        "我到了",
+        "我在家呢",
+        "我到了，等会儿说。",
+        "我等会儿煮点面吃。",
+        "就是刚才那个{label}"
+      ],
+      "call_sites": [
+        "amo_reply_pipeline.apply_chat_safety:1575"
+      ],
+      "overrides": "fact_guard/narrative 之后、question.answer 之前；出口再 post_recheck+ensure_where",
+      "overlaps": [
+        "place_guard.rewrite_reply:168",
+        "reply_fact_guard place 规则",
+        "strip_current_scene_conflicts"
+      ],
+      "frequency": "回放 soft_guards 25/176；真实模型 place_conflict 各批 2-4",
+      "risk": "中：固定句多；删句可能删答案（recheck 救）",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_state_consistency._safe_short_reply",
+      "file": "amo_state_consistency.py",
+      "line": 1075,
+      "loc": "amo_state_consistency.py:1075",
+      "tier": "style",
+      "trigger": "validate 删空/收件人丢弃/空回复",
+      "action": "从 short 池轮换取一句；再兜底",
+      "fixed": [
+        "short 池 6 句",
+        "嗯，我在呢。"
+      ],
+      "call_sites": [
+        "validate_reply_assembly:1014,1026,1040"
+      ],
+      "overrides": "最后一道文本兜底",
+      "overlaps": [
+        "repetition_guard.FALLBACKS['short']"
+      ],
+      "frequency": "未测",
+      "risk": "低",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_reply_pipeline._prefer_answered_candidate",
+      "file": "amo_reply_pipeline.py",
+      "line": 1170,
+      "loc": "amo_reply_pipeline.py:1170",
+      "tier": "symptom",
+      "trigger": "同一轮；原始候选答到他这句；现行文本是任意兜底池或不答",
+      "action": "直接返回原始候选（未 sanitize）",
+      "fixed": [],
+      "call_sites": [
+        "amo_reply_pipeline.apply_chat_safety:1503"
+      ],
+      "overrides": "chat_safety 第一步，早于 immersion/names/purchase/anti_nag/state/question/recheck/recover",
+      "overlaps": [
+        "final_semantic_recheck:1350",
+        "recover_rewrite_damage:1439"
+      ],
+      "frequency": "未测；回放 change_source chat_safety 12/176",
+      "risk": "高：裸还原可能带回旁白/禁语；与层 2 重复",
+      "recommendation": "delete",
+      "wave": 1
+    },
+    {
+      "id": "amo_reply_pipeline.final_semantic_recheck",
+      "file": "amo_reply_pipeline.py",
+      "line": 1350,
+      "loc": "amo_reply_pipeline.py:1350",
+      "tier": "symptom",
+      "trigger": "candidate 答到且 (current 不答 或 是 fallback) 且 user 在要答案；current 非安全挡话/事实产物；candidate 非自曝/泄漏",
+      "action": "经 _restore_candidate（媒体+purchase）还原候选；失败保持",
+      "fixed": [],
+      "call_sites": [
+        "apply_chat_safety:1604",
+        "apply_narrative_repetition:1661",
+        "amo_state_consistency.rewrite:705（_post_recheck:1099）",
+        "validate_reply_assembly:1048（_post_recheck:1099）"
+      ],
+      "overrides": "question.answer 之后、recover 之前；state/validate 出口各再跑",
+      "overlaps": [
+        "_prefer_answered_candidate",
+        "recover_rewrite_damage",
+        "post_rewrite_recheck"
+      ],
+      "frequency": "_RECHECK_STATS 只运行时未持久化；回放 restore 6-8/176",
+      "risk": "中：与层 1/3 重复；一轮调用 3-4 次",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_reply_pipeline.apply_fact_guard(+naturalize_fact_rewrites)",
+      "file": "amo_reply_pipeline.py",
+      "line": 935,
+      "loc": "amo_reply_pipeline.py:935",
+      "tier": "safety",
+      "trigger": "reply_fact_guard 报冲突（地点/健康/吃饭/动作/同伴）",
+      "action": "改冲突小句为固定 replacement，再经语气池换说法",
+      "fixed": [
+        "place/health/meal/action 各规则 replacement（reply_fact_guard 生成）",
+        "naturalize 变体来自 reply_fact_guard.variants"
+      ],
+      "call_sites": [
+        "amo_runtime_reply._deco_soft_guards:303",
+        "amo_persona_guard.guard_candidate:536",
+        "amo_proactive 链路"
+      ],
+      "overrides": "narrative/tone/state 之前",
+      "overlaps": [
+        "state_consistency.rewrite 场景分句",
+        "place_guard.rewrite_reply"
+      ],
+      "frequency": "daily 注入 204/修回 173/残留 0；回放 fixed 25/176；真实模型 4-6 条失败仍是 cand_codes",
+      "risk": "低（安全核心）；replacement 偏机械",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_reply_pipeline.apply_narrative_repetition",
+      "file": "amo_reply_pipeline.py",
+      "line": 1610,
+      "loc": "amo_reply_pipeline.py:1610",
+      "tier": "style",
+      "trigger": "状态词（药/等车/打车/医院/回家）近 3 条重复；整句重复（相似度 0.9）",
+      "action": "删重复状态句/整句；全删空 -> status_repeat；出口 final_semantic_recheck",
+      "fixed": [
+        "还是老样子。"
+      ],
+      "call_sites": [
+        "amo_runtime_reply._deco_soft_guards:308"
+      ],
+      "overrides": "fact_guard 之后、tone_guard 之前；登记 _TURN_SOURCE",
+      "overlaps": [
+        "dedupe_reply_segments",
+        "apply_segment_repeat_guard",
+        "tone_guard"
+      ],
+      "frequency": "daily 复读注入；回放固定兜底 19 条里 还是老样子 多次出现（holdout_report.md:143-145）",
+      "risk": "中：固定回落句是机械感主源",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "amo_reply_pipeline.apply_tone_guard",
+      "file": "amo_reply_pipeline.py",
+      "line": 989,
+      "loc": "amo_reply_pipeline.py:989",
+      "tier": "style",
+      "trigger": "同一开头连续 2 条，或 3-8 字片段近 5 条 >=2 次",
+      "action": "删句首片段/删独立短语句；不动句中事实/情绪",
+      "fixed": [],
+      "call_sites": [
+        "amo_runtime_reply._deco_soft_guards:315",
+        "tone_guard.guard:215"
+      ],
+      "overrides": "narrative 之后",
+      "overlaps": [
+        "dedupe_reply_segments / segment_repeat_guard"
+      ],
+      "frequency": "未测；tests/test_tone_guard*.py",
+      "risk": "低；只动句首",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_reply_pipeline.apply_segment_repeat_guard",
+      "file": "amo_reply_pipeline.py",
+      "line": 1709,
+      "loc": "amo_reply_pipeline.py:1709",
+      "tier": "style",
+      "trigger": "单个 segment 与近 3-5 条/本轮前段重复",
+      "action": "dedup_or_fallback 换短句；记入 _TURN_SEGMENTS",
+      "fixed": [
+        "repetition_guard.dedup_or_fallback 的 short/generic 池"
+      ],
+      "call_sites": [
+        "amo_message._send_to_umo:1144"
+      ],
+      "overrides": "每段发送前",
+      "overlaps": [
+        "dedupe_reply_segments（send 前已按段去重一次）"
+      ],
+      "frequency": "未测",
+      "risk": "低；与 dedupe 重复",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_question_guard.answer",
+      "file": "amo_question_guard.py",
+      "line": 97,
+      "loc": "amo_question_guard.py:97",
+      "tier": "style",
+      "trigger": "问句分类 where/doing/who/when/eaten 命中，且当前回复和候选都没答到",
+      "action": "整条替换成状态模板（8 种）",
+      "fixed": [
+        "我在{place}呢。",
+        "我在{doing}。",
+        "和{who}在一起呢。",
+        "一个人呢。",
+        "我已经在家啦。",
+        "我还在{place}，{end}回去。",
+        "我晚点回去。",
+        "吃过了，你呢？",
+        "还没呢，你呢？"
+      ],
+      "call_sites": [
+        "apply_chat_safety:1597",
+        "complete_deleted_answer:1407"
+      ],
+      "overrides": "chat_safety 后段；complete_deleted_answer 在 validate 内",
+      "overlaps": [
+        "final_semantic_recheck",
+        "grounding_critic.issues"
+      ],
+      "frequency": "daily probe 300 轮；真实模型 probe_unanswered 4-6；回放整句模板多次",
+      "risk": "中：整条替换；固定句机械",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "amo_purchase_guard.rewrite",
+      "file": "amo_purchase_guard.py",
+      "line": 93,
+      "loc": "amo_purchase_guard.py:93",
+      "tier": "safety",
+      "trigger": "声称买了/花了钱，但近 6h 账本/衣柜无对应记录",
+      "action": "含 claim/try 的句子整句换成固定句；真买时只留一条 claim",
+      "fixed": [
+        "我试了试，挺喜欢的，还没买。"
+      ],
+      "call_sites": [
+        "apply_chat_safety:1525",
+        "amo_message._send_to_umo:1099",
+        "amo_persona_guard.sanitize_candidate:505",
+        "amo_reply_pipeline._restore_candidate:1290"
+      ],
+      "overrides": "chat_safety 中段；send 再跑；候选还原再跑",
+      "overlaps": [
+        "amo_fact_binder._guard_consumption",
+        "reply_fact_guard 消费规则"
+      ],
+      "frequency": "回放 clean_other #2040（顺带提及已保留）；固定句是最大误伤之一（holdout_report.md:145）",
+      "risk": "中：固定句内容全丢；多 call site",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "amo_anti_nag.rewrite",
+      "file": "amo_anti_nag.py",
+      "line": 17,
+      "loc": "amo_anti_nag.py:17",
+      "tier": "style",
+      "trigger": "user 表示忙/等我/还没好，且回复含催问句",
+      "action": "删催问句；删空给固定句",
+      "fixed": [
+        "好，那你忙完跟我说一声。"
+      ],
+      "call_sites": [
+        "apply_chat_safety:1533",
+        "amo_message._send_to_umo:1093",
+        "amo_persona_guard.sanitize_candidate:497"
+      ],
+      "overrides": "chat_safety 中段 + send",
+      "overlaps": [
+        "repetition_guard 追问去重"
+      ],
+      "frequency": "未测",
+      "risk": "低；固定句机械",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "amo_grounding_critic.safe_reply",
+      "file": "amo_grounding_critic.py",
+      "line": 85,
+      "loc": "amo_grounding_critic.py:85",
+      "tier": "style",
+      "trigger": "接话 critic 两次失败",
+      "action": "按短追问/问句/情绪/分享返回固定安全句",
+      "fixed": [
+        "然后啊，{topic}的事还没讲完呢，后面还有更好笑的。",
+        "然后啊，刚才那个还没讲完呢，后面还有更好笑的。",
+        "你刚问的这个，我一下没答好，你再说一遍？",
+        "换谁都得气，我在听着。",
+        "我看到了，等我缓一下再细看。",
+        "我在听，你接着说。"
+      ],
+      "call_sites": [
+        "amo_llm_service._compose_reply:385"
+      ],
+      "overrides": "persona.safe_reply 之后 or 兜底",
+      "overlaps": [
+        "amo_persona_guard.safe_reply"
+      ],
+      "frequency": "未测；tests/test_grounding_fallback.py",
+      "risk": "低；固定句机械",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "amo_grounding_critic.post_rewrite_recheck",
+      "file": "amo_grounding_critic.py",
+      "line": 212,
+      "loc": "amo_grounding_critic.py:212",
+      "tier": "symptom",
+      "trigger": "original 答到 且 (rewritten 不答 或 rewritten 是 fallback)",
+      "action": "返回 original（纯判定）",
+      "fixed": [],
+      "call_sites": [
+        "amo_reply_pipeline._recheck_once:1342",
+        "final_semantic_recheck:1371"
+      ],
+      "overrides": "被层 2 使用",
+      "overlaps": [
+        "final_semantic_recheck 的语义判定核心"
+      ],
+      "frequency": "同 recheck 统计",
+      "risk": "低；与层 2 是同一件事两半",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "domains.reply.repetition_guard.FALLBACKS",
+      "file": "domains/reply/repetition_guard.py",
+      "line": 51,
+      "loc": "domains/reply/repetition_guard.py:51",
+      "tier": "style",
+      "trigger": "各调用方按 intent 取句",
+      "action": "固定句池（48 键/90 句）",
+      "fixed": [
+        "generic 9 句",
+        "status_repeat 1 句",
+        "short 6 句",
+        "leak 5 句",
+        "scene_generic 8 句",
+        "scene_home/road/outside 3 句",
+        "question.* 9 句",
+        "action.* 11 句",
+        "align.* 3 句",
+        "emotion.* 27 键/35 句"
+      ],
+      "call_sites": [
+        "amo_question_guard:114-138",
+        "amo_state_consistency._safe_short_reply:1078",
+        "amo_reply_pipeline:1635,1718"
+      ],
+      "overrides": "单一数据源（task-18）",
+      "overlaps": [
+        "EXTRA_FIXED_SENTENCES:130（purchase/tech/笑死）"
+      ],
+      "frequency": "回放固定兜底 19 条 + 多池串味；daily 复读注入",
+      "risk": "高：固定语料跨上下文不成立，是机械感主源",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "domains.reply.repetition_guard.fixed_rewrite_bodies/is_multi_pool",
+      "file": "domains/reply/repetition_guard.py",
+      "line": 188,
+      "loc": "domains/reply/repetition_guard.py:188",
+      "tier": "symptom",
+      "trigger": "识别整条是否固定兜底/多池串味",
+      "action": "只判定",
+      "fixed": [],
+      "call_sites": [
+        "amo_rewrite_safety.damage_reasons:291,296,301",
+        "_current_is_fallback:408",
+        "prefer_substantive_candidate:256"
+      ],
+      "overrides": "候选优先层判据",
+      "overlaps": [
+        "grounding_critic.is_fallback"
+      ],
+      "frequency": "未测",
+      "risk": "低；合并后保留",
+      "recommendation": "keep",
+      "wave": 1
+    },
+    {
+      "id": "amo_message.action_only_fallback(_ACTION_FALLBACK)",
+      "file": "amo_message.py",
+      "line": 267,
+      "loc": "amo_message.py:267",
+      "tier": "style",
+      "trigger": "整段只有括号动作",
+      "action": "按害羞/笑/默认补一句固定台词，保留动作",
+      "fixed": [
+        "……你少来。",
+        "别盯着看啦。",
+        "……干嘛呀。",
+        "你这个人真是的。",
+        "行了行了，别闹。",
+        "哈哈，你呀。",
+        "笑死我了。",
+        "……嗯。",
+        "你接着说。",
+        "我在听呢。",
+        "然后呢？"
+      ],
+      "call_sites": [
+        "segment_engine._merge_action_segments:502"
+      ],
+      "overrides": "分段合并时",
+      "overlaps": [
+        "repetition_guard action.* 池（同数据两份）"
+      ],
+      "frequency": "审计 memory_persona.md:21 45.4% 分段只有动作（历史）",
+      "risk": "中：两份池重复；固定句机械",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "short_reply.guard(_replace_banned/counter_line)",
+      "file": "short_reply.py",
+      "line": 111,
+      "loc": "short_reply.py:111",
+      "tier": "style",
+      "trigger": "<=10 字且含客服词（好的/收到/谢谢/抱歉），或他敷衍（嗯/哦/行）",
+      "action": "换成固定句/反击句",
+      "fixed": [
+        "哇！谢谢老公！爱你！",
+        "好呀~",
+        "没问题啦！",
+        "嗯。",
+        "你敷衍我是吧？那别聊了。",
+        "你就回我一个嗯？哼，我不理你了！"
+      ],
+      "call_sites": [
+        "generate.short_reply 阶段（wired=False，调用点在 amo_llm）"
+      ],
+      "overrides": "生成期",
+      "overlaps": [
+        "prompt short.rules"
+      ],
+      "frequency": "未测",
+      "risk": "低；固定句老派",
+      "recommendation": "downgrade",
+      "wave": 2
+    },
+    {
+      "id": "place_guard.rewrite_reply",
+      "file": "place_guard.py",
+      "line": 168,
+      "loc": "place_guard.py:168",
+      "tier": "safety",
+      "trigger": "第一人称地点声明与当前 zone 的 ALLOWED_GROUPS 冲突",
+      "action": "正则把地点词换回 target（含方位后缀）",
+      "fixed": [
+        "我在家/公司/商场/景区/餐厅/路上/酒店/车站/医院/街边（TARGET_WORD）"
+      ],
+      "call_sites": [
+        "amo_message._guard_self_location:1352",
+        "amo_runtime_reply._deco_soft_guards:298",
+        "amo_reply_pipeline._dec_self_location"
+      ],
+      "overrides": "fact_guard 之前（旧地点守卫先跑）",
+      "overlaps": [
+        "reply_fact_guard place 规则（两套地点表/纠正）"
+      ],
+      "frequency": "回放 soft_guards 25/176（商场->家/公司->家）",
+      "risk": "中：只换词可能与 fact_guard 二次改写叠加（看衣服服）",
+      "recommendation": "merge",
+      "wave": 1
+    },
+    {
+      "id": "amo_addressee_guard.enforce",
+      "file": "amo_addressee_guard.py",
+      "line": 214,
+      "loc": "amo_addressee_guard.py:214",
+      "tier": "safety",
+      "trigger": "首句称呼属于 BANNED_ADDRESSES/他人名；带您=丢弃；用户第一人称自述=丢弃；否则改写首句称呼",
+      "action": "整条丢弃 or 只换首句称呼",
+      "fixed": [],
+      "call_sites": [
+        "amo_persona_guard.prepare_outbound:435",
+        "amo_persona_guard.sanitize_candidate:513",
+        "amo_state_consistency.validate_reply_assembly:1035",
+        "amo_message._send_to_umo:1071",
+        "amo_outbound.send:411"
+      ],
+      "overrides": "5 个调用点：assembly -> send -> gateway 重复",
+      "overlaps": [
+        "prompt 收件人锁（生成期）"
+      ],
+      "frequency": "39 对抗收件人 14/14；回放 role_reversal 1；线上 #2288",
+      "risk": "低（fail-open）；调用点多日志重复",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_tts_guard._clean(clean_voice_text)",
+      "file": "amo_tts_guard.py",
+      "line": 207,
+      "loc": "amo_tts_guard.py:207",
+      "tier": "safety",
+      "trigger": "TTS 合成前",
+      "action": "去 Markdown、剥动作旁白；动作记 marker 不进语音",
+      "fixed": [],
+      "call_sites": [
+        "amo_tts_guard._wrap_provider:249-330",
+        "record_play:216"
+      ],
+      "overrides": "语音链路独立于文本链路",
+      "overlaps": [
+        "amo_voice._ACTION_RE:58"
+      ],
+      "frequency": "未测（voice ledger 可查）",
+      "risk": "低",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_role_guard.rewrite",
+      "file": "amo_role_guard.py",
+      "line": 17,
+      "loc": "amo_role_guard.py:17",
+      "tier": "safety",
+      "trigger": "user 在说自己气/烦/累，回复却自我否认（我哪生气/别扣帽子）",
+      "action": "删笑开头；否认句换固定句；删空兜底",
+      "fixed": [
+        "换谁都得气，关键处卡住太难受了。"
+      ],
+      "call_sites": [
+        "apply_chat_safety:1581"
+      ],
+      "overrides": "state_rewrite 之后",
+      "overlaps": [
+        "persona._DROP_SENTENCE 我哪生气了/别给我扣帽子（同批词两处处理）"
+      ],
+      "frequency": "回放 forbidden 14 条含 self-denial",
+      "risk": "低；固定句",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_marriage_guard.rewrite",
+      "file": "amo_marriage_guard.py",
+      "line": 24,
+      "loc": "amo_marriage_guard.py:24",
+      "tier": "safety",
+      "trigger": "前男友/相亲/介绍对象/男闺蜜/其他男性+暧昧动词",
+      "action": "整句换固定句或词替换",
+      "fixed": [
+        "我只有你一个。",
+        "工作上的事，下班再说。"
+      ],
+      "call_sites": [
+        "apply_chat_safety:1553"
+      ],
+      "overrides": "state_rewrite 之后",
+      "overlaps": [],
+      "frequency": "未测",
+      "risk": "低；产品红线",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_companion_guard.rewrite",
+      "file": "amo_companion_guard.py",
+      "line": 18,
+      "loc": "amo_companion_guard.py:18",
+      "tier": "safety",
+      "trigger": "日程块有 companions，回复出现 陪你/和你/跟你/我们/等你",
+      "action": "子串替换",
+      "fixed": [
+        "陪你->陪{name}",
+        "和你->和{name}",
+        "跟你->跟{name}",
+        "我们->我和{name}",
+        "等你->等{name}"
+      ],
+      "call_sites": [
+        "apply_chat_safety:1545"
+      ],
+      "overrides": "immersion/names/purchase/anti_nag 之后",
+      "overlaps": [
+        "reply_fact_guard companion 规则"
+      ],
+      "frequency": "daily companion 注入 33/修回 31",
+      "risk": "低；可能与 fact_guard 二次改",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_shared_text.strip_tech_terms(TECH_FALLBACKS)",
+      "file": "amo_shared_text.py",
+      "line": 617,
+      "loc": "amo_shared_text.py:617",
+      "tier": "safety",
+      "trigger": "命中技术/后台词",
+      "action": "删命中分句；整条命中按 source 给固定句 or 丢弃",
+      "fixed": [
+        "chat: 唔…这个先不说了，陪我聊点别的嘛。"
+      ],
+      "call_sites": [
+        "amo_persona_guard.prepare_outbound:471",
+        "amo_runtime_reply.on_decorating_result:206",
+        "amo_message._send_to_umo:1119"
+      ],
+      "overrides": "chat_safety 之后 + send",
+      "overlaps": [
+        "persona._humanize_system_sentences"
+      ],
+      "frequency": "回放 system_talk 6/176",
+      "risk": "低；固定句",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_immersion_guard.fix_identity/sanitize_extreme",
+      "file": "amo_immersion_guard.py",
+      "line": 1,
+      "loc": "amo_immersion_guard.py:1",
+      "tier": "safety",
+      "trigger": "身份混淆/极端表达",
+      "action": "确定性改写",
+      "fixed": [],
+      "call_sites": [
+        "apply_chat_safety:1509",
+        "send.immersion 阶段:1841"
+      ],
+      "overrides": "chat_safety 中段 + send",
+      "overlaps": [
+        "strip_tech_terms/role_guard"
+      ],
+      "frequency": "未测",
+      "risk": "低",
+      "recommendation": "keep",
+      "wave": 3
+    },
+    {
+      "id": "amo_state_consistency._ensure_where_answer",
+      "file": "amo_state_consistency.py",
+      "line": 1,
+      "loc": "amo_state_consistency.py:1",
+      "tier": "style",
+      "trigger": "他问 where/在家吗，最终文本没有地点词",
+      "action": "追加/替换当前地点句",
+      "fixed": [
+        "我在{place}呢。",
+        "我还在路上呢，快到了。"
+      ],
+      "call_sites": [
+        "state.rewrite:709",
+        "validate_reply_assembly:1072"
+      ],
+      "overrides": "两道出口各一次",
+      "overlaps": [
+        "question_guard.where 模板"
+      ],
+      "frequency": "未测",
+      "risk": "低；可能重复补句",
+      "recommendation": "keep",
+      "wave": 3
+    }
+  ]
+}

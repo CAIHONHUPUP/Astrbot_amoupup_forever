@@ -1,3 +1,10 @@
+## 7.6.3（2026-11-22 动作旁白/隐私）
+
+- **旁白先剥再分段**：`_send_to_umo` 在 `_segment()` 之前先做一次 `strip_action_narration`，跨行括号动作不再被分段器劈成两半；分段后再过“不成对全角括号”不变量，能剥则剥、剥不干净就丢弃并记日志。
+- **残括号兜底**：`strip_action_narration` 处理孤立「）」与只有开括号的尾巴（线上「嘴角一下翘起来）我也想你了」）。
+- **发布包隐私**：`tools/pack_release.py` 排除 `templates/` 人物三视图、`outfit_refs/`、`photo_cache/` 下的图片；6 张已跟踪三视图 `git rm --cached`，加 `.gitignore` 与新测试。
+- **版本/golden 同步**：`amo_shared_config` 版本对齐；pkg 模式 date golden 更新为无旁白版本（有意的行为变更）。
+
 ## 7.6.2（2026-11-22 稳定版收尾）
 
 - **候选还原层修好**：`amo_rewrite_safety.recover()` 原先把 `guard_mod` 用在赋值之前，任何「有候选且与现行文本不同」的调用都 `NameError`，被调用方 `except Exception` 吞掉——整层守卫实际失效。现在先取 registry，且只在现行文本命中兜底注册表（`FALLBACKS`）或多池拼装时才还原候选；完整候选与场景冲突时交给场景守卫改写，不再整条顶回去。固定 seed 日常 50/50、614/614、residual 0、guard_introduced 0。

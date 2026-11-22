@@ -513,9 +513,15 @@ class SegmentEngine:
         for symbol in self.force_split_symbols:
             new_pieces = []
             for piece in pieces:
+                # 强制分隔符也必须尊重成对符号：模型常把动作旁白写成
+                # 「（听到这句话，\n嘴角一下翘起来）」，在换行处硬切会把括号
+                # 劈成两半，旁白剥离只认成对括号，最后发出「嘴角…）」残句。
+                protected = (self._build_protected_ranges(piece)
+                             if self.protect_paired_symbols else [])
                 i, last_end = 0, 0
                 while i <= len(piece) - len(symbol):
-                    if piece.startswith(symbol, i):
+                    if (piece.startswith(symbol, i)
+                            and not self._in_protected_range(i, protected)):
                         sep_len = self._get_split_char_len(piece, i, symbol)
                         if self.keep_symbol:
                             new_pieces.append(piece[last_end:i + sep_len])

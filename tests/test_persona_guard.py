@@ -34,6 +34,19 @@ class ActionNarrationTests(unittest.TestCase):
     def test_action_with_latin_letters_stripped(self):
         self.assertEqual("我去啦", guard.strip_action_narration("（套回大T恤，坐回沙发）我去啦"))
 
+    def test_has_orphan_paren_invariant(self):
+        self.assertTrue(guard.has_orphan_paren("嘴角一下翘起来）我也想你了"))
+        self.assertTrue(guard.has_orphan_paren("（听到这句话"))
+        self.assertFalse(guard.has_orphan_paren("（听到这句话，嘴角一下翘起来）我也想你了"))
+        self.assertFalse(guard.has_orphan_paren("（11月22日）我在家"))
+        self.assertFalse(guard.has_orphan_paren("你回来啦"))
+
+    def test_orphan_close_parenthesis_dropped(self):
+        # 分段器把「（听到这句话，\n嘴角一下翘起来）」劈开后，第二段只剩闭括号；
+        # 残片不许原样发出去（线上事故：飞书收到「嘴角一下翘起来）我也想你了」）。
+        self.assertEqual("我也想你了", guard.strip_action_narration("嘴角一下翘起来）我也想你了"))
+        self.assertEqual("", guard.strip_action_narration("（听到这句话"))
+
     def test_date_parenthesis_kept(self):
         self.assertIn("（11月22日）", guard.strip_action_narration("（11月22日）我在家"))
 

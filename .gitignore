@@ -19,3 +19,12 @@ pytest-cache-files-*/
 htmlcov/
 # 本地模型探针凭据：绝不入库（历史上曾误提交，推送前务必轮换 key）
 work/sim/provider.env
+# 人物三视图/姿势参考图：隐私，不入库、不进发布包（用户 2026-11-22 明确要求）
+templates/amo_persona_*.png
+templates/角色*.png
+outfit_refs/角色三视图/
+photo_cache/
+work/audit/_scratch/**/templates/*.png
+# 本机配置（可能含 key），不入库
+data/cmd_config.json
+tests/data/cmd_config.json

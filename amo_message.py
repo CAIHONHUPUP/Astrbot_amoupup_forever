@@ -63,6 +63,24 @@ if TYPE_CHECKING:
 else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉别的 mixin 的真实实现
     _MixinBase = object
 
+
+def _strip_action_narration(text):
+    """发送出口用的薄封装：函数内条件导入会被 mypy 推断成 object。"""
+    try:
+        from .amo_persona_guard import strip_action_narration as _fn
+    except ImportError:  # 直接按文件加载时
+        from amo_persona_guard import strip_action_narration as _fn
+    return _fn(text)
+
+
+def _has_orphan_paren(text):
+    """出站括号不变量：剥掉成对括号后还残留全角括号 → 残片。"""
+    try:
+        from .amo_persona_guard import has_orphan_paren as _fn
+    except ImportError:  # 直接按文件加载时
+        from amo_persona_guard import has_orphan_paren as _fn
+    return bool(_fn(text))
+
 try:  # 地点跟日程对齐：她嘴里说的地方和日程对不上时改回来
     from .place_guard import rewrite_reply as _rewrite_reply
 except ImportError:  # 直接按文件加载时
@@ -1121,7 +1139,33 @@ class MessageMixin(_MixinBase):
             _note_swallowed("amo_message._send_to_umo.tech_terms", _amo_exc)
         if not text or not umo:
             return False
+        # 归一化前移：旁白剥离是语义操作，分段是结构操作。必须先剥再分段，
+        # 否则模型写成跨行的括号动作会被分段器劈成两半（2026-11-22 线上
+        # 「嘴角一下翘起来）我也想你了…」）。
+        try:
+            text = _strip_action_narration(text)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message._send_to_umo.action_narration", _amo_exc)
+        if not text:
+            return False
         segments = self._segment(text)
+        if not segments:
+            return False
+        # 出口不变量：任何一段都不许带不成对的全角括号。能剥则剥，剥不干净就
+        # 丢弃这一段（宁可少发一句，也不把残句发到飞书），并留下可检索日志。
+        try:
+            _safe_segments = []
+            for _seg in segments:
+                if _has_orphan_paren(_seg):
+                    _fixed = _strip_action_narration(_seg)
+                    if not _fixed or _has_orphan_paren(_fixed):
+                        logger.info("[amo] 出站残括号丢弃：%s", str(_seg)[:80])
+                        continue
+                    _seg = _fixed
+                _safe_segments.append(_seg)
+            segments = _safe_segments
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message._send_to_umo.orphan_invariant", _amo_exc)
         if not segments:
             return False
         # task-15 分段去重：后段和最近说过的话/本轮前面的段重复就整段不发。

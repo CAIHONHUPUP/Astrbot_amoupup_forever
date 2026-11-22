@@ -67,6 +67,17 @@ def _strip_line(line):
         return match.group(0) if _KEEP_PAREN.search(match.group(1)) else ""
 
     body = _PAREN.sub(_replace, str(line or ""))
+    # 分段器/模型可能把「（动作）」劈成两半：只剩全角闭括号的片段要丢到
+    # 括回为止（「嘴角一下翘起来）我也想你了」→「我也想你了」）；只有开
+    # 括号、没有闭括号的尾巴整段丢（「（听到这句话」→ 空）。
+    _close = body.find("）")
+    if _close >= 0 and "（" not in body[:_close] and "(" not in body[:_close]:
+        body = body[_close + 1:]
+    _open = body.find("（")
+    if _open < 0:
+        _open = body.find("(")
+    if _open >= 0 and body.find("）", _open) < 0 and body.find(")", _open) < 0:
+        body = body[:_open]
     body = re.sub(r"[ \t]{2,}", " ", body)
     body = re.sub(r"^[\s，。、；：,.;:!?！？~～]+", "", body)
     body = re.sub(r"[\s，、；：,;:]+$", "", body)
@@ -81,6 +92,12 @@ def strip_action_narration(text):
         if cleaned:
             lines.append(cleaned)
     return "\n".join(lines).strip()
+
+
+def has_orphan_paren(text):
+    """出站不变量：剥掉成对括号后还残留全角括号，就是被切开的残片。"""
+    body = _PAREN.sub("", str(text or ""))
+    return "（" in body or "）" in body
 
 
 def has_action_narration(text):
@@ -527,7 +544,7 @@ def guard_candidate(plugin, umo, text, user_text=""):
 
 __all__ = [
     "FORBIDDEN_PHRASES", "neutralize_forbidden", "strip_action_narration",
-    "has_action_narration", "action_only", "action_ratio",
+    "has_action_narration", "has_orphan_paren", "action_only", "action_ratio",
     "self_recent_texts", "self_recent_block", "denial_of_self_issue",
     "emotion_first_issue", "issues", "safe_reply", "ground_names",
     "prepare_outbound", "sanitize_candidate", "guard_candidate",

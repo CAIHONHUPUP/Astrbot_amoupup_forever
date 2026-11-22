@@ -1227,6 +1227,23 @@ class SendTests(unittest.TestCase):
             self.assertTrue(asyncio.run(p._send_to_umo("u", "你好", quote_id="q1")))
         self.assertEqual(len(p.context.sent[0][1].chain), 1)
 
+    def test_send_to_umo_strips_crossline_action_before_segment(self):
+        # 归一化前移：跨行括号动作在分段前整段剥掉，不会留下孤括号残句。
+        raw = "（听到这句话，\n嘴角一下翘起来）我也想你了"
+        p = self._send_plugin()
+        with mock.patch.object(M, "_reply_pipeline", FakePipeline(raw)):
+            self.assertTrue(asyncio.run(p._send_to_umo("u", raw, source="chat")))
+        sent = "".join(getattr(item, "text", "") for item in p.context.sent[0][1].chain)
+        self.assertNotIn("（", sent)
+        self.assertNotIn("）", sent)
+        self.assertIn("我也想你了", sent)
+
+    def test_send_to_umo_drops_irreparable_orphan_segment(self):
+        # 分段器若已经切出「嘴角一下翘起来）」这种残段，出口不变量必须丢弃它。
+        p = self._send_plugin(segments=["嘴角一下翘起来）"])
+        with mock.patch.object(M, "_reply_pipeline", FakePipeline("原文")):
+            self.assertFalse(asyncio.run(p._send_to_umo("u", "原文", source="chat")))
+
     def test_send_to_umo_fail_first_segment(self):
         p = self._send_plugin(fail_at=0)
         with mock.patch.object(M, "_reply_pipeline", FakePipeline("你好")):

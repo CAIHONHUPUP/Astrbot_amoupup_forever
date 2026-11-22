@@ -21,9 +21,8 @@
    ]
   },
   "send:date": {
-   "ok": true,
    "sent": [
-    "（挽着你的胳膊）我们明明在一起呀呢，好无聊，（探头看你）你不就在我面前嘛？"
+    "我们明明在一起呀呢，好无聊，你不就在我面前嘛？"
    ],
    "trace": [
     "names.foreign_names",
@@ -35,7 +34,8 @@
     "transition.maybe_advance",
     "transition.maybe_start_from_text",
     "transit.rewrite_sent_text"
-   ]
+   ],
+   "ok": true
   },
   "send:extreme": {
    "ok": true,

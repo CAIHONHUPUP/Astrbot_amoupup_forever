@@ -26,6 +26,29 @@ RUNTIME_SKIP_DIRS = {".git", "__pycache__", "dist", ".pytest_cache", ".mypy_cach
 RUNTIME_SKIP_FILES = {".coveragerc", "mypy.ini", "requirements-dev.txt", "run_tests.py",
                       ".coverage", "mypy.ini"}
 SKIP_SUFFIX = (".pyc", ".pyo", ".log", ".db", ".db-wal", ".db-shm", ".sqlite")
+
+#: 隐私：人物三视图与姿势/穿搭参考图绝不进任何发布包（2026-11-22 用户明确要求）。
+#: 本地保留文件供拍照参考；包里只发代码，缺参考图由 photo_engine 自动降级。
+PRIVATE_IMAGE_SUFFIX = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+PRIVATE_IMAGE_DIRS = ("templates/", "outfit_refs/", "photo_cache/",
+                      "outfit_refs/角色三视图/")
+PRIVATE_IMAGE_FILES = (
+    "templates/amo_persona_front.png",
+    "templates/amo_persona_side.png",
+    "templates/amo_persona_full.png",
+)
+
+
+def _is_private_asset(rel):
+    """发布包里必须排除的私有图片：三视图、姿势/穿搭参考图。"""
+    rel = str(rel or "").replace(os.sep, "/").lstrip("./")
+    if rel in PRIVATE_IMAGE_FILES:
+        return True
+    if not rel.lower().endswith(PRIVATE_IMAGE_SUFFIX):
+        return False
+    return any(rel.startswith(prefix) for prefix in PRIVATE_IMAGE_DIRS)
+
+
 SOURCE_SKIP_DIRS = {".git", "__pycache__", "dist", ".pytest_cache", ".mypy_cache",
                     "_test_tmp", ".test-tmp"}
 
@@ -51,6 +74,8 @@ def _walk(skip_dirs, skip_files):
                 continue
             path = os.path.join(base, name)
             rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+            if _is_private_asset(rel):
+                continue
             yield rel, path
 
 
