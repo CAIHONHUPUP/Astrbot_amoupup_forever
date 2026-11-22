@@ -1863,6 +1863,296 @@ async def regenerate_forbidden(text, plugin, umo="", user_text=""):
 
 
 # ---------------------------------------------------------------------------
+# 3C：统一「生成式修复」hook —— 守卫把回复变成空/罐头句时，调一次模型重生成
+#
+# 唯一接线点：chat 出站 async 阶段（amo_runtime_reply.on_decorating_result），
+# apply_chat_safety 之后。口径：
+#   * 只修 chat 出站：空回复 / 罐头句（固定句池造出来的模板话）/ 多池串味；
+#     非 chat 来源（主动/推送）一律不修；
+#   * 修 = 调一次 chat_raw（REPAIR_TIMEOUT 秒）；结果过
+#     amo_persona_guard.prepare_generated_line（禁语整句重写 + addressee_guard.apply
+#     默认参数），仍是空/罐头/含禁语就判失败；
+#   * 失败 fail-open 到「guarded or raw」：绝不把回复吞掉；
+#   * 一次出站最多一次模型调用：runtime 先用 needs_repair() 判一次（同一份纯判据），
+#     命中修复就跳过 regenerate_forbidden，两边不会各调一次。
+# ---------------------------------------------------------------------------
+
+#: 总开关：True = 空/罐头回复交给模型重生成（用户 2026-11-23 要求默认开）。
+REPAIR_ENABLED = True
+#: 修复超时（秒）：命中才调，最长等这么久，超时保持现有结果。
+REPAIR_TIMEOUT = 8.0
+#: 修复的系统提示：只要一句她会说的话，不要解释。
+_REPAIR_SYSTEM = "你就是这个角色本人，只输出一句她会说的话，不要解释。"
+#: 修出来的句子超过这个长度就不像「一句话」，不采用（fail-open）。
+_REPAIR_MAX_CHARS = 120
+#: 「包含」匹配只对够长的罐头句成立：太短的碎片（「笑死我了」）包含匹配会误伤正常回复。
+_CANNED_CONTAINS_MIN = 6
+#: 修复计数（进程内观测，不驱动逻辑）：ok=采用新句 / fail=调了模型但不可用 / skip=命中但没调。
+_REPAIR_COUNTER: Dict[str, int] = {}
+#: 懒加载的罐头句识别集（规范化 body）：只用于识别，不产出任何句子。
+_CANNED_BODIES: Optional[frozenset] = None
+
+#: 括号动作旁白：判罐头句只看「说出口的部分」（动作-only 兜底句 = 动作 + 一句台词）。
+_ACTION_PAREN = re.compile(r"[（(][^（）()]*[）)]")
+
+#: 固定句池之外的已知罐头句（识别用，不产出；来源见 tasks/3b/3c 施工图）。
+_CANNED_EXTRA_TEXTS = (
+    # persona_guard.safe_reply（复检两次失败时的安全句）
+    "我在呢，先别急，慢慢跟我说。",
+    "我刚说过的呀，就是刚才跟你提的那个，你别逗我。",
+    "我记混了，你再说一遍？",
+    # grounding_critic.safe_reply（同一契约的旧实现，3b 判定为死代码）
+    "然后啊，刚才那个还没讲完呢，后面还有更好笑的。",
+    "你刚问的这个，我一下没答好，你再说一遍？",
+    "换谁都得气，我在听着。",
+    "我看到了，等我缓一下再细看。",
+    "我在听，你接着说。",
+    # short_reply 旧句（task-3b C1 已删产出，识别集保留）
+    "哇！谢谢老公！爱你！",
+    "好呀~",
+    "没问题啦！",
+    "你敷衍我是吧？那别聊了。",
+    "你就回我一个嗯？哼，我不理你了！",
+)
+
+#: 用固定样例渲染注册表里的问句模板（question_guard 的槽位在注册表里没有字面量）。
+_QUESTION_SAMPLES: tuple[tuple[str, dict[str, str]], ...] = (
+    ("question.where", {"place": "外面"}),
+    ("question.where", {"place": "公司"}),
+    ("question.doing", {"doing": "忙点事"}),
+    ("question.who", {"who": "朋友"}),
+    ("question.who", {"who": "妈妈"}),
+    ("question.when_route", {"place": "外面", "end": "晚点"}),
+    ("question.alone", {}),
+    ("question.when_home", {}),
+    ("question.when_late", {}),
+    ("question.eaten", {}),
+    ("question.not_eaten", {}),
+)
+
+#: 取 safe_reply 各分支用的样例（函数是唯一真源，这里只负责把每个分支问一遍）。
+_SAFE_REPLY_SAMPLES = (
+    ("", None), ("好难受", None), ("好难受", ("刚才",)), ("", ("刚才",)),
+)
+
+
+def _bump_repair(name):
+    _REPAIR_COUNTER[name] = _REPAIR_COUNTER.get(name, 0) + 1
+
+
+def repair_stats():
+    """生成式修复计数快照（进程内；观测用，不驱动逻辑）。"""
+    return dict(_REPAIR_COUNTER)
+
+
+def reset_repair_stats():
+    """清空修复计数（测试与回放用）。"""
+    _REPAIR_COUNTER.clear()
+
+
+def _compare(text):
+    """规范化正文（只留汉字/字母/数字），与注册表的 compare_body 同口径。"""
+    try:
+        return _fallbacks.compare_body(text)
+    except Exception:  # cleanup: 注册表异常就本地归一化
+        return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(text or ""))
+
+
+def _safe_reply_bodies():
+    """persona_guard / grounding_critic 的 safe_reply 池（逐分支取，函数是唯一真源）。"""
+    bodies = set()
+    try:
+        try:
+            from .amo_persona_guard import safe_reply as _persona_safe
+        except ImportError:
+            from amo_persona_guard import safe_reply as _persona_safe
+        for user_text, self_texts in _SAFE_REPLY_SAMPLES:
+            bodies.add(_compare(_persona_safe(user_text, self_texts)))
+    except Exception as _amo_exc:  # cleanup: 取不到就少一类识别，不影响主流程
+        _note_swallowed("amo_reply_pipeline.repair.canned.persona", _amo_exc)
+    try:
+        try:
+            from .amo_grounding_critic import safe_reply as _grounding_safe
+        except ImportError:
+            from amo_grounding_critic import safe_reply as _grounding_safe
+        for user_text, history in (("", ""), ("然后呢", ""),
+                                   ("然后呢", "刚给你看了一个猫的视频"),
+                                   ("在吗？", ""), ("好烦啊", ""),
+                                   ("我刚刷到一个视频", "")):
+            bodies.add(_compare(_grounding_safe(user_text, history)))
+    except Exception as _amo_exc:  # cleanup: 取不到就少一类识别，不影响主流程
+        _note_swallowed("amo_reply_pipeline.repair.canned.grounding", _amo_exc)
+    return bodies
+
+
+def _canned_bodies():
+    """懒加载的罐头句识别集：注册表识别集 + safe_reply 池 + 问句模板样例 + 旧句。"""
+    global _CANNED_BODIES
+    if _CANNED_BODIES is not None:
+        return _CANNED_BODIES
+    bodies = set()
+    try:
+        bodies.update(_fallbacks.fixed_rewrite_bodies())
+    except Exception as _amo_exc:  # cleanup: 注册表不可用就只靠固定句清单
+        _note_swallowed("amo_reply_pipeline.repair.canned.registry", _amo_exc)
+    for key, fields in _QUESTION_SAMPLES:
+        try:
+            bodies.add(_compare(_fallbacks.sentence(key, **fields)))
+        except Exception as _amo_exc:  # cleanup: 单个模板坏了不影响整体
+            _note_swallowed("amo_reply_pipeline.repair.canned.question", _amo_exc)
+    bodies |= _safe_reply_bodies()
+    bodies.update(_compare(item) for item in _CANNED_EXTRA_TEXTS)
+    _CANNED_BODIES = frozenset(body for body in bodies if body)
+    return _CANNED_BODIES
+
+
+def is_canned_reply(text):
+    """这条回复是不是空/罐头句（守卫造出来的模板话）；只判不改、绝不抛。
+
+    a) 空/纯空白 → True；
+    b) repetition_guard.is_fixed_rewrite → True（固定兜底/改写句的唯一识别集）；
+    c) 去掉括号动作旁白后，正文等于/包含已知罐头句（safe_reply 池、question_guard
+       模板样例、动作台词、short_reply 旧句）→ True。
+    """
+    body = str(text or "")
+    if not body.strip():
+        return True
+    try:
+        if _fallbacks.is_fixed_rewrite(body):
+            return True
+    except Exception as _amo_exc:  # cleanup: 识别集异常就当没命中
+        _note_swallowed("amo_reply_pipeline.repair.canned.fixed", _amo_exc)
+    normalized = _compare(_ACTION_PAREN.sub("", body))
+    if not normalized:
+        return True
+    try:
+        canned = _canned_bodies()
+    except Exception as _amo_exc:  # cleanup: 识别集不可用就只按固定句判
+        _note_swallowed("amo_reply_pipeline.repair.canned", _amo_exc)
+        return False
+    if normalized in canned:
+        return True
+    return any(len(item) >= _CANNED_CONTAINS_MIN and item in normalized
+               for item in canned)
+
+
+def repair_failure(guarded):
+    """这条回复要修的理由（"" = 不用修）：empty / canned / repeat（多池串味）。"""
+    body = str(guarded or "")
+    if not body.strip():
+        return "empty"
+    if is_canned_reply(body):
+        return "canned"
+    try:
+        if _fallbacks.is_multi_pool(body):
+            return "repeat"
+    except Exception as _amo_exc:  # cleanup: 判据异常就当不是串味
+        _note_swallowed("amo_reply_pipeline.repair.multi_pool", _amo_exc)
+    return ""
+
+
+def needs_repair(guarded):
+    """runtime 用：这条要不要交给模型修（同一份纯判据，用来跳过禁语重生成）。"""
+    try:
+        return bool(repair_failure(guarded))
+    except Exception as _amo_exc:  # cleanup: 判据异常不修，保持原行为
+        _note_swallowed("amo_reply_pipeline.repair.needs", _amo_exc)
+        return False
+
+
+_REPAIR_POINTS = {
+    "empty": "上一版被守卫删空了，一句能发的话都没剩下",
+    "canned": "上一版是固定模板句（罐头句），不是真的在接他的话",
+    "repeat": "上一版是把几句兜底台词拼在一起",
+}
+
+
+def _repair_prompt(reason, raw, guarded, user_text="", history=""):
+    """修复指令：带上他的原话/最近上下文/上一版，只要一句真人话。"""
+    parts = []
+    if str(user_text or "").strip():
+        parts.append("他刚说的是：%s" % str(user_text).strip()[:100])
+    context = re.sub(r"\s+", " ", str(history or "")).strip()
+    if context:
+        parts.append("最近聊的：%s" % context[-160:])
+    if str(raw or "").strip():
+        parts.append("守卫改之前的那一版：%s" % str(raw).strip()[:160])
+    if str(guarded or "").strip():
+        parts.append("现在准备发的是：%s" % str(guarded).strip()[:160])
+    parts.append("问题：%s。" % _REPAIR_POINTS.get(str(reason), "上一版不能用"))
+    parts.append("请用第一人称「我」，接住他这句话接着往下说，带上你自己的情绪和具体内容；"
+                 "不要用固定模板句/客服话术，不要说第三人称自称（「你美丽的老婆」「你老婆」），"
+                 "不要旁白和解释，只输出一句话。")
+    return "\n".join(parts)
+
+
+def _repair_fallback(raw, guarded):
+    """失败绝不吞回复：能发 guarded 就发 guarded，否则退回守卫前的原话。"""
+    for item in (guarded, raw):
+        text = str(item or "")
+        if text.strip():
+            return text
+    return ""
+
+
+async def repair_reply(raw, guarded, plugin, umo="", user_text="", history="",
+                       source="chat"):
+    """空/罐头回复交给模型重生成一句；失败 fail-open 到「guarded or raw」。
+
+    只处理 chat 出站（source 不是 chat → 原样返回 guarded）；REPAIR_ENABLED=False、
+    没有可用 LLM、或这条不是空/罐头/串味时都 **不调模型**、原样返回（开关关 =
+    行为零变化）。同一次出站最多一次模型调用：needs_repair() 命中后 runtime 会
+    跳过 regenerate_forbidden。
+    """
+    body = str(guarded or "")
+    reason = repair_failure(body)
+    if not reason:
+        return body                           # 正常句：不计数、不调模型
+    if str(source or "").strip().lower() not in ("", "chat"):
+        _bump_repair("skip")                  # 非 chat 来源（主动/推送）不修
+        return body
+    llm = getattr(plugin, "llm", None)
+    if (not REPAIR_ENABLED or llm is None
+            or not callable(getattr(llm, "chat_raw", None))):
+        _bump_repair("skip")                  # 开关关/没有可用模型：零调用
+        return body
+    try:
+        try:
+            from .amo_persona_guard import forbidden_hits, prepare_generated_line
+        except ImportError:
+            from amo_persona_guard import forbidden_hits, prepare_generated_line
+    except Exception as _amo_exc:  # cleanup: 守卫不可用就不冒风险重生成
+        _bump_repair("fail")
+        _note_swallowed("amo_reply_pipeline.repair_reply.import", _amo_exc)
+        return _repair_fallback(raw, body)
+    try:
+        fresh = await asyncio.wait_for(
+            llm.chat_raw(str(umo or ""), _REPAIR_SYSTEM,
+                         _repair_prompt(reason, raw, body, user_text, history)),
+            timeout=REPAIR_TIMEOUT)
+    except Exception as _amo_exc:  # cleanup: 超时/模型异常 fail-open 到现有文本
+        _bump_repair("fail")
+        _note_swallowed("amo_reply_pipeline.repair_reply", _amo_exc)
+        return _repair_fallback(raw, body)
+    fresh = str(fresh or "").strip()
+    if fresh and len(fresh) <= _REPAIR_MAX_CHARS:
+        try:
+            fresh = str(prepare_generated_line(fresh) or "").strip()
+        except Exception as _amo_exc:  # cleanup: 确定性层异常就当模型没给
+            _note_swallowed("amo_reply_pipeline.repair_reply.clean", _amo_exc)
+            fresh = ""
+    else:
+        fresh = ""
+    # 仍是空/罐头/含禁语 → 不采用，交回「guarded or raw」。
+    if (not fresh or is_canned_reply(fresh) or forbidden_hits(fresh)):
+        _bump_repair("fail")
+        return _repair_fallback(raw, body)
+    _bump_repair("ok")
+    logger.info("[amo] 空/罐头回复已重生成 reason=%s text=%s", reason, fresh[:80])
+    return fresh
+
+
+# ---------------------------------------------------------------------------
 # 登记表：顺序 = 改造前代码里的真实调用顺序
 # ---------------------------------------------------------------------------
 

@@ -238,6 +238,30 @@ def neutralize_forbidden(text, key=""):
     return fresh
 
 
+def prepare_generated_line(text):
+    """模型新生成的一句在采用前的确定性收口：禁语（neutralize_forbidden）+ 收件人。
+
+    3C 生成式修复专用（amo_reply_pipeline.repair_reply）：收件人用
+    amo_addressee_guard.apply 的默认参数。返回 "" = 这一句不能用。
+    不进现有出站链/候选链；依赖都是本模块已有的模块。
+    """
+    body = str(text or "").strip()
+    if not body:
+        return ""
+    body = str(neutralize_forbidden(body) or "").strip()
+    if not body:
+        return ""
+    try:
+        try:
+            from .amo_addressee_guard import apply as _addressee_apply
+        except ImportError:
+            from amo_addressee_guard import apply as _addressee_apply
+        body = _addressee_apply(body)[0]
+    except Exception:  # cleanup: 收件人守卫不可用就只做禁语层，不拦这句
+        return str(body or "").strip()
+    return str(body or "").strip()
+
+
 # ---------------------------------------------------------------------------
 # 动作旁白：≤5% 的确定性执行（整条动作不发，行内旁白剥掉）
 # ---------------------------------------------------------------------------
@@ -915,7 +939,7 @@ def guard_candidate(plugin, umo, text, user_text=""):
 
 __all__ = [
     "FORBIDDEN_PHRASES", "forbidden_hits", "rewrite_forbidden", "neutralize_forbidden",
-    "forbidden_stats", "reset_forbidden_stats", "strip_action_narration",
+    "forbidden_stats", "reset_forbidden_stats", "prepare_generated_line", "strip_action_narration",
     "has_action_narration", "has_orphan_paren", "action_only", "action_ratio",
     "naturalness_issues", "note_naturalness", "naturalness_stats",
     "self_recent_texts", "self_recent_block", "denial_of_self_issue",

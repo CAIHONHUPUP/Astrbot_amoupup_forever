@@ -181,12 +181,14 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                 self._core_decor_logged = True
             text = await self._deco_polish_native(event, result, text)
             text = await self._deco_text_cleanup(event, text)
+            # 3C：留一份确定性守卫之前的原话（生成式修复拿它当「上一版」）+ 最近上下文。
+            _raw_text = text
+            _history = ""
             try:
                 try:
                     from .amo_reply_pipeline import apply_chat_safety
                 except ImportError:
                     from amo_reply_pipeline import apply_chat_safety
-                _history = ""
                 try:
                     _rows = self._recent(event.unified_msg_origin, 6) or []
                     # 她自己刚分享的视频/图片也要算上下文：猫不能下一句变狗
@@ -200,14 +202,27 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     getattr(event, "message_str", ""), history_text=_history)
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime_reply.chat_safety", _amo_exc)
+            # 3C：守卫把回复删成空/换成罐头句时，调一次模型重生成（默认开启）。
+            # 失败 fail-open 到「guarded or raw」，绝不吞回复；命中修复后跳过下面的
+            # 禁语重生成，保证一次出站最多一次模型调用。
+            _repair_tried = False
+            try:
+                _repair_tried = _reply_pipeline.needs_repair(text)
+                if _repair_tried:
+                    text = await _reply_pipeline.repair_reply(
+                        _raw_text, text, self, event.unified_msg_origin,
+                        getattr(event, "message_str", ""), history=_history)
+            except Exception as _amo_exc:  # cleanup: 修复失败不影响发送
+                _note_swallowed("amo_runtime_reply.reply_repair", _amo_exc)
             # 3c 阶段 2：禁语命中时让模型重生成一句（默认关闭 = 零模型调用，
             # 行为与阶段 1 的确定性收口完全一致）；失败/超时保持上面的结果。
-            try:
-                text = await _reply_pipeline.regenerate_forbidden(
-                    text, self, event.unified_msg_origin,
-                    getattr(event, "message_str", ""))
-            except Exception as _amo_exc:  # cleanup: 重生成失败不影响发送
-                _note_swallowed("amo_runtime_reply.forbidden_regen", _amo_exc)
+            if not _repair_tried:
+                try:
+                    text = await _reply_pipeline.regenerate_forbidden(
+                        text, self, event.unified_msg_origin,
+                        getattr(event, "message_str", ""))
+                except Exception as _amo_exc:  # cleanup: 重生成失败不影响发送
+                    _note_swallowed("amo_runtime_reply.forbidden_regen", _amo_exc)
             # task-26：聊天里不许出现「服务器/报错/超时/权限/面板/接口/异常/重试」
             # 这类后台话术；删掉命中分句，整条都命中就换成角色化短句。
             try:

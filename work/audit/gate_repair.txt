@@ -1,0 +1,9 @@
+# C 阶段（生成式修复 hook）门禁与四件套（2026-11-23）
+
+改动：空/罐头回复 → chat 出口调一次模型重生成（amo_reply_pipeline.repair_reply），失败回退 guarded or raw；
+amo_runtime_reply 保留 raw 并在 apply_chat_safety 后调用；amo_persona_guard.prepare_generated_line 做生成句收口。
+默认开（REPAIR_ENABLED=True）、8s 超时、无新配置键、一次出站最多一次模型调用。
+
+- 门禁 exit 0（1028.4s）：6434 passed / 0 failed / 7 skipped / 282 subtests（+30 新测试）；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
+- 四件套与 3c2 基线逐项一致：daily 614/614（turns_failed 0、probe 5 维 0、contradiction 0）、share 500/100%（fixed 230、damaged 0、persistent 0）、remind 240/240、adversarial 39/39、回放 exit 0（persistent 2、旁白 0）
+- 说明：sim/回放语料未触发「空/罐头→重生成」路径，因此数字与基线一致；触发率稍后单独实测
