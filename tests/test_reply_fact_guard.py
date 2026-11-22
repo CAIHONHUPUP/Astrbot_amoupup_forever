@@ -331,6 +331,90 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(guard(text, ctx(activity={}))[0], text)
 
 
+class PlaceGapTests(unittest.TestCase):
+    """3a-2b C1：place 规则的四个缺口（到达/目的地/裸地点词/残留地点词）。
+
+    这四条都是真实模型原话上实测出来的：删掉老 place_guard.rewrite_reply 之后，
+    回复事实守卫是唯一的地点守卫，它要么挡住，要么不许把句子改坏。
+    每条断言在改前都是红的（见 work/audit/_scratch/plug_before_c1.py 对照）。
+    """
+
+    ROAD = {"zone": "road", "place": "地铁", "activity": "挤地铁", "category": "commute"}
+
+    def test_arrival_with_particle_is_rewritten_home(self):
+        # 「我到了商场啦」：到达句尾部只有语气助词，按到达改口（改前直接放行）
+        fixed, violations = guard("我到了商场啦", ctx(activity=HOME))
+        self.assertNotIn("商场", fixed)
+        self.assertIn("家", fixed)
+        self.assertTrue(fixed.startswith("我到"), fixed)
+        self.assertTrue(fixed.endswith("啦"), fixed)
+        self.assertEqual([item["rule"] for item in violations], ["place"])
+
+    def test_return_with_particle_is_rewritten_home(self):
+        # 「我回到公司了」：回到句同样按到达改口
+        fixed, violations = guard("我回到公司了", ctx(activity=HOME))
+        self.assertNotIn("公司", fixed)
+        self.assertIn("家", fixed)
+        self.assertEqual([item["rule"] for item in violations], ["place"])
+
+    def test_arrival_at_school_is_rewritten_to_restaurant(self):
+        # 改前输出是残句「我到了」：必须是一句完整话
+        fixed, _violations = guard("我到学校了", ctx(activity=MEAL))
+        self.assertNotIn("学校", fixed)
+        self.assertIn("餐厅", fixed)
+        self.assertNotEqual(fixed, "我到了")
+
+    def test_arrival_destination_phrase_is_kept(self):
+        # 「等我到家再拍」里的「到家」是目的地/以后的动作，不是此刻所在
+        text = "等我到家再拍给你看"
+        fixed, violations = guard(text, ctx(activity=OFFICE))
+        self.assertEqual(fixed, text)
+        self.assertEqual(violations, [])
+
+    def test_going_to_place_is_kept(self):
+        # 「去+地点」是目的地：不许把地点词删掉、留下「赶着去」这种残句
+        text = "我赶着去公司呢"
+        fixed, _violations = guard(text, ctx(activity=HOME))
+        self.assertEqual(fixed, text)
+        self.assertNotIn("赶着去呢", fixed)
+
+    def test_going_to_place_on_transit_is_kept(self):
+        # 同一条在通勤日程下（地铁里赶着去公司）：地铁里不是「快到了」整句改写
+        text = "我现在在地铁里赶着去公司呢"
+        fixed, _violations = guard(text, ctx(activity=self.ROAD))
+        self.assertEqual(fixed, text)
+        self.assertNotIn("赶着去呢", fixed)
+
+    def test_towards_place_is_kept(self):
+        # 「往+地点+走」：改前删成「往商场走」→「往走」，语义和语法都不成立
+        text = "我这也刚出门往商场走呢"
+        fixed, _violations = guard(text, ctx(activity=self.ROAD))
+        self.assertEqual(fixed, text)
+        self.assertNotIn("往走", fixed)
+
+    def test_bare_place_word_is_judged_by_weather_not_by_omission(self):
+        # 裸「外面」+ 天气是天气说法，改前删成「还热」
+        text = "一动都不想动，外面还热"
+        fixed, _violations = guard(text, ctx(activity=HOME))
+        self.assertEqual(fixed, text)
+        self.assertIn("外面还热", fixed)
+        # 反过来：省略主语的裸地点词仍是地点声明，收窄判定不能把它一起放过
+        fixed_claim, _violations = guard("工位上改周报", ctx(activity=HOME))
+        self.assertNotIn("工位", fixed_claim)
+        self.assertIn("家", fixed_claim)
+
+    def test_residual_place_word_is_collapsed_to_place_only(self):
+        # 最长地点词是活动词（爬山）时，改前只删后半句、把「景区」留了下来
+        fixed, violations = guard("我在景区爬山呢", ctx(activity=HOME))
+        self.assertNotIn("景区", fixed)
+        self.assertIn("家", fixed)
+        self.assertEqual([item["rule"] for item in violations], ["place"])
+        # 商场词收句（task-41 已有语义）不能被这次改动带坏
+        fixed_mall, _violations = guard("我在商场逛街呢", ctx(activity=OFFICE))
+        self.assertNotIn("商场", fixed_mall)
+        self.assertIn("公司", fixed_mall)
+
+
 class ReverseVerificationTests(unittest.TestCase):
     """反向验证：拆掉一条规则，对应的反例就不再被改写；装回去又变绿。"""
 

@@ -90,6 +90,20 @@ _ORIGIN_PREFIXES = ("从", "离开")
 #: 「从 X 回来/出来/过来」说的是已经离开那儿，不跟此刻地点冲突
 _MOTION_DONE = ("回来", "回家", "出来", "过来", "回去")
 
+#: 到达句尾部允许保留的语气助词（「我到了商场啦」「我回到公司了」）
+_ARRIVAL_PARTICLES = ("了", "啦", "呢", "啊", "呀", "吧", "哦", "嘛", "的")
+
+#: 出现在地点词前面说明说的是「去/往某处」：那是目的地，不是此刻所在
+_DEST_PREFIXES = ("去", "往")
+
+#: 地点词前面末尾 1-2 字里出现这些方位介词，才算「我现在在哪」的声明
+_LOCATIVE_LEADS = ("在", "到", "从", "进", "出", "回", "往", "去")
+
+#: 裸地点词后面直接跟天气/体感说法时，说的是「外面」这个环境，不是她在哪（G04）
+_BARE_STATE_RE = re.compile(
+    r"^(?:还|也|真|太|好|挺|很|最|特别|有点|已经|正|就)?"
+    r"(?:热|冷|凉|晒|闷|潮|干|晴|阴|下雨|下雪|起风|风大)")
+
 #: 后续是时间/事情名词时，不硬把地点往里塞（宁可不说地点，不出坏句）
 _NOUN_TAILS = ("饭点", "时间", "事情", "东西", "天气", "现在", "今天", "今晚",
                "晚上", "早上", "中午", "下午", "周末", "一会儿", "等会儿")
@@ -291,6 +305,11 @@ def _split_place_clause(clause, word):
     return lead, tail.lstrip(), local
 
 
+def _has_locative_lead(lead):
+    """地点词前面的 1-2 个字里有没有方位介词（「外面还热」没有 → 不是地点声明）。"""
+    return any(char in _LOCATIVE_LEADS for char in str(lead or "")[-2:])
+
+
 def _place_target(activity, zone):
     return (TARGET_WORD.get(zone) or _EXTRA_TARGET.get(zone)
             or spoken_place(activity) or "在外面")
@@ -453,12 +472,14 @@ def _place_rule(clause, ctx):
         if hits:
             hits[0]["variants"] = variants
         return base, hits
-    # 2) 「到了 X / 回到 X」
-    if lead.endswith(("到了", "回到")):
-        if tail:
+    # 2) 「到了 X / 回到 X / 到 X」：后面只跟语气助词时按「到达」改整句；
+    #    「等我到家再拍」这类「到+X+再/就…」是目的地，不是此刻所在，跳过。
+    if lead.endswith(("到了", "回到", "到")):
+        if tail and any(char not in _ARRIVAL_PARTICLES for char in tail):
             return clause, []
-        core = lead[:-2]
-        base = "%s到%s了" % (core, target)
+        core = lead[:-2] if lead.endswith(("到了", "回到")) else lead[:-1]
+        particle = tail or "了"
+        base = "%s到%s%s" % (core, target, particle)
         variants = _unique((base, "%s已经到%s了" % (core, target),
                             "%s已经到%s啦" % (core, target),
                             "%s在%s呢" % (core, target), "已经到%s了" % target,
@@ -467,6 +488,14 @@ def _place_rule(clause, ctx):
         if hits:
             hits[0]["variants"] = variants
         return base, hits
+    # 2b) 「赶着去公司」「往商场走」：去/往后面跟的是目的地，不是此刻在哪。
+    #     按结构删地点词会拼出「赶着去」「往走」这种残句，直接放行（G02/G03）。
+    if tail and lead.endswith(_DEST_PREFIXES):
+        return clause, []
+    # 2c) 裸地点词 + 天气/体感说法（「外面还热」）：说的是天气，不是在回答
+    #     「她在哪」，不当此刻的地点声明，保持原样（G04）。
+    if not _has_locative_lead(lead) and _BARE_STATE_RE.match(tail):
+        return clause, []
     # 3) 身体动作（躺/睡/窝）只在家成立：改到别处时收成「人在公司呢」
     if target != "家" and any(tail.startswith(verb) for verb in _HOME_VERBS):
         tail = ""
@@ -486,6 +515,13 @@ def _place_rule(clause, ctx):
     else:
         variants = _place_drop_variants(lead, tail, target)
     base = variants[0]
+    # 二次校验（3a2b）：改完还残留「此刻不该在」的地点词（最长地点词是活动词时，
+    # 「我在景区爬山呢」只删了后半句、地点还留着）→ 收成只讲地点的短句，绝不漏出。
+    residual_hit = _match_location(base)
+    if residual_hit and residual_hit[0] not in allowed and zone not in _MALL_ZONES:
+        safe = _place_empty_tail_variants("我" if "我" in clause else "", target)[0]
+        variants = _unique((safe,) + tuple(variants))
+        base = safe
     # 二次校验（task-41）：地点词换掉了，但「试衣服/购物袋/扶梯」这类地点专属词
     # 还留在句子里时，只换地点会拼出「在看衣服服」「站在外面扶梯上」这种坏句。
     # 这时收成只讲地点的自然短句，宁可不说活动细节，也不出坏句。

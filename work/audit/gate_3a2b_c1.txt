@@ -1,0 +1,8 @@
+# 3a-2b / C1 门禁与四件套（2026-11-23）
+
+改动：reply_fact_guard 补 place 缺口（F1 到达/返回+助词、F2 去/往目的地、F3 裸地点词、F4 残留地点词收句）；
+只改 reply_fact_guard.py（+41/-5）与 tests/test_reply_fact_guard.py（+84，新增 9 测试/28 断言）。
+
+- 门禁 exit 0（899.4s）：6367 passed / 0 failed / 7 skipped / 264 subtests（+9 = 新增测试）；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
+- 四件套与 3a-2 逐项相同：daily 614/614；share 500/100%（damaged 0、persistent 0）；remind 240/240；adversarial 39/39；回放 184 exit 0（fixed 25、persistent 2、旁白 0）
+- 修前/修后证据：到达族网格 2615 组泄漏 1568→0；真实语料 1440 组仅 11 组输出变化（全是「到家再拍」目的地保留）；新输出幂等
