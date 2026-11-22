@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger("amo.persona_guard")
@@ -422,11 +423,39 @@ def _humanize_system_sentences(text):
     return "刚才走神了一下，你再说一遍？"
 
 
-def prepare_outbound(plugin, umo, text, source="chat"):
-    """统一出口前的语义卫生：返回 (text, reason)；reason 非空表示丢弃。"""
-    body = str(text or "").strip()
-    # 2026-11-22 task-23：媒体占位符不是人话，统一出口的最后一道 strip
-    # （chat/主动/push/分段都经过这里；图仍由图片组件发）。
+# ---------------------------------------------------------------------------
+# 出站链：一个 runner + 三张 profile 表 + 三个薄壳（task-3a-3）
+# ---------------------------------------------------------------------------
+# prepare_outbound / sanitize_candidate 是同序清洗链，guard_candidate 只是
+# 「候选还能不能原样还原」的事实探针。合并只共享 runner，不共享阶段：
+# 探针拿到的是已经 sanitize 过的文本，再跑一遍媒体/旁白/禁语会二次改写探针
+# 结果，让 amo_rewrite_safety._candidate_unsafe 的比较基准漂移。
+#
+# S0（trim）在 runner 内；S1..S13 是 13 个 stage 函数，契约统一：
+#     _stage_xxx(ctx) -> str | None
+# 原地写 ctx.text；返回非空 reason = 立即丢弃（后续 stage 一个都不跑）。
+# 空串即丢弃：任何可能把文本变空的 stage 必须返回对应 reason。
+# 异常策略写在 stage 内（outbound 金额上抛、candidate 金额吞），不得用公共 try 包住。
+# import 仍在函数内：架构棘轮只数目标模块，模块级 import 会改 fanout 快照。
+
+
+@dataclass
+class _ChainCtx:
+    """一次出站/候选/探针调用的上下文。"""
+
+    plugin: Any
+    umo: str
+    text: str
+    source: Any = "chat"
+    user_text: str = ""
+    profile: str = "outbound"
+    #: outbound 专用：账本函数在 collapse 阶段取一次，amounts/collapse_tail 复用。
+    ledger: Any = None
+
+
+def _stage_media(ctx):
+    """S1 媒体占位符：不是人话，统一出口的最后一道 strip。"""
+    body = ctx.text
     if "我发的照片" in body or "我发的语音" in body:
         try:
             try:
@@ -436,8 +465,15 @@ def prepare_outbound(plugin, umo, text, source="chat"):
             body = strip_media_markers(body)
         except Exception:  # cleanup: 兜底/降级，保持原行为
             pass
-    if not body:
-        return "", "empty"
+    ctx.text = body
+    # 出站：剥空就是「没有内容」；候选：留给旁白阶段按 action_only 归因（不统一）。
+    if not body and ctx.profile == "outbound":
+        return "empty"
+    return None
+
+
+def _stage_collapse(ctx):
+    """S2 重复前缀折叠（outbound 第一遍）+ 缓存账本函数。"""
     try:
         try:
             from .amo_memory_ledger import approximate_amounts, collapse_repeats
@@ -446,44 +482,207 @@ def prepare_outbound(plugin, umo, text, source="chat"):
     except Exception:  # 账本模块缺失时只做本地卫生，不挡发送
         approximate_amounts = lambda value: value
         collapse_repeats = lambda value: value
-    body = collapse_repeats(body)
-    stripped = strip_action_narration(body)
-    if stripped != body:
-        if not stripped:
-            return "", "action_only"
-        body = stripped
-    hit = _system_hit(body)
-    if hit:
-        if source not in ("chat",):
-            return "", "system_phrase"
-        body = _humanize_system_sentences(body)
-        if _system_hit(body):
-            return "", "system_phrase"
-    body = neutralize_forbidden(body)
-    if not body:
-        return "", "forbidden_phrase"
-    body = approximate_amounts(body)
-    body = ground_names(plugin, umo, body)
-    body = collapse_repeats(body).strip()
-    if not body:
-        return "", "empty_after_guard"
-    # task-32：收件人/角色反转唯一守卫（最后一层兜底）。首句称呼只能老公/你/名字；
-    # 「妈，我马上到」这类用户视角自述整条丢弃；只错称呼就改回老公/名字。
-    # 判定只在 amo_addressee_guard 一处实现，这里只转发并带上 source。
+    ctx.ledger = (approximate_amounts, collapse_repeats)
+    ctx.text = collapse_repeats(ctx.text)
+    return None
+
+
+def _stage_narration(ctx):
+    """S3 动作旁白：整条只有旁白就丢，行内旁白剥掉。"""
+    stripped = strip_action_narration(ctx.text)
+    if not stripped:
+        return "action_only"
+    if stripped != ctx.text:
+        ctx.text = stripped
+    return None
+
+
+def _stage_tech(ctx):
+    """S4 技术词（candidate 专属：候选还原绕过了 amo_message 的 strip_tech_terms）。"""
+    try:
+        try:
+            from .amo_shared_text import strip_tech_terms
+        except ImportError:
+            from amo_shared_text import strip_tech_terms
+        ctx.text = str(strip_tech_terms(ctx.text, source="chat") or "").strip()
+    except Exception:  # cleanup: 技术词清洗失败就保持候选
+        pass
+    if not ctx.text:
+        return "tech_terms"
+    return None
+
+
+def _stage_system(ctx):
+    """S5 系统词：outbound 非 chat 整条丢、chat 先 humanize 再复判；candidate 只 humanize。"""
+    if not _system_hit(ctx.text):
+        return None
+    if ctx.profile == "outbound" and ctx.source not in ("chat",):
+        return "system_phrase"
+    ctx.text = _humanize_system_sentences(ctx.text)
+    if ctx.profile == "outbound" and _system_hit(ctx.text):
+        return "system_phrase"
+    return None
+
+
+def _stage_forbidden(ctx):
+    """S6 禁语：删句 + 第三人称自称改「我」。"""
+    ctx.text = neutralize_forbidden(ctx.text)
+    if not ctx.text:
+        return "forbidden_phrase"
+    return None
+
+
+def _stage_amounts(ctx):
+    """S7 精确数字大概化。outbound 异常上抛，candidate 吞掉保候选。"""
+    if ctx.profile == "outbound":
+        # 账本函数已在 S2 取到；运行时异常不吞（由调用方 fail-open 发原文）
+        ctx.text = ctx.ledger[0](ctx.text)
+        return None
+    try:
+        try:
+            from .amo_memory_ledger import approximate_amounts
+        except ImportError:
+            from amo_memory_ledger import approximate_amounts
+        ctx.text = approximate_amounts(ctx.text)
+    except Exception:  # cleanup: 数字大概化失败就不改
+        pass
+    return None
+
+
+def _stage_names(ctx):
+    """S8 人名 grounding：没素材支撑的名字换中性称呼。"""
+    ctx.text = ground_names(ctx.plugin, ctx.umo, ctx.text)
+    return None
+
+
+def _stage_anti_nag(ctx):
+    """S9 反催问（candidate 专属：出站上游已跑，且需要 user_text）。"""
+    try:  # 反催问：和真实链路同口径，候选里有催问句照样删
+        try:
+            from .amo_anti_nag import rewrite as _anti_nag
+        except ImportError:
+            from amo_anti_nag import rewrite as _anti_nag
+        ctx.text = str(_anti_nag(ctx.text, str(ctx.user_text or "")) or ctx.text)
+    except Exception:  # cleanup: 反催问失败就保持
+        pass
+    return None
+
+
+def _stage_purchase(ctx):
+    """S10 消费事实（candidate 专属：需要 plugin.db 账本）。"""
+    try:  # 消费事实：没记账就说「买了 N 元」的候选不许原样还原
+        try:
+            from .amo_purchase_guard import rewrite as _purchase_rewrite
+        except ImportError:
+            from amo_purchase_guard import rewrite as _purchase_rewrite
+        ctx.text = str(_purchase_rewrite(ctx.text, ctx.plugin) or ctx.text)
+    except Exception:  # cleanup: 消费守卫失败就保持
+        pass
+    return None
+
+
+def _stage_collapse_tail(ctx):
+    """S11 重复前缀折叠（outbound 第二遍）+ 空判。"""
+    ctx.text = ctx.ledger[1](ctx.text).strip()
+    if not ctx.text:
+        return "empty_after_guard"
+    return None
+
+
+def _stage_addressee(ctx):
+    """S12 收件人/角色反转：判定只在 amo_addressee_guard 一处，这里只转发并带 source。"""
     try:
         try:
             from .amo_addressee_guard import enforce as _addressee_enforce
         except ImportError:
             from amo_addressee_guard import enforce as _addressee_enforce
+        if ctx.profile == "outbound":
+            # task-32：首句称呼只能老公/你/名字；「妈，我马上到」这类整条丢弃。
+            body, addressee_reason = _addressee_enforce(
+                ctx.plugin, ctx.umo, ctx.text, source=str(ctx.source or "chat"))
+            ctx.text = body
+            if not ctx.text:
+                return addressee_reason or "addressee"
+            if addressee_reason:
+                logger.info("[amo] 出站收件人守卫改写（%s）：%s", addressee_reason, ctx.text[:80])
+            return None
+        # candidate：还原候选也不能把「妈，我马上到」带回来（source 固定 chat、不打改写 INFO）
         body, addressee_reason = _addressee_enforce(
-            plugin, umo, body, source=str(source or "chat"))
-        if not body:
-            return "", addressee_reason or "addressee"
-        if addressee_reason:
-            logger.info("[amo] 出站收件人守卫改写（%s）：%s", addressee_reason, body[:80])
+            ctx.plugin, ctx.umo, ctx.text, source="chat")
+        ctx.text = body
+        if not ctx.text:
+            return addressee_reason or "addressee"
+        return None
     except Exception as _addressee_exc:
-        logger.debug("[amo] 收件人守卫失败: %s", _addressee_exc)
-    return body, ""
+        if ctx.profile == "outbound":
+            logger.debug("[amo] 收件人守卫失败: %s", _addressee_exc)
+        return None
+
+
+def _stage_fact_probe(ctx):
+    """S13 事实探针（probe 专属）：只看候选还能不能原样还原，绝不进发送链。"""
+    try:
+        try:
+            from .amo_reply_pipeline import apply_fact_guard as _fact_guard
+        except ImportError:
+            from amo_reply_pipeline import apply_fact_guard as _fact_guard
+        ctx.text = str(_fact_guard(ctx.text, ctx.plugin) or ctx.text).strip()
+    except Exception:  # cleanup: 事实守卫失败就保持
+        pass
+    return None
+
+
+#: 阶段实现表（名字 -> 函数）。判据/异常策略全在函数内，表只负责顺序。
+_STAGES = {
+    "media": _stage_media,
+    "collapse": _stage_collapse,
+    "narration": _stage_narration,
+    "tech": _stage_tech,
+    "system": _stage_system,
+    "forbidden": _stage_forbidden,
+    "amounts": _stage_amounts,
+    "names": _stage_names,
+    "anti_nag": _stage_anti_nag,
+    "purchase": _stage_purchase,
+    "collapse_tail": _stage_collapse_tail,
+    "addressee": _stage_addressee,
+    "fact_probe": _stage_fact_probe,
+}
+
+#: 三张阶段表（唯一事实源）。差异是「作用对象/失败语义不同」，不是历史遗留：
+#: - outbound 没有 tech/anti_nag/purchase（出站上游已跑；候选还原绕过了那些闸）；
+#: - candidate 没有 collapse（出站才有的两遍折叠）与 empty_after_guard；
+#: - probe 只有 fact_probe：探针绝不共享任何清洗阶段。
+#: 不变量：outbound 的 "collapse" 必须排在 "amounts"/"collapse_tail" 之前（账本函数在此缓存）。
+_CHAIN = {
+    "outbound": (
+        "media", "collapse", "narration", "system", "forbidden",
+        "amounts", "names", "collapse_tail", "addressee",
+    ),
+    "candidate": (
+        "media", "narration", "tech", "system", "forbidden",
+        "amounts", "names", "anti_nag", "purchase", "addressee",
+    ),
+    "probe": ("fact_probe",),
+}
+
+
+def _run_chain(plugin, umo, text, *, profile, source="chat", user_text=""):
+    """唯一 runner：S0 trim -> 查表逐步 -> 首个非空 reason 立即短路。"""
+    ctx = _ChainCtx(plugin=plugin, umo=umo, text=str(text or "").strip(),
+                    source=source, user_text=user_text, profile=profile)
+    if not ctx.text:
+        return "", "empty"
+    for name in _CHAIN[profile]:
+        reason = _STAGES[name](ctx)
+        if reason:
+            return "", reason
+    return ctx.text, ""
+
+
+def prepare_outbound(plugin, umo, text, source="chat"):
+    """统一出口前的语义卫生：返回 (text, reason)；reason 非空表示丢弃。"""
+    return _run_chain(plugin, umo, text, profile="outbound", source=source)
 
 
 def sanitize_candidate(plugin, umo, text, user_text=""):
@@ -493,72 +692,9 @@ def sanitize_candidate(plugin, umo, text, user_text=""):
     旁白/禁语/技术话术/精确金额/没素材的人名/错误收件人一起带回来，所以候选
     也要过一遍与真实链路同口径的安全改写。返回 (text, reason)。
     """
-    body = str(text or "").strip()
-    if not body:
-        return "", "empty"
-    if "我发的照片" in body or "我发的语音" in body:
-        try:
-            try:
-                from .amo_message import strip_media_markers
-            except ImportError:
-                from amo_message import strip_media_markers
-            body = strip_media_markers(body)
-        except Exception:  # cleanup: 剥不掉就保持原文
-            pass
-    stripped = strip_action_narration(body)
-    if not stripped:
-        return "", "action_only"
-    body = stripped
-    try:
-        try:
-            from .amo_shared_text import strip_tech_terms
-        except ImportError:
-            from amo_shared_text import strip_tech_terms
-        body = str(strip_tech_terms(body, source="chat") or "").strip()
-    except Exception:  # cleanup: 技术词清洗失败就保持候选
-        pass
-    if not body:
-        return "", "tech_terms"
-    body = _humanize_system_sentences(body)
-    body = neutralize_forbidden(body)
-    if not body:
-        return "", "forbidden_phrase"
-    try:
-        try:
-            from .amo_memory_ledger import approximate_amounts
-        except ImportError:
-            from amo_memory_ledger import approximate_amounts
-        body = approximate_amounts(body)
-    except Exception:  # cleanup: 数字大概化失败就不改
-        pass
-    body = ground_names(plugin, umo, body)
-    try:  # 反催问：和真实链路同口径，候选里有催问句照样删
-        try:
-            from .amo_anti_nag import rewrite as _anti_nag
-        except ImportError:
-            from amo_anti_nag import rewrite as _anti_nag
-        body = str(_anti_nag(body, str(user_text or "")) or body)
-    except Exception:  # cleanup: 反催问失败就保持
-        pass
-    try:  # 消费事实：没记账就说「买了 N 元」的候选不许原样还原
-        try:
-            from .amo_purchase_guard import rewrite as _purchase_rewrite
-        except ImportError:
-            from amo_purchase_guard import rewrite as _purchase_rewrite
-        body = str(_purchase_rewrite(body, plugin) or body)
-    except Exception:  # cleanup: 消费守卫失败就保持
-        pass
-    try:  # 收件人/角色反转：还原候选也不能把「妈，我马上到」带回来
-        try:
-            from .amo_addressee_guard import enforce as _addressee_enforce
-        except ImportError:
-            from amo_addressee_guard import enforce as _addressee_enforce
-        body, addressee_reason = _addressee_enforce(
-            plugin, umo, body, source="chat")
-        if not body:
-            return "", addressee_reason or "addressee"
-    except Exception:  # cleanup: 收件人守卫失败就保持
-        pass
+    body, reason = _run_chain(plugin, umo, text, profile="candidate", user_text=user_text)
+    if reason:
+        return "", reason
     return str(body or "").strip(), ""
 
 
@@ -570,18 +706,11 @@ def guard_candidate(plugin, umo, text, user_text=""):
     - C1 用户问「你在哪呢？」候选「我在商场逛街…」和日程冲突，会被收成场景短句。
     这两种候选不能靠 restore 又顶回去。这里返回守卫后的形态，由 amo_rewrite_safety
     判断「候选不安全」时改成守卫形态/保持现行文本。
+
+    注意：probe 表只有 fact_probe —— 这里不跑媒体/旁白/禁语等清洗阶段，
+    否则探针基准会漂移。返回裸 str（recover 的 guard= 回调依赖这一点）。
     """
-    body = str(text or "").strip()
-    if not body:
-        return ""
-    try:
-        try:
-            from .amo_reply_pipeline import apply_fact_guard as _fact_guard
-        except ImportError:
-            from amo_reply_pipeline import apply_fact_guard as _fact_guard
-        body = str(_fact_guard(body, plugin) or body).strip()
-    except Exception:  # cleanup: 事实守卫失败就保持
-        pass
+    body, _reason = _run_chain(plugin, umo, text, profile="probe")
     return str(body or "").strip()
 
 

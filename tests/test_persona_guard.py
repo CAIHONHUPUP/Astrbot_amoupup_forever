@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -253,6 +254,125 @@ class GroundingTests(unittest.TestCase):
             [{"role": "user", "content": "我刚跟柳如烟逛完商场"}])
         out = guard.ground_names(plugin, "umo", "柳如烟刚讲了个冷笑话")
         self.assertIn("柳如烟", out)
+
+
+class MergedChainTests(unittest.TestCase):
+    """3a-3：一个 runner + 三张 profile 表 + 三个薄壳的冻结契约。"""
+
+    class FakePlugin:
+        def __init__(self):
+            self.db = self
+
+        def _recent(self, umo, limit=8):
+            return []
+
+        def recent_messages(self, umo, limit=8):
+            return []
+
+    def setUp(self):
+        self.plugin = self.FakePlugin()
+
+    def prepare(self, text, source="chat"):
+        return guard.prepare_outbound(self.plugin, "umo", text, source)
+
+    def sanitize(self, text, user_text=""):
+        return guard.sanitize_candidate(self.plugin, "umo", text, user_text)
+
+    def test_chain_tables_are_frozen(self):
+        self.assertEqual((
+            "media", "collapse", "narration", "system", "forbidden",
+            "amounts", "names", "collapse_tail", "addressee",
+        ), guard._CHAIN["outbound"])
+        self.assertEqual((
+            "media", "narration", "tech", "system", "forbidden",
+            "amounts", "names", "anti_nag", "purchase", "addressee",
+        ), guard._CHAIN["candidate"])
+        self.assertEqual(("fact_probe",), guard._CHAIN["probe"])
+        self.assertEqual(13, len(guard._STAGES))
+        for name in guard._CHAIN["outbound"] + guard._CHAIN["candidate"]:
+            self.assertIn(name, guard._STAGES)
+
+    def test_media_only_reason_differs_by_profile(self):
+        # 出站剥空即 empty；候选留给旁白阶段按 action_only 归因（不得统一）
+        self.assertEqual(("", "empty"), self.prepare("[我发的照片]"))
+        self.assertEqual(("", "action_only"), self.sanitize("[我发的照片]"))
+        self.assertEqual(("", "empty"), self.prepare("  [我发的语音]  "))
+
+    def test_empty_and_whitespace_are_empty_for_both(self):
+        for text in ("", "   ", None):
+            self.assertEqual(("", "empty"), self.prepare(text))
+            self.assertEqual(("", "empty"), self.sanitize(text))
+        self.assertEqual("", guard.guard_candidate(self.plugin, "umo", "   "))
+
+    def test_system_phrase_gate_differs_by_profile(self):
+        push = self.prepare("【日记质检】详情在面板", "push")
+        self.assertEqual(("", "system_phrase"), push)
+        self.assertEqual("system_phrase", self.prepare("【日记质检】详情在面板", None)[1])
+        # candidate 的系统词只 humanize，永不因此丢弃
+        body, reason = self.sanitize("【日记质检】详情在面板")
+        self.assertEqual("", reason)
+        self.assertTrue(body)
+
+    def test_public_return_shapes_are_frozen(self):
+        prep = self.prepare("嗯，我在呢。")
+        self.assertIs(tuple, type(prep))
+        self.assertEqual(2, len(prep))
+        self.assertTrue(all(type(item) is str for item in prep))
+        san = self.sanitize("嗯，我在呢。")
+        self.assertIs(tuple, type(san))
+        self.assertEqual(2, len(san))
+        self.assertIs(str, type(guard.guard_candidate(self.plugin, "umo", "嗯，我在呢。")))
+
+    def test_guard_is_fact_probe_only(self):
+        import amo_reply_pipeline
+        seen = []
+
+        def fake_fact_guard(text, plugin):
+            seen.append(text)
+            return "【FG】" + text
+
+        raw = "[我发的照片]（歪头）你美丽的老婆在呢"
+        with mock.patch.object(amo_reply_pipeline, "apply_fact_guard", fake_fact_guard):
+            out = guard.guard_candidate(self.plugin, "umo", raw)
+        # 事实守卫拿到的是 trim 后的原文：媒体占位符/旁白/禁语一个都没被清洗
+        self.assertEqual([raw], seen)
+        self.assertEqual("【FG】" + raw, out)
+        self.assertEqual(("fact_probe",), guard._CHAIN["probe"])
+
+    def test_only_outbound_can_return_empty_after_guard(self):
+        import amo_memory_ledger
+        calls = []
+
+        def second_call_empties(body):
+            calls.append(body)
+            return body if len(calls) == 1 else ""
+
+        with mock.patch.object(amo_memory_ledger, "collapse_repeats", second_call_empties):
+            self.assertEqual(("", "empty_after_guard"), self.prepare("嗯，我在呢，你慢慢说。"))
+            body, reason = self.sanitize("嗯，我在呢，你慢慢说。")
+        self.assertEqual("", reason)
+        self.assertTrue(body)
+
+    def test_only_candidate_can_return_tech_terms(self):
+        import amo_shared_text
+        with mock.patch.object(amo_shared_text, "strip_tech_terms",
+                               lambda text, source="chat": ""):
+            self.assertEqual(("", "tech_terms"), self.sanitize("嗯，我在呢，你慢慢说。"))
+            body, reason = self.prepare("嗯，我在呢，你慢慢说。")
+        self.assertEqual("", reason)
+        self.assertTrue(body)
+
+    def test_prepare_is_idempotent(self):
+        for text in ("（揉了揉眼睛）你回来啦", "老公你美丽的老婆晾这儿半天了。",
+                     "就是985，我卡里还有4072，等了十五分钟", "（歪头）"):
+            first, reason = self.prepare(text)
+            again, again_reason = self.prepare(first)
+            if first:
+                self.assertEqual("", reason)
+                self.assertEqual(first, again)
+                self.assertEqual("", again_reason)
+            else:
+                self.assertEqual(("", "empty"), (again, again_reason))
 
 
 if __name__ == "__main__":
