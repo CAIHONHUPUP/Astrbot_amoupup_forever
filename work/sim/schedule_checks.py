@@ -627,14 +627,13 @@ def check_events(day, rows, ctx, raw_rows):
                                          % (day_type or "休息"),
                                          "warn", root_cause="R7_event_precedence"))
     elif kind == "friend_dinner":
+        # A1：自动社交已下线；旧事件即使出现，日程里也不许再有社交块。
         social = [row for row in rows
-                  if str(row.get("category") or "") in ("social", "date")
-                  and re.search(r"(朋友|闺蜜|聚餐|约会|吃饭)", str(row.get("activity") or ""))]
-        if not social:
-            issues.append(make_issue(day, "drift", "event_unreflected_friend_dinner",
-                                     "事件=朋友聚餐，日程里没有社交/聚餐块（%s日把事件吃掉）"
-                                     % (day_type or "?"),
-                                     "fail", root_cause="R7_event_precedence"))
+                  if str(row.get("category") or "") in ("social", "date")]
+        if social:
+            issues.append(make_issue(day, "drift", "legacy_friend_dinner_social",
+                                     "旧 friend_dinner 事件仍产生了社交块（A1 违规）",
+                                     "fail", root_cause="A1_social_disabled"))
     scenic = ctx.get("scenic") or {}
     if isinstance(scenic, dict) and scenic.get("name"):
         name = str(scenic.get("name") or "")

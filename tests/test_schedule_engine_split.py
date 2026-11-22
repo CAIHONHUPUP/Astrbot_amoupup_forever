@@ -126,7 +126,8 @@ class ByteEquivalenceTests(unittest.TestCase):
         # 2026-11-21：build_skeleton 增加 schedule_block_mode 开关（现在默认开），
         # yesterday_summary 的睡眠时长改成按时长累计（修块模式误判熬夜），哈希按新源码更新。
         # 同日：_diary_prompt 增加「他」的称呼配置（person_ref_title），哈希按新源码更新。
-        # 2026-11-22：A1 决策，_pick_event 休息日不再自动发 friend_dinner 社交事件，
+        # 2026-11-22：A1 决策，_pick_event 休息日不再自动发 friend_dinner 社交事件；
+        # 随后删除 _friend_dinner_segments 分支（build_skeleton/_rest_segments 源码变化），
         # 哈希按新源码更新（行为变更：日程不再自动生成社交块）。
         changed = [(name, _source_hash(getattr(schedule_engine.ScheduleEngine, name)), want)
                    for name, want in METHOD_HASHES.items()

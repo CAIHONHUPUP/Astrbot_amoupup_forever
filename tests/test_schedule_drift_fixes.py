@@ -177,12 +177,13 @@ def _build(**overrides):
 
 
 class EventPrecedenceTests(_Base):
-    def test_friend_dinner_beats_outing_day_type(self):
+    def test_legacy_friend_dinner_event_never_creates_social(self):
+        # A1：即使旧代码/旧数据还传 friend_dinner 事件，骨架也不再生成社交块。
         items = _build(event={"kind": "friend_dinner", "effects": {}})
         self.assert_full_day(items)
-        social = [row for row in items if row.get("category") == "social"]
-        self.assertTrue(social, items)
-        self.assertIn("朋友", social[0]["activity"])
+        social = [row for row in items
+                  if str(row.get("category") or "") in ("social", "date")]
+        self.assertEqual(social, [], items)
 
     def test_overtime_event_beats_homebody_day_type(self):
         items = _build(day_type={"id": "homebody", "label": "宅家日"},

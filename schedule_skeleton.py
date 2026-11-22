@@ -9,7 +9,7 @@ try:  # 包模式（AstrBot 加载插件）
         CAR_BRANDS, CAR_POOL, CITY_POOL, COMPANY_POOL, DISTRICT_MAP, HOME_STYLES, MOOD_BASE,
         MOOD_KEYS, PROVINCE_CITIES, SWIM_DETAILS, SWIM_PLACES, _city_of, _clock_now,
         _clock_today, _note_swallowed, _place_of, _with_city, amusement_segments,
-        business_trip_segments, clamp, date, friend_dinner_segments, homebody_segments,
+        business_trip_segments, clamp, date, homebody_segments,
         indoor_rest_segments, is_long_holiday, md5_int, occupation_kind, outing_segments,
         overtime_segments, parse_hhmm, period_rest_segments, pick_amusement_spot,
         pick_holiday_plan, random, re, scenic_segments, shopping_segments, sick_rest_segments,
@@ -21,7 +21,7 @@ except ImportError:  # 直接按文件加载时（测试/模拟器）
             CAR_BRANDS, CAR_POOL, CITY_POOL, COMPANY_POOL, DISTRICT_MAP, HOME_STYLES, MOOD_BASE,
             MOOD_KEYS, PROVINCE_CITIES, SWIM_DETAILS, SWIM_PLACES, _city_of, _clock_now,
             _clock_today, _note_swallowed, _place_of, _with_city, amusement_segments,
-            business_trip_segments, clamp, date, friend_dinner_segments, homebody_segments,
+            business_trip_segments, clamp, date, homebody_segments,
             indoor_rest_segments, is_long_holiday, md5_int, occupation_kind, outing_segments,
             overtime_segments, parse_hhmm, period_rest_segments, pick_amusement_spot,
             pick_holiday_plan, random, re, scenic_segments, shopping_segments, sick_rest_segments,
@@ -795,9 +795,6 @@ class ScheduleSkeletonMixin:
         elif event_kind == "overtime" and meta.get("rest"):
             # R7：休息日的「临时加班」事件优先于 outing/homebody/rest，否则事件被日类型吃掉。
             segments = self._overtime_segments(ctx)
-        elif event_kind == "friend_dinner":
-            # R7：朋友聚餐事件优先于 outing/homebody（以前周末先走出门/宅家分支，事件不落日程）。
-            segments = self._friend_dinner_segments(ctx)
         elif holiday:
             kind = str(holiday.get("kind") or "")
             if kind == "beach":
@@ -874,8 +871,6 @@ class ScheduleSkeletonMixin:
             return self._period_rest_segments(ctx)
         if event_kind == "overtime" and not (ctx.get("meta") or {}).get("rest"):
             return self._overtime_segments(ctx)
-        if event_kind == "friend_dinner":
-            return self._friend_dinner_segments(ctx)
         if ctx.get("scenic") and ctx.get("good_weather"):
             return self._scenic_segments(ctx)
         return self._indoor_rest_segments(ctx)
@@ -907,5 +902,3 @@ class ScheduleSkeletonMixin:
     def _overtime_segments(self, ctx):
         return overtime_segments(ctx, self._seg)
 
-    def _friend_dinner_segments(self, ctx):
-        return friend_dinner_segments(ctx, self._seg, _place_of)
