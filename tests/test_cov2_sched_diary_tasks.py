@@ -137,7 +137,7 @@ class LockCancelTests(Base):
 class SpawnExpandTests(Base):
     def test_spawn_creates_tasks_dict_and_returns_task(self):
         self.host._diary_tasks = None
-        task = self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00"),
+        task = self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00", activity="看书"),
                                            [], 1)
         self.assertIsInstance(task, FakeTask)
         self.assertIn(("2026-11-18", "08:00"), self.host._diary_tasks)
@@ -145,20 +145,20 @@ class SpawnExpandTests(Base):
 
     def test_spawn_returns_none_when_spawn_fails(self):
         self.host.spawn_returns = False
-        self.assertIsNone(self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00"),
+        self.assertIsNone(self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00", activity="看书"),
                                                       [], 1))
 
     def test_spawn_reuses_running_task_and_replaces_done(self):
         running = FakeTask(done=False)
         self.host._diary_tasks = {("2026-11-18", "08:00"): running}
-        self.assertIs(self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00"),
+        self.assertIs(self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00", activity="看书"),
                                                   [], 1), running)
         self.host._diary_tasks = {("2026-11-18", "08:00"): FakeTask(done=True)}
-        new = self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00"), [], 1)
+        new = self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00", activity="看书"), [], 1)
         self.assertIsNot(new, running)
 
     def test_done_callback_removes_entry(self):
-        task = self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00"), [], 1)
+        task = self.host._spawn_diary_task("2026-11-18", row("08:00", "09:00", activity="看书"), [], 1)
         key = ("2026-11-18", "08:00")
         self.assertIn(key, self.host._diary_tasks)
         task.callbacks[0](task)
@@ -209,10 +209,10 @@ class SaveLandTests(Base):
         self.host.db.save_diary = lambda *a, **k: calls.append(("old", a, k))
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True), \
                 mock.patch.object(sched, "block_id", lambda day, item: "bid"):
-            self.assertTrue(self.host._save_diary_text("d", row("08:00", "09:00"), "文", 1))
+            self.assertTrue(self.host._save_diary_text("d", row("08:00", "09:00", activity="看书"), "文", 1))
         self.assertEqual(calls[0][0], "block")
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: False):
-            self.assertTrue(self.host._save_diary_text("d", row("08:00", "09:00"), "文", 1))
+            self.assertTrue(self.host._save_diary_text("d", row("08:00", "09:00", activity="看书"), "文", 1))
         self.assertEqual(calls[-1][0], "old")
 
     def test_save_text_typeerror_falls_back(self):
@@ -221,12 +221,12 @@ class SaveLandTests(Base):
         self.host.db.save_diary = lambda *a, **k: calls.append(a)
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True), \
                 mock.patch.object(sched, "block_id", lambda day, item: "bid"):
-            self.assertTrue(self.host._save_diary_text("d", row("08:00", "09:00"), "文", 1))
+            self.assertTrue(self.host._save_diary_text("d", row("08:00", "09:00", activity="看书"), "文", 1))
         self.assertEqual(calls, [("d", "08:00", "文")])
         self.host.db.save_diary = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x"))
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True), \
                 mock.patch.object(sched, "block_id", lambda day, item: "bid"):
-            self.assertFalse(self.host._save_diary_text("d", row("08:00", "09:00"), "文", 1))
+            self.assertFalse(self.host._save_diary_text("d", row("08:00", "09:00", activity="看书"), "文", 1))
 
     def test_run_task_success_and_error(self):
         async def expand(day, item, items, force=False):
@@ -235,7 +235,7 @@ class SaveLandTests(Base):
         self.host.state.expand_block = expand
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True):
             result = self.run_async(self.host._run_diary_task(
-                "d", row("08:00", "09:00"), [], 1))
+                "d", row("08:00", "09:00", activity="看书"), [], 1))
         self.assertEqual(result["diary"], "生成好了")
 
         async def boom(*args, **kwargs):
@@ -245,16 +245,16 @@ class SaveLandTests(Base):
         self.host.state.expand_block = boom
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True):
             result = self.run_async(self.host._run_diary_task(
-                "d", row("08:00", "09:00"), [], 1))
+                "d", row("08:00", "09:00", activity="看书"), [], 1))
         self.assertTrue(result["fallback"])
         self.assertTrue(any("bg_error" in m for _, m in self.logger.records))
 
     def test_land_task_pending_and_text(self):
         pending = {"pending": True, "diary": ""}
-        self.assertEqual(self.host._land_diary_task("d", row("08:00", "09:00"),
+        self.assertEqual(self.host._land_diary_task("d", row("08:00", "09:00", activity="看书"),
                                                     pending, 1), pending)
         self.host.db.kv["diary_task_failed:d:08:00"] = 123
-        result = self.host._land_diary_task("d", row("08:00", "09:00"),
+        result = self.host._land_diary_task("d", row("08:00", "09:00", activity="看书"),
                                             {"diary": "正文"}, 1)
         self.assertEqual(result["diary"], "正文")
         self.assertEqual(self.host.db.kv["diary_task_failed:d:08:00"], 0)
@@ -263,7 +263,7 @@ class SaveLandTests(Base):
         self.host.db.get_block_diary = lambda day, key: "旧缓存"
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True), \
                 mock.patch.object(sched, "block_id", lambda day, item: "bid"):
-            result = self.host._land_diary_task("d", row("08:00", "09:00"), {}, 1)
+            result = self.host._land_diary_task("d", row("08:00", "09:00", activity="看书"), {}, 1)
         self.assertEqual(result, {})
 
     def test_land_task_engine_fallback(self):
@@ -273,7 +273,7 @@ class SaveLandTests(Base):
             fallback_diary=lambda *a: "引擎兜底")
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True), \
                 mock.patch.object(sched, "block_id", lambda day, item: "bid"):
-            result = self.host._land_diary_task("d", row("08:00", "09:00"), {}, 1)
+            result = self.host._land_diary_task("d", row("08:00", "09:00", activity="看书"), {}, 1)
         self.assertEqual(result["diary"], "引擎兜底")
         self.assertTrue(result["fallback"])
         self.assertTrue(saved)
@@ -284,7 +284,7 @@ class SaveLandTests(Base):
             fallback_diary=lambda *a: (_ for _ in ()).throw(RuntimeError("y")))
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True), \
                 mock.patch.object(sched, "block_id", lambda day, item: "bid"):
-            result = self.host._land_diary_task("d", row("08:00", "09:00"), {}, 7)
+            result = self.host._land_diary_task("d", row("08:00", "09:00", activity="看书"), {}, 7)
         self.assertTrue(result["failed"])
         self.assertGreater(float(self.host.db.kv["diary_task_failed:d:08:00"]), 0)
 
@@ -359,7 +359,7 @@ class TickTests(Base):
 
     def test_diary_disabled(self):
         self.host.cfg_bool = lambda key, default=False: False
-        self.timeline_blocks = [row("08:00", "09:00")]
+        self.timeline_blocks = [row("08:00", "09:00", activity="看书")]
         self._tick()
         self.assertEqual(self.backfill_calls, [])
 
@@ -382,12 +382,12 @@ class TickTests(Base):
     def test_minute_budget_exhausted(self):
         self.host.db.kv["diary_backfill_minute"] = {"minute": "202611181200",
                                                     "count": 2}
-        self.timeline_blocks = [row("08:00", "09:00")]
+        self.timeline_blocks = [row("08:00", "09:00", activity="看书")]
         self._tick()
         self.assertEqual(self.backfill_calls, [])
 
     def test_block_mode_backfills_and_updates_budget(self):
-        self.timeline_blocks = [row("08:00", "09:00")]
+        self.timeline_blocks = [row("08:00", "09:00", activity="看书")]
         with mock.patch.object(sched, "block_diary_enabled", lambda plugin: True):
             self._tick()
         self.assertEqual(self.backfill_calls[0][0], "blocks")
@@ -404,7 +404,7 @@ class TickTests(Base):
 
     def test_outer_exception_resets_running(self):
         self.host.db.schedule_version = lambda day: (_ for _ in ()).throw(RuntimeError("x"))
-        self.timeline_blocks = [row("08:00", "09:00")]
+        self.timeline_blocks = [row("08:00", "09:00", activity="看书")]
         self._tick()
         self.assertEqual(self.host._diary_scheduler_running, False)
 

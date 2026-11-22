@@ -45,7 +45,7 @@ def zone_mapper() -> Callable[[str], str] | None:
     return zone_for_place
 
 
-def minutes_of() -> Callable[[str, int, str, str], int] | None:
+def transit_minutes_of() -> Callable[[str, int, str, str], int] | None:
     """真实路程函数（amo_transition.transit_minutes）；拿不到就用引擎内置确定性函数。"""
     try:
         from .amo_transition import transit_minutes
@@ -63,11 +63,23 @@ def view_rows(
     *,
     now_min: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[engine.Defect]]:
-    """读侧安全视图：坏块降级、重叠压直、过渡全派生（不落库）。"""
-    return engine.safe_view(
+    """读侧安全视图：坏块降级、重叠压直、过渡全派生 + 内容政策（不落库）。"""
+    view, defects = engine.safe_view(
         rows, day=str(day or ""), now_min=now_min,
-        zone_mapper=zone_mapper(), minutes_of=minutes_of(),
+        zone_mapper=zone_mapper(), minutes_of=transit_minutes_of(),
     )
+    try:
+        from . import schedule_content as _content
+    except ImportError:
+        try:
+            import schedule_content as _content
+        except ImportError:
+            return view, defects
+    try:
+        return _content.polish(view), defects
+    except Exception as exc:  # cleanup: 内容政策失败不能影响展示
+        _note("schedule_observer.content", exc)
+        return view, defects
 
 
 def forbidden_names(db: Any) -> list[str]:

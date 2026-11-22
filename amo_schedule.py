@@ -1109,7 +1109,22 @@ class ScheduleMixin(_MixinBase):
         return cancelled
 
     def _spawn_diary_task(self, day, item, items, version, reason="slot_ended"):
-        """启动一个后台小日记任务，并按 (day, start) 去重。"""
+        """启动一个后台小日记任务，并按 (day, start) 去重。
+
+        P1 分级：发呆/待着/睡觉这类空转块不再单独生成块日记，交给当天大日记
+        一笔带过；有信息量的块（吃饭/出门/工作/约会/旅行/生病）保留。
+        """
+        try:
+            try:
+                from . import schedule_content as _content
+            except ImportError:
+                import schedule_content as _content
+            if not _content.is_informative(item):
+                logger.info("[DIARY_DEBUG] hour=%s skipped=content_tier reason=%s",
+                            str(item.get("start") or "-"), reason)
+                return None
+        except Exception as _amo_exc:
+            _note_swallowed("amo_schedule.diary_tier", _amo_exc)
         tasks = getattr(self, "_diary_tasks", None)
         if tasks is None:
             tasks = {}

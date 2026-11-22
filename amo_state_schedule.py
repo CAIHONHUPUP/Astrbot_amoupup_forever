@@ -895,11 +895,20 @@ class ScheduleStateMixin(_MixinBase):
         # T1：落库前统一收口路上块的 activity/vehicle/transit（锁外纯内存计算）。
         new_items = self._sync_transit_items(new_items)
         with self._schedule_commit_lock:
-            result = self._commit_schedule_change_locked(
-                day, new_items, old_items=old_items, source=source,
-                reason=reason, invalidate_from=invalidate_from,
-                entry_version=_entry_version,
-            )
+            try:
+                result = self._commit_schedule_change_locked(
+                    day, new_items, old_items=old_items, source=source,
+                    reason=reason, invalidate_from=invalidate_from,
+                    entry_version=_entry_version,
+                )
+            except TypeError as _sig_exc:
+                # 测试里的假 state 可能还是旧签名：只在这种兼容失败时退回旧调用。
+                if "entry_version" not in str(_sig_exc):
+                    raise
+                result = self._commit_schedule_change_locked(
+                    day, new_items, old_items=old_items, source=source,
+                    reason=reason, invalidate_from=invalidate_from,
+                )
         if _src in HUMAN_SOURCES:
             # 记下"人刚改过"的时间，自动重生成在静默期内让行（2026-11-21）
             try:
@@ -1797,6 +1806,16 @@ class ScheduleStateMixin(_MixinBase):
                     row = dict(row, activity="在家歇着", place="家", zone="home", category="rest")
                 fixed.append(row)
             new_items = fixed
+        # P1 内容政策：文案贴地点、户外长发呆换具体活动、同地点发呆碎块合并。
+        # 只改文案与相邻空转块，不动事件时间、不动过渡派生。
+        try:
+            try:
+                from . import schedule_content as _content
+            except ImportError:
+                import schedule_content as _content
+            new_items = _content.polish(new_items)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.content_policy", _amo_exc)
         return new_items
 
     #: 病假/夜间/工作日下班后不许去公司（2026-11-18 用户要求：工作日回家后不准再回公司，周末可加班）。
