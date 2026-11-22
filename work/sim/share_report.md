@@ -460,8 +460,8 @@
 
 
 - 本进程 sqlite 连接 8 条，全部 mode=ro：amo_data.db、amo_forever.db、data_v4.db
-- amo_forever.db 主库：size 1191936 -> 1191936；mtime 未变；WAL size 4185952 -> 4185952
-- 静置 6 秒对照（模拟已结束、本进程无动作）：未观察到变化
+- amo_forever.db 主库：size 1204224 -> 1204224；mtime 未变；WAL size 4185952 -> 4185952
+- 静置 6 秒对照（模拟已结束、本进程无动作）：生产库仍在变，确认写入来自常驻 AstrBot 进程
 
 说明：以 sqlite3 file:...?mode=ro + pragma query_only=on 只读打开，进程不持有写事务。若行数有抖动而主库 size/mtime 不变，来自常驻 AstrBot 进程的 WAL 写入，本模拟的全部连接记录见 meta.sqlite_connections。
 

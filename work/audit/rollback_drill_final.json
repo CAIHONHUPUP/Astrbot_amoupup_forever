@@ -1,0 +1,43 @@
+{
+ "db": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever\\work\\audit\\_scratch\\migrate_copy_final.db",
+ "old_worktree": "D:\\dafeiyu\\astrbot\\data\\plugins\\_amo_headwt",
+ "day": "2026-11-21",
+ "drill_db": "C:\\Users\\123\\AppData\\Local\\Temp\\amo-rollback-i0yv0i76\\rollback_drill.db",
+ "old_version": {
+  "returncode": 0,
+  "reader": {
+   "ok": true,
+   "rows": 8,
+   "tree_blocks": 4,
+   "children": 24,
+   "text_lines": 9,
+   "text_head": [
+    "��������Ϣ�ա�",
+    "00:00-07:00 ˯�����ң�",
+    "07:00-08:00 �ڼ�Ъ�ţ��ң�"
+   ],
+   "write": {
+    "changed": true,
+    "saved": true,
+    "version": 32,
+    "rejected": null
+   }
+  },
+  "stderr_tail": ""
+ },
+ "new_reads_old_write": {
+  "rows": 8,
+  "view_rows": 9,
+  "defects": {
+   "illegal_block": 0,
+   "hole": 0,
+   "overlap": 0,
+   "path_break": 0,
+   "social_residue": 0,
+   "page_chat_mismatch": 0,
+   "lost_update": 0,
+   "write_error": 0
+  }
+ },
+ "ok": true
+}

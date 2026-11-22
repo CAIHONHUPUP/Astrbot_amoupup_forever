@@ -1,5 +1,10 @@
 # 日程旧守卫/旧补丁清单与处理方式（2026-11-22，A1 换引擎后）
 
+> **执行状态（2026-11-22 22:50）：16 项已全部处理完毕。**
+> 删 7 项已删（调用/分支/属性/仿真期望）、降级 1 项（segments 文件保留一版、骨架分支已删）、
+> 测试升级 2 项已完成（16+ 条断言改为派生视图断言）、保留 5 项已逐条确认理由。
+> 对应 commit：`2b5205b`（指标）→ `b7f6427`（写侧下线）→ `a1150ae`（社交段下线）。
+
 统计口径：仓库内（不含 tests/work 快照）命中以下符号的文件与次数——
 `insert_transit_blocks / refresh_transit_texts / repair_cross_place_blocks /
 _repair_transit_blocks / place_continuity_problems / _TRANSIT_SOURCES /

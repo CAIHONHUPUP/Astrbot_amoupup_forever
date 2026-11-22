@@ -1,0 +1,26 @@
+{
+ "frozen_at": "2026-11-22",
+ "files": {
+  "schedule_engine_v2.py": "4693e36049d029d4b4759cb782eaae6fb05a145e3fe40a80328c2b208491d51d",
+  "schedule_observer.py": "119681d1db61c586b2ca52205d4a6eda2d859309df791f9d2f146a02518efacb",
+  "schedule_social_a1.py": "56a2106afc032af5246fc9d4215deff29db4f197f067d731fadd4d36671a785d",
+  "amo_state_schedule.py": "4a2c53c54486d3c2a5cbbfadfce9bedd0378e71ec90be122033aa735bb99df4b",
+  "amo_state_todo.py": "495f342401a67faa4d48036861f8ceaba8acce08b6c9afba50e0262485a24bc9",
+  "amo_state_jit.py": "5a0014bdd401e1b647870c125be1d2e04b990ce30f9ab2adcbd746c47cdde0a3",
+  "amo_transition.py": "5f5262a9d1a56c5460acfb6fde586398d503799236b12648dc135215d6645f24",
+  "amo_timeline.py": "2176dcac30c1445362f5c178730f9e85c9440edc46639a17fe62421ae749099e",
+  "schedule_skeleton.py": "42bfa77ae4fcbd7c600495dc4824f73e2ac9dbced1acf65ab76601c21029f4e7",
+  "schedule_plan.py": "8f0573608c8a830932f15856939e061906d4024c08d043ebb4c2b081dbfcb162",
+  "schedule_slots.py": "0f1781afe771d1189a7012219b36a319a5fb410d3ebee877f8a5d44c85d6454d",
+  "schedule_diary.py": "3f7d9fb7340d3380c1328505d4c61d25720ae772fd73ab139de0b170ad9e4714",
+  "schedule_change.py": "091a81bc00c552f71608985e4285fb091e0a242e9dd2e8f83774e09ad8b89426",
+  "amo_api_schedule.py": "57b129270bb102e69f423b8def007e14efbd47ead6da7ffd6321f5aebbace82c",
+  "domains/schedule/place.py": "291c4d8cff0890d7beb4d59f5401fe003a565a99cdeb14b95e5b6aa3030c002d",
+  "domains/schedule/social_segments.py": "2f00cd498a0bfcfaf9c2df395fe32aa4d17ea172663a4de81c05205224111920",
+  "domains/schedule/jit_plan.py": "6009bf69e4e71b6ca9afe8d509129e8887926a4a2fb32ca44ad65d706b64aedc",
+  "domains/schedule/day_types.py": "030969c4ff2a8d2d48edcacc104bd928e4bc3e83fa6e5ce4091e3e5696a97767",
+  "tools/schedule_shadow.py": "b00cec1cde0184b72d5b6b25138413ed0c1f3fee59ae17d50389b587563ca341",
+  "tools/migrate_social.py": "8bf5e448a6f95f8eeb6d093c4061d7fbad47a0196ff9be1ef75bf0243bcc20d6"
+ },
+ "rule": "冻结期改动必须带不变量测试 + 离线影子对比证据；只修 8 项指标回归"
+}
