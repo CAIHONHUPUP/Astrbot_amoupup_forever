@@ -127,3 +127,19 @@ daily（5 批 × 50 组）：
 3. 健康/天气历史快照缺口未回填（无来源）。
 4. `work/sim/provider.env` 曾被提交进本地 git 历史：本次已 `git rm --cached` + `.gitignore`；**未 push**，如未来推送需先轮换 key。
 5. watch/photo/data 三个仓库此前未提交的检查点改动已随本次提交；data 的 embedding 测试隔离问题已修。
+
+## 11. 上传 Git 与 CI（2026-11-22 19:xx）
+
+- **forever**：main `c64f9d6`，tag `v7.6.3-live-*`。历史已用 filter-branch 重写，移除
+  `work/sim/provider.env`、`templates/` 三视图、`work/audit/_scratch`（含嵌套 provider.env 副本）；
+  gc 后 `.git` 21.6MB → 6.1MB；force-push 后 **CI success**。
+- **watch**：main `a0f3f13`，**CI success**。
+- **photo**：main `8b74271`（补 `tests/data` golden 后），**CI success**；旧历史保留在
+  `legacy-main-20261122` 分支。
+- **data**：main `9d797bc`，**CI success**；旧历史保留在 `legacy-main-20261122`。
+- **发布包**：安装包/源码包均排除 `cmd_config.json`/`provider.env`/`.env` 与
+  `templates/`、`outfit_refs/`、`photo_cache/` 图片；forever 安装包 315 文件仅 `logo.png`，
+  源码包 1260 文件仅 logo+占位图。
+- **隐私说明**：7.6.0 起三视图曾进过 GitHub 历史；本次 force-push 已从 main/标签移除，
+  但 GitHub 缓存/fork 不保证即时清除；要彻底清除需删库重建或联系 GitHub 支持。
+- **建议**：`provider.env` 的 key 从未到过远端（origin 无此路径），仍建议轮换一次。
