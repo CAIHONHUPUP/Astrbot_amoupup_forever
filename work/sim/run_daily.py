@@ -306,20 +306,25 @@ def run_context_checks():
         "zone=mall 时 arrival 兜底句应说商场/到家，不该说在路上（复现）",
         "input=我到家了，刚脱了外套。 -> output=%s" % fixed)
 
-    # 6) 双层改口拼句：「我在家」+「在休息」
-    import place_guard
+    # 6) 改口 + 动作改口 + 语气池叠加：「我在家」+「在休息」不许拼成叠字
+    # 3a-2b C2：place_guard.rewrite_reply 已删，地点改口由 reply_fact_guard 承担，
+    # 这里按「守卫」口径跑（guard 直接给出改口结果），并额外断言地点矛盾真的被消除、
+    # 二次进入不再改动——不是恒过：守卫一旦不改口，「公司」就会留在句子里。
     import reply_fact_guard
     import amo_reply_pipeline as pipeline
     plugin = E.build_plugin(home_blocks, kv={})
     with E.frozen_clock("09:30") as now:  # 09:30 = 窝在沙发上刷手机(rest)
         activity = dict(plugin.state.current_activity())
-        step1 = place_guard.rewrite_reply("我在公司加班呢", activity)
         ctx = {"activity": activity, "health": {"status": "健康", "sick": False},
                "date": {"active": False, "together": False}, "now": now}
-        step2, _viol = reply_fact_guard.guard(step1, ctx)
+        step1, _viol = reply_fact_guard.guard("我在公司加班呢", ctx)
+        step2, _viol2 = reply_fact_guard.guard(step1, ctx)
         step3 = pipeline.apply_fact_guard("我在公司加班呢", plugin, activity, now)
-    add("guard_output_grammar", "在家在" not in step3 and "在在" not in step3,
-        "地点改口 + 动作改口 + 语气池叠加后是否出现「我在家在休息呢」这类叠字",
+    add("guard_output_grammar",
+        "在家在" not in step3 and "在在" not in step3
+        and "公司" not in step1 and "公司" not in step3 and step2 == step1,
+        "地点改口 + 动作改口 + 语气池叠加后是否出现「我在家在休息呢」这类叠字"
+        "（并须真的消除地点矛盾、二次进入不再改）",
         "公司加班 -> %s -> %s -> %s" % (step1, step2, step3))
 
     # 7) 去重兜底：整句复读/状态复读被换成固定短句，不看这轮在问什么
