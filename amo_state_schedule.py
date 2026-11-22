@@ -1073,7 +1073,7 @@ class ScheduleStateMixin(_MixinBase):
             logger.info("[amo] 状态巡检：健康已恢复，日程无需重写（%d 条过期病假）", removed)
             return removed
 
-    def save_day(self, day, items):
+    def save_day(self, day, items, source=""):
         """日程唯一落库入口：schedule 表 + kv['schedule'] 必须同一次写完。
 
         2026-11-17 事故：amo_runtime_tick 只调 db.save_schedule（只写表），
@@ -1102,6 +1102,20 @@ class ScheduleStateMixin(_MixinBase):
                                   for row in authoritative]
         mirror = self._schedule_mirror_from_table()
         self.db.kv_set("schedule", mirror if mirror is not None else self.schedule)
+        # 影子快照 + 8 项指标：旧行与 v2 视图行逐块留证（只读产物，失败不阻断落库）。
+        try:
+            try:
+                from . import schedule_observer as _obs
+            except ImportError:
+                import schedule_observer as _obs
+            view, defects = _obs.view_rows(rows, day)
+            _obs.write_shadow(self.db, day, source=source,
+                              version=self.db.schedule_version(day),
+                              raw_rows=rows, view=view, defects=defects)
+            _obs.record_metrics(self.db, day, _obs.engine.count_defects(defects),
+                                source=source or "save")
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.save_day.shadow", _amo_exc)
         return True
 
     def _schedule_mirror_from_table(self):
@@ -1489,6 +1503,51 @@ class ScheduleStateMixin(_MixinBase):
                                len(_jumps), source or "-", day, "；".join(_jumps[:3]))
         except Exception as _amo_exc:
             _note_swallowed("amo_state_schedule.continuity", _amo_exc)
+        # 零缺陷发布协议：落库前强制 validate，只拦「本次新引入」的缺陷（旧数据不回溯阻断）。
+        try:
+            try:
+                from . import schedule_observer as _obs
+                from . import schedule_engine_v2 as _engine
+            except ImportError:
+                import schedule_observer as _obs
+                import schedule_engine_v2 as _engine
+            try:
+                from .schedule_social_a1 import AUTO_SOURCES as _auto_sources
+            except ImportError:
+                from schedule_social_a1 import AUTO_SOURCES as _auto_sources
+            _auto = set(_auto_sources) | {""}
+            _old_counts = _engine.count_defects(_engine.validate(
+                old_items, day=day, zone_mapper=_obs.zone_mapper(),
+                auto_sources=_auto))
+            _new_defects = _engine.validate(
+                new_items, day=day, zone_mapper=_obs.zone_mapper(),
+                forbidden_names=_obs.forbidden_names(self.db), auto_sources=_auto)
+            _new_counts = _engine.count_defects(_new_defects)
+            _introduced = {code: _new_counts[code] - _old_counts[code]
+                           for code in _engine.METRIC_KEYS
+                           if _new_counts[code] > _old_counts[code]}
+            # 只拦「自动生成来源」新引入的缺陷；人/面板/约会/财务的写入只记指标与审计，
+            # 不阻断（人类可以坚持自己的安排，自动生成必须零缺陷）。
+            _blocking = str(source or "") in _auto
+            if _introduced and _blocking:
+                _version = self.db.schedule_version(day)
+                logger.warning("[amo] 日程 validate 拒绝写入(%s)：%s", source or "-",
+                               _introduced)
+                try:
+                    self._audit_schedule(day, source, "validate 拒绝: %s" % _introduced,
+                                         _version, [], old_items, new_items,
+                                         rejected=[code for code in _introduced])
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_state_schedule.audit.validate_reject", _amo_exc)
+                try:
+                    _obs.record_metrics(self.db, day, _new_counts, source="validate_reject")
+                except Exception as _amo_exc:
+                    _note_swallowed("amo_state_schedule.metrics.validate_reject", _amo_exc)
+                return {"changed": False, "version": _version,
+                        "changed_hours": [], "cancelled": [], "saved": False,
+                        "rejected": _introduced}
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.validate_gate", _amo_exc)
         try:
             _sick_fn = getattr(self, "on_sick_leave", None)
             _sick = bool(_sick_fn(day)) if callable(_sick_fn) and day else False
@@ -1540,7 +1599,7 @@ class ScheduleStateMixin(_MixinBase):
                 and invalidate_from is None):
             if old_items != new_items:
                 try:
-                    self.save_day(day, new_items)
+                    self.save_day(day, new_items, source=source)
                 except Exception as _amo_exc:
                     _note_swallowed("amo_human_state.commit_schedule_change.event_id_save",
                                     _amo_exc)
@@ -1583,7 +1642,7 @@ class ScheduleStateMixin(_MixinBase):
         saved = True
         try:
             # 表 + kv 一起写（save_day）：只写一张会让两份存储漂移（2026-11-17）。
-            self.save_day(day, new_items)
+            self.save_day(day, new_items, source=source)
         except Exception as _amo_exc:
             saved = False
             _note_swallowed("amo_human_state.HumanState.commit_schedule_change", _amo_exc)
@@ -2425,6 +2484,26 @@ class ScheduleStateMixin(_MixinBase):
             version = int(prov.get("version") or 0)
         return {"source": source or "unknown", "reason": reason, "version": version}
 
+    def _schedule_view_items(self, day, items, now_min=None):
+        """读侧统一入口：坏块降级 + 过渡全派生（schedule_engine_v2.safe_view）。
+
+        面板/聊天/日程文本都从这里拿展示行；派生行不落库、不带 event_id。
+        指标只在真的发现问题时写，避免每次读都产生 kv 写。
+        """
+        try:
+            try:
+                from . import schedule_observer as _obs
+            except ImportError:
+                import schedule_observer as _obs
+            rows, defects = _obs.view_rows(items, str(day or ""), now_min=now_min)
+            if defects:
+                _obs.record_metrics(self.db, str(day or ""),
+                                    _obs.engine.count_defects(defects), source="read")
+            return rows
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_schedule.view_items", _amo_exc)
+            return [row for row in (items or []) if isinstance(row, dict)]
+
     def schedule_tree(self, day=None, items=None):
         """一级 4 段、二级每小时；不再生成三级 10 分钟。
 
@@ -2442,6 +2521,7 @@ class ScheduleStateMixin(_MixinBase):
             return self._jit_schedule_tree(day, items=items)
         raw = items if isinstance(items, list) else (
             self.schedule.get(day) or self.db.get_schedule(day) or [])
+        raw = self._schedule_view_items(day, raw)
         prov = self._schedule_provenance(day)
         hourly = self._hourly_schedule(raw)
         if not hourly:
@@ -2652,16 +2732,22 @@ class ScheduleStateMixin(_MixinBase):
             lines = []
             if isinstance(info, dict) and info.get("name"):
                 lines.append("今天是%s。" % info["name"])
-            for item in items:
-                activity = str(item.get("activity") or "").strip()
-                if not activity:
-                    continue
-                place = str(item.get("place") or "").strip()
-                lines.append("%s-%s %s%s" % (
-                    item.get("start") or "", item.get("end") or "", activity,
-                    ("（%s）" % place) if place else "",
-                ))
-            return "\n".join(lines[:24]) or "那天还没有安排。"
+            # 页面与聊天共用同一份视图和同一个文本口径（schedule_engine_v2.timeline_text）。
+            view = self._schedule_view_items(key, items)
+            try:
+                try:
+                    from . import schedule_engine_v2 as _engine
+                except ImportError:
+                    import schedule_engine_v2 as _engine
+                lines.extend(_engine.timeline_text(view, limit=24))
+            except Exception as _amo_exc:
+                _note_swallowed("amo_state_schedule.text_view", _amo_exc)
+                for item in view:
+                    activity = str(item.get("activity") or "").strip()
+                    if activity:
+                        lines.append("%s-%s %s" % (
+                            item.get("start") or "", item.get("end") or "", activity))
+            return "\n".join(lines) or "那天还没有安排。"
         except Exception as _amo_exc:
             _note_swallowed("amo_human_state.schedule_text_of", _amo_exc)
             return "想不起来…"

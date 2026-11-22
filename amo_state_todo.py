@@ -288,8 +288,11 @@ class ScheduleTodoMixin(_MixinBase):
     def _jit_schedule_tree(self, day, items=None):
         now_min = minutes_now()
         prov = self._schedule_provenance(day)
+        raw_items = self._jit_items(day, items=items)
+        # 读侧统一视图：坏块降级 + 过渡全派生（派生行不落库，只用于展示）。
+        raw_items = self._schedule_view_items(day, raw_items, now_min=now_min)
         slots = self._merge_quiet_slots(
-            self._jit_visible_slots(self._jit_items(day, items=items), now_min)
+            self._jit_visible_slots(raw_items, now_min)
         )
         tree = []
         for block_start, block_end, title in self._JIT_BLOCKS:

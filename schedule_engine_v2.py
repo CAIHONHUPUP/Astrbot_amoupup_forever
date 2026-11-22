@@ -442,6 +442,7 @@ def validate(
     require_full_day: bool = False,
     forbidden_names: Iterable[str] = (),
     social_categories: Sequence[str] = ("social", "date"),
+    auto_sources: Iterable[str] = ("",),
 ) -> list[Defect]:
     """8 项指标里可在纯计算阶段判定的 5 项：非法块/空洞/重叠/路径断裂/社交残留。
 
@@ -452,13 +453,19 @@ def validate(
     defects.extend(parse_defects)
     names = [str(name) for name in (forbidden_names or ()) if str(name or "").strip()]
     social_set = {str(item) for item in social_categories}
+    auto_set = {str(item) for item in auto_sources}
     for index, event in enumerate(events):
-        if str(event.get("category") or "") in social_set:
+        # A1 只禁「自动生成」的社交块；人/约会/watch 写入的社交块是合法事实，不计残留。
+        source = str(event.get("source") or "")
+        auto = source in auto_set
+        if auto and str(event.get("category") or "") in social_set:
             defects.append(_defect(
                 METRIC_SOCIAL,
                 "自动社交块 category=%s activity=%s" % (
                     event.get("category"), event.get("activity")),
                 index=index, start=str(event.get("start") or "")))
+            continue
+        if not auto:
             continue
         activity = str(event.get("activity") or "")
         hit = next((name for name in names if name and name in activity), "")
