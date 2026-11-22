@@ -7,7 +7,7 @@
 
 - 已落地 7 项（阶段 0、3a-2、3a-2b×2、三函数合并、3b C1、3c 阶段 1）+ 1 项回归修复（「他说」归因）。
 - **3b 的 2+7 与 C2 已按「退化只回滚该项」回滚**：删固定句会让 `tests/test_immersion_acceptance.py` 的三条产品验收变红，属口径冲突，需产品决策。
-- 当前全量门禁（HEAD `29ea710`）：**6390 passed / 0 failed / 7 skipped / 282 subtests**，strict mypy 0，pyflakes clean，silent 0，schema 277，routes 119，unittest ok，freeze 0。
+- 当前全量门禁（HEAD `1ccc0df`）：**6404 passed / 0 failed / 7 skipped / 282 subtests**，strict mypy 0，pyflakes clean，silent 0，schema 277，routes 119，unittest ok，freeze 0。
 - 四件套：daily 614/614、share 500/100%（damaged 0、persistent 0）、remind 240/240（leaked 0）、adversarial 39/39、生产回放 184 条 exit 0（persistent 2、旁白 0）。
 
 ## 1. 已落地项与证据
@@ -23,6 +23,7 @@
 | 3c 阶段 1：禁语整句重写 + 残片丢句 + 中性兜底 | `bf0ac3e` | 6375/0（immersion 全绿：emotion_keep 0.9655、空回复 0/906） |
 | 「他说」归因修复 | `f93b330` | 6383/0；转述前缀保留，地点矛盾仍消除 |
 | 群聊称呼串台修复（群聊只删称呼不改「老公」） | `29ea710` | 6390/0；私聊零改动，对抗 39/39 |
+| 3c 阶段 2：禁语命中一次模型重生成（默认关） | `1ccc0df` | 6404/0；默认关零模型调用、四件套逐项不变 |
 | 文档 | `4bb5fa9`、`8c252d9`、`1bc6539` | 状态/回滚原因/累计清单 |
 
 每项均独立 commit，验证方式一致：`python work/audit/_scratch/verify_item.py --tag <tag>`
@@ -42,14 +43,15 @@
 - S21 连续空串相等
 已整体回滚（未提交）。**这是口径冲突**：固定句/情绪句正是这三项指标的实现机制。
 
-### 2.3 3c 阶段 2（模型重生成）
-未做。施工图 `3c_analysis.md` §4.2：`amo_reply_pipeline.regenerate_forbidden` + `amo_runtime_reply` 一处 await，
-用现有配置开关（不新增 schema 键）、默认关。
+### 2.3 3c 阶段 2（模型重生成）——已完成（默认关）
+`1ccc0df`：`amo_reply_pipeline.regenerate_forbidden` + `amo_runtime_reply` 一处 await；
+开关 `FORBIDDEN_REGEN_ENABLED=False`（默认关、无配置键），开启才调一次 `chat_raw`（8s 超时），
+失败/超时/仍脏返回原文；新增 14 条测试，默认关时四件套逐项不变。
 
-## 3. 剩余决策（产品口径）
+## 3. 剩余决策（只剩一项）
 
-1. **固定句**：A 保留（3b 收在 5/6/10）／B 改 immersion 验收为新契约后继续删／C 先做生成式替代再删。
-2. **3c 阶段 2**：现在做（默认关/默认开）／暂缓。
+**固定句**：A 保留（3b 收在 5/6/10）／B 改 immersion 验收为新契约后继续删 C2／C 先开生成式替代再删。
+（3c 阶段 2 已于 `1ccc0df` 落地，默认关；要开只需把 `FORBIDDEN_REGEN_ENABLED` 改 True。）
 
 ## 4. 已知缺口（不在 1b-3 范围，建议另开）
 
