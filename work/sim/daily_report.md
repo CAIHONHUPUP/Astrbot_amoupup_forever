@@ -1,6 +1,6 @@
 # 日常对话 50 组模拟报告（隔离模拟器 / 模拟 provider）
 
-生成时间：2026-11-22 23:22:53
+生成时间：2026-11-22 23:35:03
 
 > 本轮结论来自 **可复现的模拟 provider**，不是真实模型。
 > 真实模型语义质量未覆盖（拿不到隔离 provider，详见第 9 节）。
@@ -132,8 +132,8 @@
 
 - 真实模型探测：env provider=None；本机 ollama 对话模型=None；real_llm_layer.json 无 evidence
 - 本报告确定性签名：d7822c347946d7e7（同参数、同代码重跑应一致；本轮连跑两次一致）
-- 生产库指纹（运行前）：size=1204224 mtime=1795359879 sha256=f82cf88f7f24868a
-- 生产库指纹（运行后）：size=1204224 mtime=1795359879 sha256=f82cf88f7f24868a
+- 生产库指纹（运行前）：size=1204224 mtime=1795361592 sha256=3ae3c93b8200279e
+- 生产库指纹（运行后）：size=1204224 mtime=1795361592 sha256=3ae3c93b8200279e
 - 运行期拦截：AmoDB 实例化 0 次、指向生产库的 sqlite 连接 0 次（都应保持 0）。
 - 所有状态（日程/kv/健康/历史/语气池）都在进程内存；报告只写 work/sim/。
 - 没有接 AstrBot 事件循环、分段引擎、TTS、生图、记忆插件：segment_engine=None。
@@ -145,7 +145,7 @@
   - amo_reply_pipeline.py：9720b5c75c5b9f44
   - amo_diary_guard.py：0ae929c46c473768
   - amo_runtime_reply.py：fe96804cfe515ea0
-  - amo_message.py：bfc560fdd7b7b02f
+  - amo_message.py：d0fde2a045bde12f
   - amo_current_action.py：7f067db87870d033
   - domains/reply/tone.py：2aaa7a239021eb2a
   - domains/reply/repetition_guard.py：cf6e8a1f665bc4b8

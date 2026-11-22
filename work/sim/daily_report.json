@@ -344,21 +344,21 @@
   "prod_db_before": {
    "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
    "size": 1204224,
-   "mtime": 1795359879,
-   "sha256": "f82cf88f7f24868ac053745a9ce16cb2c97466e93b599a1f81a89ffee85fcc2a"
+   "mtime": 1795361592,
+   "sha256": "3ae3c93b8200279ef3e252f814d65a708e9f76869de01e58f7aa6654e2c38fd6"
   },
   "prod_db_after": {
    "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
    "size": 1204224,
-   "mtime": 1795359879,
-   "sha256": "f82cf88f7f24868ac053745a9ce16cb2c97466e93b599a1f81a89ffee85fcc2a"
+   "mtime": 1795361592,
+   "sha256": "3ae3c93b8200279ef3e252f814d65a708e9f76869de01e58f7aa6654e2c38fd6"
   },
   "blocked_calls": {
    "amo_db_init": 0,
    "sqlite": 0
   }
  },
- "generated_at": "2026-11-22 23:22:53",
+ "generated_at": "2026-11-22 23:35:03",
  "mode": "simulated_provider",
  "code_snapshot": {
   "amo_state_consistency.py": {
@@ -390,8 +390,8 @@
    "mtime": 1795326291
   },
   "amo_message.py": {
-   "sha256_16": "bfc560fdd7b7b02f",
-   "mtime": 1795342486
+   "sha256_16": "d0fde2a045bde12f",
+   "mtime": 1795361650
   },
   "amo_current_action.py": {
    "sha256_16": "7f067db87870d033",
@@ -406,7 +406,7 @@
    "mtime": 1795326142
   }
  },
- "elapsed_sec": 6.62,
+ "elapsed_sec": 7.31,
  "determinism_signature": "d7822c347946d7e7",
  "samples": [],
  "root_causes": [

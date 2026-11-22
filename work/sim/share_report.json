@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-11-22T23:23:07",
+    "generated_at": "2026-11-22T23:35:18",
     "plugin_root": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever",
     "sim_dir": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever\\work\\sim",
     "seed_base": 20261121,
@@ -929,8 +929,8 @@
       "changed": true,
       "diff": {
         "wal_mtime_ns": [
-          1795360964578308500,
-          1795360984047543900
+          1795361710267228200,
+          1795361714989209000
         ]
       }
     },
@@ -974,9 +974,9 @@
         "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
         "exists": true,
         "size": 1204224,
-        "mtime_ns": 1795359879332252600,
+        "mtime_ns": 1795361592061110400,
         "wal_size": 4185952,
-        "wal_mtime_ns": 1795360964578308500,
+        "wal_mtime_ns": 1795361710267228200,
         "shm_size": 32768,
         "shm_mtime_ns": 1795335124359870200,
         "tables": 17,
@@ -984,7 +984,7 @@
           "block_diary": 290,
           "cleanup_audit": 19,
           "dialects": 185,
-          "kv": 1166,
+          "kv": 1169,
           "memories": 0,
           "messages": 15,
           "proactive_log": 92,
@@ -1078,9 +1078,9 @@
         "path": "D:\\dafeiyu\\astrbot\\data\\plugin_data\\Astrbot_amoupup_forever\\amo_forever.db",
         "exists": true,
         "size": 1204224,
-        "mtime_ns": 1795359879332252600,
+        "mtime_ns": 1795361592061110400,
         "wal_size": 4185952,
-        "wal_mtime_ns": 1795360964578308500,
+        "wal_mtime_ns": 1795361710267228200,
         "shm_size": 32768,
         "shm_mtime_ns": 1795335124359870200,
         "tables": 17,
@@ -1088,7 +1088,7 @@
           "block_diary": 290,
           "cleanup_audit": 19,
           "dialects": 185,
-          "kv": 1166,
+          "kv": 1169,
           "memories": 0,
           "messages": 15,
           "proactive_log": 92,
