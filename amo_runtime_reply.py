@@ -274,7 +274,7 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         return result
 
     def _deco_soft_guards(self, event, text):
-        """发出去之前的软护栏：私聊下班同步、地点纠正、归属串了只告警不拦。"""
+        """发出去之前的软护栏：私聊下班同步、地点/事实改口、归属串了只告警不拦。"""
         # task-40：记下「进入装饰链前的原始候选」，出口做候选优先还原时用
         # （完整候选被固定兜底/多池拼装/语法破损覆盖时顶回去）。
         try:
@@ -292,13 +292,8 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                 self._maybe_own_desk_sync(text)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
-        try:
-            # 地点事实只读唯一视图（F1）；视图读不到才退回日程快照
-            place = _narrative_place(self) or self.state.current_activity().get("place")
-            text = self._guard_self_location(text, place)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
-        # 老地点守卫先跑；这里用新守卫兜底（日程/健康/约会/吃饭/旅游对不上时改口）
+        # 出站地点/事实唯一守卫：place/activity/meal/health/companion/amounts 都走
+        # reply_fact_guard（日程/健康/约会/吃饭/旅游对不上时改口）；异常 fail-open
         try:
             text = _reply_pipeline.apply_fact_guard(text, self)
         except Exception as _amo_exc:

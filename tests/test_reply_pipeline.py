@@ -57,7 +57,7 @@ EXPECTED_SEND_ORDER = [
 ]
 EXPECTED_PROACTIVE_ORDER = ["proactive_pre.consumption"]
 EXPECTED_DECORATE_ORDER = [
-    "decorate.strip_chat_format", "decorate.offwork_sync", "decorate.self_location",
+    "decorate.strip_chat_format", "decorate.offwork_sync", "decorate.fact_guard",
     "decorate.attribution_alert", "decorate.gift_observe", "decorate.defensive_rewrite",
     "decorate.model_leak", "decorate.draw_after_reply", "decorate.polish_native",
     "decorate.brushoff", "decorate.food_question", "decorate.transit",
@@ -65,7 +65,7 @@ EXPECTED_DECORATE_ORDER = [
 ]
 EXPECTED_GENERATE_ORDER = [
     "generate.claim_retry", "generate.polish", "generate.trim", "generate.date_state",
-    "generate.refusal", "generate.short_reply", "generate.self_location",
+    "generate.refusal", "generate.short_reply",
     "generate.consumption", "generate.group_guard", "generate.group_tease",
     "generate.photo_claim", "generate.photo_intent", "generate.photo_wants",
 ]
@@ -101,16 +101,16 @@ PROACTIVE_SCENARIOS = [
 GOLDEN_GENERATE = {
     "claim": {"text": "今天在家煮了碗面，好香",
               "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
-                        "self_location", "consumption"]},
+                        "consumption"]},
     "photo_promise": {"text": "刚刚想拍照，没拍成，先不折腾啦。",
                       "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
-                                "self_location", "consumption"]},
+                                "consumption"]},
     "short_reply": {"text": "哇！谢谢老公！爱你！",
                     "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
-                              "self_location", "consumption"]},
+                              "consumption"]},
     "plain": {"text": "好呀，那晚上一起看剧。",
               "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
-                        "self_location", "consumption"]},
+                        "consumption"]},
 }
 GEN_INPUTS = {
     "claim": {"reply": "今天点了个外卖，好香", "user": "吃了吗"},
@@ -119,7 +119,7 @@ GEN_INPUTS = {
     "plain": {"reply": "好呀，那晚上一起看剧。", "user": "晚上干嘛"},
 }
 GEN_TRACE_GROUP = ["polish", "trim", "date_state", "refusal", "short_reply",
-                   "self_location", "consumption", "group_guard", "group_tease"]
+                   "consumption", "group_guard", "group_tease"]
 STAGE_TO_LABEL = {
     "generate.claim_retry": "claim_retry",
     "generate.polish": "polish",
@@ -127,7 +127,6 @@ STAGE_TO_LABEL = {
     "generate.date_state": "date_state",
     "generate.refusal": "refusal",
     "generate.short_reply": "short_reply",
-    "generate.self_location": "self_location",
     "generate.consumption": "consumption",
     "generate.group_guard": "group_guard",
     "generate.photo_intent": "photo_intent",
@@ -370,7 +369,6 @@ def _gen_plugin(mods):
     plugin.cfg_int = lambda key, default=0: default
     plugin.cfg_bool = lambda key, default=False: default
     plugin._trim_reply = _traced(cls._trim_reply.__get__(plugin), "trim")
-    plugin._guard_self_location = _traced(cls._guard_self_location.__get__(plugin), "self_location")
     plugin._guard_consumption = _traced(cls._guard_consumption.__get__(plugin), "consumption")
 
     def tease(*args, **kwargs):
@@ -556,10 +554,15 @@ class RegistryOrderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["order"][PHASE_SEND], EXPECTED_SEND_ORDER)
         self.assertEqual(report["duplicates"], [])
         targets = {item["target"]: item for item in report["overlaps"]}
-        self.assertIn("amo_message._guard_self_location", targets)
-        self.assertFalse(targets["amo_message._guard_self_location"]["same_phase"])
-        self.assertIn("decorate.self_location",
-                      targets["amo_message._guard_self_location"]["stages"])
+        # 3a-2b：老 place_guard 包装已从登记表移除，且不许回流
+        self.assertNotIn("amo_message._guard_self_location", targets)
+        # 跨阶段重复仍要被审计出来（真实存在：地点黑名单在 decorate 和 send 各一次）
+        self.assertIn("amo_message._guard_zone_reply", targets)
+        self.assertFalse(targets["amo_message._guard_zone_reply"]["same_phase"])
+        self.assertIn("decorate.zone_guard",
+                      targets["amo_message._guard_zone_reply"]["stages"])
+        self.assertIn("send.zone_guard",
+                      targets["amo_message._guard_zone_reply"]["stages"])
 
     async def test_audit_flags_duplicates(self):
         stages = [Stage("dup", PHASE_SEND, 10, lambda text, ctx: None),
@@ -577,7 +580,7 @@ class RegistryOrderTests(unittest.IsolatedAsyncioTestCase):
         report = pipeline.audit()
         self.assertEqual(report["wired_phases"], [PHASE_SEND, PHASE_PROACTIVE_PRE])
         self.assertTrue(report["order"][PHASE_SEND])
-        self.assertIn("decorate.self_location", report["unwired"])
+        self.assertIn("decorate.fact_guard", report["unwired"])
         self.assertIn("generate.claim_retry", report["unwired"])
 
 

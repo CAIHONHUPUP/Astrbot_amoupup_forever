@@ -2,7 +2,7 @@
 """IMM 出戏验收（task-16）：100 条 × B off/on 的离线回归门。
 
 链路由 work/immersion_check/imm_harness.py 复刻生产顺序：
-_guard_self_location -> apply_fact_guard(A+语气池+B pending) -> apply_narrative_repetition
+apply_fact_guard(地点/事实守卫+语气池+B pending) -> apply_narrative_repetition
 -> apply_tone_guard -> [B on] apply_pending_tone_pick_async -> _send_to_umo(send 阶段)。
 
 这里断言的是「产品口径」，不是「当前实现」：

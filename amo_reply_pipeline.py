@@ -16,7 +16,7 @@
 1. generate（生成后、装饰前）—— amo_llm._compose_reply：
    _claim_retry → _reply_postprocess：polish → _trim_reply →
    date_state.guard → refusal.should_refuse/guard →
-   short_reply.guard → _guard_self_location → _guard_consumption →
+   short_reply.guard → _guard_consumption →
    group_scene.guard_group_reply → _maybe_group_private_tease；
    回到 _compose_reply 之后是**副作用阶段**：draw.enforce_photo_claim →
    _enforce_photo_intent → draw.send_photo_now（会真的补一张图，
@@ -24,7 +24,7 @@
 
 2. decorate（on_decorating_result）—— amo_runtime.on_decorating_result：
    strip_chat_format → _deco_soft_guards（_maybe_own_offwork_sync →
-   _guard_self_location → 归属串台告警）→ _deco_rewrite_reply
+   apply_fact_guard → 归属串台告警）→ _deco_rewrite_reply
    （gift 观察 → 防御话术/AI 自曝 → 后台信息泄漏 → draw.maybe_after_reply）→
    _deco_polish_native（polish_native 开关）→ _deco_text_cleanup
    （strip_brushoff → _strip_repeated_food_question → _transit_rewrite →
@@ -55,8 +55,14 @@
 ----
 同一条回复上，同一个 stage id 只会执行一次；同一个 target（底层守卫函数）
 也只会执行一次（ctx.stage_set / ctx.target_set 打标）。跨阶段重复由 audit()
-列出来——例如 _guard_self_location 在 generate 和 decorate 里各出现一次，
+列出来——例如 _trim_reply 在 generate 和 decorate 里各出现一次，
 _guard_zone_reply 在 send 和 decorate 里各出现一次。
+
+地点改口只有 reply_fact_guard 一个生产者（3a-2b 起）
+---------------------------------------------------
+place_guard 只提供地点词表与判据（match_location / allowed_groups / spoken_place），
+不再改写回复；generate 阶段也不再单独对齐地点，出站统一由 decorate / proactive 的
+apply_fact_guard 兜一次（send 阶段保留 zone 黑名单）。
 """
 from __future__ import annotations
 
@@ -462,10 +468,6 @@ def _gen_short(text, ctx):
     return short_reply.guard(text, ctx.snap or {}, ctx.his_words)
 
 
-def _gen_self_location(text, ctx):
-    return ctx.plugin._guard_self_location(text, ctx.activity or {})
-
-
 def _gen_consumption(text, ctx):
     return ctx.plugin._guard_consumption(text)
 
@@ -500,11 +502,11 @@ def _dec_offwork(text, ctx):
     return None
 
 
-def _dec_self_location(text, ctx):
+def _dec_fact_guard(text, ctx):
+    """decorate 的事实/地点守卫（唯一守卫：reply_fact_guard）。"""
     place = ctx.place
-    value = ctx.plugin._guard_self_location(text, place)
     activity = ctx.activity or ({"place": place} if place else None)
-    return apply_fact_guard(value, ctx.plugin, activity)
+    return apply_fact_guard(text, ctx.plugin, activity)
 
 
 def _dec_gift_observe(text, ctx):
@@ -1781,8 +1783,6 @@ def default_stages() -> List[Stage]:
               ctx_keys=("plugin", "snap", "activity", "his_words", "cash_cents", "hour", "silence_days")),
         Stage("generate.short_reply", PHASE_GENERATE, 60, _gen_short, wired=False,
               target="short_reply.guard", ctx_keys=("snap", "his_words")),
-        Stage("generate.self_location", PHASE_GENERATE, 70, _gen_self_location, wired=False,
-              target="amo_message._guard_self_location", ctx_keys=("plugin", "activity")),
         Stage("generate.consumption", PHASE_GENERATE, 80, _gen_consumption, wired=False,
               target="amo_message._guard_consumption", ctx_keys=("plugin",)),
         Stage("generate.group_guard", PHASE_GENERATE, 90, _gen_group, wired=False,
@@ -1805,8 +1805,9 @@ def default_stages() -> List[Stage]:
         Stage("decorate.offwork_sync", PHASE_DECORATE, 10, _dec_offwork, wired=False,
               when=lambda ctx: not ctx.group, side_effect=True,
               target="amo_schedule._maybe_own_offwork_sync", ctx_keys=("plugin",)),
-        Stage("decorate.self_location", PHASE_DECORATE, 20, _dec_self_location, wired=False,
-              target="amo_message._guard_self_location", ctx_keys=("plugin", "place")),
+        Stage("decorate.fact_guard", PHASE_DECORATE, 20, _dec_fact_guard, wired=False,
+              target="amo_reply_pipeline.apply_fact_guard", ctx_keys=("plugin", "place"),
+              note="地点/事实唯一守卫（真实调用点在 amo_runtime_reply 装饰阶段）"),
         Stage("decorate.attribution_alert", PHASE_DECORATE, 30, None, wired=False,
               side_effect=True, target="amo_shared.attribution_leak",
               note="归属串台只告警不拦（复合块）"),

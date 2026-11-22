@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import os
+import re
 import sys
 import unittest
 
@@ -470,17 +471,28 @@ class WiringTests(unittest.TestCase):
         with open(os.path.join(ROOT, name), encoding="utf-8") as handle:
             return handle.read()
 
-    def test_reply_pipeline_calls_fact_guard_after_place_guard(self):
+    def test_reply_pipeline_calls_fact_guard(self):
         pipeline = self._read("amo_reply_pipeline.py")
         runtime = self._read("amo_runtime_reply.py")
+        service = self._read("amo_llm_service.py")
+        llm = self._read("amo_llm.py")
         self.assertIn("def apply_fact_guard", pipeline)
         self.assertIn("[reply_guard]", pipeline)
         self.assertIn("reply_fact_guard", pipeline)
-        # 装饰后、发送前真正调用一次（老 place_guard 调用点保持原样）
+        # 装饰后、发送前真正调用一次；而且它是出站链上唯一的地点改口生产者
         self.assertIn("_reply_pipeline.apply_fact_guard", runtime)
-        self.assertIn("_guard_self_location", runtime)
-        self.assertLess(runtime.index("_guard_self_location(text"),
-                        runtime.index("apply_fact_guard(text, self)"))
+        self.assertEqual(runtime.count("_reply_pipeline.apply_fact_guard"), 1)
+        for name, source in (("amo_runtime_reply.py", runtime),
+                             ("amo_llm_service.py", service),
+                             ("amo_llm.py", llm),
+                             ("amo_reply_pipeline.py", pipeline)):
+            for symbol in ("_guard_self_location", "_rewrite_place", "_rewrite_reply",
+                           "_align_place"):
+                # 精确符号：保留的 _deco_rewrite_reply 不算 _rewrite_reply
+                hits = re.findall(r"(?<![A-Za-z0-9_])%s(?!\w)" % re.escape(symbol), source)
+                self.assertEqual(hits, [], "%s 仍在用 %s" % (name, symbol))
+        # 主动消息那条路仍然有 fact guard（切句前）
+        self.assertIn("apply_fact_guard", self._read("amo_proactive.py"))
 
     def test_guard_targets_are_ordered_place_then_fact(self):
         names = [name for name, _handler in reply_fact_guard.RULES]
@@ -509,9 +521,6 @@ class _FakeState:
 class _FakePlugin:
     def __init__(self, activity=OFFICE):
         self.state = _FakeState(activity)
-
-    def _guard_self_location(self, text, place):
-        return text
 
 
 class _KVDB:
@@ -597,15 +606,16 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(amo_reply_pipeline.apply_fact_guard("我在家躺着呢", Broken()),
                          "我在家躺着呢")
 
-    def test_decorate_self_location_stage_uses_fact_guard(self):
+    def test_decorate_fact_guard_stage_uses_fact_guard(self):
         import amo_reply_pipeline
 
         ctx = amo_reply_pipeline.ReplyContext(
             plugin=_FakePlugin(OFFICE), phase=amo_reply_pipeline.PHASE_DECORATE,
             place="莞城区的写字楼",
         )
-        fixed = amo_reply_pipeline._dec_self_location("我在家躺着呢", ctx)
+        fixed = amo_reply_pipeline._dec_fact_guard("我在家躺着呢", ctx)
         self.assertIn("公司", fixed)
+        self.assertNotIn("家", fixed)
 
 
 class ActivityCoverageTests(unittest.TestCase):

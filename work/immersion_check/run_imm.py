@@ -380,7 +380,7 @@ def build_report(dataset, runs, summary, fault, args):
     lines.append("")
     lines.append("- 生成时间：%s" % dt.datetime.now().isoformat(timespec="seconds"))
     lines.append("- 数据集：work/immersion_check/imm_dataset.json（60 条真实采样 + 40 条合成对抗）")
-    lines.append("- 链路：_guard_self_location → apply_fact_guard（事实守卫+语气池+B pending）→ "
+    lines.append("- 链路：apply_fact_guard（地点/事实守卫+语气池+B pending）→ "
                  "apply_narrative_repetition（去重/先答吃啥）→ apply_tone_guard → "
                  "[B on] apply_pending_tone_pick_async → _send_to_umo（完整 send 阶段）")
     lines.append("- LLM：全部 mock（不真实调用）；B 选择器固定/轮换，延迟 %.1fs；真实 LLM 见补充节"

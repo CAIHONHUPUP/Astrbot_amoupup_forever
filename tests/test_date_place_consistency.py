@@ -83,14 +83,21 @@ class DatePlaceConsistencyTests(unittest.TestCase):
         # 反向：同一条街上的 office 活动只允许公司，说明 allowed_groups 确实读地点
         self.assertEqual(place_guard.allowed_groups(office_activity()), frozenset({"office"}))
 
-    def test_place_guard_rewrites_conflict_to_date_place(self):
+    def test_fact_guard_rewrites_conflict_to_date_place(self):
+        # 3a-2b：place_guard.rewrite_reply 已删，同一句的改口由 reply_fact_guard 承担；
+        # 正反两个方向都断言（冲突必须改，合法不许动），比原来只测 A 更强。
         activity = date_activity()
-        fixed = place_guard.rewrite_reply("我在公司加班呢", activity)
+        fixed, violations = reply_fact_guard.guard(
+            "我在公司加班呢", {"activity": activity,
+                               "date": {"active": True, "together": True}})
         self.assertIn("商场", fixed)
         self.assertNotIn("公司", fixed)
+        self.assertIn("place", {item["rule"] for item in violations})
         # 反向：日程本来就在公司时，这句话合法、不许改
-        self.assertEqual(place_guard.rewrite_reply("我在公司加班呢", office_activity()),
-                         "我在公司加班呢")
+        fixed_ok, violations_ok = reply_fact_guard.guard(
+            "我在公司加班呢", {"activity": office_activity()})
+        self.assertEqual(fixed_ok, "我在公司加班呢")
+        self.assertEqual(violations_ok, [])
 
     def test_reply_fact_guard_place_uses_date_place(self):
         ctx = {"activity": date_activity(), "date": {"active": True, "together": True}}

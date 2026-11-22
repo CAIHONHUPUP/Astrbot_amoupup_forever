@@ -1381,16 +1381,10 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(MessageMixin._short_place(""), "家")
         self.assertEqual(MessageMixin._short_place(None), "家")
 
-    def test_guard_self_location_dict_and_string(self):
-        calls = []
-        p = FakeMix()
-        with mock.patch.object(M, "_rewrite_reply",
-                               lambda text, activity: calls.append((text, activity)) or "改好"):
-            self.assertEqual(p._guard_self_location("", {"place": "家"}), "")
-            self.assertEqual(p._guard_self_location("我在公司", {"place": "家"}), "改好")
-            self.assertEqual(p._guard_self_location("我在公司", "家"), "改好")
-        self.assertEqual(calls[0][1], {"place": "家"})
-        self.assertEqual(calls[1][1], {"place": "家"})
+    def test_place_rewriter_is_gone(self):
+        # 3a-2b：包装器与 place_guard.rewrite_reply 都已删除，不能再被悄悄加回来
+        self.assertFalse(hasattr(MessageMixin, "_guard_self_location"))
+        self.assertFalse(hasattr(M, "_rewrite_reply"))
 
     def test_guard_consumption(self):
         p = FakeMix()

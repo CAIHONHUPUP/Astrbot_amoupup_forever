@@ -28,7 +28,6 @@ astrbot_stub.install()
 
 import amo_names  # noqa: E402
 import amo_reply_pipeline as pipeline  # noqa: E402
-import place_guard  # noqa: E402
 import reply_fact_guard  # noqa: E402
 import run_imm as IMM  # noqa: E402
 
@@ -222,9 +221,15 @@ def test_place_tone_variants_never_glue_localizers():
         assert "改周报" in out and "头都大了" in out, out
 
 
-def test_place_guard_drops_localizer():
-    assert place_guard.rewrite_reply("我在工位上改周报呢", HOME) == "我在家改周报呢"
-    assert "公司" in place_guard.rewrite_reply("我在家躺着呢", OFFICE)
+def test_fact_guard_drops_localizer():
+    # 3a-2b：place_guard.rewrite_reply 已删除；同样两句改口（含「工位上」的方位后缀
+    # 不能粘成「家上」）由唯一守卫 reply_fact_guard 承担，断言逐字保留。
+    fixed, violations = reply_fact_guard.guard("在工位上改周报呢", _ctx(HOME))
+    assert fixed == "在家改周报呢", fixed
+    assert "工位" not in fixed and "家上" not in fixed
+    assert [item["rule"] for item in violations] == ["place"]
+    fixed_office, _violations = reply_fact_guard.guard("我在家躺着呢", _ctx(OFFICE))
+    assert "公司" in fixed_office and "家" not in fixed_office
 
 
 def test_broken_rewrite_detector_flags_bad_and_allows_natural():

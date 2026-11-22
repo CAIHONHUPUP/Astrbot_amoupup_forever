@@ -81,17 +81,6 @@ def _has_orphan_paren(text):
         from amo_persona_guard import has_orphan_paren as _fn
     return bool(_fn(text))
 
-try:  # 地点跟日程对齐：她嘴里说的地方和日程对不上时改回来
-    from .place_guard import rewrite_reply as _rewrite_reply
-except ImportError:  # 直接按文件加载时
-    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        try:
-            from place_guard import rewrite_reply as _rewrite_reply
-        except Exception:  # pragma: no cover
-            def _rewrite_reply(text, activity):
-                return str(text or "")
-
-
 _FOOD_WORDS = ("汤", "面", "饭", "菜", "粉", "粥", "火锅", "汉堡", "披萨",
                "外卖", "饺子", "包子", "便当", "寿司", "烧烤", "麻辣烫", "米线")
 
@@ -1344,18 +1333,6 @@ class MessageMixin(_MixinBase):
         if "·" in value:
             value = value.split("·")[-1].strip() or value
         return value or "家"
-
-    def _guard_self_location(self, text, place):
-        """把她嘴里和日程对不上的地点改回来（日程说在上班，就不能说在逛街）。
-
-        ``place`` 既接受日程里那条活动（dict，带 zone/category），也接受老签名里的
-        地点字符串——只给地点时由 ``zone_of()`` 从地点名反推。
-        """
-        value = str(text or "")
-        if not value:
-            return value
-        activity = place if isinstance(place, dict) else {"place": place}
-        return _rewrite_reply(value, activity)
 
     def _guard_consumption(self, text):
         """消费防口嗨（2026-11-15）：嘴里说的每一笔消费，账本里必须查得到。

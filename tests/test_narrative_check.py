@@ -340,8 +340,13 @@ class StructureTests(unittest.TestCase):
         self.assertIn("_current_activity", source)
 
     def test_runtime_place_reads_view(self):
+        # 3a-2b：decorate 不再自己读 place 再调老守卫，地点/事实统一交给 fact guard；
+        # 它内部只读 narrative_view（上一条 test_reply_context_only_read_view 钉住），
+        # 这里反过来钉住「生产链里不许再出现自己拼 place 的老口径」。
         source = inspect.getsource(amo_runtime_reply.RuntimeReplyMixin._deco_soft_guards)
-        self.assertIn("_narrative_place", source)
+        self.assertIn("apply_fact_guard", source)
+        self.assertNotIn("_guard_self_location", source)
+        self.assertNotIn("_narrative_place", source)
 
 
 class RepetitionTests(unittest.TestCase):

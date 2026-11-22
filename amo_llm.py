@@ -869,7 +869,6 @@ class LlmMixin(_MixinBase):
                     except Exception as exc:
                         _note_swallowed("amo_llm.py.553", exc)
             reply = short_reply.guard(reply, snap, text)
-            reply = self._guard_self_location(reply, snap.get("activity") or {})
             # 2026-11-15：嘴里说的消费必须账上查得到，编出来的直接改写
             reply = self._guard_consumption(reply)
             if group:

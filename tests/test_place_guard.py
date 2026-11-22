@@ -5,12 +5,16 @@
 这里测三层：
 - 他这句话是不是在说她在一个和日程对不上的地方（``conflicting_place``）；
 - 给主脑的纠正指令（``correction_hint``）；
-- 她回复里已经写错的地点会被改回来（``rewrite_reply`` / ``_guard_self_location``）。
+- 地点词表/判据本身（``match_location`` / ``spoken_place``）。
+
+回复里的地点改口已并入 ``reply_fact_guard``（3a-2b）：本模块只保留词表与生成侧提示，
+改写函数已删除，WiringTests 里有一条反断言防止 ``rewrite_reply`` 回流。
 """
 
 from __future__ import annotations
 
 import os
+import re
 import sys
 import unittest
 
@@ -27,7 +31,6 @@ from place_guard import (  # noqa: E402
     conflicting_place,
     correction_hint,
     match_location,
-    rewrite_reply,
     spoken_place,
 )
 
@@ -100,64 +103,35 @@ class HintTests(unittest.TestCase):
         self.assertEqual(spoken_place({"place": "某市·某某公园"}), "某某公园")
 
 
-class RewriteTests(unittest.TestCase):
-    def test_shopping_claim_at_work_is_fixed(self):
-        self.assertEqual(rewrite_reply("我在逛街呢，人好多", OFFICE), "我在公司呢，人好多")
-
-    def test_short_agreement_is_fixed(self):
-        self.assertEqual(rewrite_reply("嗯，在逛街呢", OFFICE), "嗯，在公司呢")
-
-    def test_home_claim_while_at_work_is_fixed(self):
-        self.assertIn("公司", rewrite_reply("我在家躺着", OFFICE))
-
-    def test_office_claim_while_at_home_is_fixed(self):
-        self.assertIn("家", rewrite_reply("我在公司加班呢", HOME))
-
-    def test_matching_claim_is_untouched(self):
-        self.assertEqual(rewrite_reply("我在公司加班呢", OFFICE), "我在公司加班呢")
-        self.assertEqual(rewrite_reply("我在家呢", HOME), "我在家呢")
-
-    def test_non_place_text_is_untouched(self):
-        text = "今天好累，想早点睡"
-        self.assertEqual(rewrite_reply(text, OFFICE), text)
-
-    def test_empty_and_unknown_zone(self):
-        self.assertEqual(rewrite_reply("", OFFICE), "")
-        self.assertEqual(rewrite_reply("我在逛街呢", {}), "我在逛街呢")
-
-
-class GuardHookTests(unittest.TestCase):
-    """``_guard_self_location`` 是回复发出前的最后一道闸。"""
-
-    def setUp(self):
-        from amo_message import MessageMixin
-
-        self.mixin = MessageMixin()
-
-    def test_guard_accepts_activity_dict(self):
-        text = self.mixin._guard_self_location("我在逛街呢", OFFICE)
-        self.assertIn("公司", text)
-        self.assertNotIn("逛街", text)
-
-    def test_guard_accepts_legacy_place_string(self):
-        text = self.mixin._guard_self_location("我在公司加班", "家")
-        self.assertIn("家", text)
-        self.assertNotIn("公司", text)
-
-    def test_guard_keeps_empty_text(self):
-        self.assertEqual(self.mixin._guard_self_location("", OFFICE), "")
-
-
 class WiringTests(unittest.TestCase):
     def test_dynamic_context_injects_correction_hint(self):
         source = _plugin_source.all_source(ROOT)
         self.assertIn("conflicting_place(", source)
         self.assertIn("correction_hint(snap[\"activity\"], _said)", source.replace("'", '"'))
 
-    def test_reply_and_proactive_use_rewrite(self):
+    @staticmethod
+    def _hits(source, name):
+        # 精确符号匹配：保留的 _deco_rewrite_reply（防御话术改写）不算 _rewrite_reply
+        return re.findall(r"(?<![A-Za-z0-9_])%s(?!\w)" % re.escape(name), source)
+
+    def test_production_no_longer_calls_place_rewriter(self):
+        # 3a-2b：出站地点改口收敛到 reply_fact_guard 单点。原来这里只断言 A 的调用
+        # 「存在」，现在反过来断言它一个都不许回流（调用/包装/别名/去空白别名）。
         source = _plugin_source.all_source(ROOT)
-        self.assertIn("_rewrite_reply", source)      # 回复兜底
-        self.assertIn("_rewrite_place", source)      # 主动消息兜底
+        for symbol in ("_rewrite_reply", "_rewrite_place", "_guard_self_location",
+                       "_align_place", "rewrite_reply"):
+            self.assertEqual(self._hits(source, symbol), [], symbol)
+        # 守卫本身仍在出站链上，只是换成 fact guard 承担（不是删守卫）
+        self.assertIn("apply_fact_guard", source)
+
+    def test_place_guard_keeps_dictionary_but_no_rewriter(self):
+        # 词表/判据是 B 的依赖，必须保留；改写实现必须已经删掉
+        with open(os.path.join(ROOT, "place_guard.py"), encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertNotIn("rewrite_reply", source)
+        for kept in ("def match_location", "def allowed_groups", "def spoken_place",
+                     "def conflicting_place", "def correction_hint"):
+            self.assertIn(kept, source)
 
 
 if __name__ == "__main__":

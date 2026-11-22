@@ -73,13 +73,18 @@ CHECKS = [
     },
     {
         "id": "place_rewrite", "area": "地点",
-        "label": "把「她嘴上跑偏的地点改回日程地点」的目标词清空",
-        "target": "place_guard.py",
+        # 3a-2b C2：出站地点改口已收敛到 reply_fact_guard（place_guard.rewrite_reply 删除），
+        # 反向检查跟着锚到 B 的改口目标词：清空它 → 地点矛盾不再改口 → 必红。
+        # 防回流（rewrite_reply/_guard_self_location 不许回生产源码）由
+        # tests/test_place_guard.py::WiringTests 与 tests/test_reply_fact_guard.py::WiringTests
+        # 常驻断言，不在本清单里重复。
+        "label": "把 reply_fact_guard 的改口目标词清空（地点矛盾不再改口）",
+        "target": "reply_fact_guard.py",
         "edits": [{
-            "old": "    target = TARGET_WORD.get(zone_of(activity)) or place_of(activity)\n    if not target:",
-            "new": "    target = \"\"\n    if not target:",
+            "old": "def _place_target(activity, zone):\n    return (TARGET_WORD.get(zone) or _EXTRA_TARGET.get(zone)\n            or spoken_place(activity) or \"在外面\")",
+            "new": "def _place_target(activity, zone):\n    return \"\"  # reverse-check：把改口目标词清空\n    return (TARGET_WORD.get(zone) or _EXTRA_TARGET.get(zone)\n            or spoken_place(activity) or \"在外面\")",
         }],
-        "tests": ["tests/test_place_guard.py::RewriteTests::test_shopping_claim_at_work_is_fixed"],
+        "tests": ["tests/test_reply_fact_guard.py::RewriteTests::test_home_while_at_work_is_rewritten_to_office"],
     },
     {
         "id": "health_rule", "area": "健康",

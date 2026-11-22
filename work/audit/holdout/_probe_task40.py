@@ -32,8 +32,10 @@ def wrap(name, fn, idx=None):
 pipeline.apply_fact_guard = wrap("fact_guard", pipeline.apply_fact_guard, 0)
 pipeline.apply_narrative_repetition = wrap("narrative_dedupe", pipeline.apply_narrative_repetition, 0)
 pipeline.apply_tone_guard = wrap("tone_guard", pipeline.apply_tone_guard, 0)
-orig_guard_self = M.MessageMixin._guard_self_location
-M.MessageMixin._guard_self_location = wrap("self_location", orig_guard_self, 1)
+# 3a-2b：_guard_self_location 已删除（地点守卫收敛到 reply_fact_guard），没有就不包
+orig_guard_self = getattr(M.MessageMixin, "_guard_self_location", None)
+if orig_guard_self is not None:
+    M.MessageMixin._guard_self_location = wrap("self_location", orig_guard_self, 1)
 try:
     orig_np = R.__dict__.get("_narrative_place")
 except Exception:

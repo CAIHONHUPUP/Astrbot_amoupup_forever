@@ -66,25 +66,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             truncate,
             )
 
-try:  # 地点跟日程对齐：主动消息里说错地方也改回来
-    from .place_guard import rewrite_reply as _rewrite_place
-except ImportError:  # 直接按文件加载时
-    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        try:
-            from place_guard import rewrite_reply as _rewrite_place
-        except Exception:  # pragma: no cover
-            def _rewrite_place(text, activity):
-                return str(text or "")
-
-
-def _align_place(text, snap):
-    """主动消息里说的地方和日程对不上时，改回日程地点（兜底，正常不该触发）。"""
-    try:
-        return _rewrite_place(text, (snap or {}).get("activity") or {})
-    except Exception:  # pragma: no cover - 纯文本兜底，不该把主流程带崩
-        return str(text or "")
-
-
 
 async def _proactive_context_block(self, umo, profile, system):
     # 记忆 / 关系网 / 旅游中；返回 (system, memory_text)
@@ -565,7 +546,6 @@ class LLMService:
         text = str(text or "").strip()
         if not text or "[SKIP]" in text.upper():
             return ""
-        text = _align_place(text, snap)
         try:  # 素材里没出现的名单人名不算数（同事就是同事，不换成柳如烟/方圆）
             try:
                 from .amo_names import strip_unbacked_names as _strip_names
@@ -601,7 +581,6 @@ class LLMService:
         retry = await self.chat(
             umo, system, _proactive_prompt(self, kind, _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_hint=hit[0], schedule=schedule), facts, analysis, memory_text), limit=limit,
         )
-        retry = _align_place(retry, snap)
         if retry and not _pg_near_duplicate(retry, analysis["recent_bot_texts"], threshold):
             return retry
         logger.info("[amo] 主动消息和最近的发言重复，跳过本次：%s" % str(text or retry or "")[:60])

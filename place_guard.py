@@ -7,8 +7,8 @@
 1. **他先开口试探**：``conflicting_place()`` 判断他这句话是不是在说她在一个和
    日程对不上的地方，是的话由 ``correction_hint()`` 给主脑一条当场纠正的指令
    （“别顺着承认，按日程否认”）；
-2. **她嘴上跑偏**：``rewrite_reply()`` 在回复发出去之前，把她第一人称的地点声明
-   （“我在商场呢”/“我刚在酒店”）改回日程里的地点，兜住模型没听话的那几次。
+2. **她嘴上跑偏**：出站改口已并入 ``reply_fact_guard``（place 规则，唯一守卫）；
+   这里只保留判地点用的词表与 ``spoken_place()``，不再改写回复。
 
 地点按「组」判断：家 / 公司 / 商场 / 景区 / 餐厅 / 交通 / 街边 / 酒店 / 学校 / 医院 / 健身房。
 日程说在办公室，她（或他）说在商场、在酒店、在家，都算打架；说在公司、在工位就不动。
@@ -163,40 +163,6 @@ def correction_hint(activity, said):
         "先按日程自然否认（比如“没有呀，我在%s呢”），再说别的，也不许改口说自己在别处。"
         % (word, where, place)
     )
-
-
-def rewrite_reply(text, activity):
-    """把回复里和日程冲突的第一人称地点声明改回日程地点（兜底，正常不该触发）。"""
-    value = str(text or "")
-    allowed = allowed_groups(activity)
-    if not value or not allowed:
-        return value
-    target = TARGET_WORD.get(zone_of(activity)) or place_of(activity)
-    if not target:
-        return value
-    for group, words in GROUPS:
-        if group in allowed:
-            continue
-        for word in sorted(words, key=len, reverse=True):
-            pattern = re.escape(word)
-            # 地点词后面的方位/指示词要跟地点一起换掉，不能只换地点词：
-            # 「在工位上改周报」→「在家改周报」，不能变成「在家上改周报」。
-            local = r"(?:里面|上面|这边|那边|附近|旁边|里头|里|上|中|内)?"
-            # 我在X / 我刚在X / 我还在X / 我到了X
-            value = re.sub(
-                r"我(?P<mid>(?:刚|正|一直|还|才|也|这边)?)(?:在|到了|回到)(?P<w>"
-                + pattern + r")" + local,
-                lambda match: "我" + (match.group("mid") or "") + "在" + target,
-                value,
-            )
-            # 「嗯，在逛街呢」这种省略主语的短回复
-            value = re.sub(
-                r"(^|[，,。！!？?\s])在(?P<w>" + pattern + r")" + local
-                + r"(?=[呢啊呀了，,。！!？?\s]|$)",
-                lambda match: (match.group(1) or "") + "在" + target,
-                value,
-            )
-    return value
 
 
 # 2026-11-12 新增 zone（医院/景区/街边）也要有“地点纠正”的目标词

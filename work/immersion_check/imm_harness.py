@@ -2,7 +2,7 @@
 """IMM 出戏验收 harness：假插件 + 真实回复链路（事实守卫/去重/语气池/B 开关）。
 
 链路顺序与生产 amo_runtime_reply.on_decorating_result + amo_message._send_to_umo 一致：
-  _guard_self_location -> apply_fact_guard(A + 语气池 + B pending)
+  apply_fact_guard(地点/事实守卫 + 语气池 + B pending)
   -> apply_narrative_repetition(去重/先答吃啥) -> apply_tone_guard(口头禅)
   -> [B 开启] apply_pending_tone_pick_async -> _send_to_umo(完整 send 阶段)
 """
@@ -230,12 +230,7 @@ async def run_turn(plugin, user_text, candidate, now, umo, b_mode=False, activit
     started = time.perf_counter()
     activity = dict(activity or plugin.state.current_activity())
     text = str(candidate or "")
-    # 1) 老地点守卫
-    try:
-        text = plugin._guard_self_location(text, activity)
-    except Exception:  # cleanup: harness 兜底，守卫失败不拦链路
-        pass
-    # 2) 事实守卫（A + 语气池，B 开启时记 pending）
+    # 1) 事实守卫（3a-2b：地点/活动唯一守卫 reply_fact_guard + 语气池，B 开启时记 pending）
     fixed_before, violations = "", []
     del _TONE_ACTIONS[:]
     try:
@@ -244,23 +239,23 @@ async def run_turn(plugin, user_text, candidate, now, umo, b_mode=False, activit
     except Exception:  # cleanup: harness 兜底，守卫失败不拦链路
         pass
     tone_changed = bool(_TONE_ACTIONS and _TONE_ACTIONS[-1])
-    # 3) 去重 / 先答吃啥
+    # 2) 去重 / 先答吃啥
     try:
         text = pipeline.apply_narrative_repetition(text, plugin, user_text, umo, now)
     except Exception:  # cleanup: harness 兜底，守卫失败不拦链路
         pass
-    # 4) 口头禅去复读
+    # 3) 口头禅去复读
     try:
         text = pipeline.apply_tone_guard(text, plugin, umo)
     except Exception:  # cleanup: harness 兜底，守卫失败不拦链路
         pass
-    # 5) B：消费 pending 让 LLM 选序号
+    # 4) B：消费 pending 让 LLM 选序号
     if b_mode:
         try:
             text = await pipeline.apply_pending_tone_pick_async(text, plugin)
         except Exception:  # cleanup: harness 兜底，守卫失败不拦链路
             pass
-    # 6) 完整 send 阶段（clean/人名/地点/居家服/隐私/约会/极端/过渡/交通/后台泄漏）
+    # 5) 完整 send 阶段（clean/人名/地点/居家服/隐私/约会/极端/过渡/交通/后台泄漏）
     # 2026-11-22 task-35：聊天轮的 source 必须是 chat。旧代码不传 source，_send_to_umo
     # 按 fail-closed 当 push 走 OutboundGateway 的主动频控/去重，第 2 轮起被 drop；
     # 而 sent 又取 context.sent[-1]，于是把上一轮的发送当成这一轮的发送（假复读）。
