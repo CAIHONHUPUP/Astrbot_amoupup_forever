@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-11-22T23:35:21",
+    "generated_at": "2026-11-23T01:26:25",
     "python": "3.12.16",
     "repo": "D:\\dafeiyu\\astrbot\\data\\plugins\\Astrbot_amoupup_forever",
     "isolation": {
@@ -323,14 +323,14 @@
     {
       "case": "单条日程，时间未变",
       "expect": true,
-      "got": false,
-      "ok": false
+      "got": true,
+      "ok": true
     },
     {
       "case": "同名活动两条（17:00 那条）",
       "expect": true,
-      "got": false,
-      "ok": false
+      "got": true,
+      "ok": true
     },
     {
       "case": "改期到 17:00（旧 15:00）",
