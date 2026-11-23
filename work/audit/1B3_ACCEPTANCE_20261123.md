@@ -60,3 +60,42 @@
 3. ~~群聊称呼串台~~ 已在 `29ea710` 修复（群聊只删首句称呼，不改写成「老公」）。
 4. 「听说你在商场呢」仍由黑名单 force_rewrite 改成「听说你在外面呢」（第二人称遗留，非 B 路径）。
 5. 回放 `persistent 2` 是既有基线（记忆元信息类），非本阶段引入。
+
+---
+
+## 2026-11-23 最终状态（1b-3 收尾完成）
+
+### 本轮提交
+
+| commit | 内容 |
+|---|---|
+| `41e8781` | C：空/罐头回复走一次模型重生成（repair hook，默认开） |
+| `742a03a` | B1：删问题模板/动作台词/status_repeat/原文兜底，空串交 chat 出口 repair |
+| `cee6fd8` | B2：固定句池拆「产出/识别」，emotion 池降级为词表，分段删空二次 repair |
+| `58ff131` | B3：删 persona/grounding safe_reply，复检失败改 repair（share_continuation 5/5） |
+| `85f3f63` | M1：state_consistency 组装链合并（6012 例差分 0） |
+| `54994d7` | M2：pipeline recheck 链合并（1058 例差分 0、sims 逐字节相同） |
+| `41d94fe` | M3：删空壳（_safe_short_reply/门面/sentence/short_fallback/short_reply.guard）+ 反向守卫 |
+| `367bb8f` | 修「刚聊完马上分享」：开心不再算红线 + 红线 5 分钟冷却 |
+| `2c04cea` | 测试自查：删 8 个逐字节重复用例（6451→6443） |
+
+### 最终指标（HEAD 2c04cea）
+
+- 门禁：见 `verify_final.json`（预期 6443 passed / 0 failed；mypy 0/264；pyflakes clean；silent 0；unittest ok；freeze 0）
+- 四件套：daily 50/50、614/614；share 500/100%（damaged 0、persistent 0）；remind 240/240；adversarial 39/39；imm 11 passed（emotion_keep 0.9655、空回复 0、复读 0）
+- 回放：narration_after 0；fixed 23、persistent 4（2078/2149/2223/2281，需真模型重写）
+
+### 修复触发率实测（repair_stats，daily 614 轮 + share 500 轮）
+
+| 场景 | ok | fail | fail_guard | 触发数 | 触发率 |
+|---|---|---|---|---|---|
+| daily | 108 | 44 | 1 | 153 | ≈24.9% |
+| share | 113 | 0 | 8 | 121 | ≈24.2% |
+
+- 触发率约 **1/4 回合**（删掉固定句后，凡是守卫会删空/换罐头的回合都走 repair；模拟器的 mock 模型比真模型更常被守卫判不合格，生产应更低）。
+- 成本：单次 repair prompt ≈450–600 tokens、输出 30–60，对比正常回复 3–6k tokens，单次约 **10–15%**；按 25% 触发率，平均增幅 **约 +2.5%–3.8%**。
+- 延迟：触发回合 +0.5–1.5s（8s 超时上限）；非触发回合不变。
+
+### 测试自查
+
+见 `TEST_AUDIT_20261123.md`：只有 8 对逐字节重复（已删）；6000+ 是产品面宽度，不是守卫数量。
