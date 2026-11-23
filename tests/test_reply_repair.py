@@ -8,7 +8,7 @@
 3) 模型成功 → 采用新句（ok+1），提示词带上他的原话/上一版/最近上下文；
 4) 模型异常/超时/仍罐头/仍禁语/空 → fail-open 到「guarded or raw」，绝不吞回复；
 5) 非 chat 来源（主动/推送）不修；
-6) 一次出站最多一次模型调用：命中修复时 runtime 跳过 regenerate_forbidden。
+6) 一次出站最多一次模型调用（repair 内部判定，无第二套重生成）。
 """
 from __future__ import annotations
 
@@ -345,11 +345,9 @@ class RepairTests(unittest.TestCase):
 class RuntimeWiringTests(unittest.TestCase):
     def setUp(self):
         pipeline.reset_repair_stats()
-        pipeline.reset_forbidden_regen_stats()
 
     def tearDown(self):
         pipeline.reset_repair_stats()
-        pipeline.reset_forbidden_regen_stats()
 
     def test_runtime_replaces_canned_reply(self):
         llm = _SpyLLM(reply=FRESH)
@@ -370,17 +368,7 @@ class RuntimeWiringTests(unittest.TestCase):
         self.assertEqual(plugin.sent, [NORMAL])
         self.assertEqual(llm.calls, [])
 
-    def test_runtime_repair_and_forbidden_regen_never_both_call(self):
-        """既是罐头又含禁语：修复调过一次模型后，禁语重生成必须跳过。"""
-        llm = _SpyLLM(reply=CANNED)   # 修复也失败 → fail-open 到 guarded
-        with mock.patch.object(pipeline, "FORBIDDEN_REGEN_ENABLED", True):
-            plugin = _decorate(BOTH, BOTH, llm, message_str="你老婆在吗")
-        self.assertEqual(len(llm.calls), 1)
-        self.assertEqual(pipeline.repair_stats(), {"fail": 1})
-        self.assertEqual(pipeline.forbidden_regen_stats(), {})
-        self.assertTrue(plugin.sent and "我在呢，先别急" in plugin.sent[-1])
-
-    def test_hook_runs_between_chat_safety_and_forbidden_regen(self):
+    def test_hook_runs_after_chat_safety_and_before_tech_terms(self):
         path = os.path.join(ROOT, "amo_runtime_reply.py")
         with open(path, encoding="utf-8") as fh:
             source = fh.read()
@@ -389,8 +377,7 @@ class RuntimeWiringTests(unittest.TestCase):
         self.assertLess(source.index("text = apply_chat_safety("), source.index(hook))
         self.assertIn('_note_swallowed("amo_runtime_reply.reply_repair", _amo_exc)',
                       source)
-        self.assertLess(source.index(hook),
-                        source.index("await _reply_pipeline.regenerate_forbidden("))
+        self.assertLess(source.index(hook), source.index("strip_tech_terms(text"))
 
 
 class QuestionGuardEmptyExitTests(unittest.TestCase):
@@ -398,12 +385,10 @@ class QuestionGuardEmptyExitTests(unittest.TestCase):
 
     def setUp(self):
         pipeline.reset_repair_stats()
-        pipeline.reset_forbidden_regen_stats()
         pipeline.reset_repetition_memory()
 
     def tearDown(self):
         pipeline.reset_repair_stats()
-        pipeline.reset_forbidden_regen_stats()
         pipeline.reset_repetition_memory()
 
     def test_chat_safety_returns_empty_for_unanswered_question(self):

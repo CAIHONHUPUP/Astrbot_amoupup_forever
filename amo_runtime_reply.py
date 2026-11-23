@@ -197,26 +197,14 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime_reply.chat_safety", _amo_exc)
             # 3C：守卫把回复删成空/换成罐头句时，调一次模型重生成（默认开启）。
-            # 失败 fail-open 到「guarded or raw」，绝不吞回复；命中修复后跳过下面的
-            # 禁语重生成，保证一次出站最多一次模型调用。
-            _repair_tried = False
+            # 失败 fail-open 到「guarded or raw」，绝不吞回复；repair 内部自己判
+            # 需不需要修，不再需要调用方预判。
             try:
-                _repair_tried = _reply_pipeline.needs_repair(text)
-                if _repair_tried:
-                    text = await _reply_pipeline.repair_reply(
-                        _raw_text, text, self, event.unified_msg_origin,
-                        getattr(event, "message_str", ""), history=_history)
+                text = await _reply_pipeline.repair_reply(
+                    _raw_text, text, self, event.unified_msg_origin,
+                    getattr(event, "message_str", ""), history=_history)
             except Exception as _amo_exc:  # cleanup: 修复失败不影响发送
                 _note_swallowed("amo_runtime_reply.reply_repair", _amo_exc)
-            # 3c 阶段 2：禁语命中时让模型重生成一句（默认关闭 = 零模型调用，
-            # 行为与阶段 1 的确定性收口完全一致）；失败/超时保持上面的结果。
-            if not _repair_tried:
-                try:
-                    text = await _reply_pipeline.regenerate_forbidden(
-                        text, self, event.unified_msg_origin,
-                        getattr(event, "message_str", ""))
-                except Exception as _amo_exc:  # cleanup: 重生成失败不影响发送
-                    _note_swallowed("amo_runtime_reply.forbidden_regen", _amo_exc)
             # task-26：聊天里不许出现「服务器/报错/超时/权限/面板/接口/异常/重试」
             # 这类后台话术；删掉命中分句，整条都命中就换成角色化短句。
             try:
