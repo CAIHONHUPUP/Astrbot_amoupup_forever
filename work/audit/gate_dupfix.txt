@@ -1,0 +1,7 @@
+# 重复发送修复 门禁（2026-11-23）
+
+保守版：保留「全段判重→整条一次」回退并加日志；chat 出口只压 60 秒内逐字相同的长文本。
+
+- 门禁 exit 0（982.7s）：6430 passed / 0 failed；mypy 0/264；pyflakes clean；silent 0；unittest ok；freeze 0
+- 四件套：daily 50/50、614/614（degenerate 0）；share 500/100%（d0/p0）；remind 240/240；adversarial 39/39；replay narr0/p4
+- 第一版（删回退）曾把 daily 打到 42/50、degenerate 9，已回退重做

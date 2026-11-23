@@ -84,6 +84,25 @@ class GatewaySendTests(unittest.TestCase):
         reasons = [row.get("reason") for row in gw.rows(p, "umo-test-s1")]
         self.assertIn("same_source_90s", reasons)
 
+    def test_chat_same_long_text_within_60s_rejected(self):
+        # 2026-11-23：两条发送路径同时发同一条长文本，60 秒内逐字相同就压掉。
+        p = _plugin(last_seen=NOW - 60, umo_suffix="-cd")
+        text = "今天中午吃了牛肉粉，下午想去商场看看冬衣"
+        self.assertTrue(asyncio.run(gw.send(p, "umo-test-cd", text, source="chat", now=NOW)))
+        self.assertFalse(asyncio.run(gw.send(p, "umo-test-cd", text, source="chat",
+                                             now=NOW + 30)))
+        self.assertIn("dup_chat_60s",
+                      [row.get("reason") for row in gw.rows(p, "umo-test-cd")])
+        # 跨轮合理复用不受影响（61 秒后同文本可以再发）
+        self.assertTrue(asyncio.run(gw.send(p, "umo-test-cd", text, source="chat",
+                                            now=NOW + 120)))
+
+    def test_chat_short_reply_may_repeat(self):
+        p = _plugin(last_seen=NOW - 60, umo_suffix="-cs")
+        self.assertTrue(asyncio.run(gw.send(p, "umo-test-cs", "嗯", source="chat", now=NOW)))
+        self.assertTrue(asyncio.run(gw.send(p, "umo-test-cs", "嗯", source="chat",
+                                            now=NOW + 60)))
+
     def test_cross_source_300s_rejected(self):
         p = _plugin(last_seen=NOW - 60, umo_suffix="-x1")
         self.assertTrue(asyncio.run(gw.send(p, "umo-test-x1", "早点睡", source="goodnight", kind="gn", now=NOW)))

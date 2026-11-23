@@ -239,11 +239,20 @@ def _decide(plugin, umo, text, source, kind, now=None, batch="", media=False):
     stamp = _now_ts(now)
     src = normalize_source(source)
     if src == "chat":
+        # 2026-11-23：只压「60 秒内逐字相同的长文本」——这是两条发送路径同时发同一条
+        # 的典型形状；跨轮的合理复用不拦（10 分钟窗口曾把 daily 打到 42/50）。
+        body_key = _key(text)
+        if len(body_key) >= 8:
+            for age, entry in reversed(_sent(plugin, umo, 60.0, stamp)):
+                if stamp - age > 60.0:
+                    break
+                if str(entry.get("key") or "") == body_key:
+                    return "drop", "dup_chat_60s"
         return "send", ""
+    sent = _sent(plugin, umo, FIVE_MIN_WINDOW, stamp)
     # 1) 沉默 6 小时：参与类非 chat 入口一律 0；问候/时间点提醒允许（频控仍生效）。
     if src in ENGAGE_SOURCES and _is_silent(plugin, stamp) and src not in ("goodnight", "reminder", "system", "admin"):
         return "drop", "silence_6h"
-    sent = _sent(plugin, umo, FIVE_MIN_WINDOW, stamp)
     same_batch = bool(batch) and any(
         str(entry.get("batch") or "") == str(batch) for _age, entry in sent)
     recent_20 = [item for item in sent if stamp - item[0] <= BURST_WINDOW]

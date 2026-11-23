@@ -1178,9 +1178,14 @@ class MessageMixin(_MixinBase):
                 from .amo_state_consistency import dedupe_reply_segments as _dedupe_segments
             except ImportError:
                 from amo_state_consistency import dedupe_reply_segments as _dedupe_segments
-            segments = _dedupe_segments(segments, plugin=self, umo=umo) or [text]
+            _kept = _dedupe_segments(segments, plugin=self, umo=umo)
+            if not _kept:
+                # 全判重复：保留旧的「整条一次」回退，但打日志，便于下次线上重复时定位。
+                logger.info("[amo] 分段全判重复，回退整条发送（观察用）")
+            segments = _kept or [text]
         except Exception as _amo_exc:
             _note_swallowed("amo_message._send_to_umo.dedupe_segments", _amo_exc)
+
         src = str(source or getattr(self, "_outbound_source", "") or "push")
         _kind = str(kind or getattr(self, "_outbound_kind", "") or "")
         _batch = str(getattr(self, "_outbound_batch", "") or "")
