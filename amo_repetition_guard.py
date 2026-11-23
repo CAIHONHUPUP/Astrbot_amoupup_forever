@@ -25,7 +25,6 @@ try:
         pick_variant,
         short_fallback,
         emotion_hint,
-        _emotion_fallback,
         dedup_or_fallback,
         reset,
     )
@@ -51,7 +50,6 @@ except ImportError:  # 直接按文件加载时
         pick_variant,
         short_fallback,
         emotion_hint,
-        _emotion_fallback,
         dedup_or_fallback,
         reset,
         )

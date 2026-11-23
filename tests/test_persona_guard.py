@@ -133,10 +133,14 @@ class ForbiddenPhraseTests(unittest.TestCase):
                 self.assertCleanAndIdempotent(out)
                 self.assertIn(repetition_guard.compare_body(out), pool)
 
-    def test_neutral_fallback_rotates_not_repeats(self):
+    def test_neutral_fallback_is_stable_and_non_empty(self):
+        # B2：pick 只保留 leak 安全挡话，short 池不再产出 → 兜底句稳定（不再轮换）。
+        # 不变量仍在：非空输入绝不返回空串，且返回的是干净的中性句。
         first = guard.neutralize_forbidden("我哪生气了，别给我扣帽子。")
         second = guard.neutralize_forbidden("我哪生气了，别给我扣帽子。")
-        self.assertNotEqual(first, second)
+        self.assertTrue(first.strip())
+        self.assertEqual(first, second)
+        self.assertCleanAndIdempotent(first)
 
     def test_rewrite_never_leaves_fragment(self):
         for text in self.FRAGMENT_RISK:

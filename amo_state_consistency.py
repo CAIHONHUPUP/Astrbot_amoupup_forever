@@ -995,7 +995,8 @@ def validate_reply_assembly(text, plugin=None, umo="", user_text="", recent=None
     1) 先去掉媒体占位符（模型会把它当一句话复读，且它本就不该出现在人话里）；
     2) 再删与最近她自己说过的话重复的分句（整句相似度拦不住"旧句拆进新句子"）；
     3) 最后按「此刻场景」剥离冲突地点（当前在家就不许把旧商场当成现在）。
-    全被删空时给一句不与历史复读的短句，绝不回退原文（原文就是复读）。
+    全被删空时**不再补固定短句**（B2）：chat 空串交出口 repair 重生成；非 chat 靠
+    下面的补答/地点兜底保非空（绝不回退原文——原文就是复读）。
     """
     body = str(text or "")
     if not body.strip():
@@ -1024,31 +1025,42 @@ def validate_reply_assembly(text, plugin=None, umo="", user_text="", recent=None
         body = strip_current_scene_conflicts(body, plugin)
     if not body.strip():
         body = _safe_short_reply(umo, refs)
+        if not body and not _turn_registered(umo):
+            # B2：没有 chat 出口 repair 的调用（主动推送/独立调用，本轮没登记候选）
+            # 绝不发空 —— 用删句前的正文兜底（原文就是复读，但比一条空消息好）。
+            body = before_dedup
     # task-32：收件人/角色反转守卫（聊天拼装阶段先拦一次，避免错误称呼被分段发出去）。
-    # 判定只在 amo_addressee_guard 一处实现；这里是 chat 拼装入口，丢弃时给安全短句，
-    # 绝不把原文交回 AstrBot 核心（核心回退会把原文原样发出去）。
+    # 判定只在 amo_addressee_guard 一处实现；这里是 chat 拼装入口，丢弃时**不再补
+    # 安全短句**（B2，空串交出口 repair），但绝不把原文交回 AstrBot 核心（核心回退
+    # 会把原文原样发出去）。
     try:
         try:
             from .amo_addressee_guard import enforce as _addressee_enforce
         except ImportError:
             from amo_addressee_guard import enforce as _addressee_enforce
-        guarded, addressee_reason = _addressee_enforce(
-            plugin, umo, body, source="assembly")
-        if not guarded:
-            logger.info("[state] 收件人守卫丢弃（%s）：%s",
-                        addressee_reason, str(body or "")[:80])
-            body = _safe_short_reply(umo, refs)
-        elif addressee_reason:
-            logger.info("[state] 收件人守卫改写（%s）：%s", addressee_reason, guarded[:80])
-            body = guarded
+        # B2：删空后没有正文可判收件人，空串直接交出口（不在这里误记「丢弃」）。
+        if body.strip():
+            guarded, addressee_reason = _addressee_enforce(
+                plugin, umo, body, source="assembly")
+            if not guarded:
+                logger.info("[state] 收件人守卫丢弃（%s）：%s",
+                            addressee_reason, str(body or "")[:80])
+                body = _safe_short_reply(umo, refs)
+                if not body and not _turn_registered(umo):
+                    # B2：非 chat（没有出口 repair）不能发空；用「此刻场景」的状态句
+                    # 顶上（场景宪法层，不是固定句池），绝不把收件人反转的原文发出去。
+                    body = _where_answer_sentence(plugin)
+            elif addressee_reason:
+                logger.info("[state] 收件人守卫改写（%s）：%s", addressee_reason, guarded[:80])
+                body = guarded
     except Exception as exc:  # cleanup: 守卫失败不挡正常聊天
         logger.debug("[state] 收件人守卫失败: %s", exc)
     # 唯一后置语义复检（task-29）：媒体标记/自我复读/场景剥离三步都可能把答案
     # 一起删掉，出口再判一次；原候选答得上就保留候选（别发通用短句）。
     body = _post_recheck(body, plugin, umo, user_text)
-    # 删句/场景剥离可能把「他这一问」的答案整句删掉、只剩通用短句：走 reply_pipeline
-    # 的出口补答（问句守卫唯一实现），把删前的正文当 candidate —— 它答到了就原样
-    # 还回来（答案优先于不复读），没答到才用状态模板补一句（task-36 G43/t6·t9）。
+    # 删句/场景剥离可能把「他这一问」的答案整句删掉：走 reply_pipeline 的出口补答
+    # （问句守卫唯一实现），把删前的正文当 candidate —— 它答到了就原样还回来
+    # （答案优先于不复读），没答到就是空串（B1/B2：不再用状态模板补一句）。
     try:
         try:
             from .amo_reply_pipeline import complete_deleted_answer as _complete_answer
@@ -1075,13 +1087,34 @@ def validate_reply_assembly(text, plugin=None, umo="", user_text="", recent=None
     return _ensure_where_answer(body, plugin, user_text, umo)
 
 
-def _safe_short_reply(umo, refs=None):
-    """删空时的兜底：轮换一句短话，避开最近说过的话（复用 repetition_guard）。"""
+def _turn_registered(umo):
+    """本轮候选是否已登记（= 走了 chat 链路）：有登记时空串交出口 repair。
+
+    apply_narrative_repetition 在 chat 链路上先登记本轮候选；主动推送/独立调用没有
+    这一步，也就不存在 chat 出口 repair，调用方必须自己兜底，不许把空串当结果。
+    """
+    key = str(umo or "").strip()
+    if not key:
+        return False
     try:
-        fixed = _repetition_guard().short_fallback(umo or "", list(refs or []))
-    except Exception:
-        fixed = ""
-    return str(fixed or "").strip() or "嗯，我在呢。"
+        try:
+            from .amo_reply_pipeline import _turn_candidate as _candidate
+        except ImportError:
+            from amo_reply_pipeline import _turn_candidate as _candidate
+        return bool(str(_candidate(key) or "").strip())
+    except Exception:  # cleanup: 判不出来按非 chat 处理（宁可用原文也不发空）
+        return False
+
+
+def _safe_short_reply(umo, refs=None):
+    """删空就是删空（B2）：不再轮换固定短句，返回空串交出口。
+
+    固定句池已退出生成链（domains.reply.repetition_guard 的产出 API 全部返回空串，
+    只留识别集），所以这里也没有「安全短句」可取。空串的去处：chat 出口由
+    amo_reply_pipeline.repair_reply 重生成；非 chat 由调用点的 `... or 补答前正文`
+    与 validate_reply_assembly 的原文兜底保非空，绝不给用户发一条空消息。
+    """
+    return ""
 
 
 def _post_recheck(text, plugin, umo="", user_text=""):

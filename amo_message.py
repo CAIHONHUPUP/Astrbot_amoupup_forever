@@ -1187,11 +1187,22 @@ class MessageMixin(_MixinBase):
         last_sent_at = 0.0
         for index, segment in enumerate(segments):
             # 含分段：每一段发出前和最近 3-5 条 bot 消息 / 本轮前面的段比对，
-            # 整句复读就换一句短的（绝不发空段）。
+            # 整句复读就删句并返回空串（B2：不再换一句固定短话）。
+            _segment_in = segment
             try:
                 segment = _reply_pipeline.apply_segment_repeat_guard(segment, self, umo)
             except Exception as _amo_exc:
                 _note_swallowed("amo_message.HumanCorePlugin._send_to_umo.segment_dedup", _amo_exc)
+            if (not str(segment or "").strip() and str(_segment_in or "").strip()
+                    and src == "chat"):
+                # B2：这一段被整句去重删空 → chat 出口的 repair 在 dedupe 之后还有一次
+                # 机会（用删前那一段当 raw 重新生成）。仍空才丢这一段；非 chat 不修。
+                # 一次出站最多两次模型调用：出口 repair 一次 + 每段至多一次。
+                try:
+                    segment = await _reply_pipeline.repair_reply(
+                        _segment_in, "", self, umo, _user_text, source=src)
+                except Exception as _amo_exc:  # cleanup: 段修复失败就丢这一段
+                    _note_swallowed("amo_message._send_to_umo.segment_repair", _amo_exc)
             if index > 0:
                 await self._segment_wait(None, segment, segments[index - 1], last_sent_at)
             elif last_sent_at == 0.0:

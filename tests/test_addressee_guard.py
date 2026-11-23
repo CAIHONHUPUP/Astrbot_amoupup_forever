@@ -254,10 +254,13 @@ class StateAssemblyWiringTests(unittest.TestCase):
         plugin = _Plugin([_owner_profile()])
         out = state.validate_reply_assembly(
             REAL_1131, plugin, umo="", user_text="")
-        self.assertTrue(str(out).strip())
+        # 判据不变：收件人/角色反转命中的原文绝不返回。
         self.assertNotIn("妈，我地铁", str(out))
         self.assertNotIn("地铁上", str(out))
         self.assertNotIn("妈", str(out))
+        # B2：没有 chat 出口 repair（umo 空 = 非 chat）时绝不能交空串；改用此刻
+        # 场景的状态句顶上（不是固定句池），保证「非 chat 绝不发空」。
+        self.assertTrue(str(out).strip(), out)
 
     def test_validate_assembly_keeps_legit_family_topic(self):
         plugin = _Plugin([_owner_profile()])

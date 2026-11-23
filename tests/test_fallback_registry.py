@@ -38,7 +38,8 @@ def _plugin(activity):
 
 
 class RegistryShapeTests(unittest.TestCase):
-    def test_every_intent_returns_one_sentence(self):
+    def test_every_intent_keeps_data_but_stops_rendering(self):
+        # B2：池子只剩识别/数据用途——数据一条不少，产出 API 一律返回空串。
         self.assertTrue(registry.FALLBACKS)
         for intent, items in registry.FALLBACKS.items():
             with self.subTest(intent=intent):
@@ -46,11 +47,8 @@ class RegistryShapeTests(unittest.TestCase):
                 self.assertTrue(items, intent)
                 self.assertTrue(all(isinstance(item, str) and item.strip()
                                     for item in items), intent)
-                line = registry.sentence(intent)
-                self.assertEqual(line, items[0])  # 默认只返回第一句
-                self.assertNotIn("\n", line)      # 一句，不是一段
-                if "{" not in items[0]:            # 模板槽由调用方填，不算残留
-                    self.assertNotIn("{", line)
+                self.assertEqual(registry.sentence(intent), "")   # 产出已停用
+                self.assertEqual(registry.fallback_pool(intent), tuple(items))  # 数据仍在
 
     def test_old_pool_names_are_aliases_not_copies(self):
         self.assertIs(registry.SHORT_FALLBACKS, registry.FALLBACKS["short"])
@@ -94,6 +92,25 @@ class RegistryShapeTests(unittest.TestCase):
                     self.assertNotIn(pool + " = [", source)
 
 
+class IdentificationStillWorksTests(unittest.TestCase):
+    """B2：产出停用后，识别集必须原样保留（recover/final_semantic_recheck/repair 依赖）。"""
+
+    def test_old_fixed_sentences_are_still_recognized(self):
+        for text in ("还是老样子。", "嗯，我在呢。", "我到了，等会儿说。", "嗯", "哈哈哈",
+                     "我试了试，挺喜欢的，还没买。"):
+            with self.subTest(text=text):
+                self.assertTrue(registry.is_fixed_rewrite(text))
+        self.assertTrue(registry.is_multi_pool("挺喜欢的，笑死我了。"))
+        self.assertTrue(registry.is_fixed_fragment("嗯"))
+        self.assertFalse(registry.is_fixed_rewrite("刚泡了杯茶。"))
+
+    def test_emotion_pool_is_word_list_only(self):
+        self.assertEqual(registry.emotion_hint("今天好累啊"), "累")   # 词表仍认情绪
+        self.assertFalse(hasattr(registry, "_emotion_fallback"))      # 取句路径已删
+        self.assertEqual(registry.pick("emotion.累", "k"), "")        # 不再产出
+        self.assertTrue(registry.pick("leak", "k"))                   # 安全挡话仍产出
+
+
 class ActionFallbackTests(unittest.TestCase):
     def test_action_fallback_no_longer_renders_registry_lines(self):
         # B1：动作-only 不再补台词（空串哨兵）；action.* 数据留给识别集（B2 才动）。
@@ -120,7 +137,10 @@ class CallerParityTests(unittest.TestCase):
                             "end": act.get("end", "")}
                 self.assertEqual(amo_question_guard.answer(question, _plugin(activity), "跑题了。"),
                                  "")
-                self.assertEqual(registry.sentence("question." + key, **render), expected)
+                # B2：问句模板不再渲染（产出停用），但数据/槽位原样保留给识别与回归。
+                self.assertEqual(registry.sentence("question." + key, **render), "")
+                self.assertEqual(registry.fallback_pool("question." + key)[0].format(**render),
+                                 expected)
 
     def test_pipeline_generic_detection_comes_from_registry(self):
         for text in ("还是老样子。", "我还在外面呢，晚点就回去。", "嗯", "等会儿再说！"):
@@ -128,17 +148,23 @@ class CallerParityTests(unittest.TestCase):
         self.assertFalse(pipeline._is_generic_fallback("刚练完器械，还在健身房呢"))
         self.assertEqual(pipeline._GENERIC_BODIES, registry.generic_bodies())
 
-    def test_status_repeat_sentence_comes_from_registry(self):
-        self.assertEqual(pipeline._fallbacks.sentence("status_repeat"), "还是老样子。")
+    def test_status_repeat_sentence_no_longer_renders(self):
+        # B2：status_repeat 只留在识别集里；取句 API 返回空串。
+        self.assertEqual(pipeline._fallbacks.sentence("status_repeat"), "")
+        self.assertIn(registry.compare_body("还是老样子。"),
+                      registry.fixed_rewrite_bodies())
 
-    def test_rotation_still_avoids_recent_lines(self):
+    def test_short_fallback_stops_rotating_and_full_repeat_is_empty(self):
         registry.reset()
-        first = registry.short_fallback("reg:1", [])
-        second = registry.short_fallback("reg:1", [first])
-        self.assertTrue(first.strip() and second.strip())
-        self.assertNotEqual(first, second)
-        fixed, _dropped = registry.dedup_or_fallback("我没事。", "reg:2", [])
-        self.assertIn("我没事", fixed)
+        self.assertEqual(registry.short_fallback("reg:1", []), "")
+        self.assertEqual(registry.short_fallback("reg:1", ["嗯，我在呢。"]), "")
+        # 没有删句时原样返回（判据没变）；整条都是复读时返回空串（B2 删空即不发）。
+        fixed, dropped = registry.dedup_or_fallback("我没事。", "reg:2", [])
+        self.assertEqual((fixed, dropped), ("我没事。", []))
+        empty, dropped = registry.dedup_or_fallback("我刚从公园溜达回来。", "reg:3",
+                                                    ["我刚从公园溜达回来。"])
+        self.assertEqual(empty, "")
+        self.assertTrue(dropped)
 
 
 if __name__ == "__main__":

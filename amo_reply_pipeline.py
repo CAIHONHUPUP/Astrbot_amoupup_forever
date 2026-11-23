@@ -1417,6 +1417,8 @@ def final_semantic_recheck(text, plugin=None, umo="", user_text="", original=Non
     判定在 amo_grounding_critic.post_rewrite_recheck：原候选答到他这一句、改完后
     答不到（或整条只剩通用兜底句）→ 保留候选。这里只负责取本轮候选 + 出站卫生：
     媒体占位符剥离、消费事实守卫重跑、模型自曝/后台泄漏/安全挡话不还原。
+    B2：本函数**不产出固定句**（固定句池已停产出），改写结果为空就原样返回空串，
+    由调用方决定（chat 交出口 repair，非 chat 用原文兜底）。
     """
     candidate = str(original or "") if original is not None else _turn_candidate(umo)
     if not candidate.strip():
@@ -1790,7 +1792,12 @@ def apply_segment_dedup(text, plugin, umo="", now=None):
 
 
 def apply_segment_repeat_guard(text, plugin=None, umo=""):
-    """分段发送前：和最近 3-5 条 bot 消息 / 本轮前面的段重复就换短的（返回非空）。"""
+    """分段发送前：和最近 3-5 条 bot 消息 / 本轮前面的段重复就删句。
+
+    返回空串 = 这一段整段都是复读，**不再换一句短的**（B2：固定句池已停产出）：
+    send 阶段按空段跳过（amo_outbound.send 遇空直接不发送），不会发一条空消息。
+    他这一问的答案落在这一段里时仍由 _keep_answer 保住（答案优先于不复读）。
+    """
     value = str(text or "")
     if not value.strip():
         return value
@@ -1801,13 +1808,13 @@ def apply_segment_repeat_guard(text, plugin=None, umo=""):
     fixed, dropped = _repeat_guard.dedup_or_fallback(value, umo, refs)
     fixed = _keep_answer(value, fixed, _turn_question(umo), dropped)
     for item in dropped:
-        logger.debug("[dedup] 分段复读已换掉: %s", item[:40])
+        logger.debug("[dedup] 分段复读已删掉: %s", item[:40])
     rows = _TURN_SEGMENTS.setdefault(key, [])
     body = _repeat_guard.compare_body(fixed)
     if body:
         rows.append(body)
         del rows[:-STATUS_MEMORY_LIMIT]
-    return fixed or value
+    return fixed
 
 
 def _send_status_dedup(text, ctx):
@@ -2048,7 +2055,16 @@ def _canned_bodies():
         _note_swallowed("amo_reply_pipeline.repair.canned.registry", _amo_exc)
     for key, fields in _QUESTION_SAMPLES:
         try:
-            bodies.add(_compare(_fallbacks.sentence(key, **fields)))
+            # B2：产出 API 已停用（sentence 恒返回空串），识别集直接读池数据渲染
+            # 模板样例——只进比对集合，永远不会被发出去。
+            pool = _fallbacks.fallback_pool(key)
+            template = str(pool[0]) if pool else ""
+            if template:
+                try:
+                    template = template.format(**fields)
+                except (KeyError, IndexError, ValueError):
+                    template = str(pool[0])
+                bodies.add(_compare(template))
         except Exception as _amo_exc:  # cleanup: 单个模板坏了不影响整体
             _note_swallowed("amo_reply_pipeline.repair.canned.question", _amo_exc)
     bodies |= _safe_reply_bodies()

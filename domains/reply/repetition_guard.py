@@ -8,8 +8,14 @@
 - 和最近 3-5 条 bot 消息（含同一轮前面的段）比对，归一化空白/标点后整句相同
   或相似度 >= 0.9 的句子删掉；
 - 短句（< 4 字，如「抱抱」「嗯嗯」）不参与，避免误删正常情绪重复；
-- 整条都重复时换一句短的：原句带情绪就跟一句同情绪的短话（不重复原句），
-  否则从固定短句池里轮换，且避开最近说过的话；绝不返回空串。
+- 整条都重复时**不再换一句短的**（B2）：删完就是删完，返回空串交出口
+  （chat 由 amo_reply_pipeline.repair_reply 重生成，非 chat 由调用方原文兜底）。
+
+B2（2026-11-23）把池子拆成两副面孔：FALLBACKS 数据仍是**识别集**（is_fixed_rewrite /
+is_multi_pool / is_blocking_fallback / fixed_rewrite_bodies 以及 recover、
+final_semantic_recheck、repair.is_canned_reply 都读它），但**产出 API 全部停用**
+（sentence/short_fallback 返回 ""，dedup_or_fallback 整条重复时返回空文本，
+pick 只保留 leak 安全挡话）。固定句退出生成链，只剩「认得出旧句」的能力。
 
 纯文本、无副作用，方便单测；调用方负责传「最近 bot 文本」和是否记录。
 """
@@ -42,18 +48,22 @@ DEDUP_SIMILARITY = 0.9
 
 #: 统一兜底注册表（2026-11-22 task-18）：意图/场景 -> 唯一一句。
 #:
-#: 六个阶段的私有池（amo_reply_pipeline._GENERIC_FALLBACKS、SHORT_FALLBACKS、
-#: amo_state_consistency._GENERIC_REPLIES、amo_message._ACTION_FALLBACK、
-#: amo_runtime_reply._align_*、amo_question_guard 模板）都收到这里，调用方只经
-#: sentence()/pick() 取，不再各自维护一份说法。值统一是 tuple：默认取第一条；
-#: 只有需要避开近聊复读的短句（short/leak/emotion.*）才在注册表内部轮换，
-#: 对外仍然只返回一句。动作/对齐两组是纯数据，调用点迁移见各文件待办。
+#: B2 之后这张表**只做识别**，不再产出：产出 API（sentence/pick/short_fallback/
+#: dedup_or_fallback）已停用，一律返回空串，空串交出口（chat 由 repair 重生成、
+#: 非 chat 由调用方原文兜底）。数据必须留着，是因为识别集就长在这份数据上：
+#: fixed_rewrite_bodies/is_fixed_rewrite/is_multi_pool 以及 amo_rewrite_safety.recover、
+#: final_semantic_recheck、repair.is_canned_reply 都靠它认出「这句只是旧兜底」。
+#: （3b §6 风险 1：先停产出、后收缩数据；收缩是下一波，不在 B2。）
+#:
+#: 值统一是 tuple：默认第一条（识别/渲染样例用），短句池历史上在内部轮换。
+#: 动作/对齐两组现在只服务识别；emotion.* 降级为「情绪词表」（键=情绪词），
+#: 只给 emotion_hint() 认情绪用，不再取句。
 FALLBACKS: dict[str, tuple[str, ...]] = {
     # -- 通用兜底：候选没答上来时的占位句；同时是「这条只是兜底」的识别集合 --
     "generic": ("还是老样子", "等下再说", "等会儿再说", "再说吧", "嗯", "嗯嗯", "哦", "好",
                 "我还在外面呢，晚点就回去"),
     "status_repeat": ("还是老样子。",),
-    # -- 整条复读 / 模型泄漏：轮换，绝不连续吐同一句 --
+    # -- 整条复读 / 模型泄漏：short 只做识别（产出已停）；leak 是唯一仍在产出的池 --
     "short": (
         "嗯，我在呢。",
         "在听你说呢。",
@@ -72,7 +82,7 @@ FALLBACKS: dict[str, tuple[str, ...]] = {
     "scene_home": ("我在家呢。",),
     "scene_road": ("我还在路上呢，快到了。",),
     "scene_outside": ("我到了，等会儿说。",),
-    # -- 问句兜底模板（amo_question_guard）：每个意图只渲染一句 --
+    # -- 问句模板（amo_question_guard 已不产出）：只做识别样例，渲染只给比对 --
     "question.where": ("我在{place}呢。",),
     "question.doing": ("我在{doing}。",),
     "question.who": ("和{who}在一起呢。",),
@@ -82,15 +92,15 @@ FALLBACKS: dict[str, tuple[str, ...]] = {
     "question.when_late": ("我晚点回去。",),
     "question.eaten": ("吃过了，你呢？",),
     "question.not_eaten": ("还没呢，你呢？",),
-    # -- 动作-only 补一句（amo_message._ACTION_FALLBACK；数据迁移，调用点待接） --
+    # -- 动作-only 补台词（B1 已停产出）：只做识别 --
     "action.shy": ("……你少来。", "别盯着看啦。", "……干嘛呀。", "你这个人真是的。"),
     "action.laugh": ("行了行了，别闹。", "哈哈，你呀。", "笑死我了。"),
     "action.default": ("……嗯。", "你接着说。", "我在听呢。", "然后呢？"),
-    # -- 地点/场景整句对齐（amo_runtime_reply._align_*；数据迁移，调用点待接） --
+    # -- 地点/场景整句对齐（amo_runtime_reply._align_*）：只做识别 --
     "align.arrival_road": ("我还在路上呢，快到了",),
     "align.arrival_outside": ("我还在外面呢，晚点就回去",),
     "align.swim_outside": ("在外面呢，等我到家再拍给你看，先别催。",),
-    # -- 原句带情绪时，换一句同情绪的短话（不重复原句，也不把情绪一起删没） --
+    # -- 情绪词表（B2 降级）：键=情绪词，只给 emotion_hint 认情绪，不再取句 --
     "emotion.想你": ("我也想你呀。", "我一直在想你呢。", "抱抱，我也想你了。"),
     "emotion.爱你": ("我也爱你呀。", "爱你，抱一下。"),
     "emotion.喜欢": ("我也喜欢你。", "喜欢你这样说。"),
@@ -146,6 +156,7 @@ _STATE_SENTENCE = re.compile(r"^(?:我)?(?:还)?在[\u4e00-\u9fa5]{1,8}(?:呢|�
 _FIXED_BODIES: frozenset[str] | None = None
 
 #: 兼容旧调用方/门面 re-export：这几个名字只是注册表别名，数据只有一份。
+#: （B2 起它们只是识别/词表数据，不再有出口从这几个别名取句。）
 MODEL_LEAK_DEFLECTIONS = FALLBACKS["leak"]
 SHORT_FALLBACKS = FALLBACKS["short"]
 EMOTION_FALLBACKS = tuple(
@@ -158,27 +169,35 @@ _STATE: dict = {}
 
 
 def fallback_pool(intent):
-    """注册表里某意图/场景的候选序列（模块内部轮换用；对外请用 sentence/pick）。"""
+    """注册表里某意图/场景的候选序列（**只读数据**：识别集/测试渲染样例用）。
+
+    B2 之后它不再被任何一个出口拿去造句；要判「这句是不是旧固定句」请用
+    is_fixed_rewrite/fixed_rewrite_bodies。
+    """
     return tuple(FALLBACKS.get(str(intent or ""), ()))
 
 
 def sentence(intent, **fields):
-    """按意图/场景只返回一句；模板里的 {place}/{end} 等槽用 fields 渲染。"""
-    items = fallback_pool(intent)
-    if not items:
-        return ""
-    template = items[0]
-    if not fields:
-        return template
-    try:
-        return template.format(**fields)
-    except (KeyError, IndexError, ValueError):
-        return template
+    """【产出 API，B2 已停用】固定句池退出生成链：永远返回空串。
+
+    签名保留是为了让旧调用点的空串哨兵语义显式（调用方必须自己处理空，
+    例如 amo_runtime_reply 的 `or 字面量`）；要读池数据用 fallback_pool，
+    要识别旧句用 is_fixed_rewrite/fixed_rewrite_bodies。
+    """
+    return ""
 
 
 def pick(intent, key, used=()):
-    """按 key 轮换注册表里的一句，跳过 used 里最近说过的；池非空时绝不返回空。"""
-    return pick_variant(str(key), fallback_pool(intent), used)
+    """【产出 API，B2 收窄】只保留 leak（安全挡话），其余意图一律返回空串。
+
+    为什么只留 leak：模型自曝/后台信息泄漏时必须有确定的一句把话题岔开
+    （amo_reply_pipeline._model_leak_deflection），而且这是「安全」而不是「语气」，
+    没有任何可交出口的替代文本；short/emotion/status/action/align 这些只是语气
+    兜底，停产出，空串交出口（chat 由 repair 重生成）。
+    """
+    if str(intent or "") != "leak":
+        return ""
+    return pick_variant(str(key), fallback_pool("leak"), used)
 
 
 def generic_bodies():
@@ -347,12 +366,20 @@ def pick_variant(key, pool, used):
 
 
 def short_fallback(umo, refs):
-    """整条都是复读时的短回复：轮换一句，且避开最近说过的话。"""
-    used = {compare_body(item) for item in (refs or ())}
-    return pick("short", "short:" + str(umo or ""), used)
+    """【产出 API，B2 已停用】删空不再换一句短话：返回空串（交出口）。
+
+    历史上这里按 umo 轮换 short 池、避开最近说过的话；现在整条复读=这一轮
+    没有可发的话，由 chat 出口 repair 重生成，非 chat 由调用方原文兜底。
+    """
+    return ""
 
 
 def emotion_hint(text):
+    """命中的情绪词（**只做识别**，不再据此取句）。
+
+    emotion.* 已降级为情绪词表：键=情绪词，数据留着让这里认得出情绪，
+    取句的 _emotion_fallback 已删除（B2）。
+    """
     body = str(text or "")
     for word, _pool in EMOTION_FALLBACKS:
         if word in body:
@@ -360,27 +387,15 @@ def emotion_hint(text):
     return ""
 
 
-def _emotion_fallback(umo, refs, hint):
-    word = emotion_hint(hint)
-    if not word:
-        return ""
-    used = {compare_body(item) for item in (refs or ())}
-    return pick("emotion." + word, "emo:%s:%s" % (str(umo or ""), word), used)
-
-
 def dedup_or_fallback(text, umo, refs):
-    """删重复整句；整条都重复时换短句（带情绪就保留同情绪）。"""
+    """删重复整句；整条都重复时返回空文本（B2：不再换短句/情绪句）。
+
+    返回 (文本, 删掉的句子)。文本可能为空串 = 这一轮没有可发的话，由出口决定
+    （chat 交给 repair 重生成，非 chat 由调用方原文兜底）；空串绝不被本函数填句。
+    """
     fixed, dropped = dedup_sentences(text, refs)
     if not dropped:
         return str(text or ""), dropped
-    hint = "".join(dropped)
-    emotion = emotion_hint(hint)
-    if emotion and emotion not in fixed:
-        extra = _emotion_fallback(umo, refs, hint)
-        if extra:
-            fixed = (fixed.rstrip() + extra) if fixed.strip() else extra
-    if not fixed.strip():
-        fixed = short_fallback(umo, refs)
     return fixed, dropped
 
 

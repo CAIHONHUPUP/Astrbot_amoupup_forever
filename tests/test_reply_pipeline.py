@@ -863,12 +863,18 @@ class AnswerKeptAfterDedupTests(unittest.TestCase):
         self.assertIn("17:00", final)
         self.assertIn("到家", final)
 
-    def test_emotion_repeat_without_answer_still_collapsed(self):
+    def test_emotion_repeat_without_answer_is_deleted_not_replaced(self):
+        # B2：整条都是复读 → 删空（不再换「我也想你呀。」这类情绪短句），空串交出口
+        # repair；判据不变：这一句仍被整句去重判成复读。
+        from domains.reply import repetition_guard as _rg
         plugin = _DedupRecentPlugin(["嗯嗯，我在家呢，想你"])
         out = pipeline.apply_narrative_repetition(
             "嗯嗯，我在家呢，想你", plugin, "想你", "dedup:emo")
-        self.assertNotEqual(out, "嗯嗯，我在家呢，想你")
-        self.assertIn("想你", out)
+        self.assertEqual(out, "")
+        fixed, dropped = _rg.dedup_sentences(
+            "嗯嗯，我在家呢，想你", [_rg.compare_body("嗯嗯，我在家呢，想你")])
+        self.assertEqual(fixed, "")
+        self.assertTrue(dropped)
 
 
 if __name__ == "__main__":

@@ -66,22 +66,25 @@ def test_sentence_repeat_is_dropped_but_other_sentence_kept():
     pipeline.begin_status_turn("dup1")
     out = pipeline.apply_narrative_repetition(
         "还没顾上吃呢。累死了，改了一天表格", plugin, "晚上想吃啥", "dup1")
+    # 判据不变：复读句删掉、另一句原样保留（答案优先于不复读）。
     assert "改了一天表格" not in out, out
     assert "还没顾上吃" in out, out
-    assert "累" in out, out  # 情绪句不跟着一起删没
     assert out.strip()
+    # B2：删掉的情绪句不再用固定情绪短句补回来（emotion 池已停产出），
+    # 情绪保留交给 chat 出口的 repair 重生成。
+    assert "今天确实有点累" not in out, out
 
 
-def test_whole_sentence_repeat_becomes_short_and_varies():
+def test_whole_sentence_repeat_is_deleted_not_replaced():
     plugin = _RecentPlugin([{"role": "bot", "content": "嗯嗯，我在家呢，想你"}])
+    # B2：整条都是复读 → 空串（不再换「我也想你呀。」这类情绪短句），交出口 repair。
     first = pipeline.apply_narrative_repetition(
         "嗯嗯，我在家呢，想你", plugin, "想你", "dup2")
-    assert first.strip() and first != "嗯嗯，我在家呢，想你"
-    assert "想你" in first  # 情绪保留
-    plugin.add_bot(first)
+    assert first == "", first
     second = pipeline.apply_narrative_repetition(
         "嗯嗯，我在家呢，想你", plugin, "我也想你", "dup2")
-    assert second.strip() and second != first
+    assert second == "", second
+    # 判据不变：不是复读的句子照常保留。
     pipeline.begin_status_turn("dup2")
     third = pipeline.apply_narrative_repetition(
         "马上睡了，再刷五分钟", plugin, "五分钟到了", "dup2")
@@ -112,11 +115,12 @@ def test_reverse_no_recent_history_keeps_sentence():
     assert pipeline.apply_narrative_repetition(raw, plugin, "想你", "dup5") == raw
 
 
-def test_segment_guard_replaces_repeat_and_keeps_distinct_segment():
+def test_segment_guard_deletes_repeat_and_keeps_distinct_segment():
     plugin = _RecentPlugin([{"role": "bot", "content": "好呀，我在呢。"}])
     pipeline.begin_status_turn("seg1")
+    # B2：整段复读 → 空串（send 阶段按空段跳过；chat 出口在 dedupe 之后还会修一次）。
     repeat = pipeline.apply_segment_repeat_guard("好呀，我在呢。", plugin, "seg1")
-    assert repeat.strip() and repeat != "好呀，我在呢。"
+    assert repeat == "", repeat
     distinct = pipeline.apply_segment_repeat_guard("刚泡了杯茶。", plugin, "seg1")
     assert distinct == "刚泡了杯茶。"
 
