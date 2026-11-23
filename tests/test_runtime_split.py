@@ -60,7 +60,8 @@ CODE_MD5 = {
     # 2026-11-23 3c-2：apply_chat_safety 之后多一处 await regenerate_forbidden（默认关）
     # 2026-11-23 3C：apply_chat_safety 之后多一次「空/罐头修复」hook（默认开，
     # 命中才调模型；命中修复时跳过上面的 regenerate_forbidden，保证一次出站一次调用）
-    "on_decorating_result": "9d4fd1b51f64c2c691878f901e2b68d2",
+    # 2026-11-23 3b-B1：守卫删空时不再提前 return，空串走 repair；raw 用守卫前原话
+    "on_decorating_result": "95fc7847aad276127012a96f2a6cbbcd",
     "_tick": "ac96fb9f0472533cfc38feb32d6a078e",
     "_maybe_daily_digest": "4acb3ce8497d6574eaed72b676066486",
     "warm_up": "511847b73896b66a6b03cb204c5832da",
@@ -69,7 +70,7 @@ CODE_MD5 = {
 FINGERPRINTS = {
     "on_message": "6da8d75162f656678fc8120b2a2dbee0",
     "_dynamic_context": "d080b5c312edaec7515e14c733698643",
-    "on_decorating_result": "3356720ca334375f8db0a60160a1e425",
+    "on_decorating_result": "067f37c5729c6852b52ec17040cacace",
     "_tick": "ea8ccbb018f28d852b20e7ef4c6f1644",
     "_maybe_daily_digest": "ee8626b0b24ac01c304112f7456abe22",
     "warm_up": "2e1a8372ae7b979ccade341cacff8811",

@@ -138,6 +138,9 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             text = strip_chat_format("".join(
                 comp.text for comp in result.chain if isinstance(comp, Comp.Plain)
             ))
+            # B1：守卫把回复删空/只剩动作时，空串必须能走到下面的 chat 出口修复。
+            # 先留一份进入守卫前的原话，修复失败时它就是「raw」兜底。
+            _raw_reply = text
             text = self._deco_soft_guards(event, text)
             text = self._deco_rewrite_reply(event, result, text)
             record_cls = getattr(Comp, "Record", None)
@@ -155,7 +158,8 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                 if callable(remember):
                     self._spawn(remember(event.unified_msg_origin, marker))
                 return
-            if not text.strip():
+            if not text.strip() and not _raw_reply.strip():
+                # 本来就没有文字（表情/图片-only）：保持原链不动，不白调一次模型。
                 return
             group = not event.is_private_chat()
             if not group:
@@ -182,7 +186,8 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             text = await self._deco_polish_native(event, result, text)
             text = await self._deco_text_cleanup(event, text)
             # 3C：留一份确定性守卫之前的原话（生成式修复拿它当「上一版」）+ 最近上下文。
-            _raw_text = text
+            # 守卫已经删空时用进入守卫前的原话（空串照样交给下面的 repair 重生成）。
+            _raw_text = text or _raw_reply
             _history = ""
             try:
                 try:
@@ -580,17 +585,14 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             _mark_date_end(self, text)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.on_decorating_result.date_end_cue", _amo_exc)
-        try:  # 动作-only：只有括号动作、没有一句人话时，补一句（2026-11-20）
+        try:  # 动作-only：只有括号动作、没有一句人话 → 交空串哨兵（B1，不再补台词）
             try:
-                from .amo_message import action_only_fallback as _action_fallback
                 from .amo_message import is_action_only as _action_only
             except ImportError:
-                from amo_message import action_only_fallback as _action_fallback
                 from amo_message import is_action_only as _action_only
             if _action_only(text):
-                fixed = _action_fallback(text, event.message_str or "")
-                logger.info("[amo] 动作-only 补一句: %s -> %s", text[:40], fixed[:40])
-                text = fixed
+                logger.info("[amo] 动作-only 整条丢弃（交出口修复）: %s", text[:40])
+                text = ""
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.on_decorating_result.action_only", _amo_exc)
         text = self._trim_reply(text)

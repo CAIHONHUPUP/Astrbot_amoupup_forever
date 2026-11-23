@@ -1054,7 +1054,10 @@ def validate_reply_assembly(text, plugin=None, umo="", user_text="", recent=None
             from .amo_reply_pipeline import complete_deleted_answer as _complete_answer
         except ImportError:
             from amo_reply_pipeline import complete_deleted_answer as _complete_answer
-        body = _complete_answer(body, plugin, umo, user_text, candidate=before_dedup)
+        # B1：补答守卫答不到时返回空串（chat 出口会 repair）；本函数是 chat/主动
+        # 共用出口，非 chat 来源必须「绝不发空」→ 用补答前的正文兜底。
+        body = _complete_answer(body, plugin, umo, user_text,
+                                candidate=before_dedup) or body
     except Exception as exc:  # cleanup: 问句补答失败保持删句结果
         logger.debug("[state] 出口问句补答失败: %s", exc)
     # task-40 候选优先：媒体标记/自我复读/场景剥离/收件人改写把完整候选改成

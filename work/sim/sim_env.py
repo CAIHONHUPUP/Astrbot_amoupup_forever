@@ -26,6 +26,7 @@ from __future__ import annotations
 import contextlib
 import datetime as _dt
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -38,6 +39,13 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
+import random as _random  # noqa: E402
+
+import mock_provider as _mock_provider  # noqa: E402
 import clock  # noqa: E402
 import amo_llm  # noqa: E402
 import amo_message  # noqa: E402
@@ -189,10 +197,34 @@ class FakeResult:
         self.chain = [_Plain(text)]
 
 
-class SimLLM:
-    """可复现的模拟 provider：只回答语气选择器，其余返回空（= 模型不可用）。"""
+#: 修复提示词里的问句 -> 问句意图（与 daily_checks.check_probe 的探针同名）。
+_PROBE_OF = (
+    ("when_return", re.compile(r"几点|什么时候回|回不回来|回不回家|到家呀|什么时候到家")),
+    ("where", re.compile(r"在哪|哪里|在不在家|到家了吗|到公司")),
+    ("doing", re.compile(r"干嘛|做什么|忙什么|在忙|忙不忙|偷懒")),
+    ("who", re.compile(r"跟谁|和谁|一个人|旁边有|有人吗|谁在一起")),
+    ("eaten", re.compile(r"吃了吗|吃了没|吃饭了没|吃的什么|吃啥")),
+)
 
-    def __init__(self):
+
+def _probe_of(user_text):
+    body = str(user_text or "")
+    for name, pattern in _PROBE_OF:
+        if pattern.search(body):
+            return name
+    return ""
+
+
+class SimLLM:
+    """可复现的模拟 provider：只回答语气选择器 + chat 出口的 repair 提示词。
+
+    修复路径（B1/3C）在 sim 里走 amo_message._send_to_umo -> repair_reply；这里用
+    mock_provider.clean_answer 按当前日程/场景给一句「会接话」的回复，模拟生产
+    真模型；其它 chat/chat_raw 调用仍返回空（= 模型不可用，走确定性兜底）。
+    """
+
+    def __init__(self, plugin=None):
+        self.plugin = plugin
         self.calls = 0
         self.general_calls = 0
         self.answers = []
@@ -212,8 +244,44 @@ class SimLLM:
     async def persona(self, umo):
         return ""
 
-    async def chat_raw(self, *args, **kwargs):
-        return ""
+    def _repair_answer(self, prompt):
+        """只处理 repair 提示词；返回一句和当前状态一致、能接住问句的话。"""
+        body = str(prompt or "")
+        if "问题：" not in body or "只输出一句话" not in body:
+            return ""
+        match = re.search(r"他刚说的是：([^\n]+)", body)
+        user = match.group(1).strip() if match else ""
+        if not user:
+            return ""
+        snap = {}
+        try:
+            snap = dict(self.plugin.state.current_activity() or {})
+        except Exception:
+            snap = {}
+        rng = _random.Random("repair:%s" % user)
+        probe = _probe_of(user)
+        if probe:
+            meal_ok = str(snap.get("category") or "") == "meal"
+            answer = _mock_provider.clean_answer(
+                probe, snap, meal_ok, bool(snap.get("together")), rng)
+        else:
+            answer = _mock_provider._pick(
+                rng, _mock_provider.TOPIC_REPLIES["daily"])
+        # 日程活动本身可能已带「在」（「在开会写周报」），模板再套一层会成
+        # 「在在开会…」；生产真模型不会这么写，这里按人话收一下。
+        answer = str(answer or "").replace("在在", "在")
+        activity = str(snap.get("verb") or snap.get("activity") or "")
+        if probe == "doing" and "歇" in activity:
+            # 「歇着」也是答「在干嘛」，换个常见说法，别把方言词当没答。
+            answer = "在休息呢，你呢？"
+        return answer
+
+    async def chat_raw(self, umo="", system="", prompt="", *args, **kwargs):
+        answer = self._repair_answer(prompt)
+        if answer:
+            self.general_calls += 1
+            self.answers.append(str(prompt or "")[:80])
+        return answer
 
 
 class SimPlugin(amo_message.MessageMixin, amo_llm.LlmMixin):
@@ -233,7 +301,7 @@ class SimPlugin(amo_message.MessageMixin, amo_llm.LlmMixin):
         self.wallet = FakeWallet()
         self.relation = "恋人"
         self.wardrobe = FakeWardrobe()
-        self.llm = SimLLM()
+        self.llm = SimLLM(self)
         self.context = FakeContext()
         self.segment_engine = None
         self.draw = None

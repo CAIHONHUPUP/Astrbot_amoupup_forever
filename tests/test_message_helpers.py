@@ -164,11 +164,12 @@ class ActionOnlyTests(unittest.TestCase):
         self.assertFalse(is_action_only("（笑）你少来。"))
         self.assertFalse(is_action_only("你少来。"))
 
-    def test_fallback_adds_words(self):
-        from amo_message import action_only_fallback
+    def test_fallback_no_longer_adds_words(self):
+        # B1：动作-only 不再补固定台词 → 空串（交出口 repair / 整段丢弃）。
+        from amo_message import action_only_fallback, is_action_only
         out = action_only_fallback("（耳朵有点热）")
-        self.assertIn("（耳朵有点热）", out)
-        self.assertTrue(len(out.splitlines()) >= 2)
+        self.assertEqual(out, "")
+        self.assertTrue(is_action_only("（耳朵有点热）"))  # 判据仍然成立
 
     def test_urge_strip_never_leaves_action_only(self):
         from amo_message import strip_repeated_urge

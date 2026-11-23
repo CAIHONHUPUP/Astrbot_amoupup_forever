@@ -129,9 +129,13 @@ class DoingWordTests(unittest.TestCase):
                      "在改代码，马上好。"):
             self.assertEqual(text, question.answer("在干嘛呢？", p, text))
 
-    def test_irrelevant_answer_still_uses_state_template(self):
+    def test_irrelevant_answer_returns_empty_not_state_template(self):
+        # B1：答非所问不再套状态模板（「敷面膜看书」已删）→ 空串交出口 repair；
+        # 判据仍然是 doing，答案词表没放宽。
         fixed = question.answer("在干嘛呢？", plugin(), "今天天气还行。")
-        self.assertIn("敷面膜看书", fixed)
+        self.assertEqual(fixed, "")
+        self.assertEqual(question._category("在干嘛呢？"), "doing")
+        self.assertFalse(question._answered("doing", "今天天气还行。"))
 
 
 class PlaceResidualTests(unittest.TestCase):

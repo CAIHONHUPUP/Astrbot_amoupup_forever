@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
-"""答到点上：问地点/动作/同伴/几点回/吃了吗时，回复不相关就用当前状态兜底（2026-11-22）。
+"""答到点上：判「他问的这类事情，这句回复答到了没有」（2026-11-22，task-3b B1 改）。
 
-不是替模型写话，而是在它答非所问时用唯一状态视图给一个事实短句。
+B1：本模块不再产出任何固定句（原来的 8 个 question.* 状态模板已删）。答非所问时
+返回空串哨兵，交 chat 出口的生成式修复（amo_reply_pipeline.repair_reply）重生成；
+判据 _category/_answered 全链路共用，一个字都没放宽。
 """
 from __future__ import annotations
 
 import re
-
-try:  # 统一兜底注册表（task-18）：问句兜底模板唯一来源
-    from .domains.reply import repetition_guard as _fallbacks
-except ImportError:  # 直接按文件加载时
-    from domains.reply import repetition_guard as _fallbacks
 
 # 意图词表按「问的是哪类事实」归纳，不绑定某一句样例；同一意图下面是这种问法
 # 的常见口语集合（含「你在家吗 / 到公司了吗 / 你是不是在偷懒」这类是非问），
@@ -40,13 +37,6 @@ _DOING_ANSWERS = (
     "在", "忙", "做", "弄", "写", "看", "吃", "睡",
     "打", "改", "敲", "代码", "程序", "编程",
 )
-
-
-def _act(plugin):
-    try:
-        return plugin.state.current_activity() or {}
-    except Exception:
-        return {}
 
 
 #: 第三人称作主语的陈述不是「问她本人」：例如「我同事今天摸鱼一整天」里出现了
@@ -95,10 +85,13 @@ def _answered(category, reply):
 
 
 def answer(text, plugin, reply, candidate=""):
-    """答非所问时用当前状态兜底；本轮候选已经答到这类问题，就不许整条覆盖它。
+    """答非所问时返回空串哨兵（B1：不再用状态模板整条替换）。
 
-    candidate = 进入破坏性改写前的原始候选（task-29 后置语义复检入口之一）：
-    上游守卫可能把候选删坏或换成通用句，状态模板只能在候选也答不到时才顶上去。
+    判据不变：_category 分类，_answered 判「这句有没有答到这类事」。
+    - reply 答到了 / 不是可判定的问句 → 原样返回（guard 不改正常回复）；
+    - 本轮候选（进入破坏性改写前的原文）答到了 → 返回候选（候选优先于任何改写）；
+    - 都没答到 → **空串**，交给 chat 出口的生成式修复重生成；失败由出口回退原文。
+      plugin 参数保留以兼容调用方（状态视图不再用来造句）。
     """
     category = _category(text)
     if not category or _answered(category, reply):
@@ -106,34 +99,4 @@ def answer(text, plugin, reply, candidate=""):
     candidate = str(candidate or "").strip()
     if candidate and _answered(category, candidate):
         return candidate
-    act = _act(plugin)
-    place = str(act.get("place") or "")
-    zone = str(act.get("zone") or "")
-    doing = str(act.get("activity") or "")
-    if category == "where":
-        return _fallbacks.sentence("question.where", place=place or "外面")
-    if category == "doing":
-        doing = doing or "忙点事"
-        if doing.startswith("在"):
-            # 状态里的活动本身带「在」（「在酒店休息」），模板再套一层会成
-            # 「我在在酒店休息。」（审计 3.2.3 真实模型层样例）。
-            return "我在%s。" % doing[1:]
-        return _fallbacks.sentence("question.doing", doing=doing)
-    if category == "who":
-        if act.get("together") or act.get("companion"):
-            who = str(act.get("companion") or "朋友")
-            return _fallbacks.sentence("question.who", who=who)
-        return _fallbacks.sentence("question.alone")
-    if category == "when":
-        if zone.startswith("home") or "家" in place:
-            return _fallbacks.sentence("question.when_home")
-        end = str(act.get("end") or "").strip()
-        if place:
-            return _fallbacks.sentence("question.when_route", place=place,
-                                       end=(end + " ") if end else "晚点")
-        return _fallbacks.sentence("question.when_late")
-    if category == "eaten":
-        if str(act.get("category") or "") == "meal" or "吃" in doing:
-            return _fallbacks.sentence("question.eaten")
-        return _fallbacks.sentence("question.not_eaten")
-    return reply
+    return ""

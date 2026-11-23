@@ -16,7 +16,8 @@ import amo_reply_pipeline as pipeline  # noqa: E402
 import amo_state_consistency as consistency  # noqa: E402
 from domains.reply import repetition_guard as registry  # noqa: E402
 
-#: 问句兜底：注册表模板渲染结果必须和 task-18 之前的固定句逐字一致。
+#: 问句模板仍在注册表里（数据未动，B2 才收缩）。B1 已删「调用方取模板造句」，
+#: 这里保留数据期望，用来证明删的是产出、不是数据/识别集。
 QUESTION_CASES = (
     ("where", {"place": "公司"}, "你在哪？", {"place": "公司"}, "我在公司呢。"),
     ("doing", {"place": "公司", "activity": "改方案"}, "你在干嘛？", {"doing": "改方案"},
@@ -73,7 +74,8 @@ class RegistryShapeTests(unittest.TestCase):
 
     def test_registry_is_shared_by_callers(self):
         self.assertIs(pipeline._fallbacks.FALLBACKS, registry.FALLBACKS)
-        self.assertIs(amo_question_guard._fallbacks.FALLBACKS, registry.FALLBACKS)
+        # B1：问句守卫不再取模板造句（判据移出注册表依赖），只剩判据函数。
+        self.assertFalse(hasattr(amo_question_guard, "_fallbacks"))
         self.assertEqual(tuple(consistency._GENERIC_REPLIES),
                          tuple(registry.FALLBACKS["scene_generic"]))
 
@@ -93,18 +95,21 @@ class RegistryShapeTests(unittest.TestCase):
 
 
 class ActionFallbackTests(unittest.TestCase):
-    def test_action_fallback_comes_from_registry(self):
+    def test_action_fallback_no_longer_renders_registry_lines(self):
+        # B1：动作-only 不再补台词（空串哨兵）；action.* 数据留给识别集（B2 才动）。
         import amo_message
         cases = (("（耳朵有点热）", "action.shy"), ("（笑）", "action.laugh"),
                  ("（把手机放下）", "action.default"))
         for text, key in cases:
-            out = amo_message.action_only_fallback(text)
-            line = out.splitlines()[-1]
-            self.assertIn(line, registry.FALLBACKS[key], (text, out))
+            with self.subTest(key=key):
+                self.assertTrue(registry.FALLBACKS[key])   # 数据仍在
+                self.assertEqual(amo_message.action_only_fallback(text), "")
+                self.assertTrue(amo_message.is_action_only(text))  # 判据仍在
 
 
 class CallerParityTests(unittest.TestCase):
-    def test_question_answer_still_uses_one_registry_sentence(self):
+    def test_question_answer_no_longer_renders_registry_sentence(self):
+        # B1：答非所问 → 空串（交出口 repair）；注册表里的问句模板数据原样保留。
         for key, act, question, render, expected in QUESTION_CASES:
             with self.subTest(key=key):
                 activity = {"place": act.get("place"),
@@ -114,7 +119,7 @@ class CallerParityTests(unittest.TestCase):
                             "companion": act.get("companion", ""),
                             "end": act.get("end", "")}
                 self.assertEqual(amo_question_guard.answer(question, _plugin(activity), "跑题了。"),
-                                 expected)
+                                 "")
                 self.assertEqual(registry.sentence("question." + key, **render), expected)
 
     def test_pipeline_generic_detection_comes_from_registry(self):

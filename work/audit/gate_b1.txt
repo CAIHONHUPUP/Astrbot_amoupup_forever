@@ -1,0 +1,10 @@
+# B1 门禁与四件套（2026-11-23）
+
+删除四类固定句产出（question 8 模板 / action 台词 / status_repeat / 或原文兜底），空串交给 chat 出口 repair；
+repair 接到 amo_message._send_to_umo（生产与模拟器同路径），并带三项安全约束（生成句过 purchase+fact、
+修复句登记防覆盖、protected 跳过）。
+
+- 门禁 exit 0（981.3s）：6445 passed / 0 failed / 7 skipped / 287 subtests；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
+- 四件套：daily 50/50、614/614（turns_failed 0、probe 5 维 0、contradiction 0）；share 500/100%（damaged 0、persistent 0）；remind 240/240；adversarial 39/39
+- 回放：narration_after 0、fixed 23、persistent 4（2078/2149/2223/2281）——这 4 条现在需要真模型重写，回放无真模型，按预期记录
+- 模拟器：SimLLM.chat_raw 只对 repair 提示词作答（模拟真模型），其余仍空；回放走 addressee 时只在 reason 非空才是真丢弃

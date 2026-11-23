@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sqlite3
 import sys
 import types
 import unittest
@@ -29,6 +30,8 @@ import astrbot_stub  # noqa: E402
 astrbot_stub.install()
 
 import amo_reply_pipeline as pipeline  # noqa: E402
+import amo_state_consistency as SC  # noqa: E402
+from amo_rewrite_safety import remember_candidate  # noqa: E402
 from amo_shared import Comp  # noqa: E402
 from amo_runtime_reply import RuntimeReplyMixin  # noqa: E402
 
@@ -60,6 +63,24 @@ class _SpyLLM:
 
 def _plugin(llm):
     return types.SimpleNamespace(llm=llm)
+
+
+def _rich_plugin(llm):
+    """带账本/场景的最小插件：purchase/fact 守卫探针要用。"""
+
+    class _DB:
+        def __init__(self):
+            self.conn = sqlite3.connect(":memory:")
+            self.conn.execute(
+                "create table wallet_ledger (ts real, delta_cents int, item_name text)")
+            self.conn.commit()
+
+    plugin = types.SimpleNamespace(llm=llm)
+    plugin.db = _DB()
+    plugin.state = types.SimpleNamespace(
+        current_activity=lambda: {"place": "家", "zone": "home"})
+    plugin._recent = lambda umo, n=8: []
+    return plugin
 
 
 def _repair(raw, guarded, llm, **kwargs):
@@ -369,6 +390,129 @@ class RuntimeWiringTests(unittest.TestCase):
                       source)
         self.assertLess(source.index(hook),
                         source.index("await _reply_pipeline.regenerate_forbidden("))
+
+
+class QuestionGuardEmptyExitTests(unittest.TestCase):
+    """B1 集成：问句答非所问 → 空串 → chat 出口 repair → 最终非模板非空。"""
+
+    def setUp(self):
+        pipeline.reset_repair_stats()
+        pipeline.reset_forbidden_regen_stats()
+        pipeline.reset_repetition_memory()
+
+    def tearDown(self):
+        pipeline.reset_repair_stats()
+        pipeline.reset_forbidden_regen_stats()
+        pipeline.reset_repetition_memory()
+
+    def test_chat_safety_returns_empty_for_unanswered_question(self):
+        # 问句守卫不再套模板：答非所问 → 空串（不 or 原文），交出口修复。
+        # 「在哪」由场景守卫（state_consistency._ensure_where_answer）补地点——那是
+        # 宪法层，不属 B1；这里用同样可判定的 doing 问句验证问句守卫本身。
+        plugin = _RuntimePlugin(_SpyLLM(reply=FRESH))
+        self.assertEqual(pipeline.apply_chat_safety(
+            "今天天气不错。", plugin, UMO, "你在干嘛呀？"), "")
+        self.assertEqual(pipeline.apply_chat_safety(
+            "今天天气不错。", plugin, UMO, "吃了吗？"), "")
+
+    def test_unanswered_question_regenerated_at_chat_exit(self):
+        llm = _SpyLLM(reply=FRESH)          # 假 LLM 会接话
+        plugin = _RuntimePlugin(llm)
+        event = _FakeEvent("你在干嘛呀？", "今天天气不错。")
+        asyncio.run(plugin.on_decorating_result(event))
+        self.assertEqual(1, len(llm.calls), "空串必须真的送到出口 repair")
+        self.assertEqual(pipeline.repair_stats(), {"ok": 1})
+        self.assertTrue(plugin.sent, "最终必须发出消息")
+        final = plugin.sent[-1]
+        self.assertTrue(final.strip(), "最终不能是空")
+        self.assertNotEqual(final, "今天天气不错。")
+        # 不是问句模板（is_canned_reply 覆盖 question.* 模板样例）。
+        self.assertFalse(pipeline.is_canned_reply(final), final)
+        self.assertEqual(final, FRESH)
+
+
+class RepairSafetyProbeTests(unittest.TestCase):
+    """3b-C：修复句采用前的 purchase/fact 宪法探针。"""
+
+    def setUp(self):
+        pipeline.reset_repair_stats()
+        pipeline.reset_repetition_memory()
+
+    def tearDown(self):
+        pipeline.reset_repair_stats()
+        pipeline.reset_repetition_memory()
+
+    def test_generated_purchase_claim_is_not_adopted(self):
+        # 假 LLM 补出「买了…649元」：账本没这笔 → 不采用，回退 raw，绝不带金额/已购。
+        llm = _SpyLLM(reply="我买了米白色针织开衫，花了649元。")
+        plugin = _decorate("今天天气不错。", "", llm,
+                           message_str="你买那件开衫了吗？")
+        self.assertEqual(len(llm.calls), 1)
+        self.assertTrue(plugin.sent)
+        final = plugin.sent[-1]
+        self.assertEqual(final, "今天天气不错。")
+        self.assertNotIn("买了", final)
+        self.assertNotIn("649", final)
+        self.assertEqual(pipeline.repair_stats(), {"fail_guard": 1})
+
+    def test_generated_fact_conflict_is_not_adopted(self):
+        # 此刻在家，修复句却说在商场 → fact 守卫要改口 → 整句不采用。
+        plugin = _rich_plugin(_SpyLLM(reply="我在商场逛街呢，刚试了件衣服。"))
+        out = asyncio.run(pipeline.repair_reply(
+            "今天天气不错。", "", plugin, UMO, user_text="你在哪？"))
+        self.assertEqual(out, "今天天气不错。")
+        self.assertEqual(pipeline.repair_stats(), {"fail_guard": 1})
+
+
+class RepairedCandidateSwapTests(unittest.TestCase):
+    """3b-C：repair 成功后候选换成修复句，send 段复检/去重不许用旧候选覆盖。"""
+
+    def setUp(self):
+        pipeline.reset_repair_stats()
+        pipeline.reset_repetition_memory()
+
+    def tearDown(self):
+        pipeline.reset_repair_stats()
+        pipeline.reset_repetition_memory()
+
+    def test_repaired_sentence_survives_validate_and_dedupe(self):
+        fresh = "我刚到家，正换鞋呢，今天有点累。"
+        old = "我买了米白色针织开衫，花了649元。"
+        question = "你买那件开衫了吗？"
+        plugin = _rich_plugin(_SpyLLM(reply=fresh))
+        pipeline.apply_narrative_repetition(old, plugin, question, UMO)
+        remember_candidate(plugin, UMO, old)        # 装饰链入口登记旧候选
+        out = asyncio.run(pipeline.repair_reply(
+            old, "嗯，我在呢。", plugin, UMO, user_text=question))
+        self.assertEqual(out, fresh)
+        self.assertEqual(pipeline._turn_candidate(UMO), fresh)  # 候选已换位
+        # send 段：旧候选答到他会把修复句换回「我还没买…」；换位后必须原样保住。
+        self.assertEqual(
+            SC.validate_reply_assembly(out, plugin, umo=UMO, user_text=question), fresh)
+        self.assertEqual(
+            "".join(SC.dedupe_reply_segments([out], plugin=plugin, umo=UMO)), fresh)
+
+
+class RepairProtectedSkipTests(unittest.TestCase):
+    """3b-C：安全产物（还没买 / leak 挡话）不进 repair：不调模型、不二次改写。"""
+
+    def setUp(self):
+        pipeline.reset_repair_stats()
+        pipeline.reset_repetition_memory()
+
+    def tearDown(self):
+        pipeline.reset_repair_stats()
+        pipeline.reset_repetition_memory()
+
+    def test_protected_guarded_is_skipped_without_model_call(self):
+        for guarded in ("我试了试，挺喜欢的，还没买。", "我还没买那件针织开衫。"):
+            with self.subTest(guarded=guarded):
+                pipeline.reset_repair_stats()
+                llm = _SpyLLM(reply=FRESH)
+                out = _repair("今天天气不错。", guarded, llm)
+                self.assertEqual(out, guarded)
+                self.assertEqual(llm.calls, [])          # 一次模型都没调
+                self.assertEqual(pipeline.repair_stats(), {"skip_protected": 1})
 
 
 if __name__ == "__main__":

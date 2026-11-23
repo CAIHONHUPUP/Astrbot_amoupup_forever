@@ -1058,6 +1058,10 @@ _TURN_USER_TEXT: Dict[str, Any] = {}
 #: 本轮「原始候选」：(轮次, 进入去重层时的回复)。
 #: 只给 apply_chat_safety 最后一道守卫用：候选已经答到点上，就不许被通用兜底句覆盖。
 _TURN_SOURCE: Dict[str, Any] = {}
+#: 本轮「修复句候选」：(轮次, repair_reply 采用的句子)。
+#: repair 在 exit 段之后、send 段之前跑；不换候选的话 validate/dedupe 的
+#: 复检会拿旧候选把修复句盖掉（analyst-m G23 实测）。
+_TURN_REPAIRED: Dict[str, Any] = {}
 #: 通用兜底句：她这一轮其实没答上来时用的占位话。整条回复归一化后等于其中一句，就算兜底。
 #: 「候选优先于兜底」是数据发出的单一优先级，不再让各守卫各写一份「保留原句」补丁。
 #: 句子本身只在 domains.reply.repetition_guard.FALLBACKS["generic"] 一处维护。
@@ -1073,9 +1077,11 @@ def reset_repetition_memory(umo=""):
     if umo:
         _TURN_USER_TEXT.pop(str(umo), None)
         _TURN_SOURCE.pop(str(umo), None)
+        _TURN_REPAIRED.pop(str(umo), None)
     else:
         _TURN_USER_TEXT.clear()
         _TURN_SOURCE.clear()
+        _TURN_REPAIRED.clear()
     reset_semantic_recheck_stats()
 
 
@@ -1268,15 +1274,49 @@ def _is_any_fallback(text):
 
 
 def _turn_candidate(umo):
-    """本轮进入去重层时的原始候选；只认本轮（跨轮候选不许盖这一轮）。"""
+    """本轮候选；只认本轮（跨轮候选不许盖这一轮）。
+
+    repair 采用修复句后优先返回修复句（_TURN_REPAIRED）：send 段的复检/候选优先
+    必须以修复句为准，不能再用旧候选把修复结果盖掉（analyst-m G23）。
+    """
     key = str(umo or "").strip()
+    active = _ACTIVE_TURN.get(key)
+    repaired = _TURN_REPAIRED.get(key)
+    if repaired is not None:
+        turn, fresh = repaired
+        if turn == active:
+            return str(fresh or "")
+        _TURN_REPAIRED.pop(key, None)
     entry = _TURN_SOURCE.get(key)
     if not entry:
         return ""
     turn, original = entry
-    if turn != _ACTIVE_TURN.get(key):
+    if turn != active:
         return ""
     return str(original or "")
+
+
+def mark_turn_repaired(plugin, umo, text):
+    """repair 成功后把本轮候选同步成修复句（候选 store + 本轮候选表）。
+
+    - _turn_candidate → 修复句：validate 的 _post_recheck / chat_safety 复检不再还原旧候选；
+    - amo_rewrite_safety.remember_candidate → 修复句：recover_rewrite_damage 也不会用旧候选。
+    """
+    key = str(umo or "").strip()
+    body = str(text or "").strip()
+    if not key or not body:
+        return
+    turn = _ACTIVE_TURN.get(key)
+    if turn is not None:
+        _TURN_REPAIRED[key] = (turn, body)
+    try:
+        try:
+            from .amo_rewrite_safety import remember_candidate as _remember
+        except ImportError:
+            from amo_rewrite_safety import remember_candidate as _remember
+        _remember(plugin, key, body)
+    except Exception as _amo_exc:  # cleanup: 登记失败不影响发送，复检会退回旧候选
+        _note_swallowed("amo_reply_pipeline.mark_turn_repaired", _amo_exc)
 
 
 def _media_clean(text):
@@ -1411,11 +1451,12 @@ def final_semantic_recheck(text, plugin=None, umo="", user_text="", original=Non
 
 
 def complete_deleted_answer(text, plugin=None, umo="", user_text="", candidate=""):
-    """整句删除/替换后出口补答：他这一问的答案被删掉/只剩兜底时补回来。
+    """整句删除/替换后出口补答：他这一问的答案被删掉时把候选要回来。
 
-    问句守卫是「答到点上」的唯一实现（含状态兜底模板）；删句层（分段去重/场景剥离）
-    不该为了补答再复制一份模板，统一从这里进。candidate 传删句前的正文：它答到了
-    就把答案原样要回来（答案优先于不复读），没答到才用状态模板补一句。
+    问句守卫是「答到点上」的唯一判据；删句层（分段去重/场景剥离）不该为了补答再
+    复制一份模板，统一从这里进。candidate 传删句前的正文：它答到了就把答案原样
+    要回来（答案优先于不复读）。B1：都没答到时返回**空串**（不再用状态模板填一句）；
+    调用方自己决定是否用原文兜底——chat 走出口 repair，非 chat 必须保留原文。
     """
     try:
         try:
@@ -1490,6 +1531,9 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
     """聊天回复的「最后一道确定性守卫」（2026-11-21 审计：聊天不走 send 阶段）。
 
     只跑确定性改写，不调模型：极端/暴力词 → 身份 → 人名 → 消费 → 反催问。
+    B1 出口契约：守卫把回复删空时返回**空串**（不再用「or 原文」把删掉的内容
+    捞回来），空串由 chat 出口 repair（amo_reply_pipeline.repair_reply）重生成；
+    修复失败才回退「guarded or raw」。非 chat 来源不调用本函数。
     """
     value = str(text or "")
     # 本轮他真正问的那句以登记表为准（apply_narrative_repetition 已登记）：调用方
@@ -1497,15 +1541,8 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
     # 改成上一轮的答案（task-36 回归：send 阶段扫近聊取到更早的 user 行）。
     user_text = _turn_question(umo) or str(user_text or "")
     if not value.strip():
-        try:
-            try:
-                from .amo_question_guard import answer as _empty_answer
-            except ImportError:
-                from amo_question_guard import answer as _empty_answer
-            value = _empty_answer(str(user_text or ""), plugin, "")
-        except Exception as exc:
-            logger.debug("[amo] chat_safety.empty 失败: %s", exc)
-        return value
+        # 空串进、空串出：不再用问句模板补一句固定话（B1），交出口 repair 重生成。
+        return ""
     try:
         try:
             from .amo_share_ledger import mark_reacted as _mark_reacted
@@ -1609,12 +1646,26 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
             from .amo_question_guard import answer as _question_answer
         except ImportError:
             from amo_question_guard import answer as _question_answer
-        # 问句模板是「整条替换」：本轮候选已经答到这类问题（严格判据/通用答案
-        # 规则任一命中）时，模板不许顶上去——当前文本答不到就交给出口的语义复检
-        # 还原候选，而不是先用状态模板把候选盖掉。
+        # B1：问句守卫不再套模板，答非所问时返回空串。本轮候选已经答到这类问题
+        # （严格判据/通用答案规则任一命中）时，候选优先；当前文本也答不到就保持
+        # 空串往出口走（repair 重生成，失败回退 raw），而不是盖一句固定状态话。
         _candidate = _media_clean(_turn_candidate(umo))
         _candidate_answers = bool(_candidate) and _answered_intent(_candidate, user_text)
-        if not _candidate_answers:
+        # 「在哪」已在正文里给出此刻地点（场景守卫刚补的「我在面馆呢」）就算答到：
+        # 地点词表覆盖不到的场景地名，不许被问句守卫当成没答而删空。
+        _where_answered = False
+        try:
+            from .amo_question_guard import _category as _q_category
+        except ImportError:
+            from amo_question_guard import _category as _q_category
+        try:
+            _current_place = str(
+                (plugin.state.current_activity() or {}).get("place") or "").strip()
+        except Exception:
+            _current_place = ""
+        if _current_place and _q_category(str(user_text or "")) == "where":
+            _where_answered = _current_place in str(value or "")
+        if not _candidate_answers and not _where_answered:
             value = _question_answer(
                 str(user_text or ""), plugin, value, candidate=_candidate)
     except Exception as exc:
@@ -1636,7 +1687,8 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
         _note_nat(value)
     except Exception as _amo_exc:  # cleanup: 埋点失败绝不影响发送
         logger.debug("[amo] naturalness note failed: %s", _amo_exc)
-    return value.strip() or str(text or "")
+    # B1：删空就是删空（不再用「or 原文」复活被守卫删掉的句子），空串交出口 repair。
+    return value.strip()
 
 
 def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
@@ -1644,15 +1696,16 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
 
     1) 他问吃啥：第一句先答吃了什么（事实只读唯一视图）；
     2) 最近 3 条 bot 消息说过的状态（药/等车/打车/在医院/回家），同一状态最多
-       留 1 句；全删空时压成「还是老样子」，不整句复读。
+       留 1 句；全删空时**返回空串**（B1：不再压成「还是老样子。」），由 chat
+       出口的生成式修复重生成；非 chat 来源不会走到这里（它们用原文兜底）。
     """
     value = str(text or "")
     if not value.strip():
         return value
     turn = begin_status_turn(umo)
     _TURN_USER_TEXT[str(umo or "").strip()] = (turn, str(user_text or ""))
-    # 记下「进入去重层时的原始候选」：后面去重/地点/问句守卫都可能把整条换成
-    # 通用兜底句，唯一优先级在 apply_chat_safety 里裁决（候选答到点上就还原）。
+    # 记下「进入去重层时的原始候选」：后面去重/地点/问句守卫都可能把整条换掉，
+    # 唯一优先级在 apply_chat_safety 里裁决（候选答到点上就还原）。
     _TURN_SOURCE[str(umo or "").strip()] = (turn, value)
     value = _answer_food_first(value, plugin, user_text, now)
     if FOOD_QUESTION_RE.search(str(user_text or "")):
@@ -1660,14 +1713,11 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
     said = _status_said(umo, now, count=3)
     for line in _repeat_guard.recent_bot_texts(plugin, umo, 5):
         said.update(status_tokens(line))
-    fixed, dropped = _drop_repeated_status(value, said)
-    if dropped and not fixed.strip():
-        # 纯状态重复先压成短句；这句能不能盖掉候选，只由 apply_chat_safety 的
-        # 单一优先级裁决（候选答到点上就还原候选），这里不再各判一次答案。
-        fixed = _fallbacks.sentence("status_repeat")
+    fixed, _dropped = _drop_repeated_status(value, said)
     # 整句级复读：和最近 3-5 条 bot 消息相同/≥0.9 相似的句子直接删；整条重复换短句。
     # 但删句不能把对他的回答一起删掉（「刚吃完饭，好撑。你呢？」不能只剩「你呢？」）。
-    before_dedup = fixed or value
+    # B1：状态句全删空就保持空串，不再「or 原文」把复读捞回来。
+    before_dedup = fixed
     refs = _repeat_guard.recent_reference(plugin, umo, DEDUP_WINDOW)
     fixed, repeated = _repeat_guard.dedup_or_fallback(before_dedup, umo, refs)
     fixed = _keep_answer(before_dedup, fixed, user_text, repeated)
@@ -1683,14 +1733,15 @@ def apply_narrative_repetition(text, plugin, user_text="", umo="", now=None):
             from done_action_guard import filter_contradictions as _drop_contradictions
         _done = _done_actions(_repeat_guard.recent_bot_texts(plugin, umo, 12))
         if _done:
-            _guarded = _drop_contradictions(fixed or value, _done).strip()
+            _guarded = _drop_contradictions(fixed, _done).strip()
             if _guarded:
                 fixed = _guarded
     except Exception as _amo_exc:
         logger.debug("[dedup] 完成动作一致性检查失败: %s", _amo_exc)
-    # 整句/状态去重是「整句删除」守卫：删完再判一次「还答不答得上他这一句」，
-    # 答不上就把本轮候选要回来（答案优先于不复读，且不许被「还是老样子」覆盖）。
-    return final_semantic_recheck(fixed or value, plugin, umo, user_text, original=value)
+    # 整句/状态去重是「整句删除」守卫：删完再判一次「还答不答得上他这一句」。
+    # 本轮候选真答到了就还原候选（答案优先于不复读）；否则空串继续往出口走，
+    # 交给 repair 重生成（B1：不再用 status_repeat 整条压住）。
+    return final_semantic_recheck(fixed, plugin, umo, user_text, original=value)
 
 
 def apply_proactive_dedup(text, plugin, umo="", now=None):
@@ -2060,6 +2111,57 @@ def needs_repair(guarded):
         return False
 
 
+#: 修复句采用前的宪法探针（3b-C 补洞）：这些守卫会改口 = 这句与账本/此刻场景矛盾。
+_REPAIR_GUARD_POINTS = {
+    "purchase": "模型补出来的句子在说自己买了东西/花了钱，但账本里没有这笔消费",
+    "fact": "模型补出来的句子和此刻的地点/事实对不上",
+}
+
+
+def _repair_guard_reason(fresh, plugin):
+    """采用修复句前再跑 purchase + fact 守卫（analyst-m probe_repair_acceptance）。
+
+    只判「守卫会不会改这句」：改了说明这句和账本/此刻场景矛盾，整句不采用
+    （fail-open 到 guarded or raw），绝不把守卫改过的版本发出去。
+    """
+    body = str(fresh or "").strip()
+    if not body:
+        return "empty"
+    try:
+        try:
+            from .amo_purchase_guard import rewrite as _purchase_rewrite
+        except ImportError:
+            from amo_purchase_guard import rewrite as _purchase_rewrite
+        fixed = str(_purchase_rewrite(body, plugin) or "").strip()
+        if not fixed or fixed != body:
+            return "purchase"
+    except Exception as _amo_exc:  # cleanup: 探针异常不阻断（fail-open 到原行为）
+        _note_swallowed("amo_reply_pipeline.repair.guard.purchase", _amo_exc)
+    # apply_fact_guard 命中冲突时会记 _tone_pick_pending（B 方案待选）；探针不该留下
+    # 这个副作用，跑完恢复原值（原来没有就清掉）。
+    pending = getattr(plugin, "_tone_pick_pending", None)
+    try:
+        fixed = str(apply_fact_guard(body, plugin) or "").strip()
+    except Exception as _amo_exc:  # cleanup: 探针异常不阻断
+        _note_swallowed("amo_reply_pipeline.repair.guard.fact", _amo_exc)
+        fixed = body
+    finally:
+        try:
+            plugin._tone_pick_pending = pending if pending is not None else None
+        except Exception as _amo_exc:  # cleanup: 插件禁止写属性就放弃恢复
+            _note_swallowed("amo_reply_pipeline.repair.guard.pending", _amo_exc)
+    if not fixed:
+        return "fact"
+    if fixed != body:
+        # 只把「改口」判不安全：守卫在原文外面补词（「看电影呢」→「一起看电影呢」）
+        # 仍是同一事实，可以发；把内容换掉（地点/吃饭/同伴/金额）才不采用。
+        old_body = _compare(body)
+        new_body = _compare(fixed)
+        if not old_body or old_body not in new_body:
+            return "fact"
+    return ""
+
+
 _REPAIR_POINTS = {
     "empty": "上一版被守卫删空了，一句能发的话都没剩下",
     "canned": "上一版是固定模板句（罐头句），不是真的在接他的话",
@@ -2087,12 +2189,24 @@ def _repair_prompt(reason, raw, guarded, user_text="", history=""):
 
 
 def _repair_fallback(raw, guarded):
-    """失败绝不吞回复：能发 guarded 就发 guarded，否则退回守卫前的原话。"""
-    for item in (guarded, raw):
-        text = str(item or "")
-        if text.strip():
-            return text
-    return ""
+    """失败绝不吞回复：能发 guarded 就发 guarded，否则退回「洗过一遍旁白」的原话。
+
+    直接退回 raw 会把守卫刚删掉的动作旁白又带回来（回放 narration_after 0→2），
+    所以 raw 至少先过 strip_action_narration；仍为空才真的不发。
+    """
+    text = str(guarded or "")
+    if text.strip():
+        return text
+    text = str(raw or "")
+    try:
+        try:
+            from .amo_persona_guard import strip_action_narration as _strip_narration
+        except ImportError:
+            from amo_persona_guard import strip_action_narration as _strip_narration
+        text = str(_strip_narration(text) or "")
+    except Exception:  # cleanup: 剥离失败就用原话，至少不吞回复
+        text = str(raw or "")
+    return text.strip()
 
 
 async def repair_reply(raw, guarded, plugin, umo="", user_text="", history="",
@@ -2103,8 +2217,19 @@ async def repair_reply(raw, guarded, plugin, umo="", user_text="", history="",
     没有可用 LLM、或这条不是空/罐头/串味时都 **不调模型**、原样返回（开关关 =
     行为零变化）。同一次出站最多一次模型调用：needs_repair() 命中后 runtime 会
     跳过 regenerate_forbidden。
+
+    3b-C 安全边界：
+    - guarded 已是安全产物（_protected_current：还没买/leak 挡话）→ 直接跳过；
+    - 采用前再过 purchase_guard + apply_fact_guard：被改口 = 与账本/此刻场景矛盾，
+      整句不采用（fail_guard，回退 guarded or raw）；
+    - 采用后 mark_turn_repaired：send 段复检/候选优先以修复句为准，不再用旧候选覆盖。
     """
     body = str(guarded or "")
+    # 安全产物（「还没买」/leak 挡话/角色挡话）跳过：修了也会被 send 段改回，
+    # 还可能把 raw 里的假事实重新带回来 → 不调模型、不二次改写。
+    if _protected_current(body):
+        _bump_repair("skip_protected")
+        return body
     reason = repair_failure(body)
     if not reason:
         return body                           # 正常句：不计数、不调模型
@@ -2147,7 +2272,16 @@ async def repair_reply(raw, guarded, plugin, umo="", user_text="", history="",
     if (not fresh or is_canned_reply(fresh) or forbidden_hits(fresh)):
         _bump_repair("fail")
         return _repair_fallback(raw, body)
+    # 3b-C：生成句还要过 purchase/fact 守卫；被改口 = 与账本/场景矛盾 → 不采用。
+    guard_reason = _repair_guard_reason(fresh, plugin)
+    if guard_reason:
+        logger.info("[amo] 修复句未过宪法守卫（%s：%s），不采用: %s",
+                    guard_reason, _REPAIR_GUARD_POINTS.get(guard_reason, ""), fresh[:60])
+        _bump_repair("fail_guard")
+        return _repair_fallback(raw, body)
     _bump_repair("ok")
+    # send 段复检/候选优先改用修复句，不再拿旧候选把它盖掉（analyst-m G23）。
+    mark_turn_repaired(plugin, umo, fresh)
     logger.info("[amo] 空/罐头回复已重生成 reason=%s text=%s", reason, fresh[:80])
     return fresh
 

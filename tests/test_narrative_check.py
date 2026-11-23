@@ -396,12 +396,15 @@ class RepetitionTests(unittest.TestCase):
         self.assertLessEqual(repeated, 1, sent)
 
     def test_cross_turn_repeat_collapsed(self):
+        # B1：状态句全删空 → 空串（不再压成「还是老样子。」），交 chat 出口 repair。
         pipeline.begin_status_turn(self.umo)
         pipeline.apply_segment_dedup("我这边拿了药，正等车回去呢",
                                      self.plugin, self.umo, self.when)
         fixed = pipeline.apply_narrative_repetition(
             "我这边等车呢，回去就吃药睡觉", self.plugin, "嗯", self.umo, self.when)
-        self.assertEqual(fixed, "还是老样子。")
+        self.assertEqual(fixed, "")
+        # 判据仍成立：这条确实被判成跨轮状态复读，而不是原样放行。
+        self.assertNotIn("等车", fixed)
 
     def test_food_answer_prepended_before_status(self):
         fixed = pipeline.apply_narrative_repetition(

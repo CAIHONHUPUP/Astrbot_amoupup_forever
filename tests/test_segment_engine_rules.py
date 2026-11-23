@@ -18,6 +18,7 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
+import amo_message  # noqa: E402
 from segment_engine import SegmentEngine  # noqa: E402
 
 
@@ -210,8 +211,9 @@ class ActionSegmentTests(unittest.TestCase):
         e = engine()
         self.assertEqual(e._merge_action_segments(["（笑）", "你少来。"]), ["（笑）\n你少来。"])
 
-    def test_all_action_segments_get_words(self):
+    def test_all_action_segments_are_dropped_not_given_words(self):
+        # B1：动作-only 段不再补固定台词 → 整段丢弃（空列表），不发「（笑）\n……你少来。」
         e = engine()
         out = e._merge_action_segments(["（笑）"])
-        self.assertEqual(len(out), 1)
-        self.assertTrue(len(out[0].splitlines()) >= 2)
+        self.assertEqual(out, [])
+        self.assertTrue(amo_message.is_action_only("（笑）"))  # 判据仍在

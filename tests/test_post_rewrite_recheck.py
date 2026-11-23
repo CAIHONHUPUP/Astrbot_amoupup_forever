@@ -138,8 +138,11 @@ class GuardOrderContractTests(unittest.TestCase):
     def test_narrative_dedupe_ends_with_recheck(self):
         source = _source("amo_reply_pipeline.py")
         body = _body(source, "def apply_narrative_repetition(", "def apply_proactive_dedup(")
-        self.assertIn("final_semantic_recheck(fixed or value, plugin, umo, user_text",
+        # B1：删空即空串（不许再用「fixed or value」把被删的复读捞回来）。
+        self.assertIn("final_semantic_recheck(fixed, plugin, umo, user_text",
                       body)
+        self.assertNotIn("fixed or value", body)
+        self.assertNotIn('_fallbacks.sentence("status_repeat")', body)
 
     def test_state_rewrite_and_validate_end_with_recheck(self):
         source = _source("amo_state_consistency.py")
@@ -280,14 +283,17 @@ class CandidateRecoveryTests(unittest.TestCase):
                        candidate="我在公司呢。")
         self.assertEqual(out, "我在公司呢。")
 
-    def test_question_guard_template_does_not_duplicate_leading_zai(self):
-        # 审计 3.2.3：模板硬拼会出「我在在酒店休息。」
+    def test_question_guard_no_template_after_unanswered(self):
+        # B1：答非所问不再套状态模板（「在酒店休息」这类拼装话因此绝迹）→ 空串。
         plugin = SimpleNamespace(state=SimpleNamespace(
             current_activity=lambda: {"place": "酒店", "zone": "outside",
                                       "activity": "在酒店休息"}))
         out = Q.answer("你在干嘛？", plugin, "今天天气还行。")
+        self.assertEqual(out, "")
         self.assertNotIn("我在在", out)
-        self.assertIn("酒店休息", out)
+        # 判据仍成立（删的是产出，不是判定）。
+        self.assertEqual(Q._category("你在干嘛？"), "doing")
+        self.assertFalse(Q._answered("doing", "今天天气还行。"))
 
 
 class NoOverwriteTests(unittest.TestCase):
@@ -327,6 +333,12 @@ class NoOverwriteTests(unittest.TestCase):
         self._record("换个话题吧。", "嗯")
         out = P.apply_chat_safety("还是老样子。", _plugin(), UMO, "到公司了吗？")
         self.assertEqual(out, "还是老样子。")
+
+    def test_validate_assembly_keeps_text_when_answer_guard_empties(self):
+        # B1：问句补答返回空串时，chat/主动共用出口必须用原文兜底（非 chat 绝不发空）。
+        out = SC.validate_reply_assembly(
+            "今天天气不错。", _plugin(), umo=UMO, user_text="你在干嘛呀？")
+        self.assertEqual(out, "今天天气不错。")
 
 
 class MetricsTests(unittest.TestCase):

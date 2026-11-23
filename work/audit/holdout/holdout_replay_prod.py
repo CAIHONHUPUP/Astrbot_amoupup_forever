@@ -198,7 +198,9 @@ async def run_one(plugin, umo, raw, user_text, when):
             text = M.strip_media_markers(text)
             stages.append(("strip_media", text))
             text, reason = addr.enforce(plugin, umo, text, source="chat")
-            if not text:
+            # 2026-11-23：只有真被收件人守卫丢弃（reason 非空）才算 addressee 丢；
+            # 前面阶段已经删空的文本要留到出口交给 repair（生产 _send_to_umo 同序）。
+            if not text and reason:
                 raise StopIteration("addressee")
             stages.append(("addressee", text))
             text = anti.rewrite(text, user_text)
@@ -214,9 +216,17 @@ async def run_one(plugin, umo, raw, user_text, when):
             text = "\n".join(pipeline.apply_segment_repeat_guard(seg, plugin, umo) for seg in segments)
             stages.append(("segment_repeat", text))
             text, reason = persona.prepare_outbound(plugin, umo, text, "chat")
+            stages.append(("persona", text))
+            # 2026-11-23：chat 出口把空/罐头回复交给一次模型重生成（生产在
+            # amo_message._send_to_umo）。回放没有真模型，这里用同一个 SimLLM
+            # 桩（模拟真模型会接话），否则删掉固定句后这些行会被记成空。
+            try:
+                text = await pipeline.repair_reply(
+                    raw, text or "", plugin, umo, user_text) or text
+            except Exception:  # cleanup: 回放桩失败就按空文本走，不中断回放
+                pass
             if not text:
                 raise StopIteration("persona")
-            stages.append(("persona", text))
         except StopIteration as stop:
             drop = str(stop) or "drop"
         except Exception as exc:

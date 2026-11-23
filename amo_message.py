@@ -246,30 +246,17 @@ def is_action_only(text):
     return bool(parts) and all(_ACTION_SEGMENT.match(part) for part in parts)
 
 
-#: 3a：动作-only 兜底统一走 domains/reply/repetition_guard.FALLBACKS（数据只有一份）。
-_ACTION_INTENTS = (("action.shy", ("耳朵", "脸红", "烫", "害羞", "扣", "低头")),
-                   ("action.laugh", ("笑",)),
-                   ("action.default", ()))
-
-
 def action_only_fallback(text, user_text=""):
-    """动作-only 时补一句人话；保留原动作，不整段丢。"""
-    body = str(text or "").strip()
-    intent = "action.default"
-    for name, words in _ACTION_INTENTS:
-        if words and any(word in body for word in words):
-            intent = name
-            break
-    try:
-        try:
-            from .domains.reply.repetition_guard import fallback_pool as _pool
-        except ImportError:
-            from domains.reply.repetition_guard import fallback_pool as _pool
-        pool = _pool(intent) or ("……嗯。",)
-    except Exception:
-        pool = ("……嗯。",)
-    line = random.choice(pool)
-    return (body + "\n" + line).strip() if body else line
+    """动作-only 段不再补固定台词（B1）：返回空串，由出口决定丢弃/重生成。
+
+    以前这里按 action.shy/laugh/default 从注册表随机取一句接在动作后面，
+    线上 45% 的分段只有动作，于是每条都拖一句「……你少来。」。现在：
+    - 文本链路返回空串哨兵 → chat 出口的生成式修复可以重生成，修不好就不发；
+    - 图片仍由 MediaGateway（_send_media_to_umo / amo_outbound.send_media）独立发送，
+      本函数只管文字。
+    text/user_text 参数保留以兼容旧调用点（段合并时仍要拿到原动作段做判断）。
+    """
+    return ""
 
 
 _SHORT_CONTINUE = ("慢慢看", "慢慢吃", "慢慢来", "慢慢走", "慢慢说", "去吧", "睡吧",
@@ -1066,6 +1053,9 @@ class MessageMixin(_MixinBase):
         source 必须显式或由调用方设置 _outbound_source；缺省 fail-closed 当 push，
         不再默认 chat。去重、频控、chat 批互斥、outbound_log 都在 amo_outbound。
         """
+        # B1/3C：send 阶段入口留一份原文（chat 出口 repair 的 raw 兜底；sim/新宿主
+        # 只走这里，不经过 amo_runtime_reply.on_decorating_result）。
+        _raw_in = str(text or "")
         # Phase 6：发送前的守卫不再手写在这里，统一走 amo_reply_pipeline 的 send 阶段
         context = _reply_pipeline.context_for_send(self, umo, group=bool(group))
         text = (await _reply_pipeline.run(text, context))["text"]
@@ -1082,7 +1072,9 @@ class MessageMixin(_MixinBase):
             except ImportError:
                 from amo_addressee_guard import enforce as _addressee_enforce
             text, _addr_reason = _addressee_enforce(self, umo, text, source=_addr_src)
-            if not text:
+            # 只有「本来有内容、被收件人守卫整条丢弃」才在这里 return；
+            # 入口就是空串时继续往下走，交下面 chat 出口的 repair 重生成。
+            if not text and _addr_raw.strip():
                 logger.info("[amo] 收件人守卫丢弃（source=%s, reason=%s）：%s",
                             _addr_src, _addr_reason, _addr_raw[:120])
                 return False
@@ -1132,6 +1124,23 @@ class MessageMixin(_MixinBase):
             text = strip_tech_terms(text, source=_tech_src, kind=_tech_kind)
         except Exception as _amo_exc:
             _note_swallowed("amo_message._send_to_umo.tech_terms", _amo_exc)
+        # 3C/B1：守卫把回复删成空/罐头时，chat 出口在这里补一次模型修复。sim 与
+        # 新宿主只走 _send_to_umo（不经过 on_decorating_result），漏接就会「不回」。
+        # 非 chat 不修；repair_reply 内部先判空/罐头，正常句零调用。
+        _repair_src = str(source or getattr(self, "_outbound_source", "") or "push")
+        if _repair_src == "chat":
+            try:
+                # 入口 text 可能已被 apply_chat_safety 删空：用本轮登记的原始候选
+                # 当 raw（_deco_soft_guards 已 remember_candidate），别把空串喂给修复。
+                _repair_raw = _raw_in or _reply_pipeline._turn_candidate(umo)
+                # 他这一轮问的以登记表为准：_user_text 是扫近聊取的，可能是更早的
+                # user 行（task-36 同款坑），会拿旧问句去修这一轮。
+                _repair_ask = _reply_pipeline._turn_question(umo) or str(_user_text or "")
+                text = await _reply_pipeline.repair_reply(
+                    _repair_raw, text, self, umo, _repair_ask,
+                    source=_repair_src)
+            except Exception as _amo_exc:  # cleanup: 修复失败不影响发送
+                _note_swallowed("amo_message._send_to_umo.repair", _amo_exc)
         if not text or not umo:
             return False
         # 归一化前移：旁白剥离是语义操作，分段是结构操作。必须先剥再分段，

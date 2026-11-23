@@ -471,13 +471,16 @@ class SegmentEngine:
         return self._merge_action_segments(segments)
 
     def _merge_action_segments(self, segments: List[str]) -> List[str]:
-        """括号动作不能单独成段：并到相邻的文字段；全段都是动作时补一句人话。"""
+        """括号动作不能单独成段：并到相邻的文字段；全段都是动作时整段丢弃。
+
+        B1：动作-only 不再补固定台词（amo_message.action_only_fallback 返回空串）。
+        只有动作、没有一句人话时返回空列表——send 阶段见空段跳过，宁可这轮不说，
+        也不发「（耳朵有点热）……你少来。」这种拼装话。图片不走这条文本链。
+        """
         try:
             try:
-                from .amo_message import action_only_fallback as _fallback
                 from .amo_message import is_action_only as _is_action
             except ImportError:
-                from amo_message import action_only_fallback as _fallback
                 from amo_message import is_action_only as _is_action
             out: List[str] = []
             pending = ""
@@ -495,12 +498,10 @@ class SegmentEngine:
                     seg = (pending + "\n" + seg).strip()
                     pending = ""
                 out.append(seg)
-            if pending:
-                if out:
-                    out[-1] = (out[-1].rstrip() + "\n" + pending).strip()
-                else:
-                    out = [_fallback(pending)]
-            return out or list(segments or [])
+            if pending and out:
+                out[-1] = (out[-1].rstrip() + "\n" + pending).strip()
+            # 只剩 pending（整条都是动作）：不补台词、也不回退原动作段 → 空列表。
+            return out
         except Exception as _amo_exc:
             _note_swallowed("segment_engine._merge_action_segments", _amo_exc)
             return list(segments or [])
