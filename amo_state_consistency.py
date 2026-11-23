@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger("amo.state_consistency")
 
@@ -934,73 +936,36 @@ def _keep_segment_answer(before, fixed, umo=""):
         return fixed
 
 
-def dedupe_reply_segments(segments, refs=None, plugin=None, umo=""):
-    """分段去重：后段和最近说过的话/本轮前面的段重复，就整段不发。
-
-    task-29 收口（真实模型层 G33/t8）：整句去重会把 where 问句里的地点句一起删掉
-    （「在呢，刚到家歇会儿，今天上班累死我了」→「在呢，今天上班累死我了」），
-    删完必须用 scene_at 的当前 place 补一句，不能把 where 问句发成没有地点的话。
-    """
-    refs = list(refs or [])
-    if not refs:
-        refs = history_bot_texts(plugin, umo)
-    out: list[str] = []
-    for raw in segments or ():
-        segment = str(raw or "")
-        if not segment.strip():
-            continue
-        fixed, _dropped = drop_repeated_clauses(segment, refs + out)
-        fixed = _keep_segment_answer(segment, fixed, umo)
-        if not fixed.strip():
-            # 整段都是复读：丢掉；若它是唯一一段，调用方会回退到校验后的整条文本。
-            continue
-        out.append(fixed)
-    if not out:
-        # 整段被删光：他问「在哪/在家吗」时不能交回空串，用当前地点兜一句。
-        if _ASK_WHERE.search(_turn_ask(umo, "")):
-            sentence = _where_answer_sentence(plugin)
-            if sentence:
-                return [sentence]
-        return out
-    joined = "".join(out)
-    body = joined.strip()
-    fixed_text = _ensure_where_answer(body, plugin, "", umo)
-    if fixed_text != body:
-        # 补句只追加在末尾：单段就整段替换，多段拼到最后一段后面。
-        tail = fixed_text[len(body):]
-        if len(out) == 1:
-            out[0] = fixed_text
-        else:
-            out[-1] = str(out[-1]).rstrip() + tail
-    # task-40 候选优先：分段去重/场景改写把完整候选删句/换兜底时，整条还原安全候选
-    # （分段去重在 validate 之后跑，回放 #2006 的「不是我不给看」就是在这里被删的）。
-    try:
-        try:
-            from .amo_reply_pipeline import recover_rewrite_damage as _recover_damage
-        except ImportError:
-            from amo_reply_pipeline import recover_rewrite_damage as _recover_damage
-        repaired = _recover_damage(
-            "".join(out).strip(), plugin, umo, _turn_ask(umo, ""))
-        if repaired and repaired != "".join(out).strip():
-            return [repaired]
-    except Exception as exc:  # cleanup: 候选优先层失败保持分段结果
-        logger.debug("[state] 分段去重后候选优先还原失败: %s", exc)
-    return out
+# ---------------------------------------------------------------------------
+# 组装链：一个 runner + 两张 profile 表 + 三个薄壳（M1）
+# ---------------------------------------------------------------------------
+# validate_reply_assembly（整条）与 dedupe_reply_segments（分段）共享同一个 runner，
+# 差别只在阶段表；recover 是两张表里的一个 stage，函数本体（含 amo_rewrite_safety
+# 的裸 str guard= 回调）一行不动。
+#
+# 契约：_stage_xxx(ctx) -> str | None；原地写 ctx.text（assembly）或 ctx.segments
+# （segments）；返回非空 reason = 立即短路（只表示「为什么停」，不是错误）。
+# 空串不是 stop：整条链删空由 empty_scene 处理，分段链删空由 empty_segment 处理。
+# import 仍在函数内：架构棘轮只数目标模块，模块级 import 会改 fanout 快照。
 
 
-def validate_reply_assembly(text, plugin=None, umo="", user_text="", recent=None):
-    """回复拼装前的统一校验（聊天/主动共用）：媒体标记、自我复读、当前场景。
+@dataclass
+class _AssemblyCtx:
+    """一次拼装/分段校验调用的上下文。"""
 
-    顺序不能换：
-    1) 先去掉媒体占位符（模型会把它当一句话复读，且它本就不该出现在人话里）；
-    2) 再删与最近她自己说过的话重复的分句（整句相似度拦不住"旧句拆进新句子"）；
-    3) 最后按「此刻场景」剥离冲突地点（当前在家就不许把旧商场当成现在）。
-    全被删空时**不再补固定短句**（B2）：chat 空串交出口 repair 重生成；非 chat 靠
-    下面的补答/地点兜底保非空（绝不回退原文——原文就是复读）。
-    """
-    body = str(text or "")
-    if not body.strip():
-        return body
+    plugin: Any
+    umo: Any = ""
+    user_text: Any = ""
+    refs: list[str] = field(default_factory=list)
+    before_dedup: str = ""
+    profile: str = "assembly"
+    text: str = ""
+    segments: list[str] = field(default_factory=list)
+
+
+def _stage_media(ctx):
+    """S1 媒体占位符（整条链专有）：不是人话，先剥掉再判空。"""
+    body = ctx.text
     try:
         try:
             from .amo_message import strip_media_markers as _strip_media
@@ -1011,80 +976,257 @@ def validate_reply_assembly(text, plugin=None, umo="", user_text="", recent=None
         pass
     if not body.strip():
         body = ""
+    ctx.text = body
     if not body.strip():
-        return _post_recheck(_safe_short_reply(umo, history_bot_texts(plugin, umo)),
-                             plugin, umo, user_text)
-    # 删句前先留一份：删句/场景剥离把「他这一问」的答案删掉时，问句守卫可以把
-    # 删前的这句答案要回来（task-36 G09/t5：「忙什么呢」的答案被整句去重删成「你呢？」）。
-    before_dedup = body
-    refs = list(recent or [])
+        # 媒体-only：当前行为就是短句（B2 起为空串/修复句）过一次后置复检后**提前
+        # 返回**，后面的收件人/补答/还原/地点一个都不跑（SC3）。
+        ctx.text = _post_recheck(
+            _safe_short_reply(ctx.umo, history_bot_texts(ctx.plugin, ctx.umo)),
+            ctx.plugin, ctx.umo, ctx.user_text)
+        return "media_empty"
+    return None
+
+
+def _stage_clause_dedupe(ctx):
+    """S2 分句级复读：整句相似度拦不住「旧句拆进新句子」，先删分句。"""
+    ctx.before_dedup = ctx.text
+    refs = list(ctx.refs or [])
     if not refs:
-        refs = history_bot_texts(plugin, umo)
-    body, _dropped = drop_repeated_clauses(body, refs)
-    if body.strip():
-        body = strip_current_scene_conflicts(body, plugin)
-    if not body.strip():
-        body = _safe_short_reply(umo, refs)
-        if not body and not _turn_registered(umo):
-            # B2：没有 chat 出口 repair 的调用（主动推送/独立调用，本轮没登记候选）
-            # 绝不发空 —— 用删句前的正文兜底（原文就是复读，但比一条空消息好）。
-            body = before_dedup
-    # task-32：收件人/角色反转守卫（聊天拼装阶段先拦一次，避免错误称呼被分段发出去）。
-    # 判定只在 amo_addressee_guard 一处实现；这里是 chat 拼装入口，丢弃时**不再补
-    # 安全短句**（B2，空串交出口 repair），但绝不把原文交回 AstrBot 核心（核心回退
-    # 会把原文原样发出去）。
+        refs = history_bot_texts(ctx.plugin, ctx.umo)
+    ctx.refs = refs
+    ctx.text, _dropped = drop_repeated_clauses(ctx.text, refs)
+    return None
+
+
+def _stage_scene(ctx):
+    """S3 当前场景冲突：只改非空正文（空串留给 empty_scene 统一处理）。"""
+    if ctx.text.strip():
+        ctx.text = strip_current_scene_conflicts(ctx.text, ctx.plugin)
+    return None
+
+
+def _stage_empty_scene(ctx):
+    """S4 分句/场景删空（SC4）：短句池已停产出；没有短句时非 chat 才用删前正文兜底。"""
+    if ctx.text.strip():
+        return None
+    ctx.text = _safe_short_reply(ctx.umo, ctx.refs)
+    if not ctx.text and not _turn_registered(ctx.umo):
+        # B2：没有 chat 出口 repair 的调用（主动推送/独立调用，本轮没登记候选）
+        # 绝不发空 —— 用删句前的正文兜底（原文就是复读，但比一条空消息好）。
+        ctx.text = ctx.before_dedup
+    return None
+
+
+def _stage_addressee(ctx):
+    """S5 收件人/角色反转守卫：判定只在 amo_addressee_guard 一处实现。"""
+    if not ctx.text.strip():
+        # B2：删空后没有正文可判收件人，空串直接交出口（不在这里误记「丢弃」）。
+        return None
     try:
         try:
             from .amo_addressee_guard import enforce as _addressee_enforce
         except ImportError:
             from amo_addressee_guard import enforce as _addressee_enforce
-        # B2：删空后没有正文可判收件人，空串直接交出口（不在这里误记「丢弃」）。
-        if body.strip():
-            guarded, addressee_reason = _addressee_enforce(
-                plugin, umo, body, source="assembly")
-            if not guarded:
-                logger.info("[state] 收件人守卫丢弃（%s）：%s",
-                            addressee_reason, str(body or "")[:80])
-                body = _safe_short_reply(umo, refs)
-                if not body and not _turn_registered(umo):
-                    # B2：非 chat（没有出口 repair）不能发空；用「此刻场景」的状态句
-                    # 顶上（场景宪法层，不是固定句池），绝不把收件人反转的原文发出去。
-                    body = _where_answer_sentence(plugin)
-            elif addressee_reason:
-                logger.info("[state] 收件人守卫改写（%s）：%s", addressee_reason, guarded[:80])
-                body = guarded
+        guarded, addressee_reason = _addressee_enforce(
+            ctx.plugin, ctx.umo, ctx.text, source="assembly")
+        if not guarded:
+            logger.info("[state] 收件人守卫丢弃（%s）：%s",
+                        addressee_reason, str(ctx.text or "")[:80])
+            # 收件人丢弃是安全终判：不拿 repair 句/短句池顶回来（顶回来等于绕过
+            # 收件人守卫），chat 交出口，非 chat 用此刻场景的状态句保非空。
+            ctx.text = ""
+            if not _turn_registered(ctx.umo):
+                ctx.text = _where_answer_sentence(ctx.plugin)
+        elif addressee_reason:
+            logger.info("[state] 收件人守卫改写（%s）：%s", addressee_reason, guarded[:80])
+            ctx.text = guarded
     except Exception as exc:  # cleanup: 守卫失败不挡正常聊天
         logger.debug("[state] 收件人守卫失败: %s", exc)
-    # 唯一后置语义复检（task-29）：媒体标记/自我复读/场景剥离三步都可能把答案
-    # 一起删掉，出口再判一次；原候选答得上就保留候选（别发通用短句）。
-    body = _post_recheck(body, plugin, umo, user_text)
-    # 删句/场景剥离可能把「他这一问」的答案整句删掉：走 reply_pipeline 的出口补答
-    # （问句守卫唯一实现），把删前的正文当 candidate —— 它答到了就原样还回来
-    # （答案优先于不复读），没答到就是空串（B1/B2：不再用状态模板补一句）。
+    return None
+
+
+def _stage_judge(ctx):
+    """S6 唯一后置语义复检（整条链专有）。"""
+    ctx.text = _post_recheck(ctx.text, ctx.plugin, ctx.umo, ctx.user_text)
+    return None
+
+
+def _stage_complete_answer(ctx):
+    """S7 问句补答（唯一实现 amo_reply_pipeline.complete_deleted_answer）。"""
     try:
         try:
             from .amo_reply_pipeline import complete_deleted_answer as _complete_answer
         except ImportError:
             from amo_reply_pipeline import complete_deleted_answer as _complete_answer
-        # B1：补答守卫答不到时返回空串（chat 出口会 repair）；本函数是 chat/主动
-        # 共用出口，非 chat 来源必须「绝不发空」→ 用补答前的正文兜底。
-        body = _complete_answer(body, plugin, umo, user_text,
-                                candidate=before_dedup) or body
+        ctx.text = _complete_answer(ctx.text, ctx.plugin, ctx.umo, ctx.user_text,
+                                    candidate=ctx.before_dedup) or ctx.text
     except Exception as exc:  # cleanup: 问句补答失败保持删句结果
         logger.debug("[state] 出口问句补答失败: %s", exc)
-    # task-40 候选优先：媒体标记/自我复读/场景剥离/收件人改写把完整候选改成
-    # 固定兜底/多池拼装/语法破损时，用安全改写过的原始候选顶回去。
+    return None
+
+
+def _stage_recover(ctx):
+    """S8 候选优先还原：唯一实现在 amo_rewrite_safety.recover，签名/回调形状不动。"""
+    if ctx.profile == "segments":
+        joined = "".join(ctx.segments).strip()
+        try:
+            try:
+                from .amo_reply_pipeline import recover_rewrite_damage as _recover_damage
+            except ImportError:
+                from amo_reply_pipeline import recover_rewrite_damage as _recover_damage
+            repaired = _recover_damage(joined, ctx.plugin, ctx.umo, _turn_ask(ctx.umo, ""))
+            if repaired and repaired != joined:
+                # SC8：分段去重把完整候选删坏 → 合并成一段（既有 D5 行为）。
+                ctx.segments = [repaired]
+        except Exception as exc:  # cleanup: 候选优先层失败保持分段结果
+            logger.debug("[state] 分段去重后候选优先还原失败: %s", exc)
+        return None
     try:
         try:
             from .amo_reply_pipeline import recover_rewrite_damage as _recover_damage
         except ImportError:
             from amo_reply_pipeline import recover_rewrite_damage as _recover_damage
-        body = _recover_damage(body, plugin, umo, user_text)
+        ctx.text = _recover_damage(ctx.text, ctx.plugin, ctx.umo, ctx.user_text)
     except Exception as exc:  # cleanup: 候选优先层失败保持校验结果
         logger.debug("[state] 候选优先还原失败: %s", exc)
-    # 他问「在哪/在家吗」而地点答案被整句去重删掉 → 用 scene_at 的当前地点补一句，
-    # 不能把 where 问句发成一句没有地点的「在啊，……」（G36/t10）。
-    return _ensure_where_answer(body, plugin, user_text, umo)
+    return None
+
+
+def _stage_ensure_where(ctx):
+    """S9/S4 地点补句：where 问句缺地点时补；分段链只把补句接在末段。"""
+    if ctx.profile == "assembly":
+        ctx.text = _ensure_where_answer(ctx.text, ctx.plugin, ctx.user_text, ctx.umo)
+        return None
+    joined = "".join(ctx.segments)
+    body = joined.strip()
+    fixed_text = _ensure_where_answer(body, ctx.plugin, "", ctx.umo)
+    if fixed_text != body:
+        # 补句只追加在末尾：单段就整段替换，多段拼到最后一段后面。
+        tail = fixed_text[len(body):]
+        if len(ctx.segments) == 1:
+            ctx.segments[0] = fixed_text
+        else:
+            ctx.segments[-1] = str(ctx.segments[-1]).rstrip() + tail
+    return None
+
+
+def _stage_refs(ctx):
+    """S1 分段链参考文本：不传就取最近她说过的话（整条链在 clause_dedupe 里取）。"""
+    refs = list(ctx.refs or [])
+    if not refs:
+        refs = history_bot_texts(ctx.plugin, ctx.umo)
+    ctx.refs = refs
+    return None
+
+
+def _stage_segment_dedupe(ctx):
+    """S2 逐段分句去重 + 答案保留：整段被删光的跳过，不补短句（SC6）。"""
+    out: list[str] = []
+    for raw in ctx.segments or ():
+        segment = str(raw or "")
+        if not segment.strip():
+            continue
+        fixed, _dropped = drop_repeated_clauses(segment, ctx.refs + out)
+        fixed = _keep_segment_answer(segment, fixed, ctx.umo)
+        if not fixed.strip():
+            # 整段都是复读：丢掉；若它是唯一一段，调用方会回退到校验后的整条文本。
+            continue
+        out.append(fixed)
+    ctx.segments = out
+    return None
+
+
+def _stage_empty_segment(ctx):
+    """S3 所有段都被删光（SC7）：where 问句给地点句，否则空列表交调用方兜底。"""
+    if ctx.segments:
+        return None
+    if _ASK_WHERE.search(_turn_ask(ctx.umo, "")):
+        sentence = _where_answer_sentence(ctx.plugin)
+        if sentence:
+            ctx.segments = [sentence]
+    return "empty_segments"
+
+
+#: 阶段实现表（名字 -> 函数）。判据/异常策略全在函数内，表只负责顺序。
+_STAGES = {
+    "media": _stage_media,
+    "clause_dedupe": _stage_clause_dedupe,
+    "scene": _stage_scene,
+    "empty_scene": _stage_empty_scene,
+    "addressee": _stage_addressee,
+    "judge": _stage_judge,
+    "complete_answer": _stage_complete_answer,
+    "recover": _stage_recover,
+    "ensure_where": _stage_ensure_where,
+    "refs": _stage_refs,
+    "segment_dedupe": _stage_segment_dedupe,
+    "empty_segment": _stage_empty_segment,
+}
+
+#: 两张阶段表（唯一事实源）。顺序即真实行为，不许「优化」：
+#: - assembly：媒体 → 分句去重 → 场景 → 删空 → 收件人 → 复检 → 补答 → 还原 → 地点；
+#: - segments：refs → 逐段去重/答案保留 → 删空 → 地点 → 还原。
+#: 不注册进 amo_reply_pipeline.PIPELINE：golden 顺序锁死，M1 不占全局 stage 位。
+_CHAINS = {
+    "assembly": (
+        "media", "clause_dedupe", "scene", "empty_scene", "addressee",
+        "judge", "complete_answer", "recover", "ensure_where",
+    ),
+    "segments": (
+        "refs", "segment_dedupe", "empty_segment", "ensure_where", "recover",
+    ),
+}
+
+
+def _run_assembly(segments, ctx, profile):
+    """唯一 runner：按 profile 查表逐步，首个非空 reason 立即短路。
+
+    assembly 输入是 [text]（整条），segments 输入是分段列表；返回形状跟着 profile：
+    前者 [str]，后者 list[str]（可空，调用方用 or [...] 兜底）。
+    """
+    ctx.profile = profile
+    if profile == "assembly":
+        ctx.text = str(segments[0]) if segments else ""
+        ctx.segments = []
+    else:
+        ctx.segments = [str(item or "") for item in segments or ()]
+        ctx.text = ""
+    for name in _CHAINS[profile]:
+        if _STAGES[name](ctx):
+            break
+    return [ctx.text] if profile == "assembly" else ctx.segments
+
+
+def dedupe_reply_segments(segments, refs=None, plugin=None, umo=""):
+    """分段去重：后段和最近说过的话/本轮前面的段重复，就整段不发。
+
+    task-29 收口（真实模型层 G33/t8）：整句去重会把 where 问句里的地点句一起删掉
+    （「在呢，刚到家歇会儿，今天上班累死我了」→「在呢，今天上班累死我了」），
+    删完必须用 scene_at 的当前 place 补一句，不能把 where 问句发成没有地点的话。
+    M1：本函数只是 _CHAINS["segments"] 的薄壳（list -> list，可空）。
+    """
+    ctx = _AssemblyCtx(plugin=plugin, umo=umo, refs=list(refs or []))
+    return _run_assembly(list(segments or ()), ctx, "segments")
+
+
+def validate_reply_assembly(text, plugin=None, umo="", user_text="", recent=None):
+    """回复拼装前的统一校验（聊天/主动共用）：媒体标记、自我复读、当前场景。
+
+    顺序不能换：
+    1) 先去掉媒体占位符（模型会把它当一句话复读，且它本就不该出现在人话里）；
+    2) 再删与最近她自己说过的话重复的分句（整句相似度拦不住"旧句拆进新句子"）；
+    3) 最后按「此刻场景」剥离冲突地点（当前在家就不许把旧商场当成现在）。
+    全被删空时**不再补固定短句**（B2）：chat 空串交出口 repair 重生成；非 chat 靠
+    补答/地点兜底保非空（绝不回退原文——原文就是复读）。
+    M1：本函数只是 _CHAINS["assembly"] 的薄壳（空输入原样返回，非空输入永不返回空）。
+    """
+    body = str(text or "")
+    if not body.strip():
+        # SC1：空输入原样返回（不补句，也不推进任何轮换）。
+        return body
+    ctx = _AssemblyCtx(plugin=plugin, umo=umo, user_text=user_text,
+                       refs=list(recent or []))
+    return _run_assembly([body], ctx, "assembly")[0]
 
 
 def _turn_registered(umo):
@@ -1106,15 +1248,35 @@ def _turn_registered(umo):
         return False
 
 
-def _safe_short_reply(umo, refs=None):
-    """删空就是删空（B2）：不再轮换固定短句，返回空串交出口。
-
-    固定句池已退出生成链（domains.reply.repetition_guard 的产出 API 全部返回空串，
-    只留识别集），所以这里也没有「安全短句」可取。空串的去处：chat 出口由
-    amo_reply_pipeline.repair_reply 重生成；非 chat 由调用点的 `... or 补答前正文`
-    与 validate_reply_assembly 的原文兜底保非空，绝不给用户发一条空消息。
-    """
+def _turn_repaired(umo):
+    """本轮 repair 采用的修复句（mark_turn_repaired 登记）；没有/跨轮一律空串。"""
+    key = str(umo or "").strip()
+    if not key:
+        return ""
+    try:
+        try:
+            from .amo_reply_pipeline import _ACTIVE_TURN as _active
+            from .amo_reply_pipeline import _TURN_REPAIRED as _repaired
+        except ImportError:
+            from amo_reply_pipeline import _ACTIVE_TURN as _active
+            from amo_reply_pipeline import _TURN_REPAIRED as _repaired
+        entry = _repaired.get(key)
+        if entry and entry[0] == _active.get(key):
+            return str(entry[1] or "").strip()
+    except Exception:  # cleanup: 取不到修复句就按没有处理（退回既有空串语义）
+        pass
     return ""
+
+
+def _safe_short_reply(umo, refs=None):
+    """删空兜底（B2）：短句池已停产出，正常返回空串交出口 repair。
+
+    repair-owned（本轮已 mark_turn_repaired）的修复句是**终态**：send 段的删空阶段
+    遇到它必须直接交回修复句，不再合成短句/空串把它顶掉（B3/R2，SC10）。
+    空串的去处：chat 出口由 amo_reply_pipeline.repair_reply 重生成；非 chat 由
+    调用点的正文/地点兜底保非空，绝不给用户发一条空消息。
+    """
+    return _turn_repaired(umo)
 
 
 def _post_recheck(text, plugin, umo="", user_text=""):

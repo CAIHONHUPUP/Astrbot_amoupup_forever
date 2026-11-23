@@ -149,8 +149,15 @@ class GuardOrderContractTests(unittest.TestCase):
         rewrite_body = _body(source, "def rewrite(text, plugin", "def current_scene(")
         self.assertIn("_post_recheck(body, plugin, umo, _last_user_line(user))",
                       rewrite_body)
-        validate_body = _body(source, "def validate_reply_assembly(", "def _safe_short_reply(")
-        self.assertIn("_post_recheck(body, plugin, umo, user_text)", validate_body)
+        # M1：validate 收敛成 _CHAINS["assembly"] 薄壳；顺序由阶段表锁，复检仍是 judge。
+        self.assertEqual(SC._CHAINS["assembly"], (
+            "media", "clause_dedupe", "scene", "empty_scene", "addressee",
+            "judge", "complete_answer", "recover", "ensure_where"))
+        validate_body = _body(source, "def validate_reply_assembly(", "def _turn_registered(")
+        self.assertIn('_run_assembly([body], ctx, "assembly")', validate_body)
+        judge_body = _body(source, "def _stage_judge(", "def _stage_complete_answer(")
+        self.assertIn("_post_recheck(ctx.text, ctx.plugin, ctx.umo, ctx.user_text)",
+                      judge_body)
         self.assertIn("def _post_recheck(", source)
 
     def test_align_guards_run_before_the_gate(self):
