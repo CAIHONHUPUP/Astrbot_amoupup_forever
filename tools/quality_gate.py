@@ -382,14 +382,21 @@ def check_function_sizes():
 WORK_TESTS_PATTERN = "test_*.py"
 
 
-def check_tests():
-    """tests/ 全量 + work/ 仿真库自测；两棵目录树各 discover 一次，不会重复收集。"""
+def check_tests(skip_slow=False):
+    """tests/ 全量 + work/ 仿真库自测；两棵目录树各 discover 一次，不会重复收集。
+
+    skip_slow=True 时跳过 @pytest.mark.slow 的慢用例（多天仿真/1000 天属性/沉浸验收）：
+    迭代用快集，发布门禁必须跑全量（默认）。
+    """
     work_test = os.path.join(ROOT, "work", "test_sim_lib.py")
     assert os.path.isfile(work_test), "work 仿真测试缺失：%s" % work_test
     # 2026-11-20：用 pytest 跑全量。unittest discover 不加载 tests/conftest.py，
     # 时钟不会钉在 2026-11-18 15:00，trip/clock 一批用例会按真实日期假红；
     # pytest 才是本仓库文档里的全量跑法（tests/conftest.py 的 autouse freeze 生效）。
-    cmd = [sys.executable, "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider"]
+    cmd = [sys.executable, "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider",
+           "--durations=25"]
+    if skip_slow:
+        cmd += ["-m", "not slow"]
     subprocess.run(cmd, cwd=ROOT, check=True)
     cmd = [sys.executable, "-m", "unittest", "discover", "-s", "work", "-p", WORK_TESTS_PATTERN, "-q"]
     subprocess.run(cmd, cwd=ROOT, check=True)
@@ -422,13 +429,18 @@ def check_mypy_strict():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fast", action="store_true", help="跳过全量单测")
+    parser.add_argument("--skip-slow", action="store_true",
+                        help="只跳过 @pytest.mark.slow 的慢用例（迭代用；发布门禁别加）")
     args = parser.parse_args()
     print("[quality] clean_pycache", clean_pycache())
     checks = [check_schema, check_compile, check_routes, check_dashboard_js, check_pyflakes,
               check_size, check_function_sizes, check_silent_except, check_async_blocking,
               check_mypy_strict]
     if not args.fast:
-        checks.append(check_tests)
+        def _tests():
+            return check_tests(skip_slow=args.skip_slow)
+        _tests.__name__ = "check_tests"
+        checks.append(_tests)
     for check in checks:
         print("[quality]", check.__name__, check())
 
