@@ -1,0 +1,8 @@
+# M2 门禁与四件套（2026-11-23）
+
+pipeline recheck 链合并：_RescueCtx + _run_rescue + _CHAINS{recheck, segment}，两个薄壳，
+post_rewrite_recheck 保持独立纯函数；不注册 PIPELINE。
+
+- 门禁 exit 0（961.8s）：6450 passed / 0 failed / 7 skipped / 293 subtests；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
+- 四件套与 m1b 逐项相同：daily 50/50、614/614；share 500/100%（d0/p0）；remind 240/240；adversarial 39/39；replay narr0/p4（预期）
+- 差分：1058 例 0 差异（输出/stats/_TURN_SEGMENTS/日志），三份 sim 报告逐字节相同

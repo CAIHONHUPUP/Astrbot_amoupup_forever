@@ -1405,6 +1405,169 @@ def _recheck_once(original, text, user_text):
         return str(text or "")
 
 
+# ---------------------------------------------------------------------------
+# 救援链：一个 runner + 两张 profile 表 + 两个薄壳（M2）
+# ---------------------------------------------------------------------------
+# final_semantic_recheck（整条，recheck）与 apply_segment_repeat_guard（分段，segment）
+# 共享同一个 runner，差别只在阶段表。纯判据仍是 amo_grounding_critic.post_rewrite_recheck
+# 的独立函数（judge 阶段只调用它，判据一行不动）。
+#
+# 契约（同 amo_state_consistency._run_assembly）：_stage_xxx(ctx) -> str | None；
+# 原地写 ctx.text / ctx.fixed；返回非空 reason = 立即短路（只表示「为什么停」）。
+# 空串不是 stop：整段都是复读时这一段就是空串（send 按空段跳过），不算短路。
+# 本链**不调模型、不产出固定句**：repair-owned 的修复句只可能被原样保留（它在
+# post_rewrite_recheck 里同时是候选与现行），绝不会被换短句、也不会多调一次模型。
+
+
+@dataclass
+class _RescueCtx:
+    """一次复检/分段救援的上下文（stages 只写自己的字段）。"""
+
+    plugin: Any = None
+    umo: Any = ""
+    user_text: Any = ""
+    profile: str = "recheck"
+    text: Any = ""
+    current: str = ""
+    candidate: str = ""
+    question: str = ""
+    fixed: str = ""
+    safe: str = ""
+    refs: list[str] = field(default_factory=list)
+    dropped: list[str] = field(default_factory=list)
+
+
+def _stage_judge(ctx):
+    """R1 recheck：纯判据判一次（没变就原样返回，不计数）。"""
+    if not ctx.candidate.strip():
+        return "no_candidate"  # SR1：候选为空 → 原样返回，连统计都不动
+    # 本轮他真正问的那句以登记表为准：send 阶段传进来的 user_text 可能已经过期
+    # （扫近聊取到的是更早的 user 行），用它复检会把「其实答到了」的回复判成没答到
+    # （task-36 G09/t5：「忙什么呢」被记成上一轮的「路上堵死了」）。
+    ctx.question = _turn_question(ctx.umo) or str(ctx.user_text or "")
+    ctx.fixed = _recheck_once(ctx.candidate, ctx.current, ctx.question)
+    if ctx.fixed == ctx.current:
+        ctx.text = ctx.fixed  # SR2：判完没变
+        return "unchanged"
+    _RECHECK_STATS["calls"] += 1
+    return None
+
+
+def _stage_protect(ctx):
+    """R2 recheck：现行是安全挡话/事实守卫产物时不许被候选覆盖（SR3）。"""
+    if _protected_current(ctx.current):
+        _RECHECK_STATS["blocked"] += 1
+        logger.info("[amo] 后置复检拒绝还原（安全挡话/事实守卫）: %s", ctx.current[:40])
+        return "protected"
+    return None
+
+
+def _stage_restore(ctx):
+    """R3 recheck：候选出站卫生（媒体占位符剥离 + 消费事实守卫重跑）。"""
+    ctx.safe = _restore_candidate(ctx.candidate, ctx.plugin)
+    return None
+
+
+def _stage_unsafe(ctx):
+    """R4 recheck：候选本身带自曝/后台泄漏/防御话术就不许还原（SR4）。"""
+    if _unsafe_candidate(ctx.safe):
+        _RECHECK_STATS["blocked"] += 1
+        logger.info("[amo] 后置复检拒绝还原（候选不安全）: %s", ctx.safe[:40])
+        return "unsafe"
+    return None
+
+
+def _stage_rejudge(ctx):
+    """R5 recheck：卫生改写过的候选再判一次；仍答不到就不还原（SR5/SR6）。"""
+    fixed = ctx.fixed
+    if ctx.safe != ctx.candidate:
+        retry = _recheck_once(ctx.safe, ctx.current, ctx.question)
+        if retry == ctx.current:
+            _RECHECK_STATS["blocked"] += 1
+            return "recheck_failed"
+        fixed = retry
+    _RECHECK_STATS["restored"] += 1
+    logger.info("[amo] 改写后语义复检：还原候选 %s -> %s", ctx.current[:40], fixed[:40])
+    ctx.text = fixed
+    return "restored"
+
+
+def _stage_refs(ctx):
+    """S1 segment：参考文本 = 最近几条她自己说过的话 + 本轮前面已发出去的段。"""
+    if not ctx.current.strip():
+        return "empty"  # SR7：空输入原样返回（不读近聊、不动分段记忆）
+    key = str(ctx.umo or "").strip()
+    earlier = (list(_TURN_SEGMENTS.get(key) or ())
+               if _ACTIVE_TURN.get(key) is not None else [])
+    ctx.refs = _repeat_guard.recent_reference(ctx.plugin, ctx.umo, DEDUP_WINDOW) + earlier
+    return None
+
+
+def _stage_dedupe(ctx):
+    """S2 segment：整句复读删句；整段都是复读就删成空串（空串不是 stop）。"""
+    ctx.fixed, ctx.dropped = _repeat_guard.dedup_or_fallback(ctx.current, ctx.umo, ctx.refs)
+    return None
+
+
+def _stage_keep_answer(ctx):
+    """S3 segment：他这一问的答案落在这一段里就保住（答案优先于不复读）。"""
+    ctx.fixed = _keep_answer(ctx.current, ctx.fixed, _turn_question(ctx.umo), ctx.dropped)
+    for item in ctx.dropped:
+        logger.debug("[dedup] 分段复读已删掉: %s", item[:40])
+    return None
+
+
+def _stage_remember(ctx):
+    """S4 segment：这一段记进本轮分段记忆（只有 push 逐段路径走，跨轮语义不变）。"""
+    key = str(ctx.umo or "").strip()
+    rows = _TURN_SEGMENTS.setdefault(key, [])
+    body = _repeat_guard.compare_body(ctx.fixed)
+    if body:
+        rows.append(body)
+        del rows[:-STATUS_MEMORY_LIMIT]
+    ctx.text = ctx.fixed
+    return None
+
+
+#: 阶段实现表（名字 -> 函数）。判据/异常策略全在函数内，表只负责顺序。
+_STAGES = {
+    "judge": _stage_judge,
+    "protect": _stage_protect,
+    "restore": _stage_restore,
+    "unsafe": _stage_unsafe,
+    "rejudge": _stage_rejudge,
+    "refs": _stage_refs,
+    "dedupe": _stage_dedupe,
+    "keep_answer": _stage_keep_answer,
+    "remember": _stage_remember,
+}
+
+#: 两张阶段表（唯一事实源）。顺序即真实行为，不许「优化」：
+#: - recheck：判 → 保护 → 卫生 → 不安全 → 再判（与 task-29 的直写顺序逐条对应）；
+#: - segment：参考文本 → 删复读 → 保答案 → 记本轮段。
+#: 不注册进 amo_reply_pipeline.PIPELINE：golden 顺序锁死，M2 不占全局 stage 位。
+_CHAINS = {
+    "recheck": ("judge", "protect", "restore", "unsafe", "rejudge"),
+    "segment": ("refs", "dedupe", "keep_answer", "remember"),
+}
+
+
+def _run_rescue(text, ctx, profile):
+    """唯一 runner：按 profile 查表逐步，首个非空 reason 立即短路。
+
+    recheck 的输入/输出都是整条回复（候选为空时把入参**原样**返回，连 str() 都
+    不加强转）；segment 的输入/输出都是单段文本（空输入原样返回、整段复读返回
+    空串，由 send 阶段按空段跳过）。
+    """
+    ctx.profile = profile
+    ctx.current = str(text or "")
+    ctx.text = text if profile == "recheck" else ctx.current
+    for name in _CHAINS[profile]:
+        if _STAGES[name](ctx):
+            break
+    return ctx.text
+
+
 def final_semantic_recheck(text, plugin=None, umo="", user_text="", original=None):
     """唯一后置语义复检：会整句删除/替换的守卫跑完后统一过这一道（task-29）。
 
@@ -1419,37 +1582,12 @@ def final_semantic_recheck(text, plugin=None, umo="", user_text="", original=Non
     媒体占位符剥离、消费事实守卫重跑、模型自曝/后台泄漏/安全挡话不还原。
     B2：本函数**不产出固定句**（固定句池已停产出），改写结果为空就原样返回空串，
     由调用方决定（chat 交出口 repair，非 chat 用原文兜底）。
+    M2：本函数只是 _CHAINS["recheck"] 的薄壳（统计/日志/候选契约不变）。
     """
     candidate = str(original or "") if original is not None else _turn_candidate(umo)
-    if not candidate.strip():
-        return text
-    current = str(text or "")
-    # 本轮他真正问的那句以登记表为准：send 阶段传进来的 user_text 可能已经过期
-    # （扫近聊取到的是更早的 user 行），用它复检会把「其实答到了」的回复判成没答到
-    # （task-36 G09/t5：「忙什么呢」被记成上一轮的「路上堵死了」）。
-    question = _turn_question(umo) or str(user_text or "")
-    fixed = _recheck_once(candidate, current, question)
-    if fixed == current:
-        return fixed
-    _RECHECK_STATS["calls"] += 1
-    if _protected_current(current):
-        _RECHECK_STATS["blocked"] += 1
-        logger.info("[amo] 后置复检拒绝还原（安全挡话/事实守卫）: %s", current[:40])
-        return text
-    safe = _restore_candidate(candidate, plugin)
-    if _unsafe_candidate(safe):
-        _RECHECK_STATS["blocked"] += 1
-        logger.info("[amo] 后置复检拒绝还原（候选不安全）: %s", safe[:40])
-        return text
-    if safe != candidate:
-        retry = _recheck_once(safe, current, question)
-        if retry == current:
-            _RECHECK_STATS["blocked"] += 1
-            return text
-        fixed = retry
-    _RECHECK_STATS["restored"] += 1
-    logger.info("[amo] 改写后语义复检：还原候选 %s -> %s", current[:40], fixed[:40])
-    return fixed
+    ctx = _RescueCtx(plugin=plugin, umo=umo, user_text=user_text,
+                     candidate=candidate)
+    return _run_rescue(text, ctx, "recheck")
 
 
 def complete_deleted_answer(text, plugin=None, umo="", user_text="", candidate=""):
@@ -1797,24 +1935,11 @@ def apply_segment_repeat_guard(text, plugin=None, umo=""):
     返回空串 = 这一段整段都是复读，**不再换一句短的**（B2：固定句池已停产出）：
     send 阶段按空段跳过（amo_outbound.send 遇空直接不发送），不会发一条空消息。
     他这一问的答案落在这一段里时仍由 _keep_answer 保住（答案优先于不复读）。
+    M2：本函数只是 _CHAINS["segment"] 的薄壳（_TURN_SEGMENTS 副作用与「空段=空串」
+    契约不变；repair-owned 的修复句只会在 keep_answer 里被原样保住）。
     """
-    value = str(text or "")
-    if not value.strip():
-        return value
-    key = str(umo or "").strip()
-    earlier = (list(_TURN_SEGMENTS.get(key) or ())
-               if _ACTIVE_TURN.get(key) is not None else [])
-    refs = _repeat_guard.recent_reference(plugin, umo, DEDUP_WINDOW) + earlier
-    fixed, dropped = _repeat_guard.dedup_or_fallback(value, umo, refs)
-    fixed = _keep_answer(value, fixed, _turn_question(umo), dropped)
-    for item in dropped:
-        logger.debug("[dedup] 分段复读已删掉: %s", item[:40])
-    rows = _TURN_SEGMENTS.setdefault(key, [])
-    body = _repeat_guard.compare_body(fixed)
-    if body:
-        rows.append(body)
-        del rows[:-STATUS_MEMORY_LIMIT]
-    return fixed
+    ctx = _RescueCtx(plugin=plugin, umo=umo)
+    return _run_rescue(text, ctx, "segment")
 
 
 def _send_status_dedup(text, ctx):

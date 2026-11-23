@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import inspect
 import os
 import sqlite3
 import sys
@@ -143,6 +144,27 @@ class GuardOrderContractTests(unittest.TestCase):
                       body)
         self.assertNotIn("fixed or value", body)
         self.assertNotIn('_fallbacks.sentence("status_repeat")', body)
+
+    def test_rescue_chain_is_single_source_of_order(self):
+        # M2：final_semantic_recheck / apply_segment_repeat_guard 收敛成 _CHAINS 薄壳；
+        # 纯判据 post_rewrite_recheck 保持独立（无 plugin/umo、无日志、不进链条）。
+        self.assertEqual(P._CHAINS["recheck"], (
+            "judge", "protect", "restore", "unsafe", "rejudge"))
+        self.assertEqual(P._CHAINS["segment"], (
+            "refs", "dedupe", "keep_answer", "remember"))
+        source = _source("amo_reply_pipeline.py")
+        recheck_body = _body(source, "def final_semantic_recheck(",
+                             "def complete_deleted_answer(")
+        self.assertIn('_run_rescue(text, ctx, "recheck")', recheck_body)
+        segment_body = _body(source, "def apply_segment_repeat_guard(",
+                             "def _send_status_dedup(")
+        self.assertIn('_run_rescue(text, ctx, "segment")', segment_body)
+        judge_body = _body(source, "def _stage_judge(", "def _stage_protect(")
+        self.assertIn("_recheck_once(ctx.candidate, ctx.current, ctx.question)",
+                      judge_body)
+        self.assertEqual(list(inspect.signature(GC.post_rewrite_recheck).parameters),
+                         ["original", "rewritten", "user_text", "answered"])
+        self.assertNotIn("_run_rescue", inspect.getsource(GC.post_rewrite_recheck))
 
     def test_state_rewrite_and_validate_end_with_recheck(self):
         source = _source("amo_state_consistency.py")
