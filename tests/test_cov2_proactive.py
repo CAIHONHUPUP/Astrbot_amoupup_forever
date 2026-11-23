@@ -296,8 +296,9 @@ class PureTests(unittest.TestCase):
         self.assertEqual(amo_proactive.severity_rank("怪值"), 0)
 
     def test_forced_reason(self):
+        # 2026-11-23：开心不再算红线（曾导致刚聊完天立刻以 forced 分享）。
         happy = {"mood": {"开心": 95}}
-        self.assertIn("开心到极点", amo_proactive.forced_reason(happy))
+        self.assertEqual("", amo_proactive.forced_reason(happy))
         sad = {"mood": {"委屈": 90}}
         self.assertIn("情绪很崩", amo_proactive.forced_reason(sad))
         sad2 = {"mood": {"郁闷": 95}}
@@ -1031,6 +1032,20 @@ class ChooseKindTests(unittest.TestCase):
         p.config["proactive_user_idle_minutes"] = 0
         self.assertFalse(p._proactive_user_just_talked({"last_seen": now}, now))
 
+    def test_user_just_talked_minutes_override(self):
+        p = FakeProactive(config={"proactive_user_idle_minutes": 30})
+        now = amo_proactive.now_ts()
+        self.assertTrue(p._proactive_user_just_talked({"last_seen": now - 1200}, now))
+        self.assertFalse(p._proactive_user_just_talked({"last_seen": now - 1200}, now, minutes=5))
+        self.assertTrue(p._proactive_user_just_talked(
+            {"last_seen": now - 120}, now, minutes=5))
+
+    def test_happy_mood_is_not_a_forced_redline(self):
+        # 2026-11-23：开心≥90 曾经是红线，导致刚聊完天就以 forced 身份分享。
+        self.assertEqual("", amo_proactive.forced_reason({"mood": {"开心": 95}}))
+        self.assertTrue(amo_proactive.forced_reason({"mood": {"委屈": 90}}))
+        self.assertTrue(amo_proactive.forced_reason({"mood": {"郁闷": 92}}))
+
     def test_forced_allowed(self):
         p = FakeProactive(config={"proactive_forced_gap_minutes": 30})
         now = amo_proactive.now_ts()
@@ -1396,7 +1411,7 @@ class OneTests(unittest.TestCase):
         p.config["proactive_share_prob"] = 0   # 固定 kind，避免 share 随机
         p._pick_proactive_umo = lambda profile: "lark:private:u1"
         p._photo_proactive_blocked = lambda: False
-        p._proactive_user_just_talked = lambda profile, now: False
+        p._proactive_user_just_talked = lambda profile, now, minutes=None: False
         return p
 
     def test_empty_uid_and_slot(self):
@@ -1421,7 +1436,7 @@ class OneTests(unittest.TestCase):
         with mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
             asyncio.run(amo_proactive._proactive_one(p, {"uid": "u1"}, {}, NOW, False, False))
         p._photo_proactive_blocked = lambda: False
-        p._proactive_user_just_talked = lambda profile, now: True
+        p._proactive_user_just_talked = lambda profile, now, minutes=None: True
         with mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
             asyncio.run(amo_proactive._proactive_one(p, {"uid": "u1"}, {}, NOW, False, False))
         self.assertEqual(p.sent, [])
@@ -1514,11 +1529,11 @@ class OneTests(unittest.TestCase):
 
     def test_forced_reason_path(self):
         p = self._plugin(llm=FakeLLM(text="你不舒服吗"))
-        snap = {"mood": {"开心": 95}, "health": {"sick": False}, "activity": {"category": "sleep"}}
+        snap = {"mood": {"委屈": 90}, "health": {"sick": False}, "activity": {"category": "sleep"}}
         p._send_proactive_lines = lambda profile, umo, text, kind="greet": _send_lines(profile, umo, text)
         with mock.patch.object(group_scene, "proactive_allowed", lambda plugin, umo: True):
             asyncio.run(amo_proactive._proactive_one(
-                p, {"uid": "u1", "last_seen": amo_proactive.now_ts()},
+                p, {"uid": "u1", "last_seen": amo_proactive.now_ts() - 3600},
                 snap, NOW, True, True))
         self.assertEqual(len(p.llm.calls), 1)
 
@@ -1554,7 +1569,7 @@ class ProactiveGuardTests(unittest.TestCase):
         p = FakeProactive(profiles=[{"uid": "u1", "relation": "相恋"}], **kwargs)
         p._pick_proactive_umo = lambda profile: "lark:private:u1"
         p._photo_proactive_blocked = lambda: False
-        p._proactive_user_just_talked = lambda profile, now: False
+        p._proactive_user_just_talked = lambda profile, now, minutes=None: False
         p._dating_active = lambda: False
         return p
 
@@ -1830,7 +1845,7 @@ class ProbabilityGateTests(unittest.TestCase):
 
     def test_red_line_bypasses_roll(self):
         p = self._plugin()
-        snap = {"mood": {"开心": 95, "委屈": 0, "郁闷": 0},
+        snap = {"mood": {"开心": 0, "委屈": 90, "郁闷": 0},
                 "health": {"sick": False, "severity": "none"},
                 "period": {"pain": 0}, "activity": {"category": "work"}}
         with mock.patch.object(amo_proactive, "_roll_probability", lambda prob: False), \
@@ -1868,3 +1883,4 @@ class NonDictMemoryRowsTests(unittest.TestCase):
                 return [None, "junk", 42]
 
         self.assertFalse(asyncio.run(Junk()._user_spoke_today("u1", "morning")))
+

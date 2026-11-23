@@ -78,7 +78,8 @@ class ProactiveFactsTests(unittest.TestCase):
         from amo_proactive import forced_reason
         # 「一整天没交流」已删：沉默是禁发信号，不是必须主动的红线。
         self.assertEqual(forced_reason({}, None, 8.5), "")
-        self.assertIn("开心到极点", forced_reason({"mood": {"开心": 95}}, None, 1))
+        # 2026-11-23：开心不再是红线（曾导致刚聊完天立刻以 forced 分享）。
+        self.assertEqual("", forced_reason({"mood": {"开心": 95}}, None, 1))
         self.assertIn("5%", forced_reason({}, 0.04, 1))
         self.assertEqual(forced_reason({}, 0.5, 2), "")
 

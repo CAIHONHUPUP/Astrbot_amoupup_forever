@@ -591,15 +591,21 @@ def severity_rank(value):
         return 0
 
 
+#: 红线消息（情绪崩/大病/余额慌）也要避开「他刚说完话」的头几分钟：人在旁边，
+#: 不急这几分钟，插话反而像没在听。普通消息用 proactive_user_idle_minutes。
+PROACTIVE_FORCED_IDLE_MINUTES = 5
+
+
 def forced_reason(snap, balance_ratio=None, silence=0.0):
-    """必须主动的红线：情绪极值 / 大病 / 余额低于总资产 5%。
+    """必须主动的红线：情绪崩 / 大病 / 余额低于总资产 5%。
 
     2026-11-22：删掉「超过 8 小时没交流」分支——它会把「一整天没说话」变成
     必须主动找他，直接抵消沉默 6 小时禁发规则。沉默只影响能不能打扰，不是红线。
+    2026-11-23：删掉「开心≥90 → 想分享」——开心不是红线；它曾让刚聊完天的一轮
+    立刻以 forced 身份跳过「他刚说过话」检查，表现为「刚说完话马上又分享」。
+    分享欲回到普通概率 + 30 分钟空闲口径。
     """
     mood = (snap or {}).get("mood") or {}
-    if float(mood.get("开心") or 0) >= 90:
-        return "你现在开心到极点，特别想找人分享。"
     if float(mood.get("委屈") or 0) >= 85 or float(mood.get("郁闷") or 0) >= 90:
         return "你现在情绪很崩，一个人很难受，特别想找老公。"
     health = (snap or {}).get("health") or {}
@@ -1520,9 +1526,15 @@ class ProactiveMixin(_MixinBase):
             return "share"
         return "greet"
 
-    def _proactive_user_just_talked(self, profile, now):
-        """对方刚说过话就别主动插话。0 表示关闭这项检查。"""
-        minutes = max(0, self.cfg_int("proactive_user_idle_minutes", 30))
+    def _proactive_user_just_talked(self, profile, now, minutes=None):
+        """对方刚说过话就别主动插话。0 表示关闭这项检查。
+
+        minutes=None 用配置的 proactive_user_idle_minutes（默认 30）；
+        红线消息传 PROACTIVE_FORCED_IDLE_MINUTES（5 分钟），避免「刚聊完马上分享」。
+        """
+        if minutes is None:
+            minutes = max(0, self.cfg_int("proactive_user_idle_minutes", 30))
+        minutes = max(0, int(minutes or 0))
         if not minutes:
             return False
         last_user_at = to_float(profile.get("last_seen"), 0)
@@ -2118,6 +2130,12 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
             return
         if self._proactive_user_just_talked(profile, now_ts()):
             return
+    elif self._proactive_user_just_talked(profile, now_ts(),
+                                          minutes=PROACTIVE_FORCED_IDLE_MINUTES):
+        # 红线也不在他刚说完话的头 5 分钟里插话（2026-11-23：刚聊完立刻分享的事故）。
+        logger.info("[amo] 主动消息：他刚说完话，红线也等 %d 分钟",
+                    PROACTIVE_FORCED_IDLE_MINUTES)
+        return
     try:
         followup_at = to_float(self.db.kv_get("proactive_followup_at_" + uid, 0), 0)
     except Exception as _amo_exc:
