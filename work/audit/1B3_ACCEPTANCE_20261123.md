@@ -81,7 +81,7 @@
 
 ### 最终指标（HEAD 2c04cea）
 
-- 门禁：见 `verify_final.json`（预期 6443 passed / 0 failed；mypy 0/264；pyflakes clean；silent 0；unittest ok；freeze 0）
+- 门禁（final，981s）：**6443 passed / 0 failed / 7 skipped / 293 subtests**；mypy **0/264**；pyflakes clean(220)；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
 - 四件套：daily 50/50、614/614；share 500/100%（damaged 0、persistent 0）；remind 240/240；adversarial 39/39；imm 11 passed（emotion_keep 0.9655、空回复 0、复读 0）
 - 回放：narration_after 0；fixed 23、persistent 4（2078/2149/2223/2281，需真模型重写）
 
