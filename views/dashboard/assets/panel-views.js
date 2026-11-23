@@ -11,9 +11,14 @@ const AMO_SCHEDULE_SOURCE_LABELS = {
   social: "社交", travel_overlay: "旅行", travel_follow_start: "旅行",
   travel_return: "旅行", trip_leg: "旅行", self_offwork: "她说的",
 };
+// 自动生成的块是默认形态，行尾再标一个「自动」只是噪音（2026-11-23 用户要求）。
+// 只在来源非默认（聊天/过渡/面板/财务/约会…）时才显示后缀。
+const AMO_SCHEDULE_SOURCE_HIDDEN = new Set([
+  "jit", "ensure", "ensure_regen", "generated", "auto",
+]);
 function amoScheduleSourceLabel(source) {
   const key = String(source || "").trim().toLowerCase();
-  if (!key) return "";
+  if (!key || AMO_SCHEDULE_SOURCE_HIDDEN.has(key)) return "";
   return AMO_SCHEDULE_SOURCE_LABELS[key] || key;
 }
 window.amoScheduleSourceLabel = amoScheduleSourceLabel;

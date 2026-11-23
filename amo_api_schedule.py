@@ -249,9 +249,21 @@ def _detail_spending(plugin, day, start, end):
         return {"spending": [], "spending_total_yuan": 0.0}
     items = []
     total = 0.0
+    # 只有现金账户的支出才算“消费”：withdrawable 的「可取额度随现金下调」
+    # 是同一笔花钱的额度联动（account=withdrawable / category=账户调整），
+    # 再算一次会把一碗 20 的面显示成 40（2026-11-23 线上）。
+    excluded = getattr(wallet, "_expense_excluded", None)
     for row in rows:
         if not isinstance(row, dict):
             continue
+        if str(row.get("account") or "cash") != "cash":
+            continue
+        if callable(excluded):
+            try:
+                if excluded(row):
+                    continue
+            except Exception as _amo_exc:  # cleanup: 判据不可用就只按账户过滤
+                _note_swallowed("amo_api_schedule._detail_spending.excluded", _amo_exc)
         cents = int(row.get("delta_cents") or 0)
         if cents >= 0:
             continue  # 只展示支出；工资/退款不算“消费”
