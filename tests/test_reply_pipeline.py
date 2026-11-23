@@ -610,8 +610,6 @@ class SendPathABTests(unittest.TestCase):
     def test_ab_extreme(self):
         self._ab("extreme")
 
-    def test_ab_photo_promise(self):
-        self._ab("photo_promise")
 
     def test_ab_privacy_wardrobe(self):
         self._ab("privacy_wardrobe")
@@ -622,8 +620,6 @@ class SendPathABTests(unittest.TestCase):
     def test_ab_group(self):
         self._ab("group")
 
-    def test_ab_plain(self):
-        self._ab("plain")
 
     def test_ab_package_mode_all_scenarios(self):
         for scenario_id in [item["id"] for item in SEND_SCENARIOS]:

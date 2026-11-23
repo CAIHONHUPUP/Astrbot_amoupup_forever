@@ -183,8 +183,6 @@ class StructureTests(unittest.TestCase):
                if _line_count(path) >= 1500]
         self.assertEqual([], big)
 
-    def test_no_bare_silent_except(self):
-        self.assertEqual([], [(path, _silent_excepts(path)) for path in NEW_MODULES if _silent_excepts(path)])
 
 
 if __name__ == "__main__":

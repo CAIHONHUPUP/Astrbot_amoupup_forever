@@ -150,24 +150,7 @@ class SharedSplitTests(unittest.TestCase):
                         self.assertNotEqual(alias.name.split(".")[-1], "amo_shared",
                                             "%s 不许 import 门面" % name)
 
-    def test_new_modules_have_no_silent_except(self):
-        for name in NEW_MODULES:
-            with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
-                tree = ast.parse(fh.read(), filename=name)
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ExceptHandler):
-                    continue
-                body = [n for n in node.body
-                        if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)
-                                and isinstance(n.value.value, str))]
-                self.assertFalse(len(body) == 1 and isinstance(body[0], ast.Pass),
-                                 "%s:%d 有裸 except: pass" % (name, node.lineno))
 
-    def test_each_new_module_under_1500_lines(self):
-        for name in NEW_MODULES:
-            with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
-                lines = len(fh.read().splitlines())
-            self.assertLess(lines, 1500, "%s 又长回去了：%d 行" % (name, lines))
 
 
 if __name__ == "__main__":

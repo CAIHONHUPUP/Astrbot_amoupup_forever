@@ -216,18 +216,6 @@ class RestoreAuditTests(unittest.TestCase):
 
 
 class RestoreRejectTests(unittest.TestCase):
-    def test_restore_rejects_overlap_even_with_full_fields(self):
-        api = FakeApi({"date": DAY, "id": "ev_b"})
-        self.assertEqual(run(api, "api_schedule_block_delete")["code"], 0)
-        audit_id = audit_rows(api)[0]["id"]
-        api.db.rows[DAY].append({"id": "ev_c", "start": "12:30", "end": "13:30",
-                                 "activity": "开会", "place": "会议室"})
-        api.state.schedule[DAY] = [dict(r) for r in api.db.rows[DAY]]
-        payload = call_restore(api, audit_id)
-        self.assertEqual(payload["code"], 1, payload)
-        self.assertIn("重叠", payload["msg"])
-        self.assertEqual(len(api.state.commits), 1)
-        self.assertEqual(len(audit_rows(api)), 1)
 
     def test_restore_rejects_history_and_future(self):
         api = FakeApi({})

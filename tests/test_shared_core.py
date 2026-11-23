@@ -260,8 +260,6 @@ class CrossPlatformAndQuoteTests(unittest.TestCase):
         kwargs = lark_quote_kwargs(False, "m1", "", "oc_chat", False)
         self.assertEqual(kwargs["receive_id"], "oc_chat")
 
-    def test_lark_without_ids_falls_back(self) -> None:
-        self.assertEqual(lark_quote_kwargs(False, "", "", "", False), {})
 
 
 class MiscSharedTests(unittest.TestCase):

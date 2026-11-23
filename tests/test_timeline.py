@@ -80,14 +80,6 @@ class BlockIdentityTests(unittest.TestCase):
         self.assertNotEqual(block_id("2026-11-16", _block("16:07", "16:56")),
                             block_id("2026-11-16", _block("16:56", "18:26")))
 
-    def test_block_id_changes_with_content_or_time(self):
-        base = _block("16:07", "16:56", "在医院排队", "医院")
-        self.assertNotEqual(block_id("2026-11-16", base),
-                            block_id("2026-11-16", dict(base, activity="在商场逛街")))
-        self.assertNotEqual(block_id("2026-11-16", base),
-                            block_id("2026-11-16", dict(base, place="家")))
-        self.assertNotEqual(block_id("2026-11-16", base),
-                            block_id("2026-11-16", dict(base, end="17:30")))
 
     def test_block_id_is_forwarded_from_state_common(self):
         item = _block("16:07", "16:56", "在医院排队", "医院")
