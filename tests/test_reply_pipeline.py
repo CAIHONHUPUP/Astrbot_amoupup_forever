@@ -65,7 +65,7 @@ EXPECTED_DECORATE_ORDER = [
 ]
 EXPECTED_GENERATE_ORDER = [
     "generate.claim_retry", "generate.polish", "generate.trim", "generate.date_state",
-    "generate.refusal", "generate.short_reply",
+    "generate.refusal",
     "generate.consumption", "generate.group_guard", "generate.group_tease",
     "generate.photo_claim", "generate.photo_intent", "generate.photo_wants",
 ]
@@ -100,16 +100,16 @@ PROACTIVE_SCENARIOS = [
 #: 改造前跑真实 _claim_retry + _reply_postprocess + 补图块得到的逐字节结果
 GOLDEN_GENERATE = {
     "claim": {"text": "今天在家煮了碗面，好香",
-              "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
+              "trace": ["polish", "trim", "date_state", "refusal",
                         "consumption"]},
     "photo_promise": {"text": "刚刚想拍照，没拍成，先不折腾啦。",
-                      "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
+                      "trace": ["polish", "trim", "date_state", "refusal",
                                 "consumption"]},
     "short_reply": {"text": "谢谢",
-                    "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
+                    "trace": ["polish", "trim", "date_state", "refusal",
                               "consumption"]},
     "plain": {"text": "好呀，那晚上一起看剧。",
-              "trace": ["polish", "trim", "date_state", "refusal", "short_reply",
+              "trace": ["polish", "trim", "date_state", "refusal",
                         "consumption"]},
 }
 GEN_INPUTS = {
@@ -118,7 +118,7 @@ GEN_INPUTS = {
     "short_reply": {"reply": "谢谢", "user": "给你买了个东西"},
     "plain": {"reply": "好呀，那晚上一起看剧。", "user": "晚上干嘛"},
 }
-GEN_TRACE_GROUP = ["polish", "trim", "date_state", "refusal", "short_reply",
+GEN_TRACE_GROUP = ["polish", "trim", "date_state", "refusal",
                    "consumption", "group_guard", "group_tease"]
 STAGE_TO_LABEL = {
     "generate.claim_retry": "claim_retry",
@@ -126,7 +126,6 @@ STAGE_TO_LABEL = {
     "generate.trim": "trim",
     "generate.date_state": "date_state",
     "generate.refusal": "refusal",
-    "generate.short_reply": "short_reply",
     "generate.consumption": "consumption",
     "generate.group_guard": "group_guard",
     "generate.photo_intent": "photo_intent",
@@ -395,7 +394,6 @@ class _GenTracing:
             return orig_refuse(*args, **kwargs)
         refuse.should_refuse = should_refuse
         for key, name, label in (("date_state", "guard", "date_state"),
-                                 ("short_reply", "guard", "short_reply"),
                                  ("group_scene", "guard_group_reply", "group_guard")):
             module = self.mods[key]
             orig = getattr(module, name)

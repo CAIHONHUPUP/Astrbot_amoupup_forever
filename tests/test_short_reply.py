@@ -75,38 +75,12 @@ class CurtTests(unittest.TestCase):
             self.assertFalse(short_reply.is_curt(text), text)
 
 
-class GuardTests(unittest.TestCase):
-    """task-3b C1：短回复不再被固定句替换；客服词/敷衍交给 prompt + 生成期重试。"""
-
-    def test_service_words_are_kept(self):
-        for text in ("好的", "收到", "谢谢", "没问题", "抱歉", "明白"):
-            self.assertEqual(short_reply.guard(text, HAPPY, "开会去了"), text)
-
-    def test_thanks_is_not_replaced(self):
-        text = short_reply.guard("谢谢", HAPPY, "给你转了点钱")
-        self.assertEqual(text, "谢谢")
-        self.assertNotIn("爱你", text)
-
-    def test_angry_keeps_short_cold(self):
-        self.assertEqual(short_reply.guard("嗯。", ANGRY, "随便你"), "嗯。")
-
-    def test_curt_user_gets_no_counter_line(self):
-        for reply in ("好", "嗯。"):
-            out = short_reply.guard(reply, ANGRY, "哦")
-            self.assertEqual(out, reply)
-            self.assertNotIn("别聊了", out)
-
-    def test_long_reply_untouched(self):
-        long_text = "今天在公司忙了一天，回来路上还下雨了，鞋都湿了。"
-        self.assertEqual(short_reply.guard(long_text, HAPPY, "嗯"), long_text)
-
-
 class WiringTests(unittest.TestCase):
     def test_compose_reply_uses_short_reply(self):
         text = io.open(os.path.join(ROOT, "amo_llm.py"), encoding="utf-8").read()
         self.assertIn("short_reply.prompt_block", text)
-        # task-3b C1：guard 仍是 generate 阶段 A/B 的调用点，但已不再产出固定句
-        self.assertIn("short_reply.guard", text)
+        # M3：恒等壳 guard 已删，不许回流；短回复只经 prompt_block 进生成链。
+        self.assertNotIn("short_reply.guard", text)
         self.assertNotIn("不要用括号描述动作", text)
 
 

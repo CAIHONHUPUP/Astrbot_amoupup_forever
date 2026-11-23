@@ -978,11 +978,10 @@ def _stage_media(ctx):
         body = ""
     ctx.text = body
     if not body.strip():
-        # 媒体-only：当前行为就是短句（B2 起为空串/修复句）过一次后置复检后**提前
+        # 媒体-only：当前行为就是本轮修复句（没有则空串）过一次后置复检后**提前
         # 返回**，后面的收件人/补答/还原/地点一个都不跑（SC3）。
         ctx.text = _post_recheck(
-            _safe_short_reply(ctx.umo, history_bot_texts(ctx.plugin, ctx.umo)),
-            ctx.plugin, ctx.umo, ctx.user_text)
+            _turn_repaired(ctx.umo), ctx.plugin, ctx.umo, ctx.user_text)
         return "media_empty"
     return None
 
@@ -1006,10 +1005,10 @@ def _stage_scene(ctx):
 
 
 def _stage_empty_scene(ctx):
-    """S4 分句/场景删空（SC4）：短句池已停产出；没有短句时非 chat 才用删前正文兜底。"""
+    """S4 分句/场景删空（SC4）：本轮修复句是终态；没有修复句时非 chat 才用删前正文兜底。"""
     if ctx.text.strip():
         return None
-    ctx.text = _safe_short_reply(ctx.umo, ctx.refs)
+    ctx.text = _turn_repaired(ctx.umo)
     if not ctx.text and not _turn_registered(ctx.umo):
         # B2：没有 chat 出口 repair 的调用（主动推送/独立调用，本轮没登记候选）
         # 绝不发空 —— 用删句前的正文兜底（原文就是复读，但比一条空消息好）。
@@ -1266,17 +1265,6 @@ def _turn_repaired(umo):
     except Exception:  # cleanup: 取不到修复句就按没有处理（退回既有空串语义）
         pass
     return ""
-
-
-def _safe_short_reply(umo, refs=None):
-    """删空兜底（B2）：短句池已停产出，正常返回空串交出口 repair。
-
-    repair-owned（本轮已 mark_turn_repaired）的修复句是**终态**：send 段的删空阶段
-    遇到它必须直接交回修复句，不再合成短句/空串把它顶掉（B3/R2，SC10）。
-    空串的去处：chat 出口由 amo_reply_pipeline.repair_reply 重生成；非 chat 由
-    调用点的正文/地点兜底保非空，绝不给用户发一条空消息。
-    """
-    return _turn_repaired(umo)
 
 
 def _post_recheck(text, plugin, umo="", user_text=""):

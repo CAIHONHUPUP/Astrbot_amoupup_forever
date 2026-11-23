@@ -14,8 +14,8 @@
 B2（2026-11-23）把池子拆成两副面孔：FALLBACKS 数据仍是**识别集**（is_fixed_rewrite /
 is_multi_pool / is_blocking_fallback / fixed_rewrite_bodies 以及 recover、
 final_semantic_recheck、repair.is_canned_reply 都读它），但**产出 API 全部停用**
-（sentence/short_fallback 返回 ""，dedup_or_fallback 整条重复时返回空文本，
-pick 只保留 leak 安全挡话）。固定句退出生成链，只剩「认得出旧句」的能力。
+（dedup_or_fallback 整条重复时返回空文本，pick 只保留 leak 安全挡话）。
+固定句退出生成链，只剩「认得出旧句」的能力。
 
 纯文本、无副作用，方便单测；调用方负责传「最近 bot 文本」和是否记录。
 """
@@ -32,11 +32,11 @@ __all__ = [
     "DEDUP_WINDOW", "DEDUP_MIN_CHARS", "DEDUP_SIMILARITY", "FALLBACKS",
     "MODEL_LEAK_DEFLECTIONS", "SHORT_FALLBACKS", "EMOTION_FALLBACKS",
     "FIXED_REWRITE_INTENTS", "EXTRA_FIXED_SENTENCES",
-    "fallback_pool", "sentence", "pick", "generic_bodies",
+    "fallback_pool", "pick", "generic_bodies",
     "fixed_rewrite_bodies", "is_fixed_rewrite", "is_fixed_fragment",
     "is_multi_pool", "substantive_reply", "prefer_substantive_candidate",
     "compare_body", "reference", "dedup_sentences", "dedup_or_fallback",
-    "short_fallback", "emotion_hint", "pick_variant", "reset",
+    "emotion_hint", "pick_variant", "reset",
 ]
 
 #: 只和最近几条 bot 消息比对
@@ -48,9 +48,9 @@ DEDUP_SIMILARITY = 0.9
 
 #: 统一兜底注册表（2026-11-22 task-18）：意图/场景 -> 唯一一句。
 #:
-#: B2 之后这张表**只做识别**，不再产出：产出 API（sentence/pick/short_fallback/
-#: dedup_or_fallback）已停用，一律返回空串，空串交出口（chat 由 repair 重生成、
-#: 非 chat 由调用方原文兜底）。数据必须留着，是因为识别集就长在这份数据上：
+#: B2 之后这张表**只做识别**，不再产出：产出 API（pick 只留 leak 安全挡话、
+#: dedup_or_fallback 整条重复时返回空文本）不再造句，空串交出口（chat 由 repair
+#: 重生成、非 chat 由调用方原文兜底）。数据必须留着，是因为识别集就长在这份数据上：
 #: fixed_rewrite_bodies/is_fixed_rewrite/is_multi_pool 以及 amo_rewrite_safety.recover、
 #: final_semantic_recheck、repair.is_canned_reply 都靠它认出「这句只是旧兜底」。
 #: （3b §6 风险 1：先停产出、后收缩数据；收缩是下一波，不在 B2。）
@@ -175,16 +175,6 @@ def fallback_pool(intent):
     is_fixed_rewrite/fixed_rewrite_bodies。
     """
     return tuple(FALLBACKS.get(str(intent or ""), ()))
-
-
-def sentence(intent, **fields):
-    """【产出 API，B2 已停用】固定句池退出生成链：永远返回空串。
-
-    签名保留是为了让旧调用点的空串哨兵语义显式（调用方必须自己处理空，
-    例如 amo_runtime_reply 的 `or 字面量`）；要读池数据用 fallback_pool，
-    要识别旧句用 is_fixed_rewrite/fixed_rewrite_bodies。
-    """
-    return ""
 
 
 def pick(intent, key, used=()):
@@ -363,15 +353,6 @@ def pick_variant(key, pool, used):
             return candidate
     _STATE[str(key)] = (index + 1) % len(choices)
     return choices[index % len(choices)]
-
-
-def short_fallback(umo, refs):
-    """【产出 API，B2 已停用】删空不再换一句短话：返回空串（交出口）。
-
-    历史上这里按 umo 轮换 short 池、避开最近说过的话；现在整条复读=这一轮
-    没有可发的话，由 chat 出口 repair 重生成，非 chat 由调用方原文兜底。
-    """
-    return ""
 
 
 def emotion_hint(text):

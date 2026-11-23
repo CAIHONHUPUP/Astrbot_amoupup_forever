@@ -11,7 +11,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import amo_question_guard  # noqa: E402
-import amo_repetition_guard  # noqa: E402
 import amo_reply_pipeline as pipeline  # noqa: E402
 import amo_state_consistency as consistency  # noqa: E402
 from domains.reply import repetition_guard as registry  # noqa: E402
@@ -39,7 +38,7 @@ def _plugin(activity):
 
 class RegistryShapeTests(unittest.TestCase):
     def test_every_intent_keeps_data_but_stops_rendering(self):
-        # B2：池子只剩识别/数据用途——数据一条不少，产出 API 一律返回空串。
+        # B2：池子只剩识别/数据用途——数据一条不少，产出 API（sentence）已删。
         self.assertTrue(registry.FALLBACKS)
         for intent, items in registry.FALLBACKS.items():
             with self.subTest(intent=intent):
@@ -47,8 +46,8 @@ class RegistryShapeTests(unittest.TestCase):
                 self.assertTrue(items, intent)
                 self.assertTrue(all(isinstance(item, str) and item.strip()
                                     for item in items), intent)
-                self.assertEqual(registry.sentence(intent), "")   # 产出已停用
                 self.assertEqual(registry.fallback_pool(intent), tuple(items))  # 数据仍在
+        self.assertFalse(hasattr(registry, "sentence"))  # 产出 API 已删
 
     def test_old_pool_names_are_aliases_not_copies(self):
         self.assertIs(registry.SHORT_FALLBACKS, registry.FALLBACKS["short"])
@@ -57,8 +56,6 @@ class RegistryShapeTests(unittest.TestCase):
             tuple((theme, registry.FALLBACKS["emotion." + theme])
                   for theme, _items in registry.EMOTION_FALLBACKS),
             registry.EMOTION_FALLBACKS)
-        # 门面 re-export 的也是同一份数据（不是又抄一份）
-        self.assertIs(amo_repetition_guard.SHORT_FALLBACKS, registry.FALLBACKS["short"])
 
     def test_scene_question_and_action_data_are_registered(self):
         self.assertIn("scene_generic", registry.FALLBACKS)
@@ -137,8 +134,7 @@ class CallerParityTests(unittest.TestCase):
                             "end": act.get("end", "")}
                 self.assertEqual(amo_question_guard.answer(question, _plugin(activity), "跑题了。"),
                                  "")
-                # B2：问句模板不再渲染（产出停用），但数据/槽位原样保留给识别与回归。
-                self.assertEqual(registry.sentence("question." + key, **render), "")
+                # B2：问句模板不再渲染（sentence 产出 API 已删），数据/槽位原样保留给识别与回归。
                 self.assertEqual(registry.fallback_pool("question." + key)[0].format(**render),
                                  expected)
 
@@ -149,15 +145,14 @@ class CallerParityTests(unittest.TestCase):
         self.assertEqual(pipeline._GENERIC_BODIES, registry.generic_bodies())
 
     def test_status_repeat_sentence_no_longer_renders(self):
-        # B2：status_repeat 只留在识别集里；取句 API 返回空串。
-        self.assertEqual(pipeline._fallbacks.sentence("status_repeat"), "")
+        # B2：status_repeat 只留在识别集里；取句 API（sentence）已删。
+        self.assertFalse(hasattr(registry, "sentence"))
         self.assertIn(registry.compare_body("还是老样子。"),
                       registry.fixed_rewrite_bodies())
 
-    def test_short_fallback_stops_rotating_and_full_repeat_is_empty(self):
+    def test_full_repeat_is_empty_and_short_fallback_api_removed(self):
         registry.reset()
-        self.assertEqual(registry.short_fallback("reg:1", []), "")
-        self.assertEqual(registry.short_fallback("reg:1", ["嗯，我在呢。"]), "")
+        self.assertFalse(hasattr(registry, "short_fallback"))
         # 没有删句时原样返回（判据没变）；整条都是复读时返回空串（B2 删空即不发）。
         fixed, dropped = registry.dedup_or_fallback("我没事。", "reg:2", [])
         self.assertEqual((fixed, dropped), ("我没事。", []))

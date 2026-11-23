@@ -36,7 +36,7 @@ import amo_anti_nag as NAG  # noqa: E402
 import amo_location_rules as LOC  # noqa: E402
 import amo_message as MSG  # noqa: E402
 import amo_proactive as P  # noqa: E402
-import amo_repetition_guard as RG  # noqa: E402
+from domains.reply import repetition_guard as RG  # noqa: E402
 import amo_state_consistency as SC  # noqa: E402
 import proactive_guard as PG  # noqa: E402
 from sim_lib import at, make_state, restore_clock, set_clock, span  # noqa: E402

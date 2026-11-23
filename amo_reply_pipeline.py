@@ -16,7 +16,7 @@
 1. generate（生成后、装饰前）—— amo_llm._compose_reply：
    _claim_retry → _reply_postprocess：polish → _trim_reply →
    date_state.guard → refusal.should_refuse/guard →
-   short_reply.guard → _guard_consumption →
+   _guard_consumption →
    group_scene.guard_group_reply → _maybe_group_private_tease；
    回到 _compose_reply 之后是**副作用阶段**：draw.enforce_photo_claim →
    _enforce_photo_intent → draw.send_photo_now（会真的补一张图，
@@ -76,10 +76,10 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, TYPE_CHECKING
 
 try:  # 整句级复读守卫（去重/短句兜底，纯文本无副作用）
-    from . import amo_repetition_guard as _repeat_guard
+    from .domains.reply import repetition_guard as _repeat_guard
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        import amo_repetition_guard as _repeat_guard  # type: ignore
+        from domains.reply import repetition_guard as _repeat_guard  # type: ignore
 
 try:  # 统一兜底注册表（task-18）：兜底句唯一来源
     from .domains.reply import repetition_guard as _fallbacks
@@ -459,14 +459,6 @@ def _gen_refusal(text, ctx):
         except Exception as exc:  # cleanup：落库失败不影响回复
             logger.debug("[amo] 拒绝原因落库失败: %s", exc)
     return result
-
-
-def _gen_short(text, ctx):
-    try:
-        import short_reply
-    except ImportError:  # pragma: no cover - 顶层总能导入
-        return None
-    return short_reply.guard(text, ctx.snap or {}, ctx.his_words)
 
 
 def _gen_consumption(text, ctx):
@@ -1111,7 +1103,7 @@ except ImportError:  # 直接按文件加载时
             reset_status_memory, status_tokens,
         )
 
-#: 整句级去重：实现在 amo_repetition_guard，这里只保留分段记忆
+#: 整句级去重：实现在 domains.reply.repetition_guard，这里只保留分段记忆
 DEDUP_WINDOW = _repeat_guard.DEDUP_WINDOW
 #: 同一轮里已经发出去的分段（归一化后的整句序列，分段去重只看本轮）
 
@@ -2419,8 +2411,6 @@ def default_stages() -> List[Stage]:
         Stage("generate.refusal", PHASE_GENERATE, 50, _gen_refusal, wired=False,
               side_effect=True, target="refusal.guard",
               ctx_keys=("plugin", "snap", "activity", "his_words", "cash_cents", "hour", "silence_days")),
-        Stage("generate.short_reply", PHASE_GENERATE, 60, _gen_short, wired=False,
-              target="short_reply.guard", ctx_keys=("snap", "his_words")),
         Stage("generate.consumption", PHASE_GENERATE, 80, _gen_consumption, wired=False,
               target="amo_message._guard_consumption", ctx_keys=("plugin",)),
         Stage("generate.group_guard", PHASE_GENERATE, 90, _gen_group, wired=False,

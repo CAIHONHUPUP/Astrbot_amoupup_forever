@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 """短回复人设（2026-11-14）：几个字也要像她，不像客服。
 
-三件事：
+两件事：
 - prompt_block()：把禁用词、语气规范、动作限制、标点潜台词、状态绑定、敷衍反击和 few-shot 拼进 System Prompt；
 - state_binding()：按当前健康/心情给一条“短回复状态”约束；
-- guard()：task-3b C1 起不再改写，只保留函数壳给 generate.short_reply 的 A/B；
-  客服词/敷衍交给 prompt 规则 short.rules + 生成期重试，判定判据是 is_curt()。
 
 纯函数，方便单测；不碰模型、不碰数据库。
 """
@@ -83,10 +81,3 @@ def prompt_block(snap=None, user_text=""):
     return "\n".join(parts)
 
 
-def guard(text, snap=None, user_text=""):
-    """不再改写短回复：只保留函数壳给 generate.short_reply 阶段（A/B 对照）。
-
-    task-3b C1 删掉 _replace_banned/counter_line 的固定句产出；「好的/收到/谢谢」
-    与「他敷衍」交给 prompt 规则 short.rules + 生成期重试。判定判据是 is_curt()。
-    """
-    return str(text or "").strip()

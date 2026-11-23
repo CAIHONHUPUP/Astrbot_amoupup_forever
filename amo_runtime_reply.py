@@ -8,17 +8,6 @@ import re
 import inspect
 
 
-def _fallback_text(intent):
-    """统一兜底注册表；导入失败返回空串，调用点保留原兜底。"""
-    try:
-        try:
-            from .domains.reply.repetition_guard import sentence as _sentence
-        except ImportError:
-            from domains.reply.repetition_guard import sentence as _sentence
-        return str(_sentence(intent) or "")
-    except Exception:
-        return ""
-
 try:  # 三个 mixin 的共同类型底座（运行期=object，沿用拆分前的 MRO 语义）
     from .amo_runtime_ports import RuntimeMixinBase
 except ImportError:  # 直接按文件加载时
@@ -456,7 +445,7 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     r"外套脱了|回来啦|回来了|回去啦|进门了|到家咯)")
         if on_road and _re.search(
                 r"(到了|到啦|刚到家|到家了|到家|刚进门|进家门|进屋|鞋都换了|换好鞋|换上拖鞋|外套脱了)", body):
-            _phrase = _fallback_text("align.arrival_road") or "我还在路上呢，快到了"
+            _phrase = "我还在路上呢，快到了"
             body = _re.sub(r"[^。！？\n]*(?:到了|到啦|刚到家|到家了|到家|刚进门|进家门|进屋|"
                            r"鞋都换了|换好鞋|换上拖鞋|外套脱了)[^。！？\n]*",
                            _phrase, body)
@@ -466,7 +455,7 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         elif not home and _re.search(_arrival, body) and not _re.search(r"从[^。！？\n]{0,10}回来", body):
             # 不在家却说「我回来啦」：改成还在外面（线上实例：先回来啦、后在外面）
             body = _re.sub(r"[^。！？\n]*" + _arrival + r"[^。！？\n]*",
-                           _fallback_text("align.arrival_outside") or "我还在外面呢，晚点就回去", body)
+                           "我还在外面呢，晚点就回去", body)
         body = _re.sub(r"(车|路|家|床|桌|椅|站)上上", r"\1上", body)
         return body
 
@@ -497,7 +486,7 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         if home:
             return body
         if any(w in body for w in ("行", "好", "可以", "就一张", "换", "拍")):
-            return _fallback_text("align.swim_outside") or "在外面呢，等我到家再拍给你看，先别催。"
+            return "在外面呢，等我到家再拍给你看，先别催。"
         return body
 
     async def _deco_text_cleanup(self, event, text):
