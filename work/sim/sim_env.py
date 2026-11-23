@@ -215,6 +215,34 @@ def _probe_of(user_text):
     return ""
 
 
+#: 短追问/短反应（与 amo_grounding_critic 的同名判据同口径，sim 侧副本）。
+_FOLLOWUP = re.compile(
+    r"^(?:然后|后来|接着|再然后|哈哈哈+|嘿嘿|呵呵|笑什么|笑啥|什么视频|什么图|"
+    r"在哪看到的?|真的假的|是吗|嗯嗯|好呀|好啊|所以呢|那呢)")
+#: 分享话题词：repair 提示词里有这些，才按「续接分享」回答。
+_SHARE_WORDS = ("视频", "照片", "图片", "图", "猫", "狗", "剧", "电影", "歌", "游戏", "新闻")
+#: 提示词正文归一化（只留汉字/字母/数字，判短追问用）。
+_PUNCT = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff]+")
+
+
+def _prompt_line(body, prefix):
+    """取 repair 提示词里「标签：内容」那一行（与 imm_harness._prompt_value 同口径）。"""
+    for line in str(body or "").splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix):].strip()
+    return ""
+
+
+def _share_clause(context):
+    """从「最近聊的」里挑她刚分享过的一小段，模拟真模型接着讲同一件事。"""
+    for sentence in re.split(r"[。！？!?\n]", str(context or "")):
+        for clause in re.split(r"[，,；;]", sentence):
+            clause = clause.strip()
+            if len(clause) >= 4 and any(word in clause for word in _SHARE_WORDS):
+                return clause
+    return ""
+
+
 class SimLLM:
     """可复现的模拟 provider：只回答语气选择器 + chat 出口的 repair 提示词。
 
@@ -259,6 +287,13 @@ class SimLLM:
         except Exception:
             snap = {}
         rng = _random.Random("repair:%s" % user)
+        # B3：复检两次没接住时也走 repair。真模型在提示词里看得到「最近聊的」，
+        # 短追问（然后呢/哈哈哈/什么视频）会顺着她刚分享的东西往下讲，而不是答地点。
+        context = _prompt_line(body, "最近聊的：")
+        if context and _FOLLOWUP.match(_PUNCT.sub("", user)):
+            clause = _share_clause(context)
+            if clause:
+                return "然后啊，%s，还有后续呢，我接着说。" % clause
         probe = _probe_of(user)
         if probe:
             meal_ok = str(snap.get("category") or "") == "meal"

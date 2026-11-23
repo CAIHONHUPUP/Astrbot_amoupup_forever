@@ -357,6 +357,7 @@
  "amo_llm_service.py": [
   "amo_date_context",
   "amo_grounding_critic",
+  "amo_reply_pipeline",
   "amo_household",
   "amo_immersion_guard",
   "amo_names",

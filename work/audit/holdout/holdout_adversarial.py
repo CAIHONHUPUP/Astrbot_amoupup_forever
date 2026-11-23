@@ -215,7 +215,13 @@ async def main():
             after = pipeline.apply_chat_safety(cand, plugin, UMO, user,
                                                history_text=history_text)
             issues_first = critic.issues(user, cand)
-            safe = critic.safe_reply(user) if issues_first else after
+            # B3：复检没接住 → 走生产同一条 repair（不再发固定安全句）。SimLLM 桩按
+            # 提示词里的「他刚说的是 / 最近聊的」续接她刚分享的内容。
+            if issues_first:
+                safe = await pipeline.repair_reply(
+                    cand, "", plugin, UMO, user, history=history_text)
+            else:
+                safe = after
         continues = any(w in safe for w in ("然后", "后来", "接着", "纸箱", "猫", "视频", "刚"))
         f_rows.append({"id": cid, "category": "share_continuation", "user": user,
                        "candidate": cand, "after_chat_safety": after,

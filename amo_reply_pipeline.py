@@ -1954,12 +1954,14 @@ _CANNED_BODIES: Optional[frozenset] = None
 _ACTION_PAREN = re.compile(r"[（(][^（）()]*[）)]")
 
 #: 固定句池之外的已知罐头句（识别用，不产出；来源见 tasks/3b/3c 施工图）。
+#: B3 已删 persona/grounding 的 safe_reply 产出；这些旧句仍留在识别集里，
+#: 模型偶然写出同样的模板话照样会被判罐头、交回 repair。
 _CANNED_EXTRA_TEXTS = (
-    # persona_guard.safe_reply（复检两次失败时的安全句）
+    # 旧 persona_guard.safe_reply（复检两次失败时的安全句，B3 已删）
     "我在呢，先别急，慢慢跟我说。",
     "我刚说过的呀，就是刚才跟你提的那个，你别逗我。",
     "我记混了，你再说一遍？",
-    # grounding_critic.safe_reply（同一契约的旧实现，3b 判定为死代码）
+    # 旧 grounding_critic.safe_reply（同一契约的旧实现，B3 已删产出）
     "然后啊，刚才那个还没讲完呢，后面还有更好笑的。",
     "你刚问的这个，我一下没答好，你再说一遍？",
     "换谁都得气，我在听着。",
@@ -1988,11 +1990,6 @@ _QUESTION_SAMPLES: tuple[tuple[str, dict[str, str]], ...] = (
     ("question.not_eaten", {}),
 )
 
-#: 取 safe_reply 各分支用的样例（函数是唯一真源，这里只负责把每个分支问一遍）。
-_SAFE_REPLY_SAMPLES = (
-    ("", None), ("好难受", None), ("好难受", ("刚才",)), ("", ("刚才",)),
-)
-
 
 def _bump_repair(name):
     _REPAIR_COUNTER[name] = _REPAIR_COUNTER.get(name, 0) + 1
@@ -2016,35 +2013,8 @@ def _compare(text):
         return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(text or ""))
 
 
-def _safe_reply_bodies():
-    """persona_guard / grounding_critic 的 safe_reply 池（逐分支取，函数是唯一真源）。"""
-    bodies = set()
-    try:
-        try:
-            from .amo_persona_guard import safe_reply as _persona_safe
-        except ImportError:
-            from amo_persona_guard import safe_reply as _persona_safe
-        for user_text, self_texts in _SAFE_REPLY_SAMPLES:
-            bodies.add(_compare(_persona_safe(user_text, self_texts)))
-    except Exception as _amo_exc:  # cleanup: 取不到就少一类识别，不影响主流程
-        _note_swallowed("amo_reply_pipeline.repair.canned.persona", _amo_exc)
-    try:
-        try:
-            from .amo_grounding_critic import safe_reply as _grounding_safe
-        except ImportError:
-            from amo_grounding_critic import safe_reply as _grounding_safe
-        for user_text, history in (("", ""), ("然后呢", ""),
-                                   ("然后呢", "刚给你看了一个猫的视频"),
-                                   ("在吗？", ""), ("好烦啊", ""),
-                                   ("我刚刷到一个视频", "")):
-            bodies.add(_compare(_grounding_safe(user_text, history)))
-    except Exception as _amo_exc:  # cleanup: 取不到就少一类识别，不影响主流程
-        _note_swallowed("amo_reply_pipeline.repair.canned.grounding", _amo_exc)
-    return bodies
-
-
 def _canned_bodies():
-    """懒加载的罐头句识别集：注册表识别集 + safe_reply 池 + 问句模板样例 + 旧句。"""
+    """懒加载的罐头句识别集：注册表识别集 + 问句模板样例 + 旧安全句/旧句。"""
     global _CANNED_BODIES
     if _CANNED_BODIES is not None:
         return _CANNED_BODIES
@@ -2067,7 +2037,6 @@ def _canned_bodies():
                 bodies.add(_compare(template))
         except Exception as _amo_exc:  # cleanup: 单个模板坏了不影响整体
             _note_swallowed("amo_reply_pipeline.repair.canned.question", _amo_exc)
-    bodies |= _safe_reply_bodies()
     bodies.update(_compare(item) for item in _CANNED_EXTRA_TEXTS)
     _CANNED_BODIES = frozenset(body for body in bodies if body)
     return _CANNED_BODIES
@@ -2078,7 +2047,7 @@ def is_canned_reply(text):
 
     a) 空/纯空白 → True；
     b) repetition_guard.is_fixed_rewrite → True（固定兜底/改写句的唯一识别集）；
-    c) 去掉括号动作旁白后，正文等于/包含已知罐头句（safe_reply 池、question_guard
+    c) 去掉括号动作旁白后，正文等于/包含已知罐头句（旧安全句、question_guard
        模板样例、动作台词、short_reply 旧句）→ True。
     """
     body = str(text or "")

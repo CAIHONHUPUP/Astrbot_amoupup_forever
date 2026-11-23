@@ -484,16 +484,6 @@ def issues(user_text, reply, self_texts=None):
     return result
 
 
-def safe_reply(user_text, self_texts=None):
-    """复检两次都失败时的安全句：宁可短，不可否认自己/不接情绪。"""
-    user = str(user_text or "")
-    if _EMOTION.search(user):
-        return "我在呢，先别急，慢慢跟我说。"
-    if self_texts:
-        return "我刚说过的呀，就是刚才跟你提的那个，你别逗我。"
-    return "我记混了，你再说一遍？"
-
-
 # ---------------------------------------------------------------------------
 # 姓名 / 物品 grounding（出站最后一道）
 # ---------------------------------------------------------------------------
@@ -943,6 +933,6 @@ __all__ = [
     "has_action_narration", "has_orphan_paren", "action_only", "action_ratio",
     "naturalness_issues", "note_naturalness", "naturalness_stats",
     "self_recent_texts", "self_recent_block", "denial_of_self_issue",
-    "emotion_first_issue", "issues", "safe_reply", "ground_names",
+    "emotion_first_issue", "issues", "ground_names",
     "prepare_outbound", "sanitize_candidate", "guard_candidate",
 ]

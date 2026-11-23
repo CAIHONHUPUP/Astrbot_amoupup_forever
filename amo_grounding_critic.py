@@ -3,7 +3,7 @@
 
 两段职责，共用同一套判据，不再让各守卫各写一份「保留原句」补丁：
 
-1) issues()/safe_reply()：生成期判断回复有没有接住他最后一句（bigram，低成本）；
+1) issues()：生成期判断回复有没有接住他最后一句（bigram，低成本）；
 2) post_rewrite_recheck()：所有「整句删除/替换」守卫跑完之后，再判一次
    「这一版还答得上他这一句」。原候选答得上、改写后答不上（或整条只剩通用
    兜底句）时，把原候选要回来——候选优先于删句/兜底。
@@ -57,46 +57,12 @@ def _bigrams(text):
     return {body[i:i + 2] for i in range(max(0, len(body) - 1))}
 
 
-#: 分享话题词 -> 续接时用的口语说法（safe_reply 用；纯函数不依赖插件/账本）。
-_SHARE_TOPICS = (
-    ("视频", "那个视频"), ("照片", "那张照片"), ("图片", "那张图"), ("图", "那张图"),
-    ("猫", "那只猫"), ("狗", "那只狗"), ("剧", "那部剧"), ("电影", "那部电影"),
-    ("歌", "那首歌"), ("游戏", "那个游戏"), ("新闻", "那条新闻"),
-)
-
-
-def _share_topic(history_text):
-    """从最近聊天里认出她刚分享的是什么，供续接句使用（认不出给空串）。"""
-    text = str(history_text or "")
-    for key, label in _SHARE_TOPICS:
-        if key in text:
-            return label
-    return ""
-
-
 def is_short_followup(user_text):
     """他这一句是不是「顺着上一句分享」的短追问/短反应（然后呢/哈哈哈/笑什么）。"""
     body = _PUNCT.sub("", str(user_text or ""))
     if not body or len(body) > 8:
         return False
     return bool(_SHARE_FOLLOWUP.match(body))
-
-
-def safe_reply(user_text, history_text=""):
-    """两次都没接住时，按意图发安全句，不硬发错话。"""
-    user = str(user_text or "")
-    if is_short_followup(user):
-        topic = _share_topic(history_text)
-        if topic:
-            return "然后啊，%s的事还没讲完呢，后面还有更好笑的。" % topic
-        return "然后啊，刚才那个还没讲完呢，后面还有更好笑的。"
-    if _QUESTION.search(user):
-        return "你刚问的这个，我一下没答好，你再说一遍？"
-    if any(word in user for word in ("气", "烦", "难受", "累", "崩")):
-        return "换谁都得气，我在听着。"
-    if any(word in user for word in ("视频", "图片", "刷到", "看到", "分享")):
-        return "我看到了，等我缓一下再细看。"
-    return "我在听，你接着说。"
 
 
 def issues(user_text, reply):

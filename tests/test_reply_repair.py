@@ -178,7 +178,8 @@ class CannedDetectionTests(unittest.TestCase):
             self.assertTrue(pipeline.is_canned_reply(text), text)
 
     def test_safe_reply_pool_is_canned(self):
-        # 来自 amo_persona_guard.safe_reply / amo_grounding_critic.safe_reply
+        # 旧 amo_persona_guard.safe_reply / amo_grounding_critic.safe_reply 的固定句
+        # （B3 已删产出，识别集保留：谁再吐出这些模板话都会被判罐头）
         for text in ("我在呢，先别急，慢慢跟我说。",
                      "我记混了，你再说一遍？",
                      "换谁都得气，我在听着。",

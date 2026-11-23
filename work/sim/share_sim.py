@@ -5,7 +5,7 @@
 1) 用确定性 mock provider 生成 50 组 x 10 轮「她分享视频/图片/事情 + 用户回应」对话；
 2) 每一轮把模型输出送进生产插件真实的确定性守卫：
    - 分享句：amo_state_consistency.rewrite（与 amo_proactive 主动消息同一条路）
-   - 回复：先按 amo_llm_service.polish 的顺序模拟「接话 critic -> 重写 -> 安全句」，
+   - 回复：先按 amo_llm_service.polish 的顺序模拟「接话 critic -> 重写 -> repair」，
      再过 amo_reply_pipeline.apply_chat_safety（线上聊天最后一道守卫）
 3) 用与守卫不共享实现的独立判据打分；
 4) 输出 work/sim/share_report.json / share_report.md。
@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -53,7 +54,6 @@ import amo_reply_pipeline as pipeline  # noqa: E402
 import amo_share_ledger as ledger  # noqa: E402
 import amo_state_consistency as state_consistency  # noqa: E402
 from amo_grounding_critic import issues as grounding_issues  # noqa: E402
-from amo_grounding_critic import safe_reply  # noqa: E402
 
 #: 生产库（只做只读快照：大小 / mtime / 表行数）
 PROD_DBS = [
@@ -217,6 +217,7 @@ class FakePlugin:
         self.state = SimpleNamespace(current_activity=lambda: dict(self._activity))
         self.plugin_dir = ROOT
         self.config = {}
+        self.llm = None
 
     def set_scene(self, scene):
         self._activity = {"place": scene["place"], "zone": scene["zone"],
@@ -337,8 +338,22 @@ def diff_snapshot(before, after):
 # 单轮：分享 -> 用户回应 -> 她回复（生产守卫链）
 # ---------------------------------------------------------------------------
 
-def critic_loop(user_text, raw_reply, scene, topic, intent, provider, enabled=True):
-    """复刻 amo_llm_service.polish 里的接话 critic：一次重写，再不行发安全句。"""
+class _RepairLLM:
+    """repair 桩：模拟真模型在修复提示词里重写一句（用 mock provider 的对齐回复）。"""
+
+    def __init__(self, provider, scene, topic, intent):
+        self.provider = provider
+        self.scene = scene
+        self.topic = topic
+        self.intent = intent
+
+    async def chat_raw(self, umo="", system="", prompt="", *args, **kwargs):
+        return self.provider.aligned_reply(self.scene, self.topic, self.intent)
+
+
+async def critic_loop(user_text, raw_reply, scene, topic, intent, provider,
+                     plugin=None, umo="", history="", enabled=True):
+    """复刻 amo_llm_service.polish 的接话 critic：一次重写，仍不行走一次 repair（B3）。"""
     if not enabled:
         return raw_reply, {"first_issues": [], "disabled": True}
     trace = {"first_issues": grounding_issues(user_text, raw_reply)}
@@ -350,8 +365,21 @@ def critic_loop(user_text, raw_reply, scene, topic, intent, provider, enabled=Tr
         if retry and not trace["retry_issues"]:
             text = retry
         elif trace["retry_issues"]:
-            text = safe_reply(user_text)
-            trace["fallback"] = text
+            # B3：不再发固定安全句；与生产同一条 repair（首版原文当 raw），
+            # 失败/无模型原样保留首版原文。
+            original_llm = getattr(plugin, "llm", None)
+            if plugin is not None:
+                plugin.llm = _RepairLLM(provider, scene, topic, intent)
+            try:
+                text = await pipeline.repair_reply(
+                    raw_reply, "", plugin, umo, user_text, history=history)
+            except Exception as exc:  # cleanup: 仿真容错，失败保留首版
+                trace["repair_error"] = repr(exc)[:200]
+                text = raw_reply
+            finally:
+                if plugin is not None:
+                    plugin.llm = original_llm
+            trace["repair"] = text
     return text, trace
 
 
@@ -415,8 +443,9 @@ def run_group(gidx, inject=True, critic=True):
 
         # ---- 回复：先接话 critic（polish 内），再聊天最后一道守卫 ----
         reply_raw = gen["reply"]
-        after_critic, critic_trace = critic_loop(
-            user_text, reply_raw, scene, topic, intent, provider, enabled=critic)
+        after_critic, critic_trace = asyncio.run(critic_loop(
+            user_text, reply_raw, scene, topic, intent, provider,
+            plugin=plugin, umo=umo, history=history_text, enabled=critic))
         guard_error = ""
         try:
             reply_final = pipeline.apply_chat_safety(
@@ -426,6 +455,14 @@ def run_group(gidx, inject=True, critic=True):
             guard_error = repr(exc)
         if not str(reply_final or "").strip():
             reply_final = after_critic
+        # repair 成功会 mark_turn_repaired（登记本轮候选）。sim 没有下一轮的装饰链去
+        # 覆写候选，这里按生产「候选只对本轮有效」的口径清掉，避免上一轮的修复句
+        # 被 chat_safety 还原到下一轮（B3）。
+        try:
+            from amo_rewrite_safety import clear_candidate
+            clear_candidate(plugin, umo)
+        except Exception:  # cleanup: 清不掉不影响本轮判分
+            pass
         rows.append({"role": "her", "content": reply_final})
 
         raw_problems = evaluate_turn(scene, topic, intent, user_text,
@@ -911,7 +948,7 @@ def write_markdown(report, path):
     add("1. mock provider 按（场景/话题/意图）生成分享句与回复原文，并按固定种子注入常见失败模式；")
     add("2. 分享句走 amo_state_consistency.rewrite（与 amo_proactive._send_proactive_lines 同一条路）；")
     add("3. 分享台账按生产 call-site 条件调 amo_share_ledger.note，并取 prompt_line 作为上下文锚点；")
-    add("4. 回复先复刻 amo_llm_service.polish 的接话 critic（issues -> 重写 -> safe_reply），")
+    add("4. 回复先复刻 amo_llm_service.polish 的接话 critic（issues -> 重写 -> repair），")
     add("   再过 amo_reply_pipeline.apply_chat_safety（线上聊天最后一道确定性守卫）；")
     add("5. 用与守卫不共享实现的独立判据打分。")
     add("")

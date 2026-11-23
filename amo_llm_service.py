@@ -357,13 +357,22 @@ class LLMService:
                     if _retry and not _issues_of(_retry):
                         result = _retry
                     elif _issues_of(result):
-                        from .amo_grounding_critic import safe_reply as _safe_reply
+                        # B3：复检两次都没过 → 不再造固定安全句。只调一次 repair
+                        # （首版原文当 raw，空 guarded = 交给 repair 重生成）；成功用
+                        # 新句并 mark_turn_repaired 登记本轮候选，失败/无模型保留首版原文。
+                        _repaired = ""
                         try:
-                            from .amo_persona_guard import safe_reply as _persona_safe
-                        except ImportError:
-                            from amo_persona_guard import safe_reply as _persona_safe
-                        logger.info("[amo] 接话/人设复检失败两次，发安全句: %s", str(user_text)[:40])
-                        result = _persona_safe(user_text, self_texts) or _safe_reply(user_text)
+                            try:
+                                from .amo_reply_pipeline import repair_reply as _repair_reply
+                            except ImportError:
+                                from amo_reply_pipeline import repair_reply as _repair_reply
+                            logger.info("[amo] 接话/人设复检失败两次，改走 repair: %s",
+                                        str(user_text)[:40])
+                            _repaired = await _repair_reply(
+                                text, "", self.p, umo, user_text)
+                        except Exception as _repair_exc:  # cleanup: 修复失败保留首版原文
+                            logger.debug("[amo] 复检后 repair 失败: %r", _repair_exc)
+                        result = str(_repaired or "").strip() or text
             except Exception as exc:
                 logger.debug("[amo] 接话 critic 失败: %r", exc)
         if len(result) > max(len(text) + 30, int(len(text) * 1.5)):
