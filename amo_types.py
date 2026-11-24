@@ -30,7 +30,6 @@ class PluginLike(Protocol):
     gift: Any
     draw: Any
     photo: Any
-    heartflow: Any
     segment_engine: Any
     _ready: bool
     _last_reply_at: dict[str, float]

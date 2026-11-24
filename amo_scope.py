@@ -18,10 +18,6 @@ def is_group_umo(umo):
     return GROUP_MARK in str(umo or "")
 
 
-def is_group_row(row):
-    return isinstance(row, dict) and is_group_umo(row.get("umo"))
-
-
 def private_rows(rows):
     """只留私聊的行；老数据没有 umo 字段的行按私聊保留（不凭空丢历史）。"""
     out = []

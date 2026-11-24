@@ -19,10 +19,8 @@ logger = logging.getLogger("amo")
 
 from typing import TYPE_CHECKING
 
-import os
 import re
-import shutil
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入

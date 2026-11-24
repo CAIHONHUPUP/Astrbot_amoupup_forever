@@ -14,7 +14,6 @@ date_now / date_home / date_ending / date_closed_at。
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-import datetime as _dt
 
 try:  # Phase 11：统一实现（旧私有名/旧导出名保留为 import 别名）
     from .amo_numbers import (

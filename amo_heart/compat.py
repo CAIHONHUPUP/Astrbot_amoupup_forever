@@ -5,7 +5,7 @@ from __future__ import annotations
 from .dims import new_state, nudge, tick
 from .events import observe
 from .inject import block, score
-from .states import legacy_word, mood_phrase, mood_word, stage
+from .states import legacy_word, mood_phrase, stage
 
 
 class HeartEngine:

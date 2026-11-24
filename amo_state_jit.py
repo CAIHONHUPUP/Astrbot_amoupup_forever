@@ -779,7 +779,7 @@ class JitStateMixin(_MixinBase):
                 sick_action = str((self.sick_decision(day) or {}).get("action") or "") or None
             except Exception:
                 sick_action = None
-        # 心情词：self.mood 只有十维数值（没有 word 键），以前这里永远传空字符串，
+        # 心情词：self.mood 只有九维数值（没有 word 键），以前这里永远传空字符串，
         # jit_plan 里 15:00「郁闷/低落 → 窝着发呆」那支成了死代码。
         mood_word = str(self.mood.get("word") or "")
         if not mood_word:

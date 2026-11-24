@@ -253,7 +253,6 @@ def room_key_of(value):
 
 
 def season_line(now=None):
-    import datetime as _dt
     month = (now or _amo_clock.now()).month
     if 6 <= month <= 9:
         return SEASON_SUMMER

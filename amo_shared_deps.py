@@ -195,6 +195,9 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         try:
             from time_recall import looks_like_time_query as _looks_like_time_query, render_time_block as _render_time_block
         except Exception:
+            logger.warning("[amo] time_recall 载入失败：时间回看整个不生效"
+                           "（问「昨天/昨晚」她只会答记不清）")
+
             def _looks_like_time_query(*args, **kwargs):
                 return False
 

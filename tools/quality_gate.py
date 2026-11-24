@@ -160,7 +160,6 @@ SILENT_FILE_BUDGET = {
     "amo_observability.py": 1,
     "amo_scope.py": 1,
     "amo_state_context.py": 1,
-    "heartflow_engine.py": 1,
     "housing.py": 1,
     "outfit_refs.py": 1,
     "pose_library.py": 1,

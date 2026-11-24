@@ -183,11 +183,6 @@ def date_windows(plugin, day):
     return windows
 
 
-def dating_day(plugin, day):
-    """那一天到底有没有“面对面在一起”这件事。"""
-    return bool(date_windows(plugin, day))
-
-
 def _overlap(slot, window):
     try:
         begin, end = slot

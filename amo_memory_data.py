@@ -558,60 +558,6 @@ class DataSyncMixin(_MixinBase):
             return ""
         return text.split(":")[-1].strip()
 
-    def finance_memory_uid(self):
-        """金融事件的记忆挂到谁身上：优先管理员 uid，其次最近一次私聊的 uid。
-
-        群聊 umo（aiocqhttp:GroupMessage:<群号>）的尾巴是群号；旧版直接取尾巴，
-        金融记忆就记到了群号上（uid=1055679275 这种孤儿）。群聊时改用固定内部
-        身份 owner，绝不猜成群里某个用户，免得把他的账挂到别人名下。
-        """
-        try:
-            for item in sorted(getattr(self, "admin_uids", set()) or []):
-                if str(item).strip():
-                    return str(item).strip()
-        except Exception as _amo_exc:
-            _note_swallowed("amo_memory_data.finance_memory_uid", _amo_exc)
-        uid = self._person_uid_from_umo(getattr(self, "_last_umo", ""))
-        if uid:
-            return uid
-        # 刚重启 / 最近只聊过群：不猜人，记到 owner；finance_recall 会用 owner 兜底
-        return "owner"
-
-    async def finance_remember(self, content, kind="finance", tier=2, idem_key=""):
-        """金融记忆写入（长期、subject=bot）；返回 bool。"""
-        uid = self.finance_memory_uid()
-        if not uid:
-            return False
-        try:
-            return bool(await self._data_memory_write(
-                uid, content, kind=str(kind or "finance"), tier=int(tier),
-                subject="bot", idem_key=str(idem_key or ""),
-            ))
-        except Exception as exc:
-            logger.debug("[amo] 金融记忆写入失败: %s" % exc)
-            return False
-
-    async def finance_recall(self, query, limit=6, tags=""):
-        """金融记忆检索（返回 list[dict]）；失败返回空列表。
-
-        tags 追加在末尾：老的位置调用不受影响；需要按事件回查时再传。
-        旧版把群号当 uid 记下的账（已迁移成 owner）用 owner 再兜一次，
-        免得换回私聊后查不到。
-        """
-        uid = self.finance_memory_uid()
-        if not uid:
-            return []
-        try:
-            rows = await self._data_memory_recall(uid, str(query or ""), limit=int(limit),
-                                                  tags=tags)
-            if not rows and uid != "owner":
-                rows = await self._data_memory_recall("owner", str(query or ""),
-                                                      limit=int(limit), tags=tags)
-            return rows or []
-        except Exception as exc:
-            logger.debug("[amo] 金融记忆检索失败: %s" % exc)
-            return []
-
     async def _data_memory_recall(self, uid, text, limit=6, event=None, tags=""):
         """从「记忆终端」（数据插件，旧名见 amo_compat）取回这个人的记忆。
 

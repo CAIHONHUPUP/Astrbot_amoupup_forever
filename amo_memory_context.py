@@ -62,6 +62,9 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
     _MixinBase = object
 
 
+_MEDIA_WARNED = {"done": False}
+
+
 def _media_helpers():
     """媒体占位记录的读写口径（唯一定义在 amo_message，避免两套正则）。"""
     try:
@@ -72,7 +75,12 @@ def _media_helpers():
             from amo_message import is_media_record as _is_record
             from amo_message import strip_media_markers as _strip
         return _is_record, _strip
-    except Exception:
+    except Exception as exc:
+        # 兜底返回「不是媒体」等于整块功能静默失效（照片占位行会进上下文被复读）；
+        # 只提醒一次，别每条消息刷屏。
+        if not _MEDIA_WARNED["done"]:
+            _MEDIA_WARNED["done"] = True
+            logger.warning("[amo] 媒体占位清洗不可用（照片/语音占位行会进上下文）: %r", exc)
         return (lambda text: False), (lambda text: str(text or ""))
 
 
@@ -129,8 +137,11 @@ class RecallContextMixin(MemoryRerankMixin, _MixinBase):
             return ""
         try:
             umo = str(getattr(event, "unified_msg_origin", "") or "")
-            # 配 0 / 负数时以前会「请求 4 条、只渲染 1 条」，两边都按同一档位收敛
+            # 配 0 / 负数时以前会「请求 4 条、只渲染 1 条」，两边都按同一档位收敛。
+            # 注意这个数一处两用：取回时按 limit×2 拉候选，渲染时按 limit 行截断。
+            # 想「多取少显」就改下面的 ×2，别直接调大 limit（会把块也撑长）。
             limit = max(1, min(40, self.cfg_int("time_recall_limit", 6)))
+            span = None
             # 私聊：不传 uid。recall_messages 按 uid 过滤后只剩「他」说的话，她的回复全被滤掉，
             # 块里就成了「他：是啊 / 自己煮的 / 厉害吧」这种碎片；umo 已经把范围限在这一个
             # 1:1 会话，双方的话都要，不会串到别人。
@@ -155,6 +166,8 @@ class RecallContextMixin(MemoryRerankMixin, _MixinBase):
                     if not isinstance(result, dict):
                         continue
                     label = label or str(result.get("label") or "")
+                    if span is None:
+                        span = result.get("span") or None
                     gathered.extend(result.get("messages") or [])
                 seen = set()
                 merged = []
@@ -170,6 +183,8 @@ class RecallContextMixin(MemoryRerankMixin, _MixinBase):
                     "recall_messages", self._data_bot_id(), query=text, umo=umo,
                     uid=str(uid), limit=min(limit * 2, 40),
                 )
+                if isinstance(result, dict):
+                    span = result.get("span") or None
         except Exception as exc:
             logger.debug("[amo] 时间回看失败: %s" % exc)
             return ""
@@ -179,12 +194,35 @@ class RecallContextMixin(MemoryRerankMixin, _MixinBase):
         label = str(result.get("label") or "")
         if not label:
             return ""
-        # 媒体占位记录不是聊天原话：时间回看里剔除，避免模型把它当可复读文本。
-        messages = [
-            clean for clean in (_clean_context_message(row) for row in messages)
-            if clean is not None
-        ]
-        return _render_time_block(label, messages, max_lines=max(1, int(limit)))
+        # 媒体占位记录不是聊天原话：整行剔除；她自己的旧场景断言降级成过去时。
+        # 以前这里只做媒体清洗，和【最近对话】走的是两套口径——同一句「我在小馆吃」
+        # 进最近对话会被降级、进时间回看不会，取尾部后最容易把刚说过的话当成"现在"。
+        try:
+            try:
+                from .amo_message import sanitize_context_rows as _sanitize_rows
+            except ImportError:
+                from amo_message import sanitize_context_rows as _sanitize_rows
+            messages = _sanitize_rows(self, messages)
+        except Exception as exc:  # cleanup: 清洗不可用就退回只去媒体，聊天不能因此断开
+            _note_swallowed("amo_memory.HumanCorePlugin._time_recall_context", exc)
+            messages = [
+                clean for clean in (_clean_context_message(row) for row in messages)
+                if clean is not None
+            ]
+        # 取尾还是取头：窗口在过去的（昨晚/前天/上周三）取末尾，问「最后一句」才有答案；
+        # 窗口已经盖到此刻的（今天/今晚）取开头，尾部那几句【最近对话】已经注入过，
+        # 再取一遍等于同一段话喂两次。解析不出时间（退化成「最近 N 条」）同样取开头。
+        try:
+            span_end = float((span or {}).get("end") or 0)
+        except (TypeError, ValueError, AttributeError):
+            span_end = 0.0
+        try:
+            now_epoch = float(_now().timestamp())
+        except Exception:
+            now_epoch = 0.0
+        from_tail = bool(span_end and now_epoch and span_end < now_epoch - 1800)
+        return _render_time_block(label, messages, max_lines=max(1, int(limit)),
+                                  from_tail=from_tail)
     async def _cross_platform_context(self, event, uid):
         """同一个人的其他平台（QQ / 飞书）说过什么，拼成一段给提示词用。"""
         mem = self._data_mem()

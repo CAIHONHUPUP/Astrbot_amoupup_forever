@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, List
 
 # 能触发"回看"的时间说法（宽松匹配，真正的解析交给记忆终端）
 _TIME_PATTERNS = (
-    r"(大前天|前天|昨天|今天|今晚|明晚)",
+    r"(大前天|前天|昨晚|昨天|今天|今晚|明晚)",
     r"(上上|上|这|本)?\s*(周|星期|礼拜)\s*[一二三四五六日天1-7]",
     r"(\d{4}\s*年)?\s*\d{1,2}\s*月\s*(\d{1,2}\s*[号日])?",
     r"(\d{1,2})\s*[号日]",
@@ -68,11 +68,23 @@ def looks_like_time_query(text: Any) -> bool:
 
 
 def render_time_block(label: str, messages: Iterable[Dict[str, Any]],
-                      max_lines: int = 6, max_chars: int = 120) -> str:
-    """把记忆终端返回的消息渲染成提示词块；没有记录时给一句"没聊到"。"""
+                      max_lines: int = 6, max_chars: int = 120,
+                      from_tail: bool = True) -> str:
+    """把记忆终端返回的消息渲染成提示词块；没有记录时给一句"没聊到"。
+
+    ``from_tail``：取这段话的**末尾**还是开头。
+
+    取开头是个坑：记忆终端一次只回最近 N 条（比如"昨晚"窗口里最后 20 条），
+    再从这 20 条里取开头 10 条 —— 两头都不靠，正好把最近那几句（"晚安，老婆"
+    这种"最后一句"）切掉。问「昨晚最后一句是什么」必然答不上。
+    所以默认取尾部；同一窗口已经覆盖到此刻（今天/今晚，尾部就是【最近对话】
+    里那几句）时，由调用方传 False 取开头，避免同一段话注入两遍。
+    """
     label = str(label or "").strip()
+    rows = list(messages or [])
+    picked = rows[-max(1, int(max_lines)):] if from_tail else rows[:max(1, int(max_lines))]
     items: List[str] = []
-    for row in messages or []:
+    for row in picked:
         content = str(row.get("content") or "").strip().replace("\n", " ")
         if not content:
             continue

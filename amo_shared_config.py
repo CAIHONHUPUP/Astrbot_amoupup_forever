@@ -16,7 +16,7 @@ except ImportError:  # 直接按文件加载时
 PLUGIN_NAME = "Astrbot_amoupup_forever"
 
 
-PLUGIN_VERSION = "8.0.1"
+PLUGIN_VERSION = "8.0.2"
 
 
 DEFAULT_ADMIN = ""

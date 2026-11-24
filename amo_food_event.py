@@ -177,17 +177,6 @@ def _diary(plugin, day, hour, text):
         return False
 
 
-def _place_block(plugin, day, hour, now, food, amount, pushed):
-    """把宵夜窗口落进日程：返回 amo_food_cost.ensure_block_window 的结果。"""
-    start_min = hour * 60 + int(now.minute)
-    end_min = min(24 * 60, start_min + BLOCK_MINUTES)
-    detail = "宵夜 %s 元｜来源 late_snack｜%s" % ("%.2f" % (amount / 100.0),
-                                                 "主动" if pushed else "自主")
-    return _food.ensure_block_window(plugin, day, _hm(start_min), _hm(end_min),
-                                     "吃%s（宵夜）" % food, detail,
-                                     source="late_snack", reason="宵夜冲动")
-
-
 async def _push(plugin, text):
     """宵夜主动消息：走统一闸口（静默/间隔），老版本回退直发。"""
     text = str(text or "")

@@ -39,7 +39,8 @@ EXTREME_MOODS = ("生气", "崩溃", "绝望", "愤怒", "伤心")
 EXTREME_SCORE = 20
 MEDIA_KINDS = ("photo", "image", "voice", "audio", "video", "media", "file", "record")
 MEDIA_MARKS = ("[图片]", "[语音]", "[视频]", "[文件]", "[CQ:", "<img", "http://", "https://")
-TEMPLATE_MARKS = ("（", "）", "(", ")", "【", "】")
+#: 2026-11-24：动作括号 `（…）` 是她说话的一部分，不算模板；只挡【】这类后台格式。
+TEMPLATE_MARKS = ("【", "】")
 PENDING_TTL = 600          # 10 分钟没反应 = 冷场，不学
 RECENT_WINDOW = 1800       # 30 分钟内抽过的句子排到最后，防连续复用
 PER_INTENT_DEFAULT = 6
@@ -91,6 +92,18 @@ def han_count(text) -> int:
 def normalize_text(text) -> str:
     """去标点/空白，只留汉字和字母数字，用于相似度。"""
     return re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]", "", str(text or ""))
+
+
+#: 动作描写括号（「（扒了口饭，看着手机）嗯，去吧。」）——只学她嘴里说的那句。
+_NARRATION = re.compile(r"[（(][^（()）\n]{1,80}[)）]")
+#: 纯语气字：整句都是这些，就不值得学。
+_FILLER = set("嗯哦啊呀哈呃唔诶欸吧呢嘛啦")
+
+
+def spoken_text(text) -> str:
+    """去掉动作/旁白括号，只留她说出口的部分。"""
+    body = _NARRATION.sub("", str(text or ""))
+    return re.sub(r"\s+", " ", body).strip()
 
 
 def similarity(a, b) -> float:
@@ -264,9 +277,13 @@ def _too_similar(text, others) -> bool:
 
 def filter_reason(plugin, state, text, scene, mood, mood_score, umo="") -> str:
     """入池前过滤器；返回拒绝原因（空串 = 通过）。docs §6。"""
-    body = str(text or "").strip()
+    body = spoken_text(text)
     count = han_count(body)
-    if count < 6 or count > 40:
+    # 下限 3：她平时一句话就 3-6 个字；上限按「说出口的部分」算，
+    # 动作描写再长也不算超长。纯语气（嗯嗯/啊啊）仍然不收。
+    if count < 3 or count > 40:
+        return "length"
+    if all(char in _FILLER for char in body if _HAN.match(char)):
         return "length"
     if any(word in body for word in _forbidden(plugin)):
         return "forbidden"
@@ -364,9 +381,13 @@ def decay_pool(state, now=None, decay_days=DECAY_DAYS_DEFAULT) -> int:
     return len(archived)
 
 
-def add_to_pool(plugin, text, scene="", mood="", mood_score=50, source="auto", state=None) -> dict:
-    """过滤通过后入池；写前 snapshot。A 阶段不写 candidates。"""
-    body = str(text or "").strip()
+def add_to_pool(plugin, text, scene="", mood="", mood_score=50, source="auto", state=None,
+                pending=False) -> dict:
+    """过滤通过后入池；写前 snapshot。A 阶段不写 candidates。
+
+    2026-11-24：聊天里可以带动作，**库里只存她说出口的那句**——动作是场景，不是语气。
+    """
+    body = spoken_text(text)
     if not body:
         return {"ok": False, "reason": "empty"}
     state = state if isinstance(state, dict) else _store.load_state(plugin)
@@ -397,7 +418,10 @@ def add_to_pool(plugin, text, scene="", mood="", mood_score=50, source="auto", s
         "decayed_days": 0,
         "source": str(source or "auto"),
     }
-    state.setdefault("style_pool", []).append(row)
+    if pending:
+        state.setdefault("style_pending", []).append(row)
+    else:
+        state.setdefault("style_pool", []).append(row)
     trim_pool(plugin, state)
     stats = _stats(plugin, state)
     stats["added"] = int(stats.get("added") or 0) + 1
@@ -431,9 +455,11 @@ def review_pending(plugin, user_text, group=False) -> dict:
         _store.save_state(plugin, _store.active_id(plugin), state)
         return {"ok": False, "reason": verdict}
     stats["positive"] = int(stats.get("positive") or 0) + 1
+    # 自动通过开着时直接进池；默认关：先进「待通过」等人点
     out = add_to_pool(plugin, pending.get("text"), scene=pending.get("scene"),
                       mood=pending.get("mood"), mood_score=pending.get("mood_score"),
-                      source="auto", state=state)
+                      source="auto", state=state,
+                      pending=not auto_approve_enabled(plugin))
     _store.save_state(plugin, _store.active_id(plugin), state)
     return out
 
@@ -487,7 +513,7 @@ def learned_style_block(plugin, user_text, limit=2, used_out=None) -> str:
     lines = []
     used = len(prefix)
     for item in picked:
-        text = str(item.get("text") or "").strip()[:40]
+        text = spoken_text(str(item.get("text") or ""))[:40]
         if not text:
             continue
         cost = len(text) + 3  # "- " + 换行
@@ -502,6 +528,78 @@ def recent_auto(plugin, limit=5) -> list:
     state = _store.load_state(plugin)
     rows = [row for row in (state.get("evolve_log") or []) if isinstance(row, dict)]
     return rows[-max(1, int(limit or 5)):][::-1]
+
+
+def edit_pool_entry(plugin, index=0, text="") -> dict:
+    """改一条自动入池的句子（面板「改」）；index 与 recent_auto 同序（0=最新）。"""
+    body = spoken_text(text)
+    state = _store.load_state(plugin)
+    log = [row for row in (state.get("evolve_log") or []) if isinstance(row, dict)]
+    try:
+        row = log[-1 - int(index)]
+    except (IndexError, ValueError, TypeError):
+        return {"ok": False, "reason": "empty"}
+    old = str(row.get("text") or "")
+    try:
+        at = int(row.get("at") or 0)
+    except (TypeError, ValueError):
+        at = 0
+    if not body:
+        return {"ok": False, "reason": "empty_text"}
+    count = han_count(spoken_text(body))
+    if count < 3 or count > 40:
+        return {"ok": False, "reason": "length"}
+    if any(word in body for word in _forbidden(plugin)):
+        return {"ok": False, "reason": "forbidden"}
+    if any(word in body.lower() for word in TECH_WORDS):
+        return {"ok": False, "reason": "tech"}
+    if any(mark in body for mark in TEMPLATE_MARKS):
+        return {"ok": False, "reason": "template"}
+    _store.snapshot(plugin, _store.active_id(plugin), "before_edit_pool")
+    try:
+        state["snapshots"] = list((_store.load_state(plugin) or {}).get("snapshots") or [])
+    except Exception:
+        state["snapshots"] = list(state.get("snapshots") or [])
+    for key in ("style_pending", "style_pool"):
+        for item in state.get(key) or []:
+            if (isinstance(item, dict) and str(item.get("text") or "") == old
+                    and int(item.get("at") or 0) == at):
+                item["text"] = body
+                item["intent"] = _pack.style_intent(body)
+                break
+        else:
+            continue
+        break
+    row["text"] = body
+    _store.save_state(plugin, _store.active_id(plugin), state)
+    return {"ok": True, "text": body}
+
+
+def approve_pending(plugin, index=0) -> dict:
+    """把一条待通过的句子正式收进例句池（面板「通过」）；写前 snapshot。"""
+    state = _store.load_state(plugin)
+    rows = [row for row in (state.get("style_pending") or []) if isinstance(row, dict)]
+    try:
+        row = rows[-1 - int(index)]
+    except (IndexError, ValueError, TypeError):
+        return {"ok": False, "reason": "empty"}
+    text = str(row.get("text") or "")
+    _store.snapshot(plugin, _store.active_id(plugin), "before_approve_pending")
+    try:
+        state["snapshots"] = list((_store.load_state(plugin) or {}).get("snapshots") or [])
+    except Exception:
+        state["snapshots"] = list(state.get("snapshots") or [])
+    state["style_pending"] = [item for item in (state.get("style_pending") or [])
+                               if not (isinstance(item, dict)
+                                       and str(item.get("text") or "") == text
+                                       and int(item.get("at") or 0) == int(row.get("at") or 0))]
+    approved = dict(row)
+    approved["intent"] = _pack.style_intent(text)
+    approved["source"] = str(approved.get("source") or "manual")
+    state.setdefault("style_pool", []).append(approved)
+    trim_pool(plugin, state)
+    _store.save_state(plugin, _store.active_id(plugin), state)
+    return {"ok": True, "text": text}
 
 
 def undo_last_auto(plugin, index=0) -> dict:
@@ -519,15 +617,31 @@ def undo_last_auto(plugin, index=0) -> dict:
         state["snapshots"] = list(state.get("snapshots") or [])
     text = str(row.get("text") or "")
     at = int(row.get("at") or 0)
-    pool = [item for item in (state.get("style_pool") or [])
-            if not (isinstance(item, dict) and str(item.get("text") or "") == text
-                    and int(item.get("at") or 0) == at)]
-    state["style_pool"] = pool
+    for key in ("style_pending", "style_pool"):
+        state[key] = [item for item in (state.get(key) or [])
+                      if not (isinstance(item, dict) and str(item.get("text") or "") == text
+                              and int(item.get("at") or 0) == at)]
     state["evolve_log"] = log
     stats = _stats(plugin, state)
     stats["added"] = max(0, int(stats.get("added") or 0) - 1)
     _store.save_state(plugin, _store.active_id(plugin), state)
     return {"ok": True, "text": text}
+
+
+def _rows_with_log_index(state, key) -> list:
+    """面板两侧的列表：倒序显示，并带上它在 evolve_log 里的位置（撤销/编辑按这个走）。"""
+    log = [row for row in (state.get("evolve_log") or []) if isinstance(row, dict)]
+    out = []
+    for row in reversed(list(state.get(key) or [])):
+        if not isinstance(row, dict):
+            continue
+        item = dict(row)
+        item["log_index"] = next(
+            (len(log) - 1 - pos for pos, cand in enumerate(reversed(log))
+             if str(cand.get("text") or "") == str(row.get("text") or "")
+             and int(cand.get("at") or 0) == int(row.get("at") or 0)), -1)
+        out.append(item)
+    return out
 
 
 def status(plugin) -> dict:
@@ -540,4 +654,6 @@ def status(plugin) -> dict:
         "archive_count": len(state.get("style_archive") or []),
         "pending_review": state.get("pending_review") if isinstance(state.get("pending_review"), dict) else None,
         "recent_auto": recent_auto(plugin, 5),
+        "pending_pool": _rows_with_log_index(state, "style_pending"),
+        "pool_rows": _rows_with_log_index(state, "style_pool"),
     }

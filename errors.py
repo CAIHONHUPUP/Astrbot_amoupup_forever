@@ -69,11 +69,6 @@ def code_number(code, default=None):
     return NUMBER_BY_CODE.get(str(code or "").strip(), default)
 
 
-def is_known(code):
-    """这个字符串码登记过没有。"""
-    return str(code or "").strip() in DESCRIPTIONS
-
-
 def describe_code(code):
     """人话说明：数字码 -> 中文含义；字符串码 -> 登记说明；未知的明确说未知。"""
     if isinstance(code, bool):

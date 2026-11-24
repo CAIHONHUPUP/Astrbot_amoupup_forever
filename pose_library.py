@@ -26,7 +26,6 @@ import os
 import random
 import re
 import threading
-import time
 
 from astrbot.api import logger
 

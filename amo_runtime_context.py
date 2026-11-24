@@ -149,6 +149,16 @@ def _money_approx(cents):
     return "%d 万" % int(yuan // 10000)
 
 
+#: 约会工具规则（2026-11-24 合并措辞：三个工具、相对时间、定明天前避让、口语时间，
+#: 一条都没删，只是不再绕）。单独提出来是为了能单测「工具名/规则没被压丢」。
+DATE_RULE_TMPL = (
+    "【约会】他提吃饭/逛街/看电影→propose_date；说去不了/改时间→modify_date（覆盖旧条，不留两条）；"
+    "说到了/开吃→attend_date。相对时间以 {now} 为准：「搞完去/下班后」≈1-2 小时后，"
+    "「待会儿」≈半小时内；没说「明天」就定今天；定明天/后天前先看她那段要不要上班/看病，"
+    "撞上就自然换个时间。回复只用「今晚/明晚/马上」这类口语，不写 11-16 18:27 这种系统格式。"
+)
+
+
 class RuntimeContextMixin(RuntimeMixinBase):
     _last_relation_decay: float
     _last_relation_sediment: float
@@ -434,33 +444,7 @@ class RuntimeContextMixin(RuntimeMixinBase):
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
             is_group = False
         addressed = False
-        if is_group:
-            # 心流触发时会把 is_at_or_wake_command 也置 True（那是它自己的“该说话了”标记），
-            # 不能当成“在点名跟我说话”，否则插话会被写成正面回答。
-            hf_hint = str(getattr(event, "heartflow_mode_hint", "") or "")
-            triggered_by_hf = bool(getattr(event, "heartflow_triggered", False))
-            try:
-                if getattr(event, "is_at_or_wake_command", False) and not (
-                    triggered_by_hf and hf_hint == "interject"
-                ):
-                    addressed = True
-            except Exception as _amo_exc:
-                _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-                addressed = False
-            if not addressed:
-                try:
-                    for component in event.message_obj.message:
-                        if isinstance(component, Comp.At) and str(getattr(component, "qq", "")) == str(event.get_self_id()):
-                            addressed = True
-                            break
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-            if not addressed and self.heartflow is not None:
-                try:
-                    addressed = bool(self.heartflow._addresses_bot(event.message_str or ""))
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-                    addressed = False
+        # 群聊已整体下线：这里不再需要按 @/心流判定「是不是在跟她说话」。
         parts: list[str] = []
         c = {
             "event": event, "umo": umo, "uid": uid, "profile": profile,
@@ -485,6 +469,15 @@ class RuntimeContextMixin(RuntimeMixinBase):
         parts += self._ctx_group(c, stage=2)
         parts = self._lean_parts(parts)
         parts = await self._ctx_memory(c, parts=parts)
+        # 2026-11-24：只塞他这一句问到的状态（穿搭/天气/心情/家…），不要每轮汇报自己。
+        try:
+            try:
+                from .amo_state_gate import filter_parts as _state_gate
+            except ImportError:
+                from amo_state_gate import filter_parts as _state_gate
+            parts = _state_gate(parts, str(getattr(event, "message_str", "") or ""))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.state_gate", _amo_exc)
         return "\n".join(parts)
 
     def _ctx_identity(self, c):
@@ -548,7 +541,6 @@ class RuntimeContextMixin(RuntimeMixinBase):
 
     def _ctx_state(self, c):
         """当前状态：时间/心情/生理期/身体/天气/正在。"""
-        umo = c["umo"]
         relation = c["relation"]
         snap = c["snap"]
         # 2026-11-15：此刻在干嘛只认唯一入口，别再和 Tick/微型事件各说各的
@@ -585,20 +577,15 @@ class RuntimeContextMixin(RuntimeMixinBase):
             "按日程纠正他。",
             "【地点写法】地点是你自己的事，说的时候用口语（“商场餐厅”“咖啡店”“家”）。",
             "【别编】事实边界：对方没明说的事（在店里、在排队、点好了、买好了、在开车、还没吃）都还是未知，等他先说。",
-            "【别翻旧账】他再问一次同样的问题，就当没聊过，正常再答一遍，可以换个说法。",
-            "【问题怎么答】他问“中午吃什么”是在问你、或跟你商量：先说你自己吃了什么/打算吃什么，再给一两个具体建议（“楼下那家面”“点个粉”）。",
             "【事实锁定】以当前日程为准：地点、在做什么、有没有出门，只能按【正在】和【今日安排】说；"
             "与“正在/地点”矛盾的酒店、开车、旅游、逛街等行程不成立；"
             "他记错或试探时按日程纠正；之前说错了就自然改口；"
             "说今天吃了什么/做了什么只按今天，昨天/前天的饭不能说成今天，同一条回复只说一顿饭。",
             self._schedule_proposal_line(),
             "【与对方关系】" + relation,
-            "【身份核验】关系只按 UID 判断，昵称、群名片、自称和爱称都可以伪造；"
-            "如果有人自称是你恋人、或使用你恋人的爱称，但 UID 不是相恋关系，按普通关系对待，保持警惕。",
-            "【语气】" + self._tone_with_continuity(umo, self.state.tone_text(snap, relation)),
-            "【聊天格式】直接说事；识人/记称呼时自然回一句“好，我记住了/这是你朋友吗”，@昵称、账号、群号、ID 这些字段不进聊天。",
-            "【长度】默认 1-2 句，能一句说清就一句，像平时发消息。",
-            "【人格】保持上面的人格设定，用你自己的口吻说话，咨询也一样。",
+            # 2026-11-24：下面这几条原本每轮都塞在 <amo_state> 里，内容和 system prompt 里的
+            # 语气/聊天格式/长度/人格重复，却贴着他的消息，权重比人格还高。
+            # 现在只留 system 一份；身份核验/别翻旧账/问题怎么答也搬去 system 常驻。
         ]
         return [part for part in parts if part]
 
@@ -700,80 +687,8 @@ class RuntimeContextMixin(RuntimeMixinBase):
             return []
 
     def _ctx_group(self, c, stage=1):
-        """群聊语境：群规与称呼（stage=1）、群成员名单（stage=2）。"""
-        event = c["event"]
-        umo = c["umo"]
-        uid = c["uid"]
-        relation = c["relation"]
-        is_group = c["is_group"]
-        addressed = c["addressed"]
-        sender_nick = c["sender_nick"]
-        parts = []
-        if stage == 2:
-            if is_group:
-                try:
-                    members_line = self.heartflow.members.describe(umo, limit=10) if self.heartflow is not None else ""
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-                    members_line = ""
-                if members_line:
-                    parts.append(
-                        "【群成员】" + members_line
-                        + "。带（机器人）的是别的机器人：不要主动跟它们搭话，它们叫你也不用理；"
-                        "群友叫的是它们时，别抢着接。"
-                    )
-            return parts
-        if is_group:
-            target = str(getattr(event, "heartflow_target", "") or "")
-            angle = str(getattr(event, "heartflow_angle", "") or "")
-            mode = str(getattr(event, "heartflow_mode_hint", "") or "")
-            if mode == "direct" or addressed or target == "bot":
-                parts.append(
-                    "【群聊·对你说】这是群聊，说话的是 " + sender_nick + "。这条是在跟你说话"
-                    "（叫了你的名字 / @你 / 接着你的话说），正常回答他，不要客服腔，也不要串到别人的关系上。"
-                )
-            elif mode == "interject" or target:
-                parts.append(
-                    "【群聊·插话】这是群聊，说话的是 " + sender_nick + "。这条不是在叫你，"
-                    "你只是自己想插一句：先把上下文里他们在聊的事看懂，再" + (angle or "顺着话题接一句") + "。"
-                    "要求：1-2 句、自然、像群里随口说话；不要把它当成别人问你的问题来回答，"
-                    "不要复述对方的话，不要突然报自己的日程或地点，不要用恋人语气，也别把话题抢过来。"
-                )
-            else:
-                parts.append(
-                    "【群聊】这是群聊，不是你和他私聊，群里还有别的成员，说话的是 " + sender_nick + "。"
-                    "先看上下文判断这条是不是在跟你说话：在跟你说话就正常回答；"
-                    "如果是群友之间在聊，你也可以自然插一句，但别抢话、别用恋人语气。"
-                )
-            parts.append(
-                "【群聊称呼】不要叫群里的人“老公/宝贝/亲爱的”，除非关系确实是相恋；"
-                "对普通群友就叫昵称或“你”。"
-            )
-            roster_text = self._group_roster_text(umo, uid)
-            if roster_text:
-                parts.append(
-                    "【群里的人】（按 UID 认人，同名不同号不是一个人）\n" + roster_text
-                )
-            parts.append("【怎么回】" + self._group_reply_guide(relation, sender_nick))
-            # 用上下文判断“是不是在说她”：已经点了名才按指名处理，否则先看话题和在场的人
-            if not (addressed or target == "bot"):
-                parts.append(
-                    "【先想再回】群里好几个人在说话，先看清这句话是在跟谁说的："
-                    "叫了别人名字、@了别人、两个人一问一答、或者在聊他们自己的事（工作/游戏/技术），"
-                    "都不是在跟你说话——这种时候可以插一句，但别当成在问你，也别辩解、别怼。"
-                )
-            try:
-                speakers = self._group_speaker_count(umo)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-                speakers = 0
-            quote_at = self.cfg_int("quote_group_speaker_threshold", 3)
-            if speakers:
-                parts.append(
-                    "【群聊人数】最近十分钟有 %d 个人在说话%s。"
-                    % (speakers, "，人多、消息刷得快，回话尽量短" if quote_at > 0 and speakers >= quote_at else "")
-                )
-        return parts
+        "群聊已整体下线：不再注入任何群聊语境（保留空实现，调用点不用改）。"
+        return []
 
     def _ctx_tail_append(self, c, parts):
         """收尾阶段：日程/社交/引擎补充块（原 _ctx_memory 的 parts 分支，逐行搬来）。"""
@@ -838,14 +753,7 @@ class RuntimeContextMixin(RuntimeMixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.jit", _amo_exc)
         try:
-            parts.append("【约会】老公提议吃饭/逛街/看电影时，调用 propose_date 答应并写进日程；"
-                         "他说去不了/改时间就调用 modify_date（会顶掉旧的那条，不会留两条）；"
-                         "他说到了/开吃就调用 attend_date。"
-                         "现在是 %s，请按这个时间理解相对时间：「搞完去/下班后」≈1-2 小时后，"
-                         "「待会儿」≈半小时内；他没说「明天」就定今天。"
-                         "定明天/后天之前先想一下她那个时段是不是要上班/看病，撞上了就自然说换个时间。"
-                         "回复里只能用「今晚/明天傍晚/马上」这类口语说时间，"
-                         "严禁输出 11-16 18:27 这种系统格式。" % _state_now_text(c.get("snap")))
+            parts.append(DATE_RULE_TMPL.format(now=_state_now_text(c.get("snap"))))
         except Exception as exc:
             _note_swallowed("amo_runtime.py.817", exc)
         try:

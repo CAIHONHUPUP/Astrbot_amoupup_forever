@@ -248,12 +248,6 @@
     "hint": "下雨、低温、月经期、过度疲惫会额外增加",
     "default": 0.02
   },
-  "auto_relation": {
-    "type": "bool",
-    "description": "自动记关系网",
-    "hint": "打开后，他说「小明是我同事」这类话会自动记一条关系边（只认明确陈述，且要能在画像里唯一定位到人）；管理员手动设过的不覆盖。",
-    "default": true
-  },
   "context_style": {
     "type": "string",
     "description": "上下文风格",
@@ -1021,12 +1015,6 @@
     "default": 3,
     "hint": "启动或隔了 10 分钟以上没检查时，从最近这几天里挑最旧的一天补审，一次只审一天；默认 3 天。"
   },
-  "diary_audit_quiet_hours": {
-    "type": "string",
-    "description": "【日记质检】免打扰时段",
-    "default": "22-8",
-    "hint": "默认 22-8（晚上 10 点到早上 8 点）不发提醒；格式「开始-结束」，用 24 小时制。"
-  },
   "quote_group_probability": {
     "type": "float",
     "description": "群聊引用原消息的概率",
@@ -1038,24 +1026,6 @@
     "description": "日程活动影响心情的强度",
     "hint": "每小时按日程类别（上班/吃饭/休息/逛街/通勤）给真实心情加/减一点，0=关掉；默认 3，越大越明显。",
     "default": 3.0
-  },
-  "relation_stranger_edges": {
-    "type": "bool",
-    "description": "给没聊过的人也建关系边",
-    "default": true,
-    "hint": "关掉后只给真正聊过的人建「陌生人」边。"
-  },
-  "relation_sediment_days": {
-    "type": "int",
-    "description": "关系沉淀回看天数",
-    "default": 30,
-    "hint": "每次沉淀回看最近多少天的聊天来决定关系。"
-  },
-  "relation_infer_per_user": {
-    "type": "int",
-    "description": "每人最多推断几条关系",
-    "default": 20,
-    "hint": "防止关系网被一个人撑爆。"
   },
   "data_call_timeout_seconds": {
     "type": "float",
@@ -1566,10 +1536,10 @@
     "default": 30,
     "hint": "30 天内被抽中会 +1 分；超过后每天 ×0.98，低于 0.5 归档（不删，可恢复）。"
   },
-  "persona_evolve_groups": {
+  "reply_passthrough": {
     "type": "bool",
-    "description": "【人设】是否学习群聊（默认否，不建议开）",
+    "description": "【直通】她的回复原样发出，不经事实/复读/口头禅/问句/催问改写",
     "default": false,
-    "hint": "B4 安全链路：群聊默认永远不学；只有明确打开才可能采集群聊，且仍会过滤。"
+    "hint": "开着=她用自己的话；关着=和改造前完全一致。照片、礼物、分段不受影响。"
   }
 }

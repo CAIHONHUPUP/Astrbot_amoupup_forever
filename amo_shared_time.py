@@ -253,11 +253,6 @@ def day_label(day: Any = None) -> dict:
     }
 
 
-def day_label_text(day: Any = None) -> str:
-    """day_label(day) 的整行标签（快捷方式）。"""
-    return day_label(day)["text"]
-
-
 def minutes_now() -> int:
     dt = _now()
     return dt.hour * 60 + dt.minute

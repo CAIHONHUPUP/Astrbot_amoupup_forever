@@ -31,17 +31,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        HeartflowEngine, LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
+        LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            HeartflowEngine, LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
+            LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                HeartflowEngine, LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
+                LEGACY_DEFAULT_ADMIN, SegmentEngine, logger, to_float, to_int,
             )
 
 
@@ -53,7 +53,6 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
 
 class ConfigMixin(_MixinBase):
     _config_mtime: float
-    heartflow: Any
     segment_engine: Any
 
     def _get_config_model(self):
@@ -183,12 +182,12 @@ class ConfigMixin(_MixinBase):
                 return
             old_engine_config = {
                 key: value for key, value in self.config.items()
-                if key.startswith("hf_") or key.startswith("seg_")
+                if key.startswith("seg_")
             }
             self.config.update(data)
             new_engine_config = {
                 key: value for key, value in self.config.items()
-                if key.startswith("hf_") or key.startswith("seg_")
+                if key.startswith("seg_")
             }
             if old_engine_config and old_engine_config != new_engine_config:
                 self._spawn(self._apply_runtime_config())
@@ -199,8 +198,6 @@ class ConfigMixin(_MixinBase):
                 self.bot_aliases = [
                     item.strip() for item in str(data.get("bot_aliases")).split(",") if item.strip()
                 ]
-            if self.heartflow is not None:
-                self.heartflow.set_identity(self.bot_name, self.bot_aliases)
             self._persona_name_cache.clear()
             raw_admins = data.get("admin_uids", None)
             if raw_admins is not None:
@@ -221,13 +218,6 @@ class ConfigMixin(_MixinBase):
             logger.debug("[amo] 检测到插件配置变更，已重新加载")
         except Exception as exc:
             logger.debug("[amo] 重新加载插件配置失败: %s" % exc)
-
-    def _hf_config(self):
-        try:
-            return {key[3:]: value for key, value in self.config.items() if key.startswith("hf_")}
-        except Exception as _amo_exc:
-            _note_swallowed("amo_config.HumanCorePlugin._hf_config", _amo_exc)
-            return {}
 
     def _seg_config(self):
         try:
@@ -329,9 +319,7 @@ class ConfigMixin(_MixinBase):
         for key, meta in schema.items():
             if not isinstance(meta, dict):
                 continue
-            if key.startswith("hf_"):
-                group = "心流"
-            elif key.startswith("draw_") or key.startswith("photo_"):
+            if key.startswith("draw_") or key.startswith("photo_"):
                 group = "照片"
             elif key in ("schedule_day_types", "schedule_change_enabled", "schedule_change_owner_ids"):
                 group = "日程"
@@ -405,22 +393,6 @@ class ConfigMixin(_MixinBase):
                 await self.state.refresh_weather()
             except Exception as _amo_exc:
                 _note_swallowed("amo_config.HumanCorePlugin._apply_runtime_config", _amo_exc)
-        if HeartflowEngine is not None:
-            old = self.heartflow
-            if old is not None:
-                try:
-                    await old.terminate()
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_config.HumanCorePlugin._apply_runtime_config", _amo_exc)
-            try:
-                hf_config = self._hf_config()
-                hf_config.setdefault("enable_heartflow", True)
-                hf_config.setdefault("enable_dynamic_threshold", True)
-                hf_config.setdefault("judge_provider_name", "")
-                self.heartflow = HeartflowEngine(self.context, hf_config)
-                self.heartflow.set_identity(self.bot_name, self.bot_aliases)
-            except Exception as exc:
-                logger.error("[amo] 应用心流配置失败: %s" % exc)
         if SegmentEngine is not None:
             old = self.segment_engine
             if old is not None:

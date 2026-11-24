@@ -518,36 +518,19 @@ class MessageMixin(_MixinBase):
         self._ctx_hydrated.add(str(umo))
 
     def _is_other_bot(self, event) -> bool:
-        """发言人是不是群里的其他机器人（只在她开“不跟机器人聊”时生效）。"""
-        engine = getattr(self, "heartflow", None)
-        if engine is None or not getattr(engine, "ignore_bots", True):
-            return False
-        try:
-            return bool(engine.is_other_bot_sender(event))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_message.HumanCorePlugin._is_other_bot", _amo_exc)
-            return False
+        """发言人是不是群里的其他机器人（群聊已整体下线，恒 False）。"""
+        return False
 
     def _is_talking_to_me(self, event):
-        """这句是不是冲她来的：私聊、被 @ / 叫名字、或心流判定对象是 bot。"""
+        """这句是不是冲她来的：私聊、被 @ / 叫名字。"""
         try:
             if event.is_private_chat():
                 return True
         except Exception as _amo_exc:
             _note_swallowed("amo_message.HumanCorePlugin._is_talking_to_me", _amo_exc)
             return True
-        target = str(getattr(event, "heartflow_target", "") or "")
-        if target == "bot":
-            return True
-        if str(getattr(event, "heartflow_mode_hint", "") or "") == "interject":
-            return False
         try:
             if getattr(event, "is_at_or_wake_command", False):
-                return True
-        except Exception as _amo_exc:
-            _note_swallowed("amo_message.HumanCorePlugin._is_talking_to_me", _amo_exc)
-        try:
-            if self.heartflow is not None and self.heartflow._addresses_bot(event.message_str or ""):
                 return True
         except Exception as _amo_exc:
             _note_swallowed("amo_message.HumanCorePlugin._is_talking_to_me", _amo_exc)
@@ -601,8 +584,6 @@ class MessageMixin(_MixinBase):
             # 群里别的机器人：@她也不接，避免两个机器人互相聊
             logger.info("[GATE] chat=group skip reason=other_bot sender=%s", event.get_sender_name())
             try:
-                if self.heartflow is not None:
-                    self.heartflow.note_other_bot(event)
                 event.stop_event()
             except Exception as _amo_exc:
                 _note_swallowed("amo_message.HumanCorePlugin._handle_message", _amo_exc)
@@ -646,22 +627,8 @@ class MessageMixin(_MixinBase):
             await self._handle_private(event, profile)
             return
 
-        # 群聊只走完整心流引擎；旧的五维门控/防抖/直发逻辑不再参与。
-        if self.heartflow is None or not self.cfg_bool("hf_enable_heartflow", True):
-            logger.debug("[GATE] chat=group skip reason=heartflow_off")
-            return
-        try:  # task-30：此刻地点/动作唯一读场景账本（含请假/出差硬约束）
-            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
-        except ImportError:
-            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
-        snap = _snap_with_scene(self)
-        if self._should_disturb(snap, umo, uid, text, group=True):
-            self._apply_disturbance(umo)
-            setattr(event, "amo_force_reply", True)
-        try:
-            await self.heartflow.on_group_message(event)
-        except Exception as exc:
-            logger.error("[amo] 心流处理失败: %s" % exc)
+        # 群聊已整体下线（on_message 只处理私聊），这里没有群聊分支。
+        return
 
     def _heart_avoid_decision(self):
         """回避档阶梯：没有心/没到 shut 返回 None；否则 True=回、False=不回。"""

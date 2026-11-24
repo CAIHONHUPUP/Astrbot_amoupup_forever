@@ -327,21 +327,6 @@ def _hour_candidates(hour, period):
     return (hour,)
 
 
-def parse_time_words(text):
-    """从一段中文里抠出「几点」：06:30 / 8点 / 晚上八点半 → 分钟数列表。
-
-    没写时段词的 1-11 点会同时给出两种读法（见 _hour_candidates）；窗口判定用
-    _time_word_detail，两种读法有一种贴着窗口就不算可疑。
-    """
-    out = []
-    for hour, minute, period in _time_mentions(text):
-        for candidate in _hour_candidates(hour, period):
-            value = candidate * 60 + minute
-            if value not in out:
-                out.append(value)
-    return out
-
-
 def _window_distance(minute, begin, finish):
     """时间点离 [begin, finish] 窗口的分钟数（在窗口里是 0）。"""
     if minute < begin:

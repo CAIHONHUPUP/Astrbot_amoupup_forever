@@ -435,10 +435,10 @@ def meal_slot_at(now=None):
 
 
 def _wallet_kind(wallet):
-    """钱包类型：live / stub（_NoMoney 金融退役桩）/ none。"""
+    """钱包类型：live / stub（_RetiredWallet 金融退役桩）/ none。"""
     if wallet is None:
         return "none"
-    if wallet.__class__.__name__ == "_NoMoney":
+    if wallet.__class__.__name__ == "_RetiredWallet":
         return "stub"
     return "live"
 
@@ -473,11 +473,6 @@ def meal_instance_rows(plugin, instance_id):
             out.append(row)
     out.sort(key=lambda row: float(row.get("ts") or 0))
     return out
-
-
-def meal_charged(plugin, instance_id):
-    """这个餐次实例是不是已经扣过款。"""
-    return bool(meal_instance_rows(plugin, instance_id))
 
 
 def meal_instances_today(plugin, day):
@@ -1189,7 +1184,7 @@ def pay_food(plugin, item, reason, source="meal", now=None, amount=None, idem=No
              allow_night=False, instance_id="", ensure_block=True, minutes=None):
     """公开门面：实际逻辑在 _pay_food_impl；返回里带 wallet=live/stub/none。
 
-    stub = 金融系统已退役（_NoMoney）：仍保留吃饭块，但账本没有真实流水。
+    stub = 金融系统已退役（_RetiredWallet）：仍保留吃饭块，但账本没有真实流水。
     """
     result = _pay_food_impl(
         plugin, item, reason, source=source, now=now, amount=amount, idem=idem,

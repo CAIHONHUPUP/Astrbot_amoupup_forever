@@ -14,8 +14,6 @@ except ImportError:  # 直接按文件加载时
         import amo_compat as _compat
 
 import hashlib
-import os
-import random  # 测试会 patch main.random（群聊回复概率）
 
 try:  # Phase 17：结构化健康快照（只读、降级不抛；读库细节在 observability）
     from .observability import install_log_redaction, plugin_health
@@ -32,12 +30,12 @@ except ImportError:  # 按文件直接加载（离线单测）
 #: 插件载入时刻，用来给 /status 的 obs_health.uptime_s 当起点
 _OBS_STARTED_AT = _obs_now_ts()
 
-PLUGIN_VERSION = "8.0.1"
+PLUGIN_VERSION = "8.0.2"
 
 try:  # 包模式优先（AstrBot 正常加载）
     from .amo_bootstrap import (
         AmoDB, ApiMixin, CommandMixin, ConfigMixin, Context,
-        DrawEngine, EventBus, FeatureApiMixin, GiftEngine, HeartflowEngine,
+        DrawEngine, EventBus, FeatureApiMixin, GiftEngine,
         HandshakeMixin, Housing, KbMixin, LLMService,
         InitMixin, LifecycleMixin, LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
         PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
@@ -50,7 +48,7 @@ except ImportError:  # 按文件直接加载（离线单测 / 老加载方式）
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from amo_bootstrap import (
             AmoDB, ApiMixin, CommandMixin, ConfigMixin, Context,
-            DrawEngine, EventBus, FeatureApiMixin, GiftEngine, HeartflowEngine,
+            DrawEngine, EventBus, FeatureApiMixin, GiftEngine,
             HandshakeMixin, Housing, KbMixin, LLMService,
             InitMixin, LifecycleMixin, LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
             PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
@@ -316,8 +314,6 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
 
     # ---------- 指令 ----------
 
-
-    # ---------- 心流完整版指令 ----------
 
 
     # ---------- Web 面板 ----------

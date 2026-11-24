@@ -78,6 +78,11 @@ EMOTION_TOKENS = (
 )
 _PROTECTED = FACT_TOKENS + EMOTION_TOKENS
 
+#: 称呼（2026-11-24）：去重只去称呼后面那截，称呼本身留着。
+#: 以前「老公你终于回我啦」和上一句同一个开头时，会把「老公你」整段当口头禅删掉，
+#: 一句话里最亲的那三个字反而先没了。
+CALL_NAMES = ("老公", "宝贝", "亲爱的")
+
 #: 进程内记忆：umo -> 最近 HISTORY_SIZE 条 [{"open","first","text"}]
 _MEMORY: dict = {}
 
@@ -212,6 +217,22 @@ def _drop_standalone(text, phrase):
     return rest
 
 
+def _strip_plan(phrase):
+    """这次去重怎么去：返回 (要匹配的整段, 要留下的称呼)。
+
+    句首带称呼时，称呼留着，只去它后面那截；后面不足 3 字就干脆不去——
+    为了去一次重，把「老公」删掉不划算。
+    """
+    text = str(phrase or "")
+    for name in CALL_NAMES:
+        if text.startswith(name) and len(text) > len(name):
+            rest = text[len(name):].lstrip("，,、 ")
+            if len(rest) >= MIN_PHRASE:
+                return text, name
+            return "", ""
+    return text, ""
+
+
 def guard(text, plugin=None, umo="", record=True, use_kv=False):
     """发送前确定性去重：返回 (改写后文本, actions)；actions 为空表示没动。"""
     value = str(text or "")
@@ -237,15 +258,21 @@ def guard(text, plugin=None, umo="", record=True, use_kv=False):
                     break
     fixed = value
     actions = []
+    keep_call = ""
+    if phrase:
+        phrase, keep_call = _strip_plan(phrase)
     if phrase:
         stripped = ""
         action = "strip"
-        if str(_first).strip() == phrase:
+        if str(_first).strip() == phrase and not keep_call:
             stripped = _drop_standalone(value, phrase)
             action = "drop"
         if not stripped:
             stripped = _strip_opening(value, phrase)
             action = "strip"
+        if stripped and keep_call and not stripped.startswith(keep_call):
+            # 称呼被去掉了就补回来：「老公，终于回我啦」还是她。
+            stripped = keep_call + "，" + stripped.lstrip("，,、 ")
         if stripped and stripped != value:
             fixed = stripped
             actions.append({"action": action, "phrase": phrase, "reason": reason,

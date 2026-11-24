@@ -80,10 +80,10 @@ except ImportError:  # 直接按文件加载时
         from photo_engine import PhotoEngine
 
 try:
-    from .amo_shared import GiftEngine, HeartflowEngine, SegmentEngine, logger
+    from .amo_shared import GiftEngine, SegmentEngine, logger
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:
-        from amo_shared import GiftEngine, HeartflowEngine, SegmentEngine, logger
+        from amo_shared import GiftEngine, SegmentEngine, logger
 
 try:
     from .amo_jobs import JobManager
@@ -98,7 +98,7 @@ except ImportError:  # 直接按文件加载时
         from amo_observability import note as _note_swallowed
 
 
-class _NoMoney:
+class _RetiredWallet:
     """钱包已退役：不记账、不扣款、余额不参与判断（保留属性名给未删的调用点）。"""
 
     # 兼容说明（2026-11-24 收口）：balance / balance_cents / total_assets 只为旧调用点
@@ -141,7 +141,6 @@ class InitMixin:
         def cfg_str(self, *args: Any, **kwargs: Any) -> str: ...
         def cfg_bool(self, *args: Any, **kwargs: Any) -> bool: ...
         def run_config_migrations(self, *args: Any, **kwargs: Any) -> Any: ...
-        def _hf_config(self) -> dict[str, Any]: ...
         def _seg_config(self) -> dict[str, Any]: ...
         def _install_lark_quote_guard(self) -> Any: ...
         def _install_qq_quote_guard(self) -> Any: ...
@@ -188,7 +187,7 @@ class InitMixin:
         """db / 钱包 / 各引擎（原 __init__ 中段）。"""
         self.db = AmoDB(self.plugin_dir)
         # 钱包：amo 是资产权威，金融插件只读余额 / 调 credit、debit（不做 UI）
-        self.wallet = _NoMoney(self.db)
+        self.wallet = _RetiredWallet(self.db)
         self.wardrobe = None
         if Wardrobe is not None:
             try:
@@ -248,34 +247,25 @@ class InitMixin:
         try:
             logger.info(
                 "[CONFIG] private=%s group=%s draw=%s photo=%s gift=%s diary=%s "
-                "heartflow=%s schedule_change=%s",
+                "schedule_change=%s",
                 self.cfg_bool("enable_private_reply", True),
                 self.cfg_bool("enable_group_reply", True),
                 self.cfg_bool("draw_enable", False),
                 self.cfg_bool("photo_enable", False),
                 self.cfg_bool("gift_enable", False),
                 self.cfg_bool("diary_enabled", True),
-                self.cfg_bool("hf_enable_heartflow", True),
                 self.cfg_bool("schedule_change_enabled", True),
             )
         except Exception as _amo_exc:
             _note_swallowed("main.HumanCorePlugin.__init__.config_summary", _amo_exc)
-        self.heartflow = None
         self.segment_engine = None
         try:
-            if HeartflowEngine is not None:
-                hf_config = self._hf_config()
-                hf_config.setdefault("enable_heartflow", True)
-                hf_config.setdefault("enable_dynamic_threshold", True)
-                hf_config.setdefault("judge_provider_name", "")
-                self.heartflow = HeartflowEngine(self.context, hf_config)
-                self.heartflow.set_identity(self.bot_name, self.bot_aliases)
             if SegmentEngine is not None:
                 seg_config = self._seg_config()
                 seg_config.setdefault("protect_paired_symbols", True)
                 self.segment_engine = SegmentEngine(self.context, seg_config, plugin=self)
         except Exception as exc:
-            logger.error("[amo] 心流/分段引擎初始化失败: %s" % exc)
+            logger.error("[amo] 分段引擎初始化失败: %s" % exc)
         # 第 1 刀：缺模块/缺守卫必须显式报错，不再静默降级（2026-11-23 收件人守卫事故）。
         try:
             try:

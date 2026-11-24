@@ -123,11 +123,6 @@ def _fallback_bodies():
     return _FALLBACK_BODIES
 
 
-def fallback_bodies():
-    """「只是兜底」句归一化集合（测试/验收用；数据只来自 repetition_guard）。"""
-    return _fallback_bodies()
-
-
 def is_fallback(text):
     """整条回复归一化后是否等于某句通用兜底（通用/状态复读/短句三个池）。"""
     body = _PUNCT.sub("", str(text or ""))

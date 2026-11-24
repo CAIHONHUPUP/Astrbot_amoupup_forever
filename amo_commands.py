@@ -326,18 +326,8 @@ class CommandMixin(_MixinBase):
             from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
         snap = _snap_with_scene(self)
         activity = 0.0
+        # 心流阈值已随引擎下线：这里保留全 0 的形状给面板/接口兼容，不再读引擎。
         threshold = {"value": 0.0, "base": 0.0, "absolute": 0.0}
-        if self.heartflow is not None:
-            try:
-                hf_threshold, hf_activity, hf_absolute = self.heartflow._get_dynamic_threshold(umo)
-                threshold = {
-                    "value": round(float(hf_threshold) * 100, 1),
-                    "base": round(float(self.heartflow.reply_threshold) * 100, 1),
-                    "absolute": round(float(hf_absolute), 1),
-                }
-                activity = float(hf_activity) * 100
-            except Exception as exc:
-                logger.debug("[amo] 心流阈值读取失败: %s" % exc)
         counts = self.db.counts()
         await _status_data_part(self, counts)
         try:
@@ -384,7 +374,6 @@ class CommandMixin(_MixinBase):
                 "enable_private_reply": self.cfg_bool("enable_private_reply", True),
                 "auto_active_msg": self.cfg_bool("auto_active_msg", True),
                 "enable_polish": self.cfg_bool("enable_polish", True),
-                "heartflow": self.heartflow is not None,
                 "segment_engine": self.segment_engine is not None,
                 "weather_key_set": bool(self.cfg_str("hefeng_key", "")),
                 "weather_host": self.cfg_str("weather_host", "https://devapi.qweather.com"),
@@ -424,7 +413,6 @@ class CommandMixin(_MixinBase):
         else:
             mood = data.get("mood") or {}
             mood_line = " ".join([key + str(int(value)) for key, value in mood.items()])
-        threshold = data["threshold"]
         lines = [
             "🌙 陪伴 · 当前状态",
             "🕒 " + str(data["time"]),
@@ -433,7 +421,6 @@ class CommandMixin(_MixinBase):
             "🩺 身体：" + str(data["health"]["status"]),
             "🌦 天气：" + str(data["weather_text"]),
             "📅 正在：" + str(data["activity"].get("activity", "休息")) + "（" + str(data["activity"].get("place", "")) + "）",
-            "🎚 心流阈值：" + str(threshold["value"]) + "（基础 " + str(threshold["base"]) + "，活跃度 " + str(data["activity_rate"]) + "%）",
             "📚 档案 " + str(data["counts"]["profiles"]) + " · 记忆 " + str(data["counts"]["memories"]) + " · 消息 " + str(data["counts"]["messages"]),
         ]
         # 记忆后端连没连上要写在状态里：没装能记的人只会看到「记忆 0」，然后以为功能坏了。
@@ -484,10 +471,7 @@ class CommandMixin(_MixinBase):
             return await self._cmd_weather(event, args, uid)
         if sub == "worldview" or sub == "世界观":
             return await self._cmd_worldview(event, args, uid)
-        if sub == "threshold" or sub == "阈值":
-            return await self._cmd_threshold(event, args, uid)
-        if sub == "say" or sub == "说":
-            return await self._cmd_say(event, args, uid)
+        if sub == "say" or sub == "说":            return await self._cmd_say(event, args, uid)
         if sub == "clean" or sub == "清理":
             return await self._cmd_clean(event, args, uid)
         if sub in ("trip", "旅游"):
@@ -502,7 +486,7 @@ class CommandMixin(_MixinBase):
             "/amo status 状态｜/amo mood 九维心情\n"
             "/amo profile [@人] 档案｜/amo memories [@人] 记忆\n"
             "/amo period 生理期｜/amo health 健康｜/amo schedule 日程\n"
-            "/amo weather 天气｜/amo worldview 世界观｜/amo threshold 阈值\n"
+            "/amo weather 天气｜/amo worldview 世界观\n"
             "管理员：/amo rel @人 关系｜/amo set @人 字段 值｜/amo memo @人 内容 [0/1/2]（写入记忆插件）\n"
             "/amo period set YYYY-MM-DD｜/amo health set 状态\n"
             "/amo draw 描述（测试画图）｜/amo photo（照片概率/状态）\n"
@@ -563,7 +547,7 @@ class CommandMixin(_MixinBase):
         except ImportError:
             from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
         snap = _snap_with_scene(self)
-        lines = ["🎨 陪伴的十维心情"]
+        lines = ["🎨 陪伴的九维心情"]
         for key, value in snap["mood"].items():
             bar = "█" * int(round(value / 10)) + "░" * (10 - int(round(value / 10)))
             lines.append("%s %s %d" % (key, bar, int(value)))
@@ -787,19 +771,6 @@ class CommandMixin(_MixinBase):
         await self.state.ensure_worldview(self._last_umo)
         return "🌍 世界观\n" + self.state.worldview_text()
 
-    async def _cmd_threshold(self, event, args, uid):
-        """原 _handle_command 的「threshold」分支，逐行搬来。"""
-        data = await self._status_data()
-        threshold = data["threshold"]
-        return (
-            "🎚 心流回复阈值\n"
-            "当前动态阈值：" + str(round(threshold["value"] / 100, 3)) + "\n"
-            "基础阈值：" + str(round(threshold["base"] / 100, 3)) + "\n"
-            "绝对分数阈值：" + str(threshold["absolute"]) + "/10\n"
-            "当前群活跃度：" + str(data["activity_rate"]) + "%\n"
-            "说明：阈值越高越不想说话；详细状态用 /heartflow。"
-        )
-
     async def _cmd_say(self, event, args, uid):
         """原 _handle_command 的「say」分支，逐行搬来。"""
         if not self._is_admin(event):
@@ -1014,62 +985,8 @@ class CommandMixin(_MixinBase):
             _note_swallowed("amo_commands.cmd_schedule_edit", _amo_exc)
             yield event.plain_result("没改成…")
 
-    @filter.command("heartflow")
-    async def cmd_heartflow(self, event: AstrMessageEvent):
-        await self._ensure_ready()
-        if self.heartflow is None:
-            yield event.plain_result("心流引擎未加载")
-            return
-        async for item in self.heartflow.heartflow_status(event):
-            yield item
-
-    @filter.command("heartflow_debug")
-    async def cmd_heartflow_debug(self, event: AstrMessageEvent):
-        await self._ensure_ready()
-        if self.heartflow is None:
-            yield event.plain_result("心流引擎未加载")
-            return
-        async for item in self.heartflow.heartflow_debug(event):
-            yield item
-
-    @filter.command("heartflow_clear")
-    async def cmd_heartflow_clear(self, event: AstrMessageEvent):
-        await self._ensure_ready()
-        if self.heartflow is None:
-            yield event.plain_result("心流引擎未加载")
-            return
-        async for item in self.heartflow.heartflow_clear_buffer(event):
-            yield item
-
     @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.command("heartflow_log")
-    async def cmd_heartflow_log(self, event: AstrMessageEvent):
-        await self._ensure_ready()
-        if self.heartflow is None:
-            yield event.plain_result("心流引擎未加载")
-            return
-        async for item in self.heartflow.heartflow_toggle_log(event):
-            yield item
-
     @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.command("heartflow_reset")
-    async def cmd_heartflow_reset(self, event: AstrMessageEvent):
-        await self._ensure_ready()
-        if self.heartflow is None:
-            yield event.plain_result("心流引擎未加载")
-            return
-        async for item in self.heartflow.heartflow_reset(event):
-            yield item
-
-    @filter.command("heartflow_help")
-    async def cmd_heartflow_help(self, event: AstrMessageEvent):
-        await self._ensure_ready()
-        if self.heartflow is None:
-            yield event.plain_result("心流引擎未加载")
-            return
-        async for item in self.heartflow.heartflow_help(event):
-            yield item
-
     @filter.command("amo")
     async def cmd_amo(self, event: AstrMessageEvent):
         await self._ensure_ready()

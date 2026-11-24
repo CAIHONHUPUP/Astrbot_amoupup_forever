@@ -33,7 +33,7 @@ from amo_human_state import HumanState  # noqa: E402
 from amo_schedule import ScheduleMixin  # noqa: E402
 from amo_shared import today_str  # noqa: E402
 from amo_state_common import block_diary_enabled, block_id  # noqa: E402
-from amo_init import _NoMoney as Wallet  # noqa: E402
+from amo_init import _RetiredWallet as Wallet  # noqa: E402
 
 
 def _block(start, end, activity, place, zone="home", category="rest"):

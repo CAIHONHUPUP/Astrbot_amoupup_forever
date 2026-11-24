@@ -198,6 +198,102 @@
    "intent": "praise",
    "source": "authored",
    "id": "authored:praise1"
+  },
+  {
+   "text": "你忙完啦？记得喝口水呀。",
+   "intent": "care",
+   "source": "authored",
+   "id": "authored:warm20261124:1"
+  },
+  {
+   "text": "累不累呀？累了就先靠一会儿，我在呢。",
+   "intent": "care",
+   "source": "authored",
+   "id": "authored:warm20261124:2"
+  },
+  {
+   "text": "刚还想你呢，你就来消息啦。",
+   "intent": "miss",
+   "source": "authored",
+   "id": "authored:warm20261124:3"
+  },
+  {
+   "text": "你今晚几点回呀，我等你。",
+   "intent": "miss",
+   "source": "authored",
+   "id": "authored:warm20261124:4"
+  },
+  {
+   "text": "那你猜猜我现在在干嘛？",
+   "intent": "playful",
+   "source": "authored",
+   "id": "authored:warm20261124:5"
+  },
+  {
+   "text": "哼，你倒是先说句好听的嘛。",
+   "intent": "playful",
+   "source": "authored",
+   "id": "authored:warm20261124:6"
+  },
+  {
+   "text": "你再说一遍？我没听够呢。",
+   "intent": "playful",
+   "source": "authored",
+   "id": "authored:warm20261124:7"
+  },
+  {
+   "text": "今天没啥事，就有点想跟你说话。",
+   "intent": "daily",
+   "source": "authored",
+   "id": "authored:warm20261124:8"
+  },
+  {
+   "text": "被你这么一夸，我脸都热啦。",
+   "intent": "praise",
+   "source": "authored",
+   "id": "authored:warm20261124:9"
+  },
+  {
+   "text": "你吃了没呀？我正琢磨吃点啥呢。",
+   "intent": "food",
+   "source": "authored",
+   "id": "authored:warm20261124:10"
+  },
+  {
+   "text": "早点睡呀，别熬着了，我心疼。",
+   "intent": "care",
+   "source": "authored",
+   "id": "authored:warm20261124:11"
+  },
+  {
+   "text": "你不在的时候，我老想着你呢。",
+   "intent": "miss",
+   "source": "authored",
+   "id": "authored:warm20261124:12"
+  },
+  {
+   "text": "你哄哄我嘛，就一句。",
+   "intent": "playful",
+   "source": "authored",
+   "id": "authored:warm20261124:13"
+  },
+  {
+   "text": "今天挺没劲的，还好你来了呢。",
+   "intent": "daily",
+   "source": "authored",
+   "id": "authored:warm20261124:14"
+  },
+  {
+   "text": "你再夸我两句呀，我爱听。",
+   "intent": "praise",
+   "source": "authored",
+   "id": "authored:warm20261124:15"
+  },
+  {
+   "text": "今晚吃啥呀？我馋了。",
+   "intent": "food",
+   "source": "authored",
+   "id": "authored:warm20261124:16"
   }
  ]
 }

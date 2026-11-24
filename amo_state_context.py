@@ -137,10 +137,6 @@ def event_conflict(event, ctx):
     return ""
 
 
-def state_allowed(event, ctx):
-    return not event_conflict(event, ctx)
-
-
 def memory_prefix(ctx):
     zone = str((ctx or {}).get("zone") or "unknown")
     if zone == "home":

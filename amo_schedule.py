@@ -597,11 +597,6 @@ def _day_date_of(day):
         return None
 
 
-def _day_text_of(day):
-    parsed = _day_date_of(day)
-    return parsed.isoformat() if parsed else ""
-
-
 def _row_timestamp(row):
     """聊天/账本行的时间戳（秒）；取不到返回 0（老数据没有时间字段时不凭空丢）。"""
     if not isinstance(row, dict):

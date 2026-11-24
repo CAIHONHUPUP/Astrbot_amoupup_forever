@@ -575,7 +575,9 @@ class RuntimeTickMixin(RuntimeMixinBase):
             "下面是昨天（" + (now - timedelta(days=1)).strftime("%Y-%m-%d") + "）两人的聊天记录。\n"
             "请把它压成 2-4 句长期记忆：写清聊到的事、约定、他的状态变化（工作/身体/情绪/计划）。\n"
             "每句必须带主体：写用户的用「他……」，写你自己的用「我……」；不要出现无主语的句子。\n"
-            "只写事实，不写「今天/昨天」这类相对时间；不要复述原话；不确定的不要编。\n\n"
+            "只写事实，不写「今天/昨天」这类相对时间；不要复述原话；不确定的不要编。\n"
+            "同一件事前后说法不一样时，以后面说的为准（先说想吃热汤面、后来说吃了炒米粉，就写炒米粉）。\n"
+            "只是说过要做、没有真的做成的事，要写成「他说要/我打算」，不要写成已经做了。\n\n"
             + "\n".join(lines[-120:])
         )
         try:
@@ -591,15 +593,18 @@ class RuntimeTickMixin(RuntimeMixinBase):
         if _is_explicit(summary):
             logger.info("[amo] 每日总结含露骨内容，本次不写")
             return False
-        # 摘要也会被当记忆注入：无主语句子会被读成角色自己的经历，统一补「他」
+        # 摘要也会被当记忆注入：无主语句子会被读成角色自己的经历，统一补「他」；
+        # 以称呼开头的（老公/亲爱的…）换成「他……」，否则会拼出「他老公说」这种病句。
+        try:
+            from .amo_shared_text import digest_subject as _digest_subject
+        except ImportError:
+            from amo_shared_text import digest_subject as _digest_subject
         fixed = []
         for piece in re.split(r"(?<=[。！？!?；;])", summary):
             piece = piece.strip()
             if not piece:
                 continue
-            if not piece.startswith(("他", "我", "她", "用户")):
-                piece = "他" + piece
-            fixed.append(piece)
+            fixed.append(_digest_subject(piece))
         summary = "".join(fixed)
         if len(summary) < 8:
             # 模型拒答/限流会一直返回空：不计数的话 every-5-min tick 会无限重跑

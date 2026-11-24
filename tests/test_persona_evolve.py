@@ -203,13 +203,15 @@ def test_a2_positive_review_adds_to_pool_negative_does_not():
     out = evolve.review_pending(plugin, "哈哈好可爱")
     assert out["ok"], out
     state = store.load_state(plugin)
-    assert [row["text"] for row in state["style_pool"]] == ["你先忙，我等你回来"]
-    assert state["style_pool"][0]["scene"] == "home_bed"
-    assert state["style_pool"][0]["source"] == "auto"
+    # 正向只进「待通过」，要点通过才进池（2026-11-24 审批）
+    assert state["style_pool"] == []
+    assert [row["text"] for row in state["style_pending"]] == ["你先忙，我等你回来"]
+    assert state["style_pending"][0]["scene"] == "home_bed"
+    assert state["style_pending"][0]["source"] == "auto"
 
     evolve.record_pending(plugin, "你烦不烦啊真是", "qq:FriendMessage:1")
     assert not evolve.review_pending(plugin, "滚")["ok"]
-    assert len(store.load_state(plugin)["style_pool"]) == 1
+    assert len(store.load_state(plugin)["style_pending"]) == 1
 
 
 # ---- A3 过滤器 ----
@@ -224,16 +226,38 @@ def _filter(plugin, text, **kw):
 
 def test_a3_length_bounds():
     plugin = _plugin()
-    assert _filter(plugin, "太短了吧") == "length"
+    # 2026-11-24：她平时就 4-6 个字，下限从 6 放到 4；
+    # 但「嗯嗯」这种纯语气仍然不收。
+    assert _filter(plugin, "嗯嗯") == "length"
+    assert _filter(plugin, "嗯嗯嗯") == "length"
     assert _filter(plugin, "这" * 41) == "length"
     assert _filter(plugin, "今天下班我走得有点晚") == ""
+    assert _filter(plugin, "刚到家呢") == ""
+    # 但「嗯」在 pack 的禁用词里：她拿「嗯……」开口的句子仍然不收。
+    assert _filter(plugin, "嗯，去吧。") == "forbidden"
 
 
 def test_a3_forbidden_and_tech_and_template():
     plugin = _plugin()
     assert _filter(plugin, "你美丽的老婆今天不想理你") == "forbidden"
     assert _filter(plugin, "作为一个人工智能我做不到") == "tech"
-    assert _filter(plugin, "（叹气）今天真的好累啊") == "template"
+    assert _filter(plugin, "【今天真的好累啊】") == "template"
+    # 动作括号是她说话的一部分（不是模板）：整句一起学，不剥
+    assert evolve.spoken_text("（扒了口饭，看着手机）嗯，去吧。") == "嗯，去吧。"
+    assert _filter(plugin, "（叹气）今天真的好累啊") == ""
+    assert _filter(plugin, "（裹着毛衣在沙发上坐着，笑了一下）行啊，那你先到。") == ""
+
+
+def test_a3_pool_stores_spoken_only():
+    plugin = _plugin()
+    state = store.load_state(plugin)
+    out = evolve.add_to_pool(plugin, "（笑着摇头，但没驳他）行啊，饭桌得先擦一遍。", scene="home", state=state)
+    assert out["ok"], out
+    fresh = store.load_state(plugin)
+    assert fresh["style_pool"][-1]["text"] == "行啊，饭桌得先擦一遍。"
+    # 整句只有动作 → 剥完是空的，不入池
+    only = evolve.add_to_pool(plugin, "（把碗放下）", scene="home")
+    assert not only["ok"]
 
 
 def test_a3_similar_to_fixed_or_his_words():
@@ -369,6 +393,111 @@ def test_a6_status_adds_fields_without_breaking_old():
                 "archive_count", "pending_review", "recent_auto"):
         assert key in out, key
     assert out["auto_evolve"] is True
+
+
+def test_edit_pool_entry_updates_pool_and_log():
+    plugin = _plugin()
+    state = store.load_state(plugin)
+    state["style_pool"] = [{"text": "今天下班有点晚", "at": 100, "intent": "daily", "score": 1.0}]
+    state["evolve_log"] = [{"text": "今天下班有点晚", "at": 100, "scene": "home"}]
+    store.save_state(plugin, store.active_id(plugin), state)
+
+    fixed = "（把包一放）今天下班晚啦，累死了"
+    spoken = "今天下班晚啦，累死了"
+    out = evolve.edit_pool_entry(plugin, 0, fixed)
+    assert out["ok"], out
+    fresh = store.load_state(plugin)
+    assert fresh["style_pool"][0]["text"] == spoken
+    assert fresh["evolve_log"][-1]["text"] == spoken
+
+    # 改坏了就拒绝，且不动原文
+    assert evolve.edit_pool_entry(plugin, 0, "嗯")["reason"] == "length"
+    assert evolve.edit_pool_entry(plugin, 0, "嗯，知道了")["reason"] == "forbidden"
+    assert evolve.edit_pool_entry(plugin, 9, "随便改一句")["reason"] == "empty"
+    assert store.load_state(plugin)["style_pool"][0]["text"] == spoken
+
+
+def test_auto_approve_goes_straight_to_pool():
+    plugin = _plugin(persona_auto_approve=True)
+    evolve.record_pending(plugin, "你先忙，我等你回来", "qq:FriendMessage:1")
+    out = evolve.review_pending(plugin, "哈哈好可爱")
+    assert out["ok"], out
+    state = store.load_state(plugin)
+    assert len(state["style_pool"]) == 1
+    assert state["style_pending"] == []
+
+
+def test_manual_candidate_joins_the_same_queue():
+    plugin = _plugin()
+    out = store.add_candidate(plugin, "你回来路上慢点", scene="general")
+    assert out["ok"], out
+    state = store.load_state(plugin)
+    assert state["candidates"] == []
+    assert [row["text"] for row in state["style_pending"]] == ["你回来路上慢点"]
+    assert state["style_pending"][0]["source"] == "manual"
+
+
+def test_card_action_line_follows_switch():
+    data = {"card": {"core": "认定你", "language": {"rules": ["不写动作旁白", "句子要短"]}}}
+    on = pack.card_text(data, allow_action=True)
+    off = pack.card_text(data, allow_action=False)
+    # 动作只由开关说一次：开着的时候卡里不许再留「不写动作」
+    assert "不写动作旁白" not in on
+    assert "可以带一句很短的括号动作" in on
+    assert "不写动作旁白" in off
+    assert "可以带一句很短的括号动作" not in off
+    # 别的语言规则照旧
+    assert "句子要短" in on and "句子要短" in off
+
+
+def test_pending_needs_approval_before_pool():
+    plugin = _plugin()
+    state = store.load_state(plugin)
+    out = evolve.add_to_pool(plugin, "行啊，饭桌得先擦一遍。", scene="home", state=state,
+                             pending=True)
+    assert out["ok"], out
+    fresh = store.load_state(plugin)
+    assert len(fresh["style_pending"]) == 1
+    assert len(fresh["style_pool"]) == 0
+    st = evolve.status(plugin)
+    assert len(st["pending_pool"]) == 1
+    assert st["pending_pool"][0]["log_index"] == 0
+
+    # 未通过前不参与注入（池子空 → 回落固定例句，不是我们自己这条）
+    before = evolve.learned_style_samples(plugin, "晚饭吃了吗", mark=False)
+    assert all(row.get("source") != "pool" for row in before)
+
+    assert evolve.approve_pending(plugin, 0)["ok"]
+    fresh = store.load_state(plugin)
+    assert fresh["style_pending"] == []
+    assert len(fresh["style_pool"]) == 1
+    picked = evolve.learned_style_samples(plugin, "晚饭吃了吗", mark=False)
+    assert picked and picked[0]["text"] == "行啊，饭桌得先擦一遍。"
+
+
+def test_learned_style_block_uses_pool():
+    plugin = _plugin()
+    state = store.load_state(plugin)
+    # at 必须是近期：池子按天数衰减，1970 年的时间戳会被当成过期归档
+    state["style_pool"] = [{"text": "行啊，饭桌得先擦一遍。",
+                            "at": int(__import__("time").time()),
+                            "intent": pack.style_intent("晚饭吃了吗"), "score": 1.0}]
+    store.save_state(plugin, store.active_id(plugin), state)
+    block = evolve.learned_style_block(plugin, "晚饭吃了吗")
+    assert "你以前这样说过" in block
+    assert "饭桌得先擦一遍" in block
+    assert len(block) <= 120
+
+
+def test_style_pool_is_wired_into_chat_prompt():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "amo_llm.py"), encoding="utf-8") as fh:
+        src = fh.read()
+    # 正常聊天的入口必须自己取例句池，否则池子只是陈列柜
+    assert "amo_llm.on_llm_request.style_pool" in src
+    # 2026-11-24：两条路共用 _style_block_for，不再各写一份
+    assert src.count("_style_block_for(") >= 3
+    assert "learned_style_block as _learned" in src
 
 
 def test_old_state_missing_new_fields_gets_defaults():

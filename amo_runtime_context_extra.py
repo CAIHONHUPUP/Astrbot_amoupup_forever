@@ -22,6 +22,39 @@ def _mod():
     return module
 
 
+def _life_line(facts):
+    """洗衣/生活状态压成一句人话。
+
+    只保留会影响聊天的事实（有没有干净衣服、是不是手洗、床品该不该换）。
+    烘干机报价、钱包余额、干净件数的精确值对聊天没有意义，以前整段 JSON 每轮
+    都在喂，既费 token 又容易让她顺着「余额一千万」乱说。
+    """
+    facts = facts if isinstance(facts, dict) else {}
+    bits = []
+    if facts.get("hand_wash"):
+        bits.append("家里没洗衣机，衣服都手洗（袜子每天顺手洗）")
+    try:
+        washing = int(facts.get("washing_count") or 0)
+    except (TypeError, ValueError):
+        washing = 0
+    if washing:
+        bits.append("正洗着 %d 件" % washing)
+    if facts.get("no_clean"):
+        bits.append("没有干净衣服了")
+    else:
+        try:
+            clean = int(facts.get("clean_count") or 0)
+        except (TypeError, ValueError):
+            clean = 0
+        if clean > 0:
+            bits.append("干净衣服够穿")
+    if facts.get("bedding_due"):
+        bits.append("床品该换了")
+    if facts.get("season_mismatch"):
+        bits.append("衣柜和季节不太对")
+    return ("【生活事实】" + "；".join(bits) + "。") if bits else ""
+
+
 class ExtraContextMixin:
     # 宿主（HumanCorePlugin）提供的成员：只在类型层面声明，运行时不创建属性（不改变任何行为）。
     state: Any
@@ -101,12 +134,12 @@ class ExtraContextMixin:
                             _life = LifeFacts(self)
                             _life.tick()
                             _life_facts = _life.snapshot()
-                            parts.append("【生活事实】" + _json.dumps(
-                                _life_facts, ensure_ascii=False))
-                            if _life_facts.get("hand_wash"):
-                                parts.append(
-                                    "【洗衣】家里没有洗衣机：衣服都是手洗的（30 分钟洗完再晾 6–12 小时），"
-                                    "袜子每天顺手洗；不要说用洗衣机洗。")
+                            # 以前整段 JSON（≈400 字，含烘干机报价、余额、干净件数明细）
+                            # 每轮都灌进提示词：模型只会被「余额 1000 万」带跑，
+                            # 这些字段对聊天没有任何用处。压成一句人话。
+                            _line = _life_line(_life_facts)
+                            if _line:
+                                parts.append(_line)
                             try:
                                 _cur = self.state.current_activity() or {}
                                 self.db.kv_set("last_activity", _cur)

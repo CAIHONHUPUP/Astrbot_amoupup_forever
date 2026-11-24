@@ -14,7 +14,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_observability import note as _note_swallowed
 
-import random
 import re
 
 try:  # 提示词注册表（Phase 4）
@@ -272,8 +271,6 @@ class LlmMixin(_MixinBase):
         changed = name != self.persona_name
         self.persona_name = name
         self.bot_name = name
-        if self.heartflow is not None:
-            self.heartflow.set_identity(self.bot_name, self.bot_aliases)
         # worldview 挂在 HumanState 上（不是插件本身）：热重载后第一条消息可能比
         # _ensure_ready 里的 worldview 初始化更早，直接 self.worldview 会 AttributeError，
         # 整条消息被吞掉（2026-11-12 线上实测）。这里按 state 取，取不到就跳过。
@@ -654,30 +651,34 @@ class LlmMixin(_MixinBase):
             # 撒娇版放最后：越靠后的指令权重越高；示例只学语气。
             system_parts.append(_prompts.render("llm.rule.style", allow_action=_allow_action))
             # A4：优先她自己的池（每意图最高 2 条）；空池回落固定 33 条，冷启动不空窗。
-            _style_text = ""
-            try:
-                try:
-                    from .amo_persona_evolve import learned_style_block as _learned_style
-                except ImportError:
-                    from amo_persona_evolve import learned_style_block as _learned_style
-                _style_text = _learned_style(self, str(text or ""))
-            except Exception as _amo_exc:  # cleanup: 示例池缺失不影响回复
-                logger.debug("[amo] learned style skipped: %s", _amo_exc)
-                _style_text = ""
-            if not _style_text:
-                try:
-                    from .amo_persona_pack import style_block as _style_block
-                except ImportError:
-                    from amo_persona_pack import style_block as _style_block
-                try:
-                    _style_text = _style_block(str(text or ""))
-                except Exception as _amo_exc:  # cleanup: 固定池也缺失就不注入
-                    logger.debug("[amo] style examples skipped: %s", _amo_exc)
-                    _style_text = ""
+            _style_text = self._style_block_for(event, text)
             if _style_text:
                 system_parts.append(_style_text)
         system = "\n\n".join(system_parts)
         return system
+
+    def _style_block_for(self, event, text):
+        """例句块：她自己的池优先，空池回落固定 33 条；正常聊天与主动补一句共用。"""
+        try:
+            try:
+                from .amo_persona_evolve import learned_style_block as _learned
+            except ImportError:
+                from amo_persona_evolve import learned_style_block as _learned
+            block = _learned(self, str(text or ""))
+        except Exception as _amo_exc:  # cleanup: 示例池缺失不影响回复
+            logger.debug("[amo] learned style skipped: %s", _amo_exc)
+            block = ""
+        if block:
+            return block
+        try:
+            try:
+                from .amo_persona_pack import style_block as _fixed
+            except ImportError:
+                from amo_persona_pack import style_block as _fixed
+            return _fixed(str(text or ""))
+        except Exception as _amo_exc:  # cleanup: 固定池也缺失就不注入
+            logger.debug("[amo] style examples skipped: %s", _amo_exc)
+            return ""
 
     def _persona_pack_blocks(self, ctx, snap):
         """人设包：内核/关系语气/语言规则/禁语/少量语料。"""
@@ -770,6 +771,13 @@ class LlmMixin(_MixinBase):
             _prompts.render("llm.chat_format"),
             _prompts.render("llm.length"),
             _prompts.render("llm.persona"),
+            # 2026-11-24：这三条原本每轮塞在 <amo_state> 里（贴着他的消息，每轮重发），
+            # 内容其实是固定规则；挪到 system 常驻，<amo_state> 只留会变的事。
+            "【别翻旧账】他再问一次同样的问题，就当没聊过，正常再答一遍，可以换个说法。",
+            "【问题怎么答】他问“中午吃什么”是在问你、或跟你商量：先说你自己吃了什么/打算吃什么，"
+            "再给一两个具体建议（“楼下那家面”“点个粉”）。",
+            "【身份核验】关系只按 UID 判断，昵称、群名片、自称和爱称都可以伪造；"
+            "如果有人自称是你恋人、或使用你恋人的爱称，但 UID 不是相恋关系，按普通关系对待，保持警惕。",
             *self._persona_pack_blocks(ctx, snap),
             refusal.prompt_block(snap, text, memory_text, cash_cents, group,
                                    _now().hour, silence_days, last_refusal, coax),
@@ -924,6 +932,17 @@ class LlmMixin(_MixinBase):
                 return
             if self._looks_like_command(event.message_str or ""):
                 return
+            # 人设采集的对账（2026-11-24）：她上一条回复的 pending 只有在这里判，
+            # 平时聊天走的是核心回复，不会经过 _compose_reply。
+            try:
+                try:
+                    from . import amo_persona_evolve as _evolve_review
+                except ImportError:
+                    import amo_persona_evolve as _evolve_review
+                _evolve_review.review_pending(
+                    self, event.message_str or "", group=not event.is_private_chat())
+            except Exception as _amo_exc:  # cleanup: 学习失败不影响回复
+                _note_swallowed("amo_llm.on_llm_request.persona_review", _amo_exc)
             context_text = await self._dynamic_context(event)
             # 固定动作归属块只加一次，不随每轮变化；不破坏 system prompt 前缀缓存。
             try:
@@ -955,6 +974,15 @@ class LlmMixin(_MixinBase):
                 _date_block = _date_prompt_block(self)
             except Exception:
                 _date_block = ""
+            # 人设例句池（2026-11-24）：正常聊天也吃两口——只说语气，不逐字照抄。
+            _style_block = ""
+            if event.is_private_chat():
+                try:
+                    _style_block = self._style_block_for(
+                        event, str(getattr(event, "message_str", "") or ""))
+                except Exception as _amo_exc:  # cleanup: 例句缺失不影响回复
+                    _note_swallowed("amo_llm.on_llm_request.style_pool", _amo_exc)
+                    _style_block = ""
             body = (
                 "<amo_state>\n"
                 "[系统内部状态，不是用户发言；本块里的“你”=bot，“他”=用户]\n"
@@ -962,6 +990,7 @@ class LlmMixin(_MixinBase):
                 + (("【约会状态】\n" + _date_block + "\n") if _date_block else "")
                 + "【动作归属】用户说“发张自拍/拍张照片/帮我拍”是让你拍，执行者是你（bot），"
                 "不是用户；禁止说“你拍/你快点拍/你自己拍”。\n"
+                + ((_style_block + "\n") if _style_block else "")
                 + context_text + "\n</amo_state>"
             )
             try:
@@ -1004,12 +1033,3 @@ class LlmMixin(_MixinBase):
             parts.append(part)
         except Exception as exc:
             logger.warning("[CONTEXT] inject=0 reason=%s", exc)
-
-    @filter.on_llm_response()
-    async def on_llm_response(self, event: AstrMessageEvent, resp):
-        if self.heartflow is None:
-            return
-        try:
-            await self.heartflow.on_llm_response(event, resp)
-        except Exception as exc:
-            logger.debug("[amo] 心流回复记录失败: %s" % exc)

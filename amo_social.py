@@ -15,7 +15,6 @@ import json
 import os
 import random
 import re
-import time
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed

@@ -53,12 +53,19 @@
     const core = String(data.core || "").trim();
     setText("personaName", name || "未命名人设");
     setText("personaCore", core || "还没有写人设内核（card.core）");
-    setText("personaActiveId", data.active || "—");
+    const actionBtn = el("personaActionToggle");
+    if (actionBtn) {
+      const on = !!data.action_narration;
+      actionBtn.textContent = "动作 · " + (on ? "开" : "关");
+      actionBtn.dataset.enabled = on ? "1" : "0";
+      actionBtn.classList.toggle("hot", on);
+    }
     const avatar = el("personaAvatar");
     if (avatar) avatar.textContent = (name || "她").slice(0, 1);
     setText("personaCorpus", String(Number(data.corpus_count) || 0));
-    setText("personaEvolved", String(Number(data.evolved) || 0));
-    setText("personaPending", String((data.candidates || []).length));
+    // 2026-11-24：进化=已通过（池子），待批=待通过例句；以前待批读的是手动候选，进化读了个不存在的字段，永远 0
+    setText("personaEvolved", String(Number(data.pool_count) || 0));
+    setText("personaPending", String((data.pending_pool || []).length));
   }
 
   function renderProfiles(data) {
@@ -73,14 +80,16 @@
       box.appendChild(empty);
       return;
     }
+    const labels = data.profile_labels || {};
     rows.forEach((pid) => {
       const active = pid === data.active;
+      const label = String(labels[pid] || pid);
       const button = document.createElement("button");
       button.type = "button";
       button.className = active ? "active" : "";
-      button.textContent = (active ? "✓ " : "") + pid;
+      button.textContent = (active ? "✓ " : "") + label;
       button.disabled = active;
-      button.title = active ? "当前正在使用" : "切换到 " + pid;
+      button.title = (active ? "当前正在使用" : "切换到 " + label) + "（" + pid + "）";
       button.addEventListener("click", () => switchProfile(pid));
       box.appendChild(button);
     });
@@ -145,46 +154,125 @@
     });
   }
 
-  function renderRecent(data) {
-    const box = el("personaRecent");
-    if (!box) return;
-    box.textContent = "";
-    const rows = data.recent_auto || [];
-    const pill = el("personaPoolPill");
-    if (pill) pill.textContent = (Number(data.pool_count) || 0) + " 条池";
-    if (!rows.length) {
-      const empty = document.createElement("div");
-      empty.className = "persona-empty";
-      const title = document.createElement("div");
-      title.textContent = "还没有自动入池的句子";
-      const hint = document.createElement("span");
-      hint.className = "hint";
-      hint.textContent = "开关打开后，只学私聊里她说过、你反应不错、且过滤通过的句子。";
-      empty.appendChild(title);
-      empty.appendChild(hint);
-      box.appendChild(empty);
-      return;
-    }
-    rows.forEach((item, index) => {
-      const row = document.createElement("div");
-      row.className = "persona-candidate";
-      const body = document.createElement("div");
-      body.className = "persona-candidate-text";
-      const tag = document.createElement("span");
-      tag.className = "sub persona-source";
-      const scene = String(item.scene || "通用");
-      tag.textContent = scene + " · ";
-      body.appendChild(tag);
-      body.appendChild(document.createTextNode(String(item.text || "")));
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "persona-approve";
-      button.textContent = "撤销";
-      button.addEventListener("click", () => undoAuto(index));
-      row.appendChild(body);
-      row.appendChild(button);
-      box.appendChild(row);
+  function emptyBox(titleText, hintText) {
+    const empty = document.createElement("div");
+    empty.className = "persona-empty";
+    const title = document.createElement("div");
+    title.textContent = titleText;
+    const hint = document.createElement("span");
+    hint.className = "hint";
+    hint.textContent = hintText;
+    empty.appendChild(title);
+    empty.appendChild(hint);
+    return empty;
+  }
+
+  function mkBtn(label, cls) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "persona-approve" + (cls ? " " + cls : "");
+    b.textContent = label;
+    return b;
+  }
+
+  function poolRow(item, opts) {
+    const options = opts || {};
+    const row = document.createElement("div");
+    row.className = "persona-candidate";
+    const body = document.createElement("div");
+    body.className = "persona-candidate-text";
+    const tag = document.createElement("span");
+    tag.className = "sub persona-source";
+    tag.textContent = String(item.scene || "通用") + " · ";
+    const shown = document.createElement("span");
+    shown.textContent = String(item.text || "");
+    body.appendChild(tag);
+    body.appendChild(shown);
+
+    const logIndex = Number(item.log_index);
+    const canEdit = Number.isFinite(logIndex) && logIndex >= 0;
+    const edit = mkBtn("编辑");
+    const save = mkBtn("保存", "primary");
+    const cancel = mkBtn("取消");
+    const undo = mkBtn("撤销");
+    save.hidden = true;
+    cancel.hidden = true;
+    edit.hidden = !canEdit;
+    undo.hidden = !canEdit;
+
+    const area = document.createElement("textarea");
+    area.rows = 2;
+    area.value = String(item.text || "");
+    area.hidden = true;
+    area.style.cssText = "width:100%;min-height:54px;resize:vertical;border:1px solid var(--line);" +
+      "border-radius:10px;padding:8px;font:inherit;font-size:13px;line-height:1.6;" +
+      "background:transparent;color:inherit;outline:none;";
+
+    edit.addEventListener("click", () => {
+      area.value = String(item.text || "");
+      area.hidden = false;
+      body.textContent = "";
+      body.appendChild(area);
+      edit.hidden = true; undo.hidden = true;
+      save.hidden = false; cancel.hidden = false;
+      area.focus();
     });
+    cancel.addEventListener("click", () => render(lastStatus));
+    save.addEventListener("click", () => saveEdit(logIndex, area.value));
+    undo.addEventListener("click", () => undoAuto(logIndex));
+
+    if (options.approveIndex !== undefined) {
+      const ok = mkBtn("通过", "primary");
+      ok.addEventListener("click", () => approvePool(options.approveIndex));
+      row.appendChild(ok);
+    }
+    row.appendChild(body);
+    row.appendChild(edit);
+    row.appendChild(save);
+    row.appendChild(cancel);
+    row.appendChild(undo);
+    return row;
+  }
+
+  function renderRecent(data) {
+    const approved = el("personaRecent");
+    const pending = el("personaPendingList");
+    const pendingRows = Array.isArray(data.pending_pool) ? data.pending_pool : [];
+    const poolRows = Array.isArray(data.pool_rows) ? data.pool_rows
+      : (Array.isArray(data.recent_auto) ? data.recent_auto : []);
+
+    setText("personaPoolPill", (Number(data.pool_count) || 0) + " 条池");
+    setText("personaPendingPill", pendingRows.length + " 条");
+    setText("personaApprovedPill", poolRows.length + " 条");
+
+    if (pending) {
+      pending.textContent = "";
+      if (!pendingRows.length) {
+        pending.appendChild(emptyBox("没有待通过的句子",
+          "她说过、你反应不错的新句子会先落到这里，点「通过」才写进例句池。"));
+      } else {
+        pendingRows.forEach((item, index) => {
+          pending.appendChild(poolRow(item, { approveIndex: index }));
+        });
+      }
+    }
+    if (approved) {
+      approved.textContent = "";
+      if (!poolRows.length) {
+        approved.appendChild(emptyBox("池子是空的", "通过之后才会进池，池子只学语气、不抄原话。"));
+      } else {
+        poolRows.forEach((item) => approved.appendChild(poolRow(item, {})));
+      }
+    }
+  }
+
+  async function approvePool(index) {
+    try {
+      render(await callApi("persona/pool/approve", { index }));
+      toastMsg("已通过，这条进池了");
+    } catch (error) {
+      toastMsg("通过失败：" + (error.message || error), true);
+    }
   }
 
   function renderAuto(data) {
@@ -204,7 +292,6 @@
     renderHead(lastStatus);
     renderAuto(lastStatus);
     renderProfiles(lastStatus);
-    renderCandidates(lastStatus);
   }
 
   async function load() {
@@ -214,6 +301,25 @@
       const name = el("personaName");
       if (name) name.textContent = "读取失败";
       toastMsg("读取人设失败：" + (error.message || error), true);
+    }
+  }
+
+  async function copyProfile() {
+    const input = el("personaCopyName");
+    const name = String((input && input.value) || "").trim();
+    if (!name) { toastMsg("先给它起个名字", true); return; }
+    try {
+      const data = await callApi("persona/export", { id: lastStatus.active || "" });
+      const pack = (data && (data.pack || (data.data && data.data.pack))) || null;
+      if (!pack) throw new Error("读不到当前人设包");
+      const copy = JSON.parse(JSON.stringify(pack));
+      copy.id = String(lastStatus.active || "pack") + "-copy-" + Date.now().toString(36);
+      copy.name = name;
+      render(await callApi("persona/import", { pack: copy }));
+      if (input) input.value = "";
+      toastMsg("已复制成「" + name + "」，点它切换过去");
+    } catch (error) {
+      toastMsg("复制失败：" + (error.message || error), true);
     }
   }
 
@@ -252,6 +358,20 @@
       toastMsg("已撤销这条自动进化");
     } catch (error) {
       toastMsg("撤销失败：" + (error.message || error), true);
+    }
+  }
+
+  async function saveEdit(index, value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      toastMsg("不能存空句子", true);
+      return;
+    }
+    try {
+      render(await callApi("persona/pool/edit", { index, text }));
+      toastMsg("已保存");
+    } catch (error) {
+      toastMsg("保存失败：" + (error.message || error), true);
     }
   }
 
@@ -408,7 +528,23 @@
   }
 
   function bind() {
-    const importBtn = el("personaImport");
+    const actionToggle = el("personaActionToggle");
+  if (actionToggle) {
+    actionToggle.addEventListener("click", async () => {
+      const next = actionToggle.dataset.enabled !== "1";
+      try {
+        render(await callApi("persona/auto", { key: "action_narration", enabled: next }));
+        toastMsg(next ? "动作描写已开（一条最多一句短动作）" : "动作描写已关");
+      } catch (error) {
+        toastMsg("切换失败：" + (error.message || error), true);
+      }
+    });
+  }
+
+  const dupBtn = el("personaCopy");
+  if (dupBtn) dupBtn.addEventListener("click", copyProfile);
+
+  const importBtn = el("personaImport");
     const exportBtn = el("personaExport");
     const copyBtn = el("personaCopy");
     const downloadBtn = el("personaDownload");

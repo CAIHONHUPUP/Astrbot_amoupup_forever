@@ -25,7 +25,6 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from photo_rules import resolve_zone
 
-import datetime as _dt
 
 PRIORITY = ("micro", "jit", "schedule", "fallback")
 

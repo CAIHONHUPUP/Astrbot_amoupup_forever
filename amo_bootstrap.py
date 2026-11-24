@@ -138,5 +138,3 @@ __all__ = [
 ]
 
 
-# 心流已移除：保留名字给旧调用方做 None 判断
-HeartflowEngine = None

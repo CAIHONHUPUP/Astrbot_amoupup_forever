@@ -32,9 +32,18 @@ class PersonaApiMixin:
             "scene": str(row.get("scene") or ""),
             "mood": str(row.get("mood") or ""),
         } for row in (state.get("candidates") or []) if isinstance(row, dict)]
+        profiles = _store.profiles(self)
+        labels = {}
+        for pid in profiles:
+            try:
+                labels[pid] = str((_store.load_pack(self, pid) or {}).get("name") or pid)
+            except Exception:
+                labels[pid] = pid
         out = {
             "active": active,
-            "profiles": _store.profiles(self),
+            "profiles": profiles,
+            # 面板显示用：id 是目录名（英文），name 才是人设卡里的名字
+            "profile_labels": labels,
             "name": str(data.get("name") or ""),
             "core": str((data.get("card") or {}).get("core") or ""),
             "corpus_count": len(data.get("corpus") or []),
@@ -43,6 +52,10 @@ class PersonaApiMixin:
             # 新字段只增不改：来源标签 / 自动进化状态 / 最近自动入池。
             "candidate_rows": candidate_rows,
         }
+        try:
+            out["action_narration"] = bool(self.cfg_bool("persona_action_narration", False))
+        except Exception:
+            out["action_narration"] = False
         try:
             out.update(_evolve.status(self))
         except Exception:
@@ -125,7 +138,10 @@ class PersonaApiMixin:
         data = await self._body()
         data = data if isinstance(data, dict) else {}
         kind = str(data.get("key") or "auto_evolve")
-        key = "persona_auto_approve" if kind == "auto_approve" else "persona_auto_evolve"
+        key = {
+            "auto_approve": "persona_auto_approve",
+            "action_narration": "persona_action_narration",
+        }.get(kind, "persona_auto_evolve")
         enabled = bool(data.get("enabled"))
         try:
             self.config[key] = enabled
@@ -136,6 +152,40 @@ class PersonaApiMixin:
                     "data": self._persona_status()}
         return {"code": 0, "msg": ("已开启 " if enabled else "已暂停 ") + key,
                 "data": self._persona_status()}
+
+    async def api_persona_pool_edit(self):
+        """改一条自动入池的句子（面板「改」）。"""
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        try:
+            index = int(data.get("index") or 0)
+        except (TypeError, ValueError):
+            index = 0
+        out = _evolve.edit_pool_entry(self, index, str(data.get("text") or ""))
+        if not out.get("ok"):
+            msg = {
+                "empty": "没有这条自动进化",
+                "empty_text": "改后的句子不能为空",
+                "length": "长度不合适（说出口 3-40 个字）",
+                "forbidden": "这句在她人设的禁用词里",
+                "tech": "带 AI 腔/技术词",
+                "template": "带【】这类后台格式",
+            }.get(str(out.get("reason") or ""), "改不了")
+            return {"code": 1, "msg": msg, "data": self._persona_status()}
+        return {"code": 0, "msg": "已改", "data": self._persona_status()}
+
+    async def api_persona_pool_approve(self):
+        """把一条待通过的句子收进例句池（面板「通过」）。"""
+        data = await self._body()
+        data = data if isinstance(data, dict) else {}
+        try:
+            index = int(data.get("index") or 0)
+        except (TypeError, ValueError):
+            index = 0
+        out = _evolve.approve_pending(self, index)
+        if not out.get("ok"):
+            return {"code": 1, "msg": "没有待通过的句子", "data": self._persona_status()}
+        return {"code": 0, "msg": "已通过", "data": self._persona_status()}
 
     async def api_persona_undo(self):
         """撤销最近一条自动入池（A6/B3）。"""

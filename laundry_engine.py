@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 import logging
 logger = logging.getLogger("amo")
 
-import datetime as _dt
 
 try:
     from .clock import now as _clock_now

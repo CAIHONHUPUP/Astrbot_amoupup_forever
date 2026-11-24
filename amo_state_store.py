@@ -32,7 +32,6 @@ import datetime as _dt
 import json
 import re
 import threading
-import time
 
 try:  # AstrBot 运行环境和单测桩都提供 astrbot.api.logger
     from astrbot.api import logger

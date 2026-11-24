@@ -333,7 +333,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
         return {"code": 0, "data": {"items": self._config_schema_items()}}
 
     async def api_providers(self):
-        """面板下拉用：列出已配置的模型供应商（脱敏），并标注心流判定/主对话模型。"""
+        """面板下拉用：列出已配置的模型供应商（脱敏），并标注主对话模型。"""
         await self._ensure_ready()
         judge_id = self._judge_provider_id()
         using_id = self._using_provider_id()

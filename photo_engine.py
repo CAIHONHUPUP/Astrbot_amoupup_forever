@@ -25,12 +25,9 @@ except ImportError:  # 直接按文件加载时
 import asyncio
 import shutil
 import base64
-import hashlib
-import io
 import json
 import os
 import random
-import time
 import urllib.error
 import urllib.request
 
@@ -70,7 +67,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         try:
             from amo_shared import now_ts, quiet_now, today_str
         except Exception:
-            import time as _time
 
             def now_ts():
                 return _amo_clock.now_ts()

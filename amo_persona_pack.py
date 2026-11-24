@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 try:  # 动作文案唯一来源（开关关闭/打开各只有一种说法）
@@ -34,6 +35,13 @@ STAY_RULE = (
 _DEFAULT_CACHE: dict | None = None
 STYLE_PATH = os.path.join(PACK_DIR, "style_examples.json")
 _STYLE_CACHE: list | None = None
+
+#: 示例池决定她学哪一种句式（2026-11-24）：池里 15/33 句号收尾、只有 3 句反问，
+#: 模型照着写就是「陈述句 + 句号」。这三组词只用来给示例排「暖度」，不改任何示例原文。
+WARM_TONE = ("呀", "呢", "啦", "嘛", "哦", "呗", "诶", "嗨", "唔", "唉", "咯")
+WARM_CALL = ("老公", "宝贝", "亲爱的")
+#: 轮换只在最暖的前几条里转（太多条会把冷句又抽回来）
+WARM_PICK = 6
 
 #: 用户这句话的粗意图 -> 取哪组示例；只做关键词路由，不调模型。
 _STYLE_INTENTS = (
@@ -69,15 +77,49 @@ def style_intent(user_text: str) -> str:
     return "daily"
 
 
+def warmth_score(text: str) -> int:
+    """示例的「暖」分数（2026-11-24）：语气词/反问加分，句号收尾减分。
+
+    只影响「挑哪两条示例」，不改示例原文、不碰事实；分数相同的保持原顺序，
+    保证同一句话每次挑到的示例是确定的（可单测）。
+    """
+    body = str(text or "")
+    score = 0
+    if any(ch in body for ch in WARM_TONE):
+        score += 2
+    if "？" in body or "?" in body:
+        score += 2
+    if any(word in body for word in WARM_CALL):
+        score += 1
+    if body.rstrip().endswith("。"):
+        score -= 1
+    if 0 < len(body) <= 24:
+        score += 1
+    return score
+
+
+def _warm_first(texts: list) -> list:
+    """按暖分数从高到低排；同分保持原顺序（sorted 是稳定排序）。"""
+    return sorted(texts, key=lambda item: -warmth_score(item))
+
+
 def style_samples(user_text: str, limit: int = 2) -> list:
-    """按意图取 2 条；确定性轮换，避免每轮都是同一对示例。"""
+    """按意图取 2 条；确定性轮换，避免每轮都是同一对示例。
+
+    2026-11-24：候选先按暖度排序（反问/语气词优先，句号收尾靠后），
+    先让她学到「会接话、会反问」的句式，而不是一池陈述句。
+    """
     rows = load_style_examples()
     if not rows:
         return []
     intent = style_intent(user_text)
     seed = sum(ord(ch) for ch in str(user_text or "")) % 997
-    same = [row["text"] for row in rows if str(row.get("intent") or "") == intent]
-    other = [row["text"] for row in rows if str(row.get("intent") or "") in ("playful", "miss")]
+    same = _warm_first([row["text"] for row in rows if str(row.get("intent") or "") == intent])
+    other = _warm_first([row["text"] for row in rows
+                         if str(row.get("intent") or "") in ("playful", "miss")])
+    # 轮换只在「最暖的几条」里轮，不再从整组里随机抽——否则排序等于没排。
+    same = same[:max(2, min(WARM_PICK, len(same)))] if same else []
+    other = other[:max(2, min(WARM_PICK, len(other)))] if other else []
     picked = []
     if same:
         picked.append(same[seed % len(same)])
@@ -179,12 +221,17 @@ def card_text(pack: dict, register: str = "partner_safe", allow_action: bool = F
     registers = card.get("registers") or {}
     language = card.get("language") or {}
     action_line = _narration.pick(_narration.CARD_FORBID, _narration.CARD_ALLOW, allow_action)
+    # 2026-11-24：动作写不写只由开关（amo_narration_policy）说一次。
+    # 人设包的 language.rules 里如果再自带一条动作禁令，就会和【动作】那句撞车——
+    # 这里统一过滤掉动作类规则，导入的旧包也不会自相矛盾。
+    language_rules = [str(item) for item in (language.get("rules") or [])
+                      if not re.search(r"动作|旁白|括号", str(item))]
     parts = [
         "【人设内核】" + str(card.get("core") or ""),
         "【称呼】他叫你「%s」；你自称「%s」" % (address.get("user") or "老公",
                                               address.get("self") or "我"),
         "【当前关系语气】" + str(registers.get(register) or registers.get("partner_safe") or ""),
-        "【语言】" + "；".join(str(item) for item in (language.get("rules") or [])),
+        "【语言】" + "；".join(language_rules),
         "【金钱观】" + str(card.get("money") or ""),
         "【公开场合】" + str(card.get("public") or ""),
         "【动作】" + action_line,

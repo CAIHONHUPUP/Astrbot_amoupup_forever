@@ -82,12 +82,20 @@ def _status_said(umo, now=None, count=3, seconds=None, turn=None):
 #: 删句后剩下这些词开头，说明被删的是条件/前提，删了会只剩孤立结论。
 _ORPHAN_HEAD_RE = re.compile(r"^(再|就|才|也|还|然后|所以|但是|不过|而且|可|那)")
 
+#: 状态句里带这些词，说明它不只是报状态，还带着情绪/称呼（2026-11-24）：
+#: 删了会把温度一起删掉。句号级去重（dedup_or_fallback）仍会拦住一字不差的复读，
+#: 这里只是不拿「状态」当理由删掉带情绪的那句。
+WARM_KEEP = ("老公", "宝贝", "亲爱的", "想", "爱", "心疼", "舍不得", "抱", "亲", "陪")
+
 
 def _drop_repeated_status(text, said):
     """把「已经在前面说过的同一状态」整句删掉；返回 (新文本, 删掉的句子)。
 
     1b-2：删句不能留下孤立的结论。线上「等你病好了，再谈收拾我这件事」——
     「等你病好了」被当重复状态删掉，只剩「再谈…」接不上；这种情况保留原句。
+
+    2026-11-24：带称呼/情绪的句子不按「重复状态」删。线上「我到家啦，想你了」
+    被整句删掉，只剩一句干巴巴的状态；宁可重复一次状态，也别把想他删掉。
     """
     said = set(said or ())
     if not said:
@@ -98,6 +106,9 @@ def _drop_repeated_status(text, said):
     for index, part in enumerate(parts):
         tokens = status_tokens(part)
         if tokens and all(name in said for name in tokens):
+            if any(word in part for word in WARM_KEEP):
+                kept.append(part)
+                continue
             rest = ("".join(kept) + "".join(parts[index + 1:])).strip()
             if rest and _ORPHAN_HEAD_RE.match(rest):
                 kept.append(part)

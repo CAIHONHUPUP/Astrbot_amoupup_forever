@@ -13,7 +13,6 @@ from typing import Any
 
 import asyncio
 import os
-import time
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -117,11 +116,7 @@ class UsageMixin(_MixinBase):
         return items
 
     def _judge_provider_id(self):
-        try:
-            if self.heartflow is not None:
-                return str(self.heartflow.judge_provider_info().get("id") or "")
-        except Exception as _amo_exc:
-            _note_swallowed("amo_usage.HumanCorePlugin._judge_provider_id", _amo_exc)
+        """心流判定模型已下线：不再有独立的判定 provider。"""
         return ""
 
     def _using_provider_id(self):

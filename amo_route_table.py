@@ -92,6 +92,8 @@ ROUTE_SPECS = (
     ("/persona/preview", "api_persona_preview", ("POST",)),
     ("/persona/auto", "api_persona_auto", ("POST",)),
     ("/persona/undo", "api_persona_undo", ("POST",)),
+    ("/persona/pool/edit", "api_persona_pool_edit", ("POST",)),
+    ("/persona/pool/approve", "api_persona_pool_approve", ("POST",)),
     ("/photo/test", "api_photo_test", ("GET", "POST",)),
     ("/photo/prompt", "api_photo_prompt", ("GET", "POST",)),
     ("/photo/prompt_saved", "api_photo_prompt_saved", ("GET", "POST",)),

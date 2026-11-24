@@ -296,10 +296,6 @@ def zone_of(place, zone="") -> str:
         return HOME_ZONE if any(w in text for w in ("家", "卧室", "客厅", "床", "厨房", "出租屋")) else ""
 
 
-def is_home(place, zone="") -> bool:
-    return zone_of(place, zone) == HOME_ZONE
-
-
 def _partner_place(place, activity="") -> str:
     text = str(place or "") + " " + str(activity or "")
     if any(w in text for w in ("卧室", "床", "被窝", "睡")):

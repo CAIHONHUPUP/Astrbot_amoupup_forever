@@ -759,3 +759,26 @@ def extract_persona_name(persona: Any) -> str:
     return ""
 
 
+
+
+#: 日摘里「谁在说」的称呼词：以这些开头的句子补主语时不能直接拼「他」
+_DIGEST_ADDRESS = ("老公", "老婆", "亲爱的", "宝贝", "宝宝")
+
+
+def digest_subject(piece):
+    """给摘要的一句补主语；以称呼开头的句子换成「他……」。
+
+    以前只要句子不是「他/我/她/用户」开头就机械补一个「他」，
+    「老公说以后回来和我一起住」被写成「他老公说以后回来和我一起住」——
+    读起来像「她老公」，主体就错了。
+    """
+    text = str(piece or "").strip()
+    if not text:
+        return text
+    for address in _DIGEST_ADDRESS:
+        if text.startswith(address):
+            rest = text[len(address):].lstrip("，,、!！?？ \t")
+            return "他" + (rest or "说")
+    if text.startswith(("他", "我", "她", "用户")):
+        return text
+    return "他" + text

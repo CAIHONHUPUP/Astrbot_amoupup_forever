@@ -170,6 +170,7 @@ def load_state(plugin, profile_id="") -> dict:
     # 2026-11-24 A 阶段：旧 state.json 没有这些字段时自动补默认（不覆盖已有值）。
     state.setdefault("pending_review", None)
     state.setdefault("style_pool", [])
+    state.setdefault("style_pending", [])
     state.setdefault("style_archive", [])
     state.setdefault("last_used", {})
     state.setdefault("used_seq", 0)
@@ -243,20 +244,26 @@ def active_pack(plugin) -> dict:
 
 
 def add_candidate(plugin, text, scene="", mood="", profile_id="") -> dict:
+    """手动塞一条（/人设 候选加）。
+
+    2026-11-24 起和自动学习合并：都先进「待通过」，只有一条审批流水线。
+    """
     body = str(text or "").strip()[:80]
     if not body:
         return {"ok": False, "reason": "empty"}
     pid = str(profile_id or active_id(plugin))
     state = load_state(plugin, pid)
-    rows = list(state.get("candidates") or [])
+    rows = list(state.get("style_pending") or [])
     if any(str(row.get("text") or "") == body for row in rows):
         return {"ok": True, "duplicate": True}
     snapshot(plugin, pid, "before_candidate")
     rows.append({"text": body, "scene": str(scene or "general"),
-                 "mood": str(mood or ""), "at": int(_amo_clock.now_ts())})
-    state["candidates"] = rows[-20:]
+                 "mood": str(mood or ""), "at": int(_amo_clock.now_ts()),
+                 "intent": "", "score": 1.0, "last_used": 0,
+                 "decayed_days": 0, "source": "manual"})
+    state["style_pending"] = rows[-20:]
     save_state(plugin, pid, state)
-    return {"ok": True, "candidates": len(state["candidates"])}
+    return {"ok": True, "candidates": len(state["style_pending"])}
 
 
 def approve_candidate(plugin, index=0, profile_id="") -> dict:

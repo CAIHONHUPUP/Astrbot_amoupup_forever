@@ -43,7 +43,6 @@ except ImportError:  # 直接按文件加载时
                                        event_conflict, format_event_memory)
 
 try:  # 事实绑定（2026-11-15）：日程说做饭，就别再抽"点外卖"
-    from .amo_fact_binder import COOK_WORDS as _COOK_WORDS
     from .amo_fact_binder import facts_lines as _facts_lines
     from .amo_fact_binder import guard as _fact_guard
     from .amo_fact_binder import ledger_today as _ledger_today
@@ -245,15 +244,6 @@ def event_zones(event):
     for value in _tag_values(event.get("tags"), TAG_ZONE):
         zones.update(part.strip() for part in value.split(",") if part.strip())
     return zones
-
-
-def _hhmm_minutes(text):
-    """'12:30' -> 750；解析不了返回 -1（2026-11-15 判定这一餐吃没吃）。"""
-    try:
-        hour, minute = [int(x) for x in str(text or "").split(":")[:2]]
-        return hour * 60 + minute
-    except Exception:
-        return -1
 
 
 def in_time_window(now, window):

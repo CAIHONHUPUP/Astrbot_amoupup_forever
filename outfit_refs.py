@@ -365,15 +365,6 @@ async def ensure_ref(plugin, name, session=None, force=False, item=None):
     return await ensure_item_ref(plugin, target, session=session, force=force)
 
 
-async def ensure_many(plugin, names, session=None, limit=4):
-    refs = []
-    for name in list(names or [])[:limit]:
-        path = await ensure_ref(plugin, name, session=session)
-        if path:
-            refs.append(path)
-    return refs
-
-
 async def ensure_batch(plugin, items, session=None, progress=None):
     """逐件生成：生成并确认落盘后再做下一件；已有文件直接跳过。"""
     global _batch_running

@@ -15,7 +15,7 @@ import astrbot_stub  # noqa: E402
 
 astrbot_stub.install()
 
-from amo_init import _NoMoney  # noqa: E402
+from amo_init import _RetiredWallet  # noqa: E402
 import amo_food_cost as food  # noqa: E402
 
 
@@ -34,7 +34,7 @@ class FakeState:
 class FakePlugin:
     def __init__(self):
         self.state = FakeState()
-        self.wallet = _NoMoney(None)
+        self.wallet = _RetiredWallet(None)
 
 
 class ActualConsumptionTests(unittest.TestCase):

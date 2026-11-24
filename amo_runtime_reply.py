@@ -93,12 +93,6 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             self._last_reply_at[event.unified_msg_origin] = now_ts()
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin.on_after_message_sent", _amo_exc)
-        if self.heartflow is None:
-            return
-        try:
-            await self.heartflow.on_after_message_sent(event)
-        except Exception as exc:
-            logger.debug("[amo] 心流发送后状态更新失败: %s" % exc)
 
     @filter.on_decorating_result()
     async def on_decorating_result(self, event: AstrMessageEvent):
@@ -130,7 +124,11 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             # B1：守卫把回复删空/只剩动作时，空串必须能走到下面的 chat 出口修复。
             # 先留一份进入守卫前的原话，修复失败时它就是「raw」兜底。
             _raw_reply = text
-            text = self._deco_soft_guards(event, text)
+            # 直通档（2026-11-24）：她的原话直接发，只留照片/礼物这些「手」；
+            # 关掉时行为与改造前完全一致。
+            _passthrough = self.cfg_bool("reply_passthrough", False)
+            if not _passthrough:
+                text = self._deco_soft_guards(event, text)
             text = self._deco_rewrite_reply(event, result, text)
             record_cls = getattr(Comp, "Record", None)
             if record_cls is not None and any(
@@ -172,8 +170,12 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     "避免核心覆盖「私聊不引用 / 群聊按概率引用」"
                 )
                 self._core_decor_logged = True
-            text = await self._deco_polish_native(event, result, text)
-            text = await self._deco_text_cleanup(event, text)
+            if not _passthrough:
+                text = await self._deco_polish_native(event, result, text)
+                text = await self._deco_text_cleanup(event, text)
+            else:
+                # 直通只放过「改稿」，不放过「自相矛盾」：地点/穿搭一致性照跑
+                text = self._deco_consistency(event, text)
             # 3C：留一份确定性守卫之前的原话（生成式修复拿它当「上一版」）+ 最近上下文。
             # 守卫已经删空时用进入守卫前的原话（空串照样交给下面的 repair 重生成）。
             _raw_text = text or _raw_reply
@@ -193,7 +195,7 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     _note_swallowed("amo_runtime_reply.chat_safety.history", _amo_exc)
                 text = apply_chat_safety(
                     text, self, event.unified_msg_origin,
-                    getattr(event, "message_str", ""), history_text=_history)
+                    getattr(event, "message_str", ""), history_text=_history) if not _passthrough else text
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime_reply.chat_safety", _amo_exc)
             # 3C：守卫把回复删成空/换成罐头句时，调一次模型重生成（默认开启）。
@@ -202,7 +204,7 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             try:
                 text = await _reply_pipeline.repair_reply(
                     _raw_text, text, self, event.unified_msg_origin,
-                    getattr(event, "message_str", ""), history=_history)
+                    getattr(event, "message_str", ""), history=_history) if not _passthrough else text
             except Exception as _amo_exc:  # cleanup: 修复失败不影响发送
                 _note_swallowed("amo_runtime_reply.reply_repair", _amo_exc)
             # task-26：聊天里不许出现「服务器/报错/超时/权限/面板/接口/异常/重试」
@@ -314,7 +316,8 @@ class RuntimeReplyMixin(RuntimeMixinBase):
         # 出站地点/事实唯一守卫：place/activity/meal/health/companion/amounts 都走
         # reply_fact_guard（日程/健康/约会/吃饭/旅游对不上时改口）；异常 fail-open
         try:
-            text = _reply_pipeline.apply_fact_guard(text, self)
+            text = _reply_pipeline.apply_fact_guard(
+                text, self, umo=str(getattr(event, "unified_msg_origin", "") or ""))
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin.on_decorating_result", _amo_exc)
         # 跨轮/跨段状态复读 + 他问吃啥先答（只加这一层，不改事实守卫）
@@ -416,6 +419,20 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             if polished and polished != text:
                 text = polished
                 result.chain = [Comp.Plain(text)]
+        return text
+
+    def _deco_consistency(self, event, text):
+        """地点/穿搭一致性（直通模式也跑）：鞋跟衣柜、路上别说到家、地铁别叫车上、外面别答应换泳装。"""
+        for name, fn in (
+            ("footwear", lambda v: self._align_footwear(v)),
+            ("arrival", lambda v: self._align_arrival(v)),
+            ("transit_word", lambda v: self._align_transit_word(v)),
+            ("swim_where", lambda v: self._align_swim_where(v, event.message_str or "")),
+        ):
+            try:
+                text = fn(text)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_runtime.on_decorating_result.passthrough.%s" % name, _amo_exc)
         return text
 
     def _align_footwear(self, text):

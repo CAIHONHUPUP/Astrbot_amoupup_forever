@@ -689,3 +689,9 @@ html[data-theme="dark"] .persona-primary { color: #06283a; }
   .persona-sec-head { flex-wrap: nowrap; }
   .persona-sec-head > div { min-width: 0; }
 }
+
+/* 2026-11-24 人设池左右分栏：待通过 / 已通过 */
+.persona-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+.persona-split > div { min-width: 0; }
+.persona-col-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+@media (max-width: 860px) { .persona-split { grid-template-columns: 1fr; } }

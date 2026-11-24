@@ -579,7 +579,6 @@ class FeatureApiMixin(PersonaApiMixin):
             self.db.kv_set("date_mood_line", {"line": str(line or ""), "until": float(until_ts or 0)})
 
         def set_date_separation(self, title, ended_ts=0):
-            import time as _time
             base = float(ended_ts or _amo_clock.now_ts())
             self.db.kv_set("date_separation", {"title": str(title or "约会"),
                                                "ended_ts": base,

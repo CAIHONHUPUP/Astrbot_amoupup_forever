@@ -42,7 +42,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 import asyncio
 import re
 import threading
-import time
 
 CAP_REMEMBER = "remember"
 CAP_RECALL = "recall"

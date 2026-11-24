@@ -68,7 +68,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime as _dt
-import hashlib
 import inspect
 import os
 import re
@@ -488,7 +487,7 @@ def _dec_fact_guard(text, ctx):
     """decorate 的事实/地点守卫（唯一守卫：reply_fact_guard）。"""
     place = ctx.place
     activity = ctx.activity or ({"place": place} if place else None)
-    return apply_fact_guard(text, ctx.plugin, activity)
+    return apply_fact_guard(text, ctx.plugin, activity, umo=ctx.umo)
 
 
 def _dec_gift_observe(text, ctx):
@@ -890,13 +889,6 @@ def tone_llm_pick_stats():
     return dict(TONE_LLM_STATS)
 
 
-def set_tone_llm_pick(enabled):
-    """显式开关 B（测试/运维命令用）；默认 False。"""
-    global TONE_LLM_PICK_ENABLED
-    TONE_LLM_PICK_ENABLED = bool(enabled)
-    return TONE_LLM_PICK_ENABLED
-
-
 def _env_truthy(name):
     return str(os.environ.get(name, "")).strip().lower() in (
         "1", "true", "yes", "on", "enable", "enabled")
@@ -960,11 +952,57 @@ def _naturalize_safe(fixed, violations, plugin, activity, now):
         return fixed
 
 
-def apply_fact_guard(text, plugin, activity=None, now=None):
+#: 这几条规则会用整句替换（"刚到家/在家呢"这类固定说法）；
+#: 能删掉冲突句就不换句——她要随上下文说，不要被顶一句模板（2026-11-24）。
+_DROP_INSTEAD_OF_REPLACE = ("place", "activity")
+
+
+def _drop_canned_conflicts(value, violations, umo=""):
+    """冲突句能删就删：返回删后的文本，删不了返回空串（调用方保持原替换逻辑）。
+
+    只在两种情况下删：
+    - 删完还剩至少 4 个字（不能把整条回复删光）；
+    - 他这一句不是在问「你在哪」——问地点时必须给出地点，删了等于没答。
+    """
+    text = str(value or "")
+    targets = [str(item.get("sentence") or "").strip()
+               for item in (violations or ())
+               if str(item.get("rule") or "") in _DROP_INSTEAD_OF_REPLACE]
+    targets = [item for item in targets if item and item in text]
+    if not targets:
+        return ""
+    try:
+        question = _turn_question(umo) if umo else ""
+        if question:
+            try:
+                from .amo_question_guard import _category as _q_category
+            except ImportError:
+                from amo_question_guard import _category as _q_category
+            # 「在哪」「在干嘛」都必须正面回答：删掉冲突句等于答非所问，
+            # 这种情况宁可让事实守卫换成正确说法（或交给重生成）。
+            if _q_category(question) in ("where", "doing"):
+                return ""
+    except Exception as exc:  # cleanup: 判不出问题类型就不删，退回原替换
+        logger.debug("[reply_guard] 冲突删句判定失败: %s", exc)
+        return ""
+    out = text
+    for sent in targets:
+        out = out.replace(sent, "", 1)
+    out = re.sub(r"([，,、；;]\s*){2,}", "，", out).strip(" ，,、；;")
+    return out if len(out) >= 4 else ""
+
+
+def apply_fact_guard(text, plugin, activity=None, now=None, umo=""):
     """回复发送前跑一次「不矛盾」守卫；日志只打 debug，失败绝不拦发送。"""
     value, fixed, violations, context = _guard_once(text, plugin, activity, now)
     if not value:
         return value
+    if violations:
+        dropped = _drop_canned_conflicts(value, violations, umo)
+        if dropped and dropped != value:
+            logger.debug("[reply_guard] 冲突句已删除（不换固定句）: %s -> %s",
+                         str(value or "")[:60], dropped[:60])
+            return dropped
     for item in violations:
         logger.debug("[reply_guard] rule=%s said=%s -> %s | %s",
                      item.get("rule"), item.get("sentence"),

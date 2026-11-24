@@ -266,13 +266,3 @@ def store_path(name, base_dir):
     return os.path.join(str(base_dir), str(filename))
 
 
-def upgrade_all(base_dir, db=None, backup=True):
-    """批量迁移（显式运维入口；启动路径不自动调，免得无谓改写文件）。"""
-    results = {}
-    for name in STORE_NAMES:
-        entry = STORE_SPECS[name]
-        if entry["kind"] == "kv":
-            results[name] = upgrade_kv(name, db) if db is not None else {"store": name, "skipped": True}
-        else:
-            results[name] = upgrade_file(name, store_path(name, base_dir), backup=backup)
-    return results

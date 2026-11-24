@@ -191,14 +191,6 @@ SHOP_WORDS = ("火锅店", "烧烤店", "餐厅", "饭馆", "海底捞", "商场
 FOOD_WORDS = ("火锅", "烧烤", "烤肉", "自助", "海底捞", "麻辣烫", "砂锅", "串串")
 
 
-def _parse_minutes(value):
-    try:
-        hour, _, minute = str(value or "").partition(":")
-        return int(hour) * 60 + int(minute or 0)
-    except (TypeError, ValueError):
-        return None
-
-
 def _light_line(activity, now=None):
     """按当前时刻 + 室内/室外给出光线，避免半夜画出大太阳。"""
     now = now or _amo_now()

@@ -34,12 +34,29 @@ HARD_FORCE = ("必须", "就要", "不行也得", "听我的", "立刻", "马上
 REFUSE_MARKERS = ("不想", "不要", "不行", "改天", "下次", "太累", "没力气", "生病", "不舒服",
                   "明天再说", "再说嘛", "算了", "不去了", "不想动", "别嘛", "才不")
 
-_TEMPLATES = {
-    "sick": "唔……我还在生病呢，真的没力气出门，头也晕。等我好一点，我们再一起去好不好？",
-    "tired": "唔……我今天真的好累，不想动了，就想在家躺着。要不我们改天再去？",
-    "late": "大半夜的聊什么哲学呀，我脑子都不转了，明天再说嘛~",
-    "angry": "哟，今天怎么想起找我了？我还以为你把我忘了呢。",
+_TEMPLATE_VARIANTS = {
+    "sick": (
+        "唔……我还在生病呢，真的没力气出门，头也晕。等我好一点，我们再一起去好不好？",
+        "还烧着呢，出门吹风又该重了。你先去，等我好了补给你，行不行呀？",
+        "今天真的爬不起来……等我缓过这阵，我主动找你，说到做到。",
+    ),
+    "tired": (
+        "唔……我今天真的好累，不想动了，就想在家躺着。要不我们改天再去？",
+        "今天累得话都不想说了，改天吧，我请你喝奶茶赔罪嘛。",
+        "我现在只想瘫着，出门肯定一路打哈欠。等周末好不好？",
+    ),
+    "late": (
+        "大半夜的聊什么哲学呀，我脑子都不转了，明天再说嘛~",
+        "这个点我人都迷糊了，明天再跟你掰扯，先睡啦。",
+    ),
+    "angry": (
+        "哟，今天怎么想起找我了？我还以为你把我忘了呢。",
+        "现在想起我啦？我这边可是等了好一会儿呢。",
+    ),
 }
+
+#: 兼容旧导入：默认取每个原因的第一条
+_TEMPLATES = {name: rows[0] for name, rows in _TEMPLATE_VARIANTS.items()}
 
 
 def _mood(snap):
@@ -123,8 +140,11 @@ def should_refuse(snap, text, cash_cents=0, hour=None, silence_days=0):
     return False, ""
 
 
-def refusal_text(reason):
-    return _TEMPLATES.get(str(reason or ""), _TEMPLATES["tired"])
+def refusal_text(reason, seed=""):
+    """按原因挑一句软拒绝；seed（他这句话）决定挑哪条，避免每次同一句。"""
+    rows = _TEMPLATE_VARIANTS.get(str(reason or "")) or _TEMPLATE_VARIANTS["tired"]
+    index = sum(ord(ch) for ch in str(seed or "")) % len(rows)
+    return rows[index]
 
 
 def is_refusal_reply(text):
@@ -142,7 +162,7 @@ def guard(reply, snap, text, cash_cents=0, hour=None, silence_days=0):
         return body
     if is_refusal_reply(body):
         return body
-    return refusal_text(reason)
+    return refusal_text(reason, seed=text)
 
 
 def _grudge(memory_text):

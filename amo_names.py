@@ -82,10 +82,6 @@ def circle_of(name=""):
     return str(RELATION_CIRCLE.get(str(name or "").strip()) or "")
 
 
-def is_male_npc(name=""):
-    return str(name or "").strip() in MALE_NPCS
-
-
 def strip_unbacked_names(text, context, fallback="同事"):
     """名单里的名字如果在素材里根本没出现，就换成中性称呼。
 

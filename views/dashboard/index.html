@@ -177,12 +177,12 @@
       <div class="persona-name" id="personaName">读取中…</div>
       <div class="persona-core" id="personaCore">正在读她的人设卡…</div>
      </div>
-     <span class="persona-pill" id="personaActiveId">—</span>
+     <button class="persona-pill" id="personaActionToggle" type="button" title="她说的话带不带（动作）">动作 · 读取中</button>
     </div>
     <div class="persona-stats">
      <div class="persona-stat" title="人设包里自带的语料条数"><b id="personaCorpus">—</b><span>语料</span></div>
      <div class="persona-stat" title="已经批准、写进人设的进化语料"><b id="personaEvolved">—</b><span>进化</span></div>
-     <div class="persona-stat" title="等她被批准的新语料"><b id="personaPending">—</b><span>待批</span></div>
+     <div class="persona-stat" title="等她被批准的新语料"><b id="personaPending">—</b><span>待通过</span></div>
     </div>
     <div class="persona-auto-row row between">
      <div><span class="label">自动进化</span> <span class="sub" id="personaAutoState">读取中…</span></div>
@@ -194,21 +194,27 @@
     <div class="persona-switch">
      <div class="label">切换人设 <span class="persona-note">切走不会覆盖原来的包，切回来还是原样</span></div>
      <div id="personaProfiles" class="persona-profiles"><span class="sub">读取中…</span></div>
+     <div class="row" style="margin-top:8px">
+      <input class="grow" id="personaCopyName" placeholder="新名字，例如：温柔版 / 凶一点">
+      <button class="ghost" id="personaCopy" type="button">复制当前人设</button>
+     </div>
     </div>
    </section>
    <section class="card">
     <div class="row between persona-sec-head">
-     <div><div class="label">候选语料</div><div class="sub">自动收集 / 手动添加的候选语料先放这儿，点「通过」才会写进人设。</div></div>
-     <span class="persona-pill" id="personaCandidatePill">0 条</span>
-    </div>
-    <div id="personaCandidates" class="persona-candidates"></div>
-   </section>
-   <section class="card">
-    <div class="row between persona-sec-head">
-     <div><div class="label">最近自动进化</div><div class="sub">她自己说过、你反应不错、过滤后入池的句子；只入池，不自动通过。</div></div>
+     <div><div class="label">最近自动进化</div><div class="sub">进池只是排队；点「通过」才真正写进她的例句池。</div></div>
      <span class="persona-pill" id="personaPoolPill">0 条池</span>
     </div>
-    <div id="personaRecent" class="persona-candidates"></div>
+    <div class="persona-split">
+     <div>
+      <div class="sub persona-col-head">待通过 <span class="persona-pill" id="personaPendingPill">0 条</span></div>
+      <div id="personaPendingList" class="persona-candidates"></div>
+     </div>
+     <div>
+      <div class="sub persona-col-head">已通过 <span class="persona-pill" id="personaApprovedPill">0 条</span></div>
+      <div id="personaRecent" class="persona-candidates"></div>
+     </div>
+    </div>
    </section>
    <section class="card">
     <div class="label">语气预览</div>

@@ -31,7 +31,10 @@ CONTRACT_NAME = "amo-metrics"
 CONTRACT_VERSION = 1
 SOURCE = "forever"
 
-#: 不算“消费”的分类（资产变动 / 账单）；与 wallet._EXPENSE_EXCLUDE_CATEGORIES 同源扩展
+#: 不算“消费”的分类（资产变动 / 账单）；与 wallet._EXPENSE_EXCLUDE_CATEGORIES 同源扩展。
+#: 2026-11-24 说明：金融系统已退役（钱包是 _RetiredWallet 桩），但**历史账本流水里仍留着**
+#: 基金/股票/理财这类分类；这套表只用于统计历史流水，不要按「功能已删」删掉，
+#: 删了会把旧账本的资产变动错算成日常消费。
 ASSET_CATEGORIES = frozenset(("存款", "投资", "转账", "退款", "理财", "基金", "股票",
                               "账户调整"))
 BILL_CATEGORIES = frozenset(("房租", "水电", "物业", "取暖", "宽带"))

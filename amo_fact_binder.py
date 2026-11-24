@@ -342,11 +342,12 @@ def facts_lines(plugin, now=None):
                 entry.get("reason") or "", entry.get("mark") or ""))
         lines.append("【今天的账单】" + "；".join(pieces) + "。")
 
-    # 4) 红线
-    lines.append(
-        "【消费红线】聊天里说的每一笔花钱、外卖、点单、买东西，都必须能在【今天的账单】里找到；"
-        "找不到就是没发生，绝对不许说。没发生的“刚吃完/点好了/在等外卖”一样不许编。"
-        "想吃什么就说想吃，不要说自己已经点了或者已经吃了。")
+    # 4) 红线：只在真有账单时注入（2026-11-24；钱包已退役，账本恒空，
+    #    再写「只按【今天的账单】说」等于禁止她提任何花钱的事，还指向一个不存在的块）
+    if rows:
+        lines.append(
+            "【消费红线】花钱、外卖、点单、买东西，只按【今天的账单】说；"
+            "账单里没有的，就说还没买/还没点。想吃什么可以直接说想吃。")
     if facts["cooked"]:
         lines.append(
             "【顺着事实说】日程写的是在家做饭，你就说自己做的"
@@ -369,7 +370,10 @@ def view_lines(plugin, now=None):
         except ImportError:
             from amo_diary_guard import narrative_view as _narrative_view
         view = _narrative_view(plugin, explicit_now, cache=explicit_now is None)
-        return fact_timeline.render_lines(fact_timeline.view_facts(view), "[今日] ")
+        rows = fact_timeline.render_lines(fact_timeline.view_facts(view), "[今日] ")
+        # 2026-11-24：日记行原来直接跟在【消费红线】后面，块解析会把 800 多字日记
+        # 算成红线的一部分（她最后读到的是一屏日记+一句规则）。这里给它自己的块头。
+        return (["【今天的小日记】"] + rows) if rows else []
     except Exception as exc:
         logger.debug("[amo] 事实视图读取失败: %r", exc)
         return []
@@ -507,6 +511,15 @@ def _fallback_line(plugin, facts, now=None):
 
 def _mode(plugin):
     try:
+        # 2026-11-24：钱包已退役（_RetiredWallet：账本恒空、debit 恒 True）。
+        # 再跑消费守卫只剩副作用——她每说一句「我吃了/我买了」都被删掉换成固定句。
+        # 不涉及钱就整条关闭，配置项 chat_claim_guard=False 的语义不变（手工关也能关）。
+        try:
+            from .amo_init import _RetiredWallet
+        except ImportError:
+            from amo_init import _RetiredWallet
+        if isinstance(getattr(plugin, "wallet", None), _RetiredWallet):
+            return "off"
         if not plugin.cfg_bool("chat_claim_guard", True):
             return "off"
         if plugin.cfg_bool("chat_claim_charge", False):

@@ -21,7 +21,7 @@ except ImportError:
 
 import logging
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 logger = logging.getLogger("amo.memory_ledger")
 

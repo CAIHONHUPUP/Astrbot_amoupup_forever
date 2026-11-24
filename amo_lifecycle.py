@@ -2,7 +2,7 @@
 """生命周期（2026-11-17 从 main.py 拆出）：initialize / terminate / stop。
 
 启动只做两件事：LLM 工具注册（买家电/网购/发照片/日程）+ kv 只读巡检。
-停止按「任务 → 心流 → 分段引擎 → state」顺序收，不关数据库
+停止按「任务 → 分段引擎 → state」顺序收，不关数据库
 （AstrBot 重载插件时旧实例的 Web API 还可能被调用，关连接会报
 Cannot operate on a closed database）。
 """
@@ -30,7 +30,6 @@ class LifecycleMixin:
         context: Any
         _running: bool
         jobs: Any
-        heartflow: Any
         segment_engine: Any
         state: Any
         _tasks: set[Any]
@@ -85,11 +84,6 @@ class LifecycleMixin:
                 await jobs.stop()
             except Exception as _amo_exc:
                 _note_swallowed("amo_lifecycle.LifecycleMixin.terminate.jobs", _amo_exc)
-        if self.heartflow is not None:
-            try:
-                await self.heartflow.terminate()
-            except Exception as _amo_exc:
-                _note_swallowed("amo_lifecycle.LifecycleMixin.terminate", _amo_exc)
         if self.segment_engine is not None:
             for task in list(getattr(self.segment_engine, "_tasks", set())):
                 try:
