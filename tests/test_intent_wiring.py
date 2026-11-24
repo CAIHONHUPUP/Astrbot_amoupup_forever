@@ -87,6 +87,8 @@ class DetectIntentTests(unittest.TestCase):
         self.assertEqual(tr.detect_intent("快去洗澡")["kind"], "bath")
         self.assertEqual(tr.detect_intent("去洗澡")["minutes"], 25)
         self.assertEqual(tr.detect_intent("快去睡觉")["kind"], "sleep")
+        self.assertEqual(tr.detect_intent("睡觉了")["kind"], "sleep")
+        self.assertIsNone(tr.detect_intent("那我摸着睡觉"))
         self.assertEqual(tr.detect_intent("去吃饭吧")["kind"], "meal")
         errand = tr.detect_intent("去倒垃圾")
         self.assertEqual(errand["kind"], "errand")
@@ -103,6 +105,15 @@ class DetectIntentTests(unittest.TestCase):
     def test_empty(self):
         self.assertIsNone(tr.detect_intent(""))
         self.assertIsNone(tr.detect_intent("今天天气不错"))
+
+
+class SleepGateTests(unittest.TestCase):
+    def test_sleep_intent_skips_when_already_asleep(self):
+        plugin = FakePlugin()
+        plugin.state.activity = {
+            "activity": "深度睡眠", "place": "家", "zone": "home", "category": "sleep",
+        }
+        self.assertIsNone(tr.maybe_start_from_text(plugin, "睡觉了", now=NOW))
 
 
 class BathFlowTests(unittest.TestCase):

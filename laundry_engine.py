@@ -277,22 +277,6 @@ class LifeFacts:
         self._charge(2500)
         return {"ok": True, "count": len(dirty)}
 
-    def buy_appliance(self, kind="dryer", now=None):
-        kind = str(kind or "").strip()
-        if kind not in APPLIANCES:
-            return {"ok": False, "reason": "unknown"}
-        quote = self.quote(kind, now)
-        if not quote["affordable"]:
-            return {"ok": False, "reason": "short", **quote}
-        self._charge(int(APPLIANCES[kind] * 100))
-        wardrobe, data = self._data()
-        if data is not None:
-            state = self._state(data)
-            state.setdefault("assets", {})[kind] = {"price": APPLIANCES[kind]}
-            self._save(wardrobe, data)
-        return {"ok": True, "kind": kind, "price": APPLIANCES[kind],
-                "balance": round(quote["balance"] - APPLIANCES[kind], 2)}
-
     def organize(self, now=None):
         now = _now(now)
         wardrobe, data = self._data()
@@ -314,37 +298,5 @@ class LifeFacts:
                     return True
         except Exception as exc:
             logger.debug("[amo] optional step failed: %r", exc)
-        return False
-
-
-BUY_TOOL_NAME = "buy_appliance"
-BUY_TOOL_ARGS = [
-    {"type": "string", "name": "appliance_name",
-     "description": "washer 或 dryer"},
-    {"type": "number", "name": "price",
-     "description": "她看到的标价，单位元；仅用于确认，不覆盖系统价"},
-]
-
-
-def make_buy_appliance_tool(plugin):
-    async def buy_appliance(event=None, appliance_name="dryer", price=0.0):
-        import json as _json
-        result = LifeFacts(plugin).buy_appliance(str(appliance_name or "dryer"))
-        return _json.dumps(result, ensure_ascii=False)
-    return buy_appliance
-
-
-def register_buy_appliance(plugin, manager):
-    """幂等注册：先移除同名旧工具，再挂新 handler；失败只记日志。"""
-    if manager is None:
-        return False
-    try:
-        if manager.get_func(BUY_TOOL_NAME) is not None:
-            manager.remove_func(BUY_TOOL_NAME)
-        manager.add_func(BUY_TOOL_NAME, BUY_TOOL_ARGS,
-                         "当她想买洗衣机/烘干机时调用；会校验余额、扣款并把家电写入资产。",
-                         make_buy_appliance_tool(plugin))
-        return True
-    except Exception:
         return False
 

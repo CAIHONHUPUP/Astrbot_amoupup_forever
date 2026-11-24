@@ -1,4 +1,9 @@
 
+import logging
+
+logger = logging.getLogger("amo.amo_human_state")
+
+
 import time
 from typing import Any, TYPE_CHECKING
 
@@ -45,11 +50,11 @@ import re
 import threading
 
 try:  # 日程主语校验（纯函数）：生成的活动不能凭空带上老公
-    from .schedule_subject import validate_activity as _validate_activity
+    from .domains.schedule.subject import validate_activity as _validate_activity
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         try:
-            from schedule_subject import validate_activity as _validate_activity
+            from domains.schedule.subject import validate_activity as _validate_activity
         except Exception:  # pragma: no cover - 缺模块时退回放行，不让日程写不进去
             def _validate_activity(activity, approved=False):
                 return {"ok": True, "activity": activity, "changed": False, "reason": "unavailable"}
@@ -58,6 +63,7 @@ if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
         MOOD_BASE,
         MOOD_KEYS,
+        normalize_mood,
         SCHEDULE_VERSION,
         SICK_STATUSES,
         ScheduleEngine,
@@ -88,6 +94,7 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         from .amo_shared import (
             MOOD_BASE,
             MOOD_KEYS,
+            normalize_mood,
             SCHEDULE_VERSION,
         SICK_STATUSES,
             ScheduleEngine,
@@ -118,6 +125,7 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
             from amo_shared import (
                 MOOD_BASE,
                 MOOD_KEYS,
+                normalize_mood,
                 SCHEDULE_VERSION,
             SICK_STATUSES,
                 ScheduleEngine,
@@ -213,6 +221,21 @@ WEATHER_FAIL_TTL = 2 * 3600
 #: 不管上层怎么 force、签名怎么抖，一天都不可能超过这个数字——4 万次那种事故直接绝迹。
 WEATHER_DAILY_MAX_CALLS = 12
 
+#: 旧十维词 -> 九维中文键（迁移期只做别名，不再存十维）
+_MOOD_ALIASES = {
+    "兴奋": "好奇", "平静": "压力", "焦虑": "压力", "生气": "压力",
+    "暴躁": "压力", "委屈": "压力", "郁闷": "开心",
+}
+_HEART_TO_CN = {
+    "joy": "开心", "curiosity": "好奇", "reflection": "反思", "duty": "责任",
+    "social": "社交", "fatigue": "疲惫", "intimacy": "亲密",
+    "stress": "压力", "attachment": "依恋",
+}
+
+
+def _mood_target(key):
+    return _MOOD_ALIASES.get(str(key), str(key))
+
 class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStateMixin, DateStateMixin):
     def __init__(self, plugin):
         self.p = plugin
@@ -221,7 +244,32 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         self._schedule_commit_lock = threading.RLock()
         self._schedule_gen_locks = {}
         saved_mood = self.db.kv_get("mood", {}) or {}
-        self.mood = {key: clamp(saved_mood.get(key, MOOD_BASE[key])) for key in MOOD_KEYS}
+        heart = getattr(plugin, "heart", None)
+        if (heart is not None and isinstance(saved_mood, dict) and saved_mood
+                and not self.db.kv_get("mood_migrated", False)):
+            try:
+                if not self.db.kv_get("heart_state", None):
+                    try:
+                        from .amo_heart.bridge import migrate_legacy_abs as _migrate_abs
+                    except ImportError:
+                        from amo_heart.bridge import migrate_legacy_abs as _migrate_abs
+                    _migrate_abs(heart.state, saved_mood)
+                self.db.kv_set("mood_migrated", True)
+                try:
+                    self.db.kv_delete("mood")
+                except Exception as exc:
+                    logger.debug("[amo_human_state.__init__] optional step failed: %s", exc)
+            except Exception as _amo_exc:
+                _note_swallowed("amo_human_state.mood_migrate", _amo_exc)
+        if heart is not None and isinstance(getattr(heart, "state", None), dict):
+            # 九维是唯一真源；旧 kv["mood"] 只给没有 heart 的测试桩兜底。
+            state = heart.state
+            self.mood = {
+                key: clamp(state.get(eng, MOOD_BASE[key]))
+                for eng, key in _HEART_TO_CN.items()
+            }
+        else:
+            self.mood = {key: clamp(saved_mood.get(key, MOOD_BASE[key])) for key in MOOD_KEYS}
         self.mood_ts = to_float(self.db.kv_get("mood_ts", now_ts()), now_ts())
         config_start = self.p.cfg_str("period_start", "").strip()
         seen = self.db.kv_get("period_config_seen", "")
@@ -283,8 +331,40 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         return legacy if isinstance(legacy, dict) else {}
 
     # ---------- 心情 ----------
+    def _heart(self):
+        """鱼之心：有就读它；测试桩/旧调用没有 heart 时退回十维。"""
+        heart = getattr(self.p, "heart", None)
+        if heart is None:
+            return None
+        try:
+            try:
+                from .amo_heart import runtime as _heart_runtime
+            except ImportError:
+                from amo_heart import runtime as _heart_runtime
+            return _heart_runtime.ensure(self.p) or heart
+        except Exception:
+            return heart
+
+    def _heart_apply(self, deltas):
+        heart = self._heart()
+        if heart is None:
+            return
+        try:
+            try:
+                from .amo_heart.bridge import apply_legacy
+            except ImportError:
+                from amo_heart.bridge import apply_legacy
+            apply_legacy(heart.state, deltas)
+            try:
+                from .amo_heart import runtime as _heart_runtime
+            except ImportError:
+                from amo_heart import runtime as _heart_runtime
+            _heart_runtime.save(self.p, heart)
+        except Exception as exc:
+            logger.debug("[amo_human_state._heart_apply] optional step failed: %s", exc)
+
     def save_mood(self):
-        self.db.kv_set("mood", {key: round(value, 2) for key, value in self.mood.items()})
+        # 九维是唯一真源；旧 kv["mood"] 不再写，迁移后由 heart_state 承担。
         self.db.kv_set("mood_ts", self.mood_ts)
 
     def save(self):
@@ -296,10 +376,14 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
 
     def nudge(self, **deltas):
         for key, value in deltas.items():
-            if key in self.mood:
-                self.mood[key] = clamp(self.mood[key] + value)
+            target = _mood_target(key)
+            if target in self.mood:
+                # 平静/郁闷是反向旧词：平静升高 = 压力下降。
+                sign = -1 if key in ("平静", "郁闷") else 1
+                self.mood[target] = clamp(self.mood[target] + value * sign)
         self.mood_ts = now_ts()
         self.save_mood()
+        self._heart_apply(deltas)
 
     def nudge_once(self, idem, **deltas):
         """带幂等的心情调整：同一 idem 只生效一次（金融事件用）。"""
@@ -332,12 +416,21 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
         self.save_mood()
 
     def dominant_mood(self):
-        return max(MOOD_KEYS, key=lambda key: self.mood[key])
+        heart = self._heart()
+        if heart is not None:
+            return heart.dominant_mood()
+        m = normalize_mood(self.mood)
+        if not m:
+            return "平静"
+        return max(MOOD_KEYS, key=lambda key: m.get(key, 0))
 
     def mood_score(self):
+        heart = self._heart()
+        if heart is not None:
+            return heart.mood_score()
         m = self.mood
-        positive = (m["开心"] + m["兴奋"] + m["平静"] + m["依恋"]) / 4.0
-        negative = (m["郁闷"] + m["疲惫"] + m["生气"] + m["暴躁"] + m["委屈"] + m["焦虑"]) / 6.0
+        positive = (m["开心"] + m["依恋"] + m["亲密"] + m["好奇"]) / 4.0
+        negative = (m["疲惫"] + m["压力"]) / 2.0
         return clamp(50 + (positive - negative) * 0.8)
 
     def mood_text(self):
@@ -347,6 +440,9 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
 
     def mood_words(self):
         """对外只给自然语言情绪词，不暴露数值（金融联动也会用到）。"""
+        heart = self._heart()
+        if heart is not None:
+            return heart.mood_words()
         score = self.mood_score()
         if score >= 85:
             return "狂喜、超级开心，开心到转圈"
@@ -629,12 +725,12 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
                 self.db.kv_set("salary_deductions", deductions[-60:])
             except Exception as exc:
                 _note_swallowed("amo_human_state.sick_leave.deduction_record", exc)
-            for key, delta in (("平静", 6), ("疲惫", 4), ("委屈", 2)):
+            for key, delta in (("压力", -6), ("疲惫", 4), ("依恋", 2)):
                 if key in self.mood:
                     self.mood[key] = max(0.0, min(100.0, float(self.mood[key]) + delta))
             decision["mood_word"] = "虚弱但安心"
         else:
-            for key, delta in (("委屈", 8), ("疲惫", 6), ("焦虑", 3)):
+            for key, delta in (("压力", 11), ("疲惫", 6)):
                 if key in self.mood:
                     self.mood[key] = max(0.0, min(100.0, float(self.mood[key]) + delta))
             try:
@@ -646,7 +742,6 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
                 _note_swallowed("amo_human_state.sick_work.health", exc)
             decision["mood_word"] = "委屈又疲惫"
         try:
-            self.db.kv_set("mood", self.mood)
             self.db.kv_set("sick_decision:%s" % day, decision)
         except Exception as exc:
             _note_swallowed("amo_human_state.sick_decision.save", exc)
@@ -1292,26 +1387,25 @@ class HumanState(ScheduleStateMixin, ScheduleTodoMixin, JitStateMixin, DiaryStat
 
     def tone_text(self, snap=None, relation="普通"):
         snap = snap or self.snapshot()
-        mood = snap["mood"]
-        if relation == "相恋" and (mood["暴躁"] >= 60 or mood["生气"] >= 62):
+        mood = normalize_mood(snap.get("mood") or {})
+        stress = float(mood.get("压力", 0) or 0)
+        joy = float(mood.get("开心", 0) or 0)
+        curiosity = float(mood.get("好奇", 0) or 0)
+        if relation == "相恋" and stress >= 70:
             tone = (
-                "你在生对方的气，但你是他的恋人：会抱怨、闹别扭、说反话、要哄，"
-                "语气带一点委屈，不会像对普通人那样冷怼、赶人或人身攻击；可以嘴硬，但不要真的伤人。"
+                "你心里有压力、也有点闹别扭，但你是他的恋人：会抱怨、说反话、要哄，"
+                "不会像对普通人那样冷怼、赶人或人身攻击；可以嘴硬，但不要真的伤人。"
             )
-        elif mood["暴躁"] >= 60:
-            tone = "你现在很暴躁，说话冲、短、带刺，一点就着，但不要真正辱骂。"
-        elif mood["生气"] >= 62:
-            tone = "你现在很烦躁，说话冲、短、带刺，容易不耐烦，但不要辱骂。"
-        elif mood["委屈"] >= 60:
-            tone = "你现在很委屈，语气软软的，会撒娇，想被哄。"
-        elif mood["开心"] >= 65 or mood["兴奋"] >= 65:
+        elif stress >= 70:
+            tone = "你现在压力很大，说话冲、短、带刺，一点就着，但不要真正辱骂。"
+        elif stress >= 60:
+            tone = "你现在有点烦躁，说话冲、短、带刺，容易不耐烦，但不要辱骂。"
+        elif joy >= 65 or curiosity >= 65:
             tone = "你现在心情很好，语气轻快，会用语气词和感叹号。"
-        elif mood["郁闷"] >= 60:
+        elif joy <= 35:
             tone = "你现在有点低落，说话安静、句子短。"
         elif mood["疲惫"] >= 65:
             tone = "你很累，句子短一点、不展开；但别拿累当理由赶人、结束话题。"
-        elif mood["焦虑"] >= 60:
-            tone = "你有点焦虑，句子急，容易追问。"
         elif mood["依恋"] >= 65:
             tone = "你现在很黏人，想和对方多聊几句。"
         else:

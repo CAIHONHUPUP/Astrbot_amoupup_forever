@@ -2,6 +2,10 @@
 """CommandMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger("amo.amo_commands")
+
 from typing import Any, TYPE_CHECKING
 
 import re
@@ -135,104 +139,64 @@ class CommandMixin(_MixinBase):
         return self._canonical_uid(event)
 
     async def _mood_story(self, snap, umo):
-        """情绪面板旁白/归因：10 分钟缓存，失败退回模板。"""
-        import asyncio as _asyncio
+        """面板旁白/归因只拼真实事件，不调模型；没有事实就返回空串（面板隐藏）。"""
         import datetime as _dt
-        mood = dict(snap.get("mood") or {})
-        top = sorted(mood.items(), key=lambda kv: float(kv[1] or 0), reverse=True)[:3]
-        names = [k for k, _ in top]
-        recent = ""
-        try:
-            rows = self._recent(umo, 6) if callable(getattr(self, "_recent", None)) else []
-            recent = "；".join(str(r.get("content") or "")[:40] for r in rows[-6:])
-        except Exception as _amo_exc:
-            _note_swallowed("amo_commands.py.mood_recent", _amo_exc)
-            recent = ""
-        shared_line = ""
-        try:
-            act = self.db.kv_get("shared_activity", {}) or {}
-            if act.get("status") == "active":
-                shared_line = "正在进行：和老公一起%s（%s 开始）" % (
-                    act.get("label") or "看电视",
-                    _dt.datetime.fromtimestamp(float(act.get("started_at") or 0)).strftime("%H:%M"))
-            else:
-                last = self.db.kv_get("shared_activity_last", {}) or {}
-                if last and now_ts() - float(last.get("at") or 0) < 7200:
-                    shared_line = "刚发生：%s（%s）" % (
-                        str(last.get("text") or ""),
-                        _dt.datetime.fromtimestamp(float(last.get("at") or 0)).strftime("%H:%M"))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_commands.py.mood_shared", _amo_exc)
-            shared_line = ""
-        sig = "|".join("%s:%d" % (k, int(float(v or 0)) // 10) for k, v in top)
-        sig += "|" + str(abs(hash(recent + "||" + shared_line)) % 100000)
-        now = _clock_from_ts(now_ts())
-        try:
-            cache = self.db.kv_get("mood_story_cache", {}) or {}
-        except Exception:
-            cache = {}
-        if isinstance(cache, dict) and cache.get("sig") == sig:
-            try:
-                if (now - _dt.datetime.fromisoformat(cache["at"])).total_seconds() < 600:
-                    return str(cache.get("narration") or ""), str(cache.get("attribution") or "")
-            except Exception as exc:
-                _note_swallowed("amo_commands.py.130", exc)
         activity = snap.get("activity") or {}
-        place = str(activity.get("place") or "家")
-        act = str(activity.get("activity") or "待着")
-        health = snap.get("health") or {}
-        period = snap.get("period") or {}
-        fallback_narr = "今天%s，心里%s，%s。" % (
-            "、".join(names[:2]) or "说不上来", "还算安稳" if float(snap.get("mood_score") or 50) >= 50 else "有点沉",
-            "在%s%s" % (place, act) if place else "待着")
-        fallback_attr = "主要是最近%s，所以情绪%s。" % (
-            "、".join(names[:2]) or "没什么特别的事", "比较平稳" if float(snap.get("mood_score") or 50) >= 50 else "有点低")
-        narration, attribution = fallback_narr, fallback_attr
-        llm = getattr(self, "llm", None)
-        if llm is not None and callable(getattr(llm, "chat_raw", None)) and umo:
-            prompt = (
-                "你在给情绪面板写一句第一人称内心独白和一句归因。当前最高情绪：%s；"
-                "地点/动作：%s·%s；健康：%s；生理期：%s；"
-                "最近聊天（从旧到新）：%s；%s。"
-                "只输出两行：\n独白：...\n归因：...\n"
-                "独白 30-50 字，自然口语，不要数字；归因 20-40 字，解释为什么，不要编造未发生的事。"
-                "归因必须按最近发生的事写（优先最近聊天和上面的共同活动）；超过 2 小时的事不要再提，"
-                "也不要把同一件事一直黏在归因里。"
-                % ("、".join("%s%d" % (k, int(float(v or 0))) for k, v in top),
-                   place, act, health.get("status") or "健康",
-                   period.get("phase") or "非生理期", recent or "没有新聊天",
-                   shared_line or "没有正在进行的共同活动")
-            )
+        place = str(activity.get("place") or "").strip()
+        act = str(activity.get("activity") or "").strip()
+        narration = ""
+        if place or act:
+            narration = "此刻在%s%s。" % (place or "家", act or "待着")
+        attribution = ""
+        candidates = []
+        for key in ("micro_event:last", "shared_activity_last"):
             try:
-                text = await _asyncio.wait_for(
-                    llm.chat_raw(umo, "你是她的内心独白，不是助手。", prompt), timeout=3.5)
-                for line in str(text or "").splitlines():
-                    line = line.strip()
-                    if line.startswith("独白："):
-                        narration = line[3:].strip() or narration
-                    elif line.startswith("归因："):
-                        attribution = line[3:].strip() or attribution
-            except Exception as exc:
-                _note_swallowed("amo_commands.py.169", exc)
-        try:
-            self.db.kv_set("mood_story_cache", {
-                "sig": sig, "at": now.isoformat(timespec="seconds"),
-                "narration": narration, "attribution": attribution,
-            })
-        except Exception as exc:
-            _note_swallowed("amo_commands.py.176", exc)
+                item = self.db.kv_get(key, {}) or {}
+            except Exception:
+                item = {}
+            if not isinstance(item, dict):
+                continue
+            body = str(item.get("text") or item.get("label") or "").strip()
+            try:
+                ts = float(item.get("ts") or item.get("at") or 0)
+            except (TypeError, ValueError):
+                ts = 0.0
+            if body and ts and now_ts() - ts <= 6 * 3600:
+                candidates.append((ts, body))
+        if candidates:
+            ts, body = max(candidates)
+            moment = _dt.datetime.fromtimestamp(ts).strftime("%H:%M")
+            where = ("，" + place) if place else ""
+            attribution = "最近的事：%s（%s%s）" % (body[:60], moment, where)
         return narration, attribution
 
     def _mood_history(self, snap):
         import datetime as _dt
+        try:
+            try:
+                from .amo_heart import runtime as _heart_runtime
+            except ImportError:
+                from amo_heart import runtime as _heart_runtime
+            _heart_runtime.snapshot_day(self)
+        except Exception as exc:
+            logger.debug("[amo_commands._mood_history] optional step failed: %s", exc)
         history = []
         today = _clock_from_ts(now_ts()).date()
         for offset in range(6, -1, -1):
             day = today - _dt.timedelta(days=offset)
             score = None
-            if offset == 0:
+            # 七日趋势优先读九维每日快照；旧的 diary_mood 只做回退。
+            try:
+                raw_heart = self.db.kv_get("heart_daily:" + day.isoformat(), None)
+                if isinstance(raw_heart, dict):
+                    _raw_score = raw_heart.get("score")
+                    if _raw_score is not None:
+                        score = float(_raw_score)
+            except Exception:
+                score = None
+            if score is None and offset == 0:
                 score = float(snap.get("mood_score") or 50)
-            else:
+            elif score is None:
                 try:
                     raw = self.db.kv_get("diary_mood:" + day.isoformat(), None)
                     if raw is not None:
@@ -242,6 +206,94 @@ class CommandMixin(_MixinBase):
             if score is not None:
                 history.append({"date": day.isoformat(), "score": round(score, 1)})
         return history
+
+    def _heart_status(self):
+        """面板只读鱼之心：九维/五档/责怪/回避；没有心就返回 None，面板隐藏。"""
+        heart = getattr(self, "heart", None)
+        if heart is None:
+            return None
+        try:
+            try:
+                from .amo_heart import runtime as _heart_runtime
+            except ImportError:
+                from amo_heart import runtime as _heart_runtime
+            _heart_runtime.ensure(self)
+        except Exception as exc:
+            logger.debug("[amo_commands._heart_status] optional step failed: %s", exc)
+        try:
+            state = dict(getattr(heart, "state", {}) or {})
+            dims = {
+                name: round(float(state.get(name, 0) or 0), 1)
+                for name in ("attachment", "curiosity", "reflection", "duty",
+                             "social", "fatigue", "intimacy", "stress", "joy")
+            }
+            return {
+                "dims": dims,
+                "stage": heart.stage(),
+                "mood": heart.dominant_mood(),
+                "blame": round(float(state.get("blame", 0) or 0), 1),
+                "avoid": int(state.get("shut_streak", 0) or 0),
+                "thought": str(getattr(heart, "thought", "") or ""),
+                "updated": float(state.get("updated", 0) or 0),
+            }
+        except Exception:
+            return None
+
+    def _thoughts_status(self):
+        """面板念头卡：只列真实发生的小事 + 心自己惦记的一句话，不生成新文本。"""
+        items = []
+        try:
+            heart = getattr(self, "heart", None)
+            thought = str(getattr(heart, "thought", "") or "").strip() if heart is not None else ""
+            if thought:
+                items.append({"kind": "心里惦记", "text": thought, "at": 0})
+        except Exception as exc:
+            logger.debug("[amo_commands._thoughts_status] optional step failed: %s", exc)
+        for key, kind in (("micro_event:last", "身边小事"), ("shared_activity_last", "一起做的事")):
+            try:
+                item = self.db.kv_get(key, {}) or {}
+            except Exception:
+                item = {}
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or item.get("label") or "").strip()
+            try:
+                ts = float(item.get("ts") or item.get("at") or 0)
+            except (TypeError, ValueError):
+                ts = 0.0
+            if text and ts and now_ts() - ts <= 6 * 3600:
+                items.append({"kind": kind, "text": text[:60], "at": ts})
+        return items[:5]
+
+    def _proactive_status(self):
+        """面板主动说话卡：今日开口数 / 上次开口 / 是否在等他回。"""
+        try:
+            uid = str(getattr(self, "_last_uid", "") or "")
+            if not uid:
+                rows = self.db.list_profiles(limit=1)
+                uid = str(rows[0].get("uid") or "") if rows else ""
+            profile = self.db.get_profile(uid) or {} if uid else {}
+            day = today_str()
+            count = int(profile.get("proactive_count") or 0) if profile.get("proactive_day") == day else 0
+            last = float(profile.get("last_proactive") or 0)
+            waiting = False
+            pending_key = getattr(self, "_pending_key", None)
+            if uid and callable(pending_key):
+                pending = self.db.kv_get(pending_key(uid), {}) or {}
+                waiting = bool(isinstance(pending, dict) and pending.get("sent_at"))
+            return {"today": count, "last": last, "waiting": waiting}
+        except Exception:
+            return {"today": 0, "last": 0.0, "waiting": False}
+
+    def _photos_today(self):
+        try:
+            try:
+                from .amo_media import photo_count
+            except ImportError:
+                from amo_media import photo_count
+            return {"today": int(photo_count(self) or 0)}
+        except Exception:
+            return {"today": 0}
 
     async def _status_data(self, fresh=False):
         # P2：面板同一次刷新会先调 api_status 再调 api_get_status，旧实现把整份
@@ -288,12 +340,24 @@ class CommandMixin(_MixinBase):
                 logger.debug("[amo] 心流阈值读取失败: %s" % exc)
         counts = self.db.counts()
         await _status_data_part(self, counts)
+        try:
+            try:
+                from .amo_guard_health import check_guards as _check_guards
+            except ImportError:
+                from amo_guard_health import check_guards as _check_guards
+            guards = getattr(self, "_guard_health", None) or _check_guards()
+        except Exception:  # cleanup: 健康检查坏了不能拖垮 /status
+            guards = {}
         result = {
             "time": snap["datetime_text"],
             "day": day_meta(),
-            "mood": snap["mood"],
             "dominant": snap["dominant"],
             "mood_score": round(snap["mood_score"], 1),
+            "heart": self._heart_status(),
+            "photos": self._photos_today(),
+            "proactive": self._proactive_status(),
+            "thoughts": self._thoughts_status(),
+            "recent": self._recent(umo, 8) if umo and callable(getattr(self, "_recent", None)) else [],
             "period": snap["period"],
             "health": snap["health"],
             "weather": snap["weather"],
@@ -309,6 +373,7 @@ class CommandMixin(_MixinBase):
             # Phase 17：结构化健康快照（plugin/version/uptime/db/jobs/counts）。
             # 老字段 health 是「人物健康」，语义不同，所以这里用 obs_health，不覆盖。
             "obs_health": self._obs_health(),
+            "guards": guards,
             # Phase 19：跨插件 feature API 协议摘要（只新增字段）
             "protocol": self.protocol_info(),
             "mood_narration": "",
@@ -324,10 +389,6 @@ class CommandMixin(_MixinBase):
                 "weather_key_set": bool(self.cfg_str("hefeng_key", "")),
                 "weather_host": self.cfg_str("weather_host", "https://devapi.qweather.com"),
                 "version": PLUGIN_VERSION,
-                "dialect_style": self._dialect_style(),
-                # 面板靠这个判断「方言到底开没开」：dialect_style 可能还留着上次的方言名
-                "dialect_enabled": self._dialect_active(),
-                "dialect_count": len(self._dialect_rows()) if self._dialect_active() else 0,
                 "companion_memory_available": self._data_connected(),
             },
             "data_plugin": {
@@ -357,8 +418,12 @@ class CommandMixin(_MixinBase):
         return result
 
     def _format_status(self, data):
-        mood = data["mood"]
-        mood_line = " ".join([key + str(int(value)) for key, value in mood.items()])
+        heart = data.get("heart") or {}
+        if heart.get("dims"):
+            mood_line = " ".join([key + str(int(value)) for key, value in heart["dims"].items()])
+        else:
+            mood = data.get("mood") or {}
+            mood_line = " ".join([key + str(int(value)) for key, value in mood.items()])
         threshold = data["threshold"]
         lines = [
             "🌙 陪伴 · 当前状态",
@@ -757,8 +822,8 @@ class CommandMixin(_MixinBase):
                 except ImportError:
                     from amo_message import strip_media_markers as _strip_media
                 content = _strip_media(content)
-            except Exception:  # cleanup: 兜底/降级，保持原行为
-                pass
+            except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                logger.debug("[amo_commands._cmd_say] optional step failed: %s", exc)
             if not content:
                 return ""
             await event.send(MessageChain([Comp.Plain(content)]))

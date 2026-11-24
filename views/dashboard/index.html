@@ -17,10 +17,10 @@
 <path d="M2.5 12h4l2.2-5.5 3.1 11 2.3-5.5h5.4"/> </svg> </button> <div class="clock" id="clock">--</div></div></header><div class="tabnav">
 <button class="tabnav-arrow left" type="button" aria-label="向前">‹</button> <nav class="tabs"> <button class="tab active" data-tab="world"><span>世界</span></button>
 <button class="tab" data-tab="schedule"><span>日程</span></button> <button class="tab" data-tab="actions"><span>操作</span></button> <button class="tab" data-tab="profiles"><span>用户</span></button>
-<button class="tab" data-tab="gift"><span>礼物</span></button> <button class="tab" data-tab="shop"><span>网购</span></button> <button class="tab" data-tab="wardrobe"><span>穿搭</span></button> <button class="tab" data-tab="photo"><span>照片</span></button><button class="tab" data-tab="persona"><span>人设</span></button>
+<button class="tab" data-tab="gift"><span>礼物</span></button>  <button class="tab" data-tab="wardrobe"><span>穿搭</span></button> <button class="tab" data-tab="photo"><span>照片</span></button><button class="tab" data-tab="persona"><span>人设</span></button>
 <button class="tab" data-tab="settings" data-group="基础"><span>基础</span></button> <button class="tab" data-tab="settings" data-group="状态"><span>参数</span></button>
 <button class="tab" data-tab="settings" data-group="记忆"><span>记忆</span></button> <button class="tab" data-tab="settings" data-group="私聊"><span>私聊</span></button>
-<button class="tab" data-tab="settings" data-group="语音"><span>语音</span></button> <button class="tab" data-tab="settings" data-group="心流"><span>心流</span></button>
+<button class="tab" data-tab="settings" data-group="语音"><span>语音</span></button> 
 <button class="tab" data-tab="settings" data-group="分段"><span>分段</span></button> <button class="tab" data-tab="diary"><span>日记</span></button> <button class="tab" data-tab="usage"><span>用量</span></button>
 </nav> <button class="tabnav-arrow right" type="button" aria-label="向后">›</button> </div><div id="tab-status" class="tab-panel" hidden><section class="card status-shell"><div class="hero-top"><div>
 <div class="label">当前心情</div><div class="dominant" id="dominant">读取中…</div><div class="mood-context" id="moodContext">—</div></div><div class="hero-score"><span id="moodScore">--</span><small>/100</small></div>
@@ -30,7 +30,7 @@
 <div class="sub" id="periodSub"></div></div><div class="status-item clickable" id="healthCard" title="点击修改身体设置"><div class="label">身体</div><div class="value" id="health">—</div>
 <div class="track status-track"><span class="fill" id="healthBar"></span></div><div class="sub" id="healthSub"></div></div><div class="status-item"><div class="label">天气</div>
 <div class="value" id="weather">—</div><div class="track status-track"><span class="fill" id="weatherBar"></span></div><div class="sub" id="weatherSub"></div></div><div class="status-item">
-<div class="label">正在</div><div class="value" id="activity">—</div><div class="track status-track"><span class="fill" id="activityBar"></span></div><div class="sub" id="activitySub"></div></div><div class="status-item"><div class="label">旅游结算</div><div class="value" id="tripSettle">—</div><div class="sub" id="tripSettleSub"></div></div></div>
+<div class="label">正在</div><div class="value" id="activity">—</div><div class="track status-track"><span class="fill" id="activityBar"></span></div><div class="sub" id="activitySub"></div></div></div>
 </section></div><div id="tab-world" class="tab-panel"><section class="card"><div class="row between"><div><div class="label">世界文档</div><div class="sub">她的生活设定、城市、工作、性格与边界；长文默认收起，点标题展开。</div></div>
 <button id="worldExpandAll" class="world-expand" type="button">展开全部</button> </div><article id="worldDoc" class="world-doc">加载中…</article></section></div>
 <div id="tab-schedule" class="tab-panel" hidden><section class="card"><div class="row between"><div class="label">日程一览</div></div><div class="row between" style="gap:8px;align-items:center">
@@ -167,14 +167,110 @@
 <select id="nRelB" style="flex:1;min-width:120px"></select> <select id="nRelType"> <option>家人</option><option>恋人</option><option selected>朋友</option> <option>同事</option><option>同学</option><option>熟人</option>
 <option>陌生人</option><option>仇人</option> </select> <button class="primary" id="btnNeuronAdd">添加</button> </div> <input id="nRelNote" placeholder="备注（可选）" style="margin-top:8px;width:100%">
 <div id="neuronList" class="list" style="margin-top:8px;max-height:200px;overflow:auto"></div> <button class="ghost" id="btnNeuronBack" style="margin-top:8px">返回图谱</button> </div></div></div>
-<div class="modal" id="moodModal" hidden><div class="modal-card"><div class="row between"><div><div class="label">调整心情</div><div class="sub">仅 AstrBot 管理员可修改</div></div> <button id="btnMoodClose">关闭</button>
-</div><div id="moodEditor" class="mood-editor"></div> <button id="btnMoodSave">保存心情</button> </div></div><div class="toast" id="toast"></div>
-  <div id="tab-persona" class="tab-panel" hidden><section class="card"><div class="label">当前人设</div><div id="personaCurrent">读取中…</div><div id="personaProfiles" class="persona-profiles"></div><div class="label">候选语料</div><div id="personaCandidates"></div><div class="label">导入 / 导出</div><textarea id="personaJson" rows="6" spellcheck="false" placeholder="粘贴人设包 JSON 后点导入；点导出会把当前 pack+state 填进来"></textarea><div class="persona-actions"><button id="personaImport" type="button">导入人设包</button><button id="personaExport" type="button">导出当前</button><button id="personaFile" type="button">从文件导入</button><input id="personaFileInput" type="file" accept="application/json,.json" hidden /></div><div class="label">预览</div><div class="persona-actions"><input id="personaScene" placeholder="场景，如 sick / quarrel" /><input id="personaMood" placeholder="情绪，如 委屈" /><button id="personaPreview" type="button">生成预览</button></div><pre id="personaPreviewBox" class="persona-preview"></pre></section></div>
+<div class="toast" id="toast"></div>
+  <div id="tab-persona" class="tab-panel" hidden>
+   <section class="card persona-hero">
+    <div class="persona-hero-head">
+     <div class="persona-avatar" id="personaAvatar" aria-hidden="true">她</div>
+     <div class="persona-meta">
+      <div class="label">当前人设</div>
+      <div class="persona-name" id="personaName">读取中…</div>
+      <div class="persona-core" id="personaCore">正在读她的人设卡…</div>
+     </div>
+     <span class="persona-pill" id="personaActiveId">—</span>
+    </div>
+    <div class="persona-stats">
+     <div class="persona-stat" title="人设包里自带的语料条数"><b id="personaCorpus">—</b><span>语料</span></div>
+     <div class="persona-stat" title="已经批准、写进人设的进化语料"><b id="personaEvolved">—</b><span>进化</span></div>
+     <div class="persona-stat" title="等她被批准的新语料"><b id="personaPending">—</b><span>待批</span></div>
+    </div>
+    <div class="persona-auto-row row between">
+     <div><span class="label">自动进化</span> <span class="sub" id="personaAutoState">读取中…</span></div>
+     <div class="row">
+      <span class="persona-pill" id="personaAutoHint">今日 +0 条</span>
+      <button id="personaAutoToggle" class="ghost" type="button">暂停</button>
+     </div>
+    </div>
+    <div class="persona-switch">
+     <div class="label">切换人设 <span class="persona-note">切走不会覆盖原来的包，切回来还是原样</span></div>
+     <div id="personaProfiles" class="persona-profiles"><span class="sub">读取中…</span></div>
+    </div>
+   </section>
+   <section class="card">
+    <div class="row between persona-sec-head">
+     <div><div class="label">候选语料</div><div class="sub">自动收集 / 手动添加的候选语料先放这儿，点「通过」才会写进人设。</div></div>
+     <span class="persona-pill" id="personaCandidatePill">0 条</span>
+    </div>
+    <div id="personaCandidates" class="persona-candidates"></div>
+   </section>
+   <section class="card">
+    <div class="row between persona-sec-head">
+     <div><div class="label">最近自动进化</div><div class="sub">她自己说过、你反应不错、过滤后入池的句子；只入池，不自动通过。</div></div>
+     <span class="persona-pill" id="personaPoolPill">0 条池</span>
+    </div>
+    <div id="personaRecent" class="persona-candidates"></div>
+   </section>
+   <section class="card">
+    <div class="label">语气预览</div>
+    <div class="sub">先选场景（或直接填），点「生成预览」看她会拿到什么提示词；只读，不改人设，也不发消息。</div>
+    <div id="personaScenes" class="persona-scenes"></div>
+    <div class="persona-preview-inputs">
+     <input id="personaScene" class="input" placeholder="场景 scene，如 quarrel" autocomplete="off" />
+     <input id="personaMood" class="input" placeholder="情绪 mood，如 委屈" autocomplete="off" />
+     <button id="personaPreview" class="persona-primary" type="button">生成预览</button>
+    </div>
+    <div class="persona-preview-meta" id="personaPreviewMeta">还没预览</div>
+    <pre id="personaPreviewBox" class="persona-preview">点「生成预览」，看看她现在的提示词长什么样。</pre>
+   </section>
+   <section class="card">
+    <details class="persona-io" id="personaIo">
+     <summary>
+      <span class="persona-io-title">导入 / 导出人设包</span>
+      <span class="sub">整份 JSON：换角色、备份、搬到别的机器都用它</span>
+     </summary>
+     <div class="persona-io-body">
+      <textarea id="personaJson" class="input persona-json" rows="8" spellcheck="false" placeholder="把 persona pack 的 JSON 粘在这里，然后点「导入人设包」"></textarea>
+      <div class="persona-actions">
+       <button id="personaImport" class="persona-primary" type="button">导入人设包</button>
+       <button id="personaFile" class="ghost" type="button">从文件导入</button>
+       <button id="personaExport" class="ghost" type="button">导出当前</button>
+       <button id="personaCopy" class="ghost" type="button">复制 JSON</button>
+       <button id="personaDownload" class="ghost" type="button">下载 .json</button>
+       <input id="personaFileInput" type="file" accept="application/json,.json" hidden />
+      </div>
+      <div class="persona-tip">导入不会自动切换；<code>id</code> 不能和已有人设重名（字母 / 数字 / <code>_</code> / <code>-</code>，最多 32 位）。人设包存在插件数据目录的 <code>persona_profiles/&lt;id&gt;/</code> 下。</div>
+     </div>
+    </details>
+   </section>
+  </div>
   <script src="assets/api-client.js"></script>
   <script src="assets/panel.js"></script>
   <script src="assets/panel-views.js"></script>
   <script src="assets/panel-user.js"></script>
   <script src="assets/panel-persona.js"></script>
 <footer style="padding:0 16px 28px;text-align:center;font-size:11px;color:var(--muted)">by 彩虹upup · 感谢《我会永远陪伴你》和《我想永远陪伴你》的作者</footer>
+<script id="legacy-deeplink">
+(function(){
+  var m = location.search.match(/[?&]tab=([^&]+)/);
+  if (!m) return;
+  var key = decodeURIComponent(m[1]);
+  var parts = key.split(":");
+  var sel = '.tab[data-tab="' + parts[0] + '"]';
+  if (parts[1]) sel += '[data-group="' + parts[1] + '"]';
+  var btn = document.querySelector(sel);
+  if (btn) btn.click();
+})();
+</script>
+<script id="legacy-bridge">
+window.addEventListener("message", function (event) {
+  var data = event.data || {};
+  if (!data.tab) return;
+  var parts = String(data.tab).split(":");
+  var sel = '.tab[data-tab="' + parts[0] + '"]';
+  if (parts[1]) sel += '[data-group="' + parts[1] + '"]';
+  var btn = document.querySelector(sel);
+  if (btn) btn.click();
+});
+</script>
 </body>
 </html>

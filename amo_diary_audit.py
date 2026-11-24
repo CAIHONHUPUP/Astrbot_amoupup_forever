@@ -1050,53 +1050,8 @@ def in_quiet_hours(hour, window):
     return start <= hour < end
 
 
-async def notify(plugin, now=None):
-    """到点给主人发一条（每天最多一条、全干净不发、quiet 不发）。"""
-    now = now or _now()
-    if not _cfg_bool(plugin, "diary_audit_notify", True):
-        return False
-    hour = max(0, min(23, _cfg_int(plugin, "diary_audit_notify_hour", 9)))
-    if now.hour < hour:
-        return False
-    quiet = parse_quiet(_cfg_str(plugin, "diary_audit_quiet_hours", DEFAULT_QUIET_HOURS))
-    if in_quiet_hours(now.hour, quiet):
-        return False
-    day = (now.date() - timedelta(days=1)).isoformat()
-    if not _cfg_bool(plugin, "diary_audit_push", False):
-        return False
-    db = plugin.db
-    with _NOTIFY_LOCK:
-        if db.kv_get(KEY_NOTIFIED + day, False):
-            return False
-        # 先占位再推送，避免并发 tick 各推一次；失败再释放
-        db.kv_set(KEY_NOTIFIED + day, now_ts())
-    try:
-        report = db.kv_get(KEY_REPORT + day, None)
-    except Exception as exc:
-        _note_swallowed("amo_diary_audit.notify.kv", exc)
-        return False
-    if not isinstance(report, dict) or not report:
-        return False
-    text = notify_text(report, day)
-    if not text:
-        return False
-    push = getattr(plugin, "push_to_owner", None)
-    if not callable(push):
-        return False
-    try:
-        sent = await push(text)
-    except Exception as exc:
-        _note_swallowed("amo_diary_audit.notify.push", exc)
-        db.kv_set(KEY_NOTIFIED + day, False)
-        return False
-    if not sent:
-        db.kv_set(KEY_NOTIFIED + day, False)
-        return False
-    return True
-
-
 async def tick(plugin, now=None):
-    """housekeeping 入口：一次只补审一天（最旧优先），顺带尝试发通知。"""
+    """housekeeping 入口：一次只补审一天（最旧优先）。"""
     if not _cfg_bool(plugin, "diary_audit_enabled", True):
         return {"day": "", "report": {}, "notified": False}
     now = now or _now()
@@ -1107,10 +1062,5 @@ async def tick(plugin, now=None):
             report = await asyncio.to_thread(run, plugin, day, True, now)
         except Exception as exc:
             _note_swallowed("amo_diary_audit.tick.run", exc)
-    notified = False
-    try:
-        notified = bool(await notify(plugin, now))
-    except Exception as exc:
-        _note_swallowed("amo_diary_audit.tick.notify", exc)
     return {"day": day, "report": report if isinstance(report, dict) else {},
-            "notified": notified}
+            "notified": False}

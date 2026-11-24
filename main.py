@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """我能永远陪着你 / 我能永远陪伴你 5.4.2
 一个尽量“像人”的 AstrBot 智械人类核心：
@@ -31,7 +32,7 @@ except ImportError:  # 按文件直接加载（离线单测）
 #: 插件载入时刻，用来给 /status 的 obs_health.uptime_s 当起点
 _OBS_STARTED_AT = _obs_now_ts()
 
-PLUGIN_VERSION = "7.6.5"
+PLUGIN_VERSION = "8.0.0"
 
 try:  # 包模式优先（AstrBot 正常加载）
     from .amo_bootstrap import (
@@ -40,8 +41,8 @@ try:  # 包模式优先（AstrBot 正常加载）
         HandshakeMixin, Housing, KbMixin, LLMService,
         InitMixin, LifecycleMixin, LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
         PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
-        ScheduleMixin, SegmentEngine, SocialLearnEngine, SocialMixin, Star,
-        TravelMixin, UsageMixin, Wallet, Wardrobe,
+        ScheduleMixin, SegmentEngine, SocialMixin, Star,
+        TravelMixin, UsageMixin, Wardrobe,
         WebRouteMixin, _align_handler_module_paths, _clock_configure, _clock_name, _note_swallowed,
         logger, looks_like_plain_command,
     )
@@ -53,8 +54,8 @@ except ImportError:  # 按文件直接加载（离线单测 / 老加载方式）
             HandshakeMixin, Housing, KbMixin, LLMService,
             InitMixin, LifecycleMixin, LlmMixin, MemoryMixin, MessageMixin, MicroEventEngine, PhotoEngine,
             PoseLibrary, ProactiveMixin, ReplyGate, RuntimeMixin, ScheduleChanged,
-            ScheduleMixin, SegmentEngine, SocialLearnEngine, SocialMixin, Star,
-            TravelMixin, UsageMixin, Wallet, Wardrobe,
+            ScheduleMixin, SegmentEngine, SocialMixin, Star,
+            TravelMixin, UsageMixin, Wardrobe,
             WebRouteMixin, _align_handler_module_paths, _clock_configure, _clock_name, _note_swallowed,
             logger, looks_like_plain_command,
         )
@@ -195,13 +196,6 @@ class HumanCorePlugin(MemoryMixin, CommandMixin, ConfigMixin, MessageMixin, Soci
                     logger.info("[amo] 姿势参考图缺 %d 张，后台补齐", len(_pending))
             except Exception as exc:
                 logger.debug("[amo] 姿势参考图补齐失败: %s" % exc)
-            try:
-                from .laundry_engine import register_buy_appliance
-                manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)
-                if register_buy_appliance(self, manager):
-                    logger.info("[amo] LLM tool registered: buy_appliance")
-            except Exception as exc:
-                logger.debug("[amo] 注册 buy_appliance 工具失败: %s" % exc)
             try:
                 from .draw_engine import register_send_photo
                 manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)

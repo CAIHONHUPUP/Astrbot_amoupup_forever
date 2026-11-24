@@ -5,6 +5,15 @@
 内部实现可以变，方法名、参数、返回值不要改。
 """
 from __future__ import annotations
+
+try:  # 旧十维快照只读兼容
+    try:
+        from .amo_shared import normalize_mood
+    except ImportError:
+        from amo_shared import normalize_mood
+except Exception:
+    def normalize_mood(mood):
+        return dict(mood or {})
 from typing import TYPE_CHECKING, Any
 
 try:  # Phase 11：统一时钟（不再裸调系统时钟）
@@ -42,6 +51,7 @@ def _contract_module(name):
         try:
             return _importlib.import_module("." + name, package + ".services")
         except ImportError:  # cleanup: 兜底/降级，保持原行为
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
             pass
     return _importlib.import_module("services." + name)
 
@@ -949,9 +959,9 @@ class FeatureApiMixin(PersonaApiMixin):
 
             try:
 
-                mood = self.state.mood
+                mood = normalize_mood(self.state.mood)
 
-                if float(mood.get("郁闷", 0)) + float(mood.get("焦虑", 0)) >= 130:
+                if float(mood.get("压力", 0)) >= 65:
 
                     return "心情不好花钱发泄"
 

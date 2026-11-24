@@ -132,40 +132,6 @@ class DiaryApiMixin(_MixinBase):
                                     "live_text": str(live.get("text") or ""),
                                     "live_pending": bool(live.get("pending"))}}
 
-    async def api_diary_audit(self):
-        """日记质检报告（只读）：GET /diary/audit?day=YYYY-MM-DD，不带日期取最近一份。"""
-        await self._ensure_ready()
-        payload = await self._body()
-        raw = ""
-        if isinstance(payload, dict):
-            raw = payload.get("day") or payload.get("date") or ""
-        if not raw:
-            raw = self._q("day", "") or self._q("date", "")
-        day = _diary_parse_day(raw) if raw else None
-        if raw and day is None:
-            return {"code": 1, "msg": "日期格式应为 YYYY-MM-DD"}
-        try:
-            try:
-                from . import amo_diary_audit as audit
-            except ImportError:
-                import amo_diary_audit as audit
-        except Exception as exc:
-            _note_swallowed("amo_api_diary.DiaryApiMixin.api_diary_audit.import", exc)
-            return {"code": 1, "msg": "日记质检模块未加载"}
-        day_text = day.isoformat() if day is not None else audit.latest_report_day(self)
-        if not day_text:
-            return {"code": 0, "data": {"day": "", "report": None,
-                                        "text": "还没有日记质检记录"}}
-        report = None
-        try:
-            report = self.db.kv_get(audit.KEY_REPORT + day_text, None)
-        except Exception as exc:
-            _note_swallowed("amo_api_diary.DiaryApiMixin.api_diary_audit.kv", exc)
-        if not isinstance(report, dict):
-            report = None
-        return {"code": 0, "data": {"day": day_text, "report": report,
-                                    "text": audit.report_text(self, day_text)}}
-
     def append_diary_note(self, day, text):
         """给当天日记追加一段事件（不覆盖正文、不写 diary_written）。"""
         body = str(text or "").strip()

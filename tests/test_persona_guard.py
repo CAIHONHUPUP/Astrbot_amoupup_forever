@@ -400,12 +400,12 @@ class MergedChainTests(unittest.TestCase):
 
     def test_chain_tables_are_frozen(self):
         self.assertEqual((
-            "media", "collapse", "narration", "system", "forbidden",
-            "amounts", "names", "collapse_tail", "addressee",
+            "media", "collapse", "narration", "props", "system", "forbidden",
+            "amounts", "names", "collapse_tail",
         ), guard._CHAIN["outbound"])
         self.assertEqual((
-            "media", "narration", "tech", "system", "forbidden",
-            "amounts", "names", "anti_nag", "purchase", "addressee",
+            "media", "narration", "props", "tech", "system", "forbidden",
+            "amounts", "names", "anti_nag", "purchase",
         ), guard._CHAIN["candidate"])
         self.assertEqual(("fact_probe",), guard._CHAIN["probe"])
         self.assertEqual(13, len(guard._STAGES))

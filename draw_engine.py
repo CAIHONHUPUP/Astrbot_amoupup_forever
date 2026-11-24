@@ -445,8 +445,8 @@ def _photo_turn_key(event):
         mid = str(getattr(getattr(event, "message_obj", None), "message_id", "") or "")
         if mid:
             return mid
-    except Exception:  # cleanup: 取不到 message_id 就退回 id(event)
-        pass
+    except Exception as exc:  # cleanup: 取不到 message_id 就退回 id(event)
+        logger.debug("[draw_engine._photo_turn_key] optional step failed: %s", exc)
     return str(id(event))
 
 
@@ -1148,8 +1148,8 @@ class DrawEngine:
                 except ImportError:
                     from amo_message import strip_media_markers as _strip_media
                 text = _strip_media(text)
-            except Exception:  # cleanup: 兜底/降级，保持原行为
-                pass
+            except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                _note_swallowed("draw_engine._send_text", exc)
             if not str(text or "").strip():
                 return False
             await event.send(MessageChain([Plain(text)]))
@@ -1320,8 +1320,8 @@ class DrawEngine:
                             if not _fits(_pose, _zone):
                                 logger.info("[DRAW] 点名的姿势不适合当前场景 %s，本次不用", _zone)
                                 _pose = None
-                        except Exception:  # cleanup: 兜底/降级，保持原行为
-                            pass
+                        except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                            _note_swallowed("draw_engine.send_photo_now", exc)
                     if _pose:
                         detail = (detail + "。" + pose_line(_pose)).strip("。")
                         try:
@@ -1363,16 +1363,16 @@ class DrawEngine:
                            caption=caption, photo_plan=photo_plan)
             try:
                 self._last_tool_photo_at = time.monotonic()
-            except Exception:  # cleanup: 时间戳失败不影响发图
-                pass
+            except Exception as exc:  # cleanup: 时间戳失败不影响发图
+                _note_swallowed("draw_engine.send_photo_now", exc)
             return "已安排：她的实拍，正在生成"
         prompt = ("网上找的图片，聊天里分享的网图/截图，不是她本人拍的，"
                   "可以是店铺招牌、菜品图或梗图风格，画面里不出现她自己；" + text)
         self._schedule(event, prompt, "tool", selfie=False, caption=caption)
         try:
             self._last_tool_photo_at = time.monotonic()
-        except Exception:  # cleanup: 时间戳失败不影响发图
-            pass
+        except Exception as exc:  # cleanup: 时间戳失败不影响发图
+            _note_swallowed("draw_engine.send_photo_now", exc)
         return "已安排：找一张图分享，正在生成"
 
     def enforce_photo_retry(self, event, his_words, reply):
@@ -1646,8 +1646,8 @@ class DrawEngine:
                 except ImportError:
                     from amo_shared import sanitize_caption as _sanitize_caption
                 caption = _sanitize_caption(caption)
-            except Exception:  # cleanup: 兜底/降级，保持原行为
-                pass
+            except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                _note_swallowed("draw_engine._send_image", exc)
         plugin = getattr(self, "plugin", None)
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         activity = self._activity() if callable(getattr(self, "_activity", None)) else {}

@@ -19,6 +19,11 @@
 """
 from __future__ import annotations
 
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
+
 #: 用户最后一条消息超过这么久没回：禁止催问/逛街/自拍/未回复追问。
 SILENCE_BLOCK_HOURS = 6.0
 #: 沉默超时后仍允许的主动类型：早晚问候 + 明确时间点提醒。
@@ -48,6 +53,7 @@ def _now_ts(now=None):
         try:
             return float(now)
         except (TypeError, ValueError):  # cleanup: 兜底/降级，保持原行为
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
             pass
     try:
         try:
@@ -123,8 +129,8 @@ def current_scene(plugin):
                 "quality": str(led.get("quality") or ""),
                 "together": bool(led.get("together")),
             }
-    except Exception:  # cleanup: 账本不可用时退回旧读法
-        pass
+    except Exception as exc:  # cleanup: 账本不可用时退回旧读法
+        _note_swallowed("amo_presence.current_scene", exc)
     try:
         scene = dict(plugin.state.current_activity() or {})
     except Exception:

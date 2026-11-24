@@ -36,6 +36,19 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         from astrbot.core.platform.message_session import MessageSession as MS
 
 
+def contextual_fallback(user_text):
+    """整条回复被守卫吃掉时，按他最后一句给一句人话；没有匹配返回空串（不硬发）。
+
+    唯一实现在 domains/reply/repetition_guard，persona_guard 也只是转发；
+    这里保留同名入口给既有测试/调用方，避免三处各写一套兜底。
+    """
+    try:
+        from .amo_persona_guard import contextual_fallback as _fallback
+    except ImportError:
+        from amo_persona_guard import contextual_fallback as _fallback
+    return _fallback(user_text)
+
+
 class SegmentEngine:
     """基于可配置规则的消息分段插件，将长回复拆分为多条消息依次发送。"""
 
@@ -302,18 +315,39 @@ class SegmentEngine:
                     from amo_persona_guard import prepare_outbound as _prepare_outbound
                 _umo_guard = str(getattr(event, "unified_msg_origin", "") or "")
                 _guarded = []
+                _intercept_reason = ""
                 for _segment in segments:
                     _clean, _reason = _prepare_outbound(
                         self.plugin, _umo_guard, _segment, "chat")
                     if _clean:
                         _guarded.append(_clean)
                     else:
+                        _intercept_reason = _reason
                         logger.info("[amo] 分段出站拦截（%s）：%s", _reason, str(_segment)[:40])
                 if _guarded:
                     segments = _guarded
                 else:
-                    # 整条都被守卫吃掉（只剩动作旁白）：给一句人话，别把原文交回核心发。
-                    segments = ["嗯，我在呢。"]
+                    # 整条都被守卫吃掉（只剩动作旁白）：按他最后一句给一句人话；
+                    # 没有匹配就静默这一轮（result.chain 清空后 return True = 已接管），
+                    # 既不发固定「嗯，我在呢。」，也不把原文交回核心。
+                    _fallback = contextual_fallback(
+                        str(getattr(event, "message_str", "") or ""))
+                    if not _fallback:
+                        logger.info(
+                            "[amo] 分段出站拦截（无可用台词，不硬发）：reason=%s original=%s",
+                            _intercept_reason or "action_only", str(raw_text)[:80])
+                        try:
+                            result.chain.clear()
+                        except Exception as _amo_exc:
+                            _note_swallowed(
+                                "segment_engine.SegmentEngine.handle_segment_reply.silent", _amo_exc)
+                        await self._set_typing(event, False)
+                        return True
+                    logger.info(
+                        "[amo] 分段出站兜底 reason=%s original=%s cleaned=%s fallback=%s",
+                        _intercept_reason or "action_only", str(raw_text)[:80], "",
+                        _fallback)
+                    segments = [_fallback]
             except Exception as _amo_exc:
                 _note_swallowed("segment_engine.SegmentEngine.handle_segment_reply.persona", _amo_exc)
 

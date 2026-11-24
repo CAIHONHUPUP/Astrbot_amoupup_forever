@@ -143,6 +143,7 @@ def preflight(backup_path, work_dir=None, keep=False):
         try:
             shutil.rmtree(base, ignore_errors=True)
         except OSError:
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
             pass
     return result
 

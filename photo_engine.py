@@ -188,10 +188,6 @@ try:
     _light_value,
     selfie_state_hint,
     _log_photo_debug,
-    OUTDOOR_POSES,
-    outdoor_pose_line,
-    SCENE_ALLOWED,
-    SCENE_POLICY,
     _PROP_WORDS,
     _POSTURE_WORDS,
     _RIDE_WORDS,
@@ -205,7 +201,6 @@ try:
     _int_in,
     PHOTO_INTENT_WORDS,
     PHOTO_PLACE_WORDS,
-    scene_allowed_line,
     )
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
@@ -215,10 +210,6 @@ except ImportError:  # 直接按文件加载时
             _light_value,
             selfie_state_hint,
             _log_photo_debug,
-            OUTDOOR_POSES,
-            outdoor_pose_line,
-            SCENE_ALLOWED,
-            SCENE_POLICY,
             _PROP_WORDS,
             _POSTURE_WORDS,
             _RIDE_WORDS,
@@ -232,7 +223,6 @@ except ImportError:  # 直接按文件加载时
             _int_in,
             PHOTO_INTENT_WORDS,
             PHOTO_PLACE_WORDS,
-            scene_allowed_line,
         )
 
 try:
@@ -1037,16 +1027,32 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
             library = getattr(self.plugin, "pose", None)
             if library is None:
                 return None
-            pose = library.random_pose("home", str(scene or ""), usage="couple")
-            text = str((pose or {}).get("name") or "") + str((pose or {}).get("note") or "")
-            if any(word in text for word in self._COUPLE_EXPLICIT):
-                # 成人向的姿势不进日常合拍
-                safe = [p for p in library.poses() if str(p.get("usage")) == "couple"
-                        and not any(word in (str(p.get("name") or "") + str(p.get("note") or ""))
-                                    for word in self._COUPLE_EXPLICIT)]
-                if safe:
-                    import random as _random
-                    return _random.choice(safe)
+            try:
+                from .amo_intimacy import resolve_intimacy_level
+                from .pose_library import usage_of
+            except ImportError:
+                from amo_intimacy import resolve_intimacy_level
+                from pose_library import usage_of
+            try:
+                level = resolve_intimacy_level(
+                    self.plugin.cfg_int("intimacy_level", 1),
+                    self.plugin.cfg_bool("intimacy_explicit_enabled", False),
+                )
+            except Exception:
+                level = 1
+            pose = library.random_pose("home", str(scene or ""), usage="couple", level=level)
+            if level <= 0:
+                text = str((pose or {}).get("name") or "") + str((pose or {}).get("note") or "")
+                if any(word in text for word in self._COUPLE_EXPLICIT):
+                    # 0 档：合拍不用露骨姿势，只在 0 档允许的白名单+拍脚池里换安全的
+                    safe = [p for p in library.allowed_poses(0)
+                            if usage_of(p) == "couple"
+                            and not any(word in (str(p.get("name") or "") + str(p.get("note") or ""))
+                                        for word in self._COUPLE_EXPLICIT)]
+                    if safe:
+                        import random as _random
+                        return _random.choice(safe)
+                    return None
             return pose
         except Exception:
             return None
@@ -1056,6 +1062,11 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         try:
             library = getattr(self.plugin, "pose", None)
             if pose is not None and library is not None:
+                # 参考图是线稿人偶；交缠/双手相拉这类姿势的线稿本身手指和腿就容易
+                # 糊成一团，喂给生图模型会被原样抄坏，宁可只靠文字姿势描述。
+                _name = str(pose.get("name") or "")
+                if any(word in _name for word in ("双手相拉", "交缠", "缠绕")):
+                    return refs
                 path = library.ref_path(pose)
                 if path and os.path.isfile(path):
                     refs.append(path)
@@ -1078,6 +1089,12 @@ class PhotoEngine(PhotoPromptMixin, PhotoGenerateMixin, PhotoShareMixin):
         return ("两人合照：画面里两个真实人物——她（参考图前三张是她的三视图）和用户本人"
                 "（参考图中间几张是他的三视图），两个人在一起，场景：%s。"
                 "姿势：%s（%s）。%s；自然光，日常穿搭，表情自然。"
+                "两人的腿和脚必须各自独立、数量正确：每个人两条腿、两只脚，膝盖和脚踝方向正常；"
+                "就算交缠也要能看清谁是谁的腿，禁止腿融合、腿粘连、多余的腿、缺腿、脚趾畸形、膝盖反折。"
+                "两人的手也必须各自独立、数量正确：每只手五根手指，手指和关节方向正常；"
+                "牵手可以，但禁止手指融合、多指、少指、手指打结、手掌粘连。"
+                "鞋和脚也要各自独立：每个人两只鞋、两只脚，鞋头方向正常；"
+                "禁止第三只鞋、鞋融合、脚从鞋里穿出、鞋和脚粘连、左右脚穿反。"
                 "参考图只借长相和姿势，不要照搬背景和衣服。"
                 % (where, name or "自然站在一起", note or "并排看镜头", camera))
 

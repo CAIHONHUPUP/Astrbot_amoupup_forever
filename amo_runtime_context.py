@@ -34,17 +34,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
+        AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
+            AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
+                AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate, weekday_cn,
             )
 
 
@@ -61,6 +61,34 @@ except ImportError:  # 直接按文件加载时
             def is_outfit_change_request(text):
                 return False
 
+try:  # 2026-11-23：夸/撩、先贬后夸、亲密尺度（纯函数）
+    from .amo_intimacy import (
+        has_explicit_change_request, intimacy_prompt, is_compliment_or_flirt,
+        is_contrast_praise, resolve_intimacy_level,
+    )
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_intimacy import (
+            has_explicit_change_request, intimacy_prompt, is_compliment_or_flirt,
+            is_contrast_praise, resolve_intimacy_level,
+        )
+
+try:  # 穿搭/换装/归属纠正补充块（2026-11-24 拆出）
+    from .amo_runtime_context_extra import ExtraContextMixin
+except ImportError:
+    from amo_runtime_context_extra import ExtraContextMixin
+
+try:  # 吃饭/今日安排 mixin（2026-11-24 从本文件拆出）
+    from .amo_runtime_context_agenda import AgendaContextMixin
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_runtime_context_agenda import AgendaContextMixin
+
+try:  # 外卖待送达：上下文口径唯一实现（只读事实层，不写日程）
+    from .amo_food_delivery import pending_context_lines, pending_state
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_food_delivery import pending_context_lines, pending_state
 
 try:  # 地点跟日程对齐：他说她在别处时当场纠正
     from .place_guard import conflicting_place, correction_hint
@@ -121,40 +149,6 @@ def _money_approx(cents):
     return "%d 万" % int(yuan // 10000)
 
 
-def money_fact_line(wallet, db):
-    """【钱】事实块：现金/定期/今日花费，只给大概数，禁止她自己编余额。"""
-    try:
-        cash = int(wallet.balance())
-        bank = db.kv_get("bank_summary", {}) or {}
-        fixed = sum(int(row.get("amount") or 0) for row in (bank.get("fixed") or []))
-        end = ""
-        for row in (bank.get("fixed") or []):
-            if str(row.get("end") or ""):
-                end = str(row.get("end"))
-                break
-        today = today_str()
-        spend = 0
-        for row in wallet.ledger(200) or []:
-            try:
-                ts = float(row.get("ts") or 0)
-            except (TypeError, ValueError):
-                continue
-            if time.strftime("%Y-%m-%d", time.localtime(ts)) != today:
-                continue
-            delta = int(row.get("delta_cents") or 0)
-            if delta < 0:
-                spend += -delta
-    except Exception as exc:
-        _note_swallowed("amo_runtime.money_fact", exc)
-        return ""
-    if cash <= 0 and fixed <= 0:  # 纯测试夹具/还没接钱包：不塞无意义的「没有钱」块
-        return ""
-    fixed_text = ("定期约" + _money_approx(fixed) + ("（%s 到期）" % end if end else "")) if fixed else "没有定期"
-    return ("【钱】现金约%s；%s；今天已经花了约%s。他问存款/余额时只说大概"
-            "（例如「六千多，还有一万定期」），不要报精确到个位或分的数字，也不要自己编余额。"
-            % (_money_approx(cash), fixed_text, _money_approx(spend)))
-
-
 class RuntimeContextMixin(RuntimeMixinBase):
     _last_relation_decay: float
     _last_relation_sediment: float
@@ -163,6 +157,21 @@ class RuntimeContextMixin(RuntimeMixinBase):
     _last_pending_check: float
     _last_schedule_save: str
     _proactive_last: float
+
+    def _ctx_outfit(self, c, change=False):
+        return ExtraContextMixin._ctx_outfit(self, c, change=change)
+
+    def _ctx_outfit_change(self, event):
+        return ExtraContextMixin._ctx_outfit_change(self, event)
+
+    def _ctx_tail_world(self, c, parts):
+        return ExtraContextMixin._ctx_tail_world(self, c, parts)
+
+    def _ctx_meal_missing(self, c):
+        return AgendaContextMixin._ctx_meal_missing(self, c)
+
+    def _ctx_agenda(self, c):
+        return AgendaContextMixin._ctx_agenda(self, c)
 
     async def sync_current_state(self):
         """每条用户消息前轻量同步 JIT/当前位置，避免分钟切片读到上一小时。"""
@@ -186,6 +195,9 @@ class RuntimeContextMixin(RuntimeMixinBase):
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
+        # 群聊已整体删除：群消息一律不处理（只做私聊小陪伴）。
+        if not event.is_private_chat():
+            return
         try:
             from .amo_date_context import maybe_finish_date
             maybe_finish_date(self, event.message_str)
@@ -464,6 +476,8 @@ class RuntimeContextMixin(RuntimeMixinBase):
         parts += self._ctx_place_fix(c, self._ctx_state(c))
         parts += self._ctx_facts(c)
         parts += self._ctx_outfit(c)
+        parts += self._ctx_intimacy(c)
+        parts += self._ctx_meal_missing(c)
         parts += self._ctx_agenda(c)
         parts += self._ctx_group(c)
         parts += await self._ctx_memory(c)
@@ -503,28 +517,6 @@ class RuntimeContextMixin(RuntimeMixinBase):
             "这些名字不会从你嘴里说出来。",
         ]
         return parts
-
-    def _schedule_tool_line(self, snap):
-        try:
-            activity = snap.get("activity") or {}
-            category = str(activity.get("category") or "")
-            text = str(activity.get("activity") or "")
-            if category in ("meal", "play", "shopping") or any(w in text for w in ("吃午饭", "吃饭", "逛街", "商场")):
-                # task-28 P0-3：聊天 prompt 里不再注入精确到分的余额。
-                # 线上实测模型会原样抄「卡里还有 4072」；这里只给大概数，
-                # 由 set_schedule_cost 自己定价，数字不对用户报账。
-                try:
-                    cash_cents = int(self.wallet.balance())
-                except Exception:
-                    cash_cents = 0
-                return ("【消费工具】现在是消费时段，余额大概%s，物价系数 1.0；"
-                        "请调用 set_schedule_cost(cost_cents, reason) 自主定价，"
-                        "可以吃泡面/自己煮面给 0，不要由代码替她定价；"
-                        "也不要把精确余额、价格、等待分钟报给他。"
-                        % _money_approx(cash_cents))
-        except Exception:
-            return ""
-        return ""
 
     def _rain_fact_line(self, snap):
         try:
@@ -571,6 +563,9 @@ class RuntimeContextMixin(RuntimeMixinBase):
             _act = {}
         _act_text = str(_act.get("action") or "").strip() or str(snap["activity"].get("activity", "休息"))
         _act_place = str(_act.get("place") or "").strip() or str(snap["activity"].get("place", "家"))
+        _pending = pending_state(self, now=_now().timestamp())
+        if _pending:
+            _act_text, _act_place = _pending["activity"], _pending["place"]
         parts = [
             "【绝对事实·最高优先级】现在是%s，你在%s，正在%s；这是唯一事实，"
             "聊天里的环境、动作、地点必须严格符合，绝不能说你躺在家里/在商场/在别处。"
@@ -581,9 +576,9 @@ class RuntimeContextMixin(RuntimeMixinBase):
             "【身体】" + snap["health"]["status"],
             "【天气】" + snap["weather_text"],
             self._rain_fact_line(snap),
-            self._schedule_tool_line(snap),
             "【天气一致】你的天气以【天气】为准（刚进出空调房/室内除外）。",
             "【正在】" + _act_text + "（" + self._short_place(_act_place) + "）",
+            _pending["line"] if _pending else "",
             self._recent_micro_line(),
             "【此刻地点】【正在】括号里的地点就是你此刻唯一所在的地方；"
             "他要是说你在别处（逛街、在外面、在酒店、在开车、在旅游），那是他在试探或记错了，"
@@ -663,249 +658,46 @@ class RuntimeContextMixin(RuntimeMixinBase):
                 from amo_fact_binder import facts_lines as _facts_lines
                 from amo_fact_binder import view_lines as _view_lines
             # F1：事实视图（块日记/合并后的事实）只读 build_day_view，接在绝对事实后面
-            return list(_facts_lines(self)) + list(_view_lines(self))
+            lines = list(_facts_lines(self)) + list(_view_lines(self))
+            _pending = pending_state(self, now=_now().timestamp())
+            if _pending:
+                lines = pending_context_lines(lines, _pending["food"])
+            return lines
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.facts", _amo_exc)
             return []
 
-    def _ctx_outfit(self, c, change=False):
-        """【穿搭】；change=True 时处理「换一套」（睡衣/白天/在外面换不了）。"""
-        event = c["event"]
-        if change:
-            return self._ctx_outfit_change(event)
-        parts = []
+    def _ctx_intimacy(self, c):
+        """私聊亲密尺度 + 接住夸/撩；群聊直接不注入，公开过滤保持原样。"""
+        if c.get("is_group"):
+            return []
         try:
-            wardrobe = getattr(self, "wardrobe", None)
-            if wardrobe is not None:
-                _outfit = wardrobe.current()
-                _top = str(_outfit.get("top") or "")
-                _bottom = str(_outfit.get("bottom") or "")
-                _shoes = str(_outfit.get("shoes") or "")
-                _wear = "、".join([part for part in (_top, _bottom) if part])
-                if _wear:
-                    try:
-                        _at_hotel = self.wardrobe.at_hotel()
-                    except Exception:
-                        _at_hotel = False
-                    try:
-                        _is_home = self.wardrobe.at_home() is True and not _at_hotel
-                    except Exception:
-                        _is_home = False
-                    if _outfit.get("sleep") and _is_home:
-                        _line = ("【当前穿搭事实】你现在在家，穿着" + _wear
-                                 + "（居家服/睡衣）。你今天没有出门，绝对没有穿外套、牛仔裤或外出的鞋，"
-                                 "不要为了好看脑补光鲜的外出穿搭。")
-                    elif _outfit.get("sleep"):
-                        if _at_hotel:
-                            _line = ("【穿搭】在酒店，换上"
-                                     + ("酒店睡衣" if _outfit.get("hotel") else "睡衣")
-                                     + "了：" + _wear)
-                        else:
-                            _line = "【穿搭】已经下班回家，换上睡衣了：" + _wear
-                    else:
-                        _line = "【穿搭】今天穿的是" + _wear
-                    if _shoes:
-                        _line += ("，脚上是" if _is_home else "，鞋子是") + _shoes
-                    _line += "；被问起穿搭就照这个说。"
-                    parts.append(_line)
-                    try:
-                        import json as _json
-                        _act = str((self.state.current_activity() or {}).get("activity") or "")
-                        _scene = ("takeout" if any(w in _act for w in ("拿外卖", "倒垃圾", "取快递"))
-                                  else "work" if any(w in _act for w in ("上班", "开会", "工作", "公司"))
-                                  else "date" if any(w in _act for w in ("约会", "逛街"))
-                                  else "home" if _is_home else "outing")
-                        _weather = getattr(self.state, "weather", {}) or {}
-                        _facts = {
-                            "scene": _scene,
-                            "location": str((self.state.current_activity() or {}).get("place") or ""),
-                            "outfit": [p for p in (_top, _bottom, _shoes) if p],
-                            "is_homewear": bool(_outfit.get("homewear") or _outfit.get("sleep")),
-                            "sleepwear": bool(_outfit.get("sleep")),
-                            "outerwear_off": bool(_outfit.get("transition") or _outfit.get("outerwear_off")),
-                            "weather": str(_weather.get("text") or ""),
-                            "temperature": _weather.get("temp"),
-                            "rain": any(w in str(_weather.get("text") or "") for w in ("雨", "雪")),
-                            "is_makeup": _scene not in ("takeout", "home"),
-                        }
-                        parts.append("【穿搭事实】" + _json.dumps(_facts, ensure_ascii=False))
-                        try:
-                            from .laundry_engine import LifeFacts
-                            _life = LifeFacts(self)
-                            _life.tick()
-                            _life_facts = _life.snapshot()
-                            parts.append("【生活事实】" + _json.dumps(
-                                _life_facts, ensure_ascii=False))
-                            if _life_facts.get("hand_wash"):
-                                parts.append(
-                                    "【洗衣】家里没有洗衣机：衣服都是手洗的（30 分钟洗完再晾 6–12 小时），"
-                                    "袜子每天顺手洗；不要说用洗衣机洗。")
-                            try:
-                                from .ecommerce_engine import EcommerceEngine
-                                _shop = EcommerceEngine(self)
-                                _shop.tick()
-                                try:
-                                    _cur = self.state.current_activity() or {}
-                                    _last = self.db.kv_get("last_activity", {}) or {}
-                                    _was_shop = any(w in str(_last.get("activity") or "")
-                                                    for w in ("逛街", "商场", "试衣", "看衣服"))
-                                    _is_home = "家" in str(_cur.get("place") or "")
-                                    if _was_shop and _is_home:
-                                        _shop.note_price_compare("看中的衣服", 0, 0)
-                                    self.db.kv_set("last_activity", _cur)
-                                except Exception as exc:
-                                    _note_swallowed("amo_runtime.py.567", exc)
-                                parts.append("【网购事实】" + _json.dumps(
-                                    _shop.snapshot(), ensure_ascii=False))
-                            except Exception as exc:
-                                _note_swallowed("amo_runtime.py.571", exc)
-                        except Exception as exc:
-                            _note_swallowed("amo_runtime.py.573", exc)
-                    except Exception as exc:
-                        _note_swallowed("amo_runtime.py.575", exc)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-        return parts
-
-    def _ctx_outfit_change(self, event):
-        # 「换一套」：在外面换不了 / 睡衣 / 白天在家；返回提示块列表
-        parts = []
-        try:
-            is_private = bool(event.is_private_chat())
-        except Exception:
-            is_private = False
-        try:
-            if is_private and getattr(self, "wardrobe", None) is not None:
-                text_now = event.message_str or ""
-                if is_outfit_change_request(text_now):
-                    at_home = self.wardrobe.at_home()
-                    at_hotel = self.wardrobe.at_hotel()
-                    pajama = is_pajama_change_request(text_now)
-                    try:
-                        hour = int(_now().hour)
-                    except Exception:
-                        hour = 20
-                    night_time = hour >= 20 or hour < 8
-                    place = ""
-                    try:
-                        place = self._short_place((self.state.current_activity() or {}).get("place") or "")
-                    except Exception:
-                        place = ""
-                    if at_home is False and not at_hotel:
-                        # 白天在外面：换不了，按人设解释，别假装换了
-                        parts.append(
-                            "【换装】他让你换一套，但你现在在外面"
-                            + ("（" + place + "）" if place else "")
-                            + "，换不了衣服。用你的人设语气（无奈/撒娇/讲道理都行）跟他说清楚："
-                            "在外面不方便换，回家再换；不要答应，也不要假装已经换好。"
-                        )
-                    elif pajama:
-                        changed = self.wardrobe.set_night(reroll=True)
-                        self.wardrobe.current()
-                        wear = "、".join([part for part in (changed.get("top"), changed.get("bottom")) if part])
-                        if wear:
-                            parts.append(
-                                "【换装】他嫌睡衣不好看，你顺手换了一套睡衣：" + wear
-                                + "（今晚穿）。用你的人设语气接一句，带点被他说动/配合的感觉，别报后台。"
-                            )
-                    elif night_time:
-                        changed = self.wardrobe.set_night(reroll=True)
-                        self.wardrobe.current()
-                        wear = "、".join([part for part in (changed.get("top"), changed.get("bottom")) if part])
-                        if wear:
-                            parts.append(
-                                "【换装】他让你换一套，你晚上在家，已经换上新的睡衣了：" + wear
-                                + "。用你的人设语气接一句（配合/撒娇/嫌他事多都可以），别报后台。"
-                            )
-                    else:
-                        # 白天在家：可以换白天这套
-                        changed = self.wardrobe.reroll()
-                        self.wardrobe.current()
-                        wear = "、".join([part for part in (changed.get("top"), changed.get("bottom")) if part])
-                        if wear:
-                            parts.append(
-                                "【换装】他让你换一套，你正好在家，已经换好新的白天穿搭：" + wear
-                                + "。用你的人设语气接一句（被夸/配合/撒个娇都行），别报后台。"
-                            )
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-        return parts
-
-
-    def _ctx_agenda(self, c):
-        """今日安排/城市/旅游/他在/跟随/出游。"""
-        follow_text = c["follow_text"]
-        wander_text = c["wander_text"]
-        parts = []
-        try:
-            now_text = _now().strftime("%H:%M")
-            agenda: list[Any] = []
-            for item in (self.state.schedule.get(today_str()) or []):
-                end = str(item.get("end") or "")
-                if end and end <= now_text:
-                    continue
-                if len(agenda) >= 6:
-                    break
-                agenda.append("%s-%s %s（%s）" % (
-                    item.get("start", ""), end,
-                    item.get("activity", "休息"),
-                    self._short_place(item.get("place", "家")),
-                ))
-            if agenda:
-                parts.append("【今日安排】" + "；".join(agenda))
-                parts.append(
-                    "【日程为准】今天的安排以【今日安排】为准；日程里没有的会议、出差、约会、聚餐都不算数；"
-                    "之前说错了就自然改口（“我看错时间了/记岔了”）。"
-                )
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-        try:
-            city_block = _city_block(self.db.kv_get("his_city", "") or "")
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-            city_block = ""
-        if city_block:
-            parts.append(city_block)
-        try:
-            travel_row = self.db.kv_get("travel", {}) or {}
-            if (
-                isinstance(travel_row, dict)
-                and str(travel_row.get("city") or "").strip()
-                and str(travel_row.get("start_day") or "") <= today_str()
-            ):
-                travel_city = str(travel_row["city"])
-                try:
-                    travel_spots = _city_pick_spots(self.scenic_spots(), travel_city, today_str())
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-                    travel_spots = []
-                travel_text = _city_travel_block(
-                    travel_city, weekday=_now().date().weekday() < 5, spots=travel_spots,
-                )
-                if travel_text:
-                    parts.append(travel_text)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-        try:
-            he_city = str(self.db.kv_get("he_city", "") or "").strip()
-            my_city = str(self.db.kv_get("his_city", "") or "").strip()
-            _tv = self.db.kv_get("travel", {}) or {}
-            _tv_active = bool(
-                isinstance(_tv, dict) and str(_tv.get("city") or "").strip()
-                and str(_tv.get("start_day") or "") <= today_str()
+            event = c["event"]
+            text = str(getattr(event, "message_str", "") or "")
+            level = resolve_intimacy_level(
+                self.cfg_int("intimacy_level", 1),
+                self.cfg_bool("intimacy_explicit_enabled", False),
             )
-            if he_city and he_city != my_city and not _tv_active:
+            parts = [intimacy_prompt(level)]
+            # 1 档起才加“接住夸/撩”；0 档只保留含蓄尺度，不主动开撩。
+            if level <= 0:
+                return parts
+            if is_contrast_praise(text):
                 parts.append(
-                    "【他在】他现在在 " + he_city + "，你还在 " + (my_city or "东莞")
-                    + "上班；你有点想他，但没过去。"
+                    "【先贬后夸】他这句是先挑毛病再夸你，不是嫌你，也不是让你换衣服。"
+                    "先接住夸，别解释衣服、别换睡衣、别把他写成嫌你；可以嘴硬心软、被夸到，"
+                    "也可以顺着他的玩笑接，不要转成吃醋或表忠心。"
                 )
+            elif is_compliment_or_flirt(text):
+                parts.append(
+                    "【接住夸/撩】他这句在夸你/撩你（好看、漂亮、没吃到你、睡不着都算）。"
+                    "先接住这个夸或撩，再回一句你自己的感受；别用换衣服、催他睡觉、转话题打发。"
+                    "他顺着玩笑接话时先顺着玩笑接，别转成吃醋或表忠心。"
+                )
+            return parts
         except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-        if follow_text:
-            parts.append(follow_text)
-        if wander_text:
-            parts.append(wander_text)
-        return parts
+            _note_swallowed("amo_runtime.HumanCorePlugin._ctx_intimacy", _amo_exc)
+            return []
 
     def _ctx_group(self, c, stage=1):
         """群聊语境：群规与称呼（stage=1）、群成员名单（stage=2）。"""
@@ -1000,80 +792,9 @@ class RuntimeContextMixin(RuntimeMixinBase):
             _note_swallowed("amo_runtime._ctx_tail_append.shared", _amo_exc)
         return parts
 
-    def _ctx_tail_world(self, c, parts):
-        # 日期事实/约会状态/社交学习/住处/微型事件/归属纠正
-        event = c["event"]
-        umo = c["umo"]
-        is_group = c["is_group"]
-        try:
-            _date_fact = self._date_fact_line()
-            if _date_fact:
-                parts.insert(0, "【最高事实】" + _date_fact)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.date_fact", _amo_exc)
-        try:
-            try:
-                from .date_state import prompt_line as _date_state_line
-            except ImportError:
-                from date_state import prompt_line as _date_state_line
-            _date_line = _date_state_line(self)
-            if _date_line:
-                parts.append(_date_line)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.date_state", _amo_exc)
-        try:
-            _social = self.social_learn.injection() if getattr(self, "social_learn", None) is not None else ""
-            if _social:
-                parts.append(_social)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.social_learn", _amo_exc)
-        try:
-            if getattr(self, "housing", None) is not None:
-                parts.append(self.housing.prompt_line())
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.housing", _amo_exc)
-        try:
-            _group = not bool(event.is_private_chat())
-        except Exception:
-            try:
-                _group = bool(event.get_group_id())
-            except Exception:
-                _group = False
-        if not _group:
-            try:
-                try:
-                    from . import amo_household as _hh
-                except ImportError:
-                    import amo_household as _hh
-                _presence = _hh.presence_line(self)
-                if _presence:
-                    parts.append(_presence)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.household", _amo_exc)
-        try:
-            if getattr(self, "micro_events", None) is not None:
-                _micro = self.micro_events.injection()
-                if _micro:
-                    parts.append(_micro)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.micro_events", _amo_exc)
-        if (not is_group) and first_person_experience is not None:
-            body_now = event.message_str or ""
-            try:
-                if first_person_experience(body_now):
-                    parts.append(
-                        "【归属】他刚说的「" + truncate(body_now, 36) + "」是他自己的经历，不是你做的；"
-                        "不要接成“我也在/我也吃了/我也去了”。"
-                    )
-                elif now_ts() - to_float(getattr(self, "_attribution_alert", {}).get(umo, 0), 0) < 600:
-                    parts.append("【归属】上一轮你把他的经历说成了自己的；这次分清：他说的是他，你说的是你。")
-            except Exception as _amo_exc:
-                _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
-
     def _ctx_tail_runtime(self, c, parts):
         # 饥饿/约会心情/JIT 正在做/约会工具/账本/购物/人情/熬夜哄睡/微型事件/性格块
         event = c["event"]
-        memory_text = c["memory_text"]
         try:
             _hunger_line = self.hunger.prompt_line() if getattr(self, "hunger", None) else ""
             if _hunger_line:
@@ -1206,18 +927,6 @@ class RuntimeContextMixin(RuntimeMixinBase):
                     _note_swallowed("amo_runtime.shopping_prompt.scene", _amo_exc2)
                 if _allow_shop and _shop_text:
                     parts.append("【购物】" + _shop_text)
-            try:
-                _arrival = self.db.kv_get("shop_arrival", None)
-                if isinstance(_arrival, dict) and _arrival.get("items"):
-                    pending = [item for item in _arrival["items"] if not item.get("notified")]
-                    if pending:
-                        lines = "、".join(str(item.get("line") or "") for item in pending)
-                        parts.append("【快递】快递到了：" + lines + "（可以顺口说一句）")
-                        for item in pending:
-                            item["notified"] = True
-                        self.db.kv_set("shop_arrival", _arrival)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_runtime.shop_arrival", _amo_exc)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.shop", _amo_exc)
         try:
@@ -1242,14 +951,6 @@ class RuntimeContextMixin(RuntimeMixinBase):
                 self.micro_events.note_user_text(getattr(event, "message_str", "") or "")
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.micro_action", _amo_exc)
-        try:
-            from .group_scene import micro_prompt_block as _traits_block
-            _trait = _traits_block(self, getattr(event, "message_str", "") or "", memory_text)
-            if _trait:
-                parts.append(_trait)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.traits", _amo_exc)
-
 
     async def _ctx_finalize(self, event, parts):
         """收尾补充：天气提醒之后 / 连发合并 / 刚答过 / 礼物（原 _ctx_memory 尾部，逐行搬来）。"""
@@ -1358,11 +1059,6 @@ class RuntimeContextMixin(RuntimeMixinBase):
             _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
         if re.search(r"(怎么|如何|为什么|步骤|怎么办|该怎么做|教程|方法|建议|教我|能不能|是什么|该不该|可不可以)", event.message_str or ""):
             parts.append("【回答方式】这是咨询/步骤类问题：先给结论，最多 2-3 句，口语化，保留角色感。")
-        if self._dialect_active():
-            style = self._dialect_style()
-            samples = DIALECT_SAMPLES.get(style, "")
-            if style and samples:
-                parts.append("【方言】你的语种设定是「" + style + "」，偶尔自然用一点当地方言口语（如" + samples + "），但不要每句都用，也不要硬替换“就是/什么/怎么”。")
         if self.cfg_bool("weather_query_enabled", True) and is_weather_query(event.message_str or ""):
             try:
                 parts.append(await self._weather_query_context(event.message_str or ""))
@@ -1377,7 +1073,7 @@ class RuntimeContextMixin(RuntimeMixinBase):
             scenic_text = await self._scenic_kb_context(event.message_str or "")
             if scenic_text:
                 parts.append("【景区参考】\n" + scenic_text)
-        if relation == "相恋" and (snap["mood"]["暴躁"] >= 60 or snap["mood"]["生气"] >= 62):
+        if relation == "相恋" and float((snap.get("mood") or {}).get("压力") or 0) >= 60:
             parts.append("【恋人情绪】你在生他的气，但会抱怨、闹别扭、要哄，不会像对普通人一样冷怼或赶人。")
         if getattr(event, "amo_impersonation", False):
             parts.append(
@@ -1392,12 +1088,6 @@ class RuntimeContextMixin(RuntimeMixinBase):
                 parts.append(recovered)
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.health_recovered_block", _amo_exc)
-        try:
-            money_line = money_fact_line(self.wallet, self.db)
-            if money_line:
-                parts.append(money_line)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.money_fact_block", _amo_exc)
         if self._recent_bot_initiated(umo):
             parts.append(self._bot_initiated_line(umo))
         if bool(re.search(r"(?<![a-z])ai(?![a-z])", (event.message_str or "").lower())) or any(word in (event.message_str or "").lower() for word in ("机器人", "人机", "人工智能", "不是真人", "程序")):
@@ -1429,11 +1119,32 @@ class RuntimeContextMixin(RuntimeMixinBase):
                 "需要对方哄你；回复会冷淡、低落，或者直接说“你是不是不想理我”。"
             )
         try:
-            dialect_context = await self._dialect_kb_context(event.message_str or "")
-            if dialect_context:
-                parts.append("【方言参考】只在合适口语词上偶尔用，不要硬改“就是/什么/怎么”，句子要通顺。\n" + dialect_context)
+            heart = getattr(self, "heart", None)
+            if heart is not None and self.cfg_bool("heart_enabled", True):
+                if not getattr(self, "_heart_loaded", False):
+                    saved = self.db.kv_get("heart_state", None)
+                    if isinstance(saved, dict):
+                        heart.state.update(saved)
+                    self._heart_loaded = True
+                heart.observe(event.message_str or "", minutes=0.0)
+                self.db.kv_set("heart_state", dict(heart.state))
+                parts.append(heart.snapshot_text())
         except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context", _amo_exc)
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.heart", _amo_exc)
+        try:
+            try:
+                from . import amo_referent_guard, amo_topic_anchor
+            except ImportError:
+                import amo_referent_guard, amo_topic_anchor
+            rows = self._recent(umo, 6) if callable(getattr(self, "_recent", None)) else []
+            for block in (
+                amo_topic_anchor.prompt_block(rows),
+                amo_referent_guard.prompt_block(event.message_str or "", rows),
+            ):
+                if block:
+                    parts.append(block)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._dynamic_context.anchors", _amo_exc)
         return parts
 
     def _ctx_memory_tail_blocks(self, c, event, umo, uid, is_group):
@@ -1442,9 +1153,6 @@ class RuntimeContextMixin(RuntimeMixinBase):
         cross_text = c["cross_text"]
         time_text = c["time_text"]
         parts = []
-        relation_network = self._relation_network_text(uid)
-        if relation_network:
-            parts.append("【关系网】\n" + relation_network)
         if memory_text:
             parts.append("【关于对方的记忆】\n" + memory_text)
         if cross_text:

@@ -27,6 +27,7 @@ try:  # 纯规则模块：地点→zone、词表、清洗，和图片引擎解�
         TRAVEL_WORDS,
         clean_place,
         is_swim_activity,
+        resolve_zone,
         road_ride,
         zone_for_place,
     )
@@ -37,6 +38,7 @@ except ImportError:  # 直接按文件加载时
             TRAVEL_WORDS,
             clean_place,
             is_swim_activity,
+            resolve_zone,
             road_ride,
             zone_for_place,
         )
@@ -115,11 +117,23 @@ def place_of(activity):
 
 
 def zone_of(activity):
-    """日程里的地图区域；没有写明 zone 时按地点词反推（具体优先，街/路兜底）。"""
-    zone = str(_activity_dict(activity).get("zone") or "").strip()
+    """日程里的地图区域；没有写明 zone 时按地点词反推（具体优先，街/路兜底）。
+
+    2026-11-23 23:00：旧行可能是 place=楼下小馆、zone=road（过渡 finish 的回落）。
+    读侧只在 zone=road 时用 resolve_zone 纠偏；正常 zone 仍以日程为准，
+    「公司附近」这种半具体地点不会被改写。
+    """
+    data = _activity_dict(activity)
+    zone = str(data.get("zone") or "").strip()
+    place = place_of(data)
+    category = str(data.get("category") or "").strip()
+    if zone == "road":
+        fixed = resolve_zone(place, category, zone)
+        if fixed and fixed != "road":
+            return fixed
     if zone:
         return zone
-    return zone_for_place(place_of(activity))
+    return resolve_zone(place, category, "")
 
 def scene_blob(activity):
     """zone / 地点 / 活动拼起来，给关键词判断用。"""

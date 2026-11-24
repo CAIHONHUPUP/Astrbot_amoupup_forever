@@ -88,6 +88,7 @@ def _run_old(old_root, db_path):
         try:
             os.remove(script)
         except OSError:
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
             pass
     payload = {}
     for line in reversed((proc.stdout or "").splitlines()):
@@ -111,6 +112,7 @@ def main(argv=None):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
         pass
 
     tmp_dir = tempfile.mkdtemp(prefix="amo-rollback-")

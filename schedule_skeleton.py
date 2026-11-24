@@ -561,7 +561,7 @@ class ScheduleSkeletonMixin:
             except Exception:
                 day_index, days = 1, int(self._BUSINESS_TRIP_DEFAULT_DAYS)
         return_home = day_index >= max(1, days - 1)
-        effects = prev_event.get("effects") or {"疲惫": 10, "焦虑": 8}
+        effects = prev_event.get("effects") or {"疲惫": 10, "压力": 8}
         return {
             "kind": "business_trip",
             "title": "临时外派",
@@ -606,7 +606,7 @@ class ScheduleSkeletonMixin:
                     "where": "%s·%s" % (province, city),
                     "note": "早上接到通知，被派去%s出差，当天回不来" % city,
                     "task": "处理外派的事",
-                    "effects": {"疲惫": 10, "焦虑": 10, "开心": -6, "生气": 3},
+                    "effects": {"疲惫": 10, "压力": 10, "开心": -6},
                     "soothe": False,
                 }
                 self._remember_business_trip(day, trip)

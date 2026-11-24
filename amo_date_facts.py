@@ -11,6 +11,11 @@
 聊天记录降级成互动素材；窗口内的转账/消费改写成面对面语境。
 """
 from __future__ import annotations
+
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
 from typing import TYPE_CHECKING
 
 import datetime as _dt
@@ -266,8 +271,8 @@ def date_presence_facts(plugin, day, hour_slot=None, slot=None):
                 _override = _hh.wording("date_ending", plugin=plugin)
                 if _override:
                     _detail = _override
-            except Exception:  # cleanup: 居住状态读不到就用原句
-                pass
+            except Exception as exc:  # cleanup: 居住状态读不到就用原句
+                _note_swallowed("amo_date_facts.date_presence_facts", exc)
             facts.append({
                 "time": _clock(at),
                 "type": "物理场景",

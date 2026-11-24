@@ -33,7 +33,6 @@ try:  # 门面转发：amo_shared_deps
     from .amo_shared_deps import (
     Comp,
         GiftEngine,
-        HeartflowEngine,
         MemoryHub,
         MessageChain,
         ScheduleEngine,
@@ -69,16 +68,10 @@ try:  # 门面转发：amo_shared_deps
         _follow_refuse,
         _greeting_targets,
         _looks_like_time_query,
-        _ms_build_content,
-        _ms_build_prompt,
-        _ms_idle_due,
-        _ms_should_archive,
-        _ms_transcript,
         _note_swallowed,
         _pg_analyze_rows,
         _pg_compose_task,
         _pg_near_duplicate,
-        _rank_edges,
         _render_time_block,
         _wander_agree,
         _wander_ask_limit,
@@ -108,9 +101,7 @@ try:  # 门面转发：amo_shared_deps
         next_check_slot,
         parse_clock,
         parse_hhmm,
-        parse_relations,
         parse_weather_daily,
-        plan_relation_edges,
         render_recent_block,
         slot_key,
         strip_brushoff,
@@ -123,7 +114,6 @@ except ImportError:  # 直接按文件加载时
         from amo_shared_deps import (
         Comp,
             GiftEngine,
-            HeartflowEngine,
             MemoryHub,
             MessageChain,
             ScheduleEngine,
@@ -159,17 +149,11 @@ except ImportError:  # 直接按文件加载时
             _follow_refuse,
             _greeting_targets,
             _looks_like_time_query,
-            _ms_build_content,
-            _ms_build_prompt,
-            _ms_idle_due,
-            _ms_should_archive,
-            _ms_transcript,
             _note_swallowed,
             _pg_analyze_rows,
             _pg_compose_task,
             _pg_near_duplicate,
-            _rank_edges,
-            _render_time_block,
+                _render_time_block,
             _wander_agree,
             _wander_ask_limit,
             _wander_assess,
@@ -198,10 +182,8 @@ except ImportError:  # 直接按文件加载时
             next_check_slot,
             parse_clock,
             parse_hhmm,
-            parse_relations,
-            parse_weather_daily,
-            plan_relation_edges,
-            render_recent_block,
+                parse_weather_daily,
+                render_recent_block,
             slot_key,
             strip_brushoff,
             to_float,
@@ -345,15 +327,12 @@ except ImportError:  # 直接按文件加载时
 
 try:  # 门面转发：amo_shared_config
     from .amo_shared_config import (
-    CITY_DIALECT_RULES,
         DEFAULT_ADMIN,
-        DIALECT_FALLBACK_ROWS,
-        DIALECT_REGIONS,
-        DIALECT_SAMPLES,
         INTERNAL_RELATION_NODES,
         LEGACY_DEFAULT_ADMIN,
         MOOD_BASE,
         MOOD_KEYS,
+        normalize_mood,
         NETWORK_RELATIONS,
         PLUGIN_NAME,
         PLUGIN_VERSION,
@@ -364,21 +343,17 @@ try:  # 门面转发：amo_shared_config
         STYLE_HINTS,
         _CATEGORY_MOOD_CACHE,
         city_or_empty,
-        dialect_for_city,
         schedule_category_mood,
     )
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from amo_shared_config import (
-        CITY_DIALECT_RULES,
             DEFAULT_ADMIN,
-            DIALECT_FALLBACK_ROWS,
-            DIALECT_REGIONS,
-            DIALECT_SAMPLES,
             INTERNAL_RELATION_NODES,
             LEGACY_DEFAULT_ADMIN,
             MOOD_BASE,
             MOOD_KEYS,
+            normalize_mood,
             NETWORK_RELATIONS,
             PLUGIN_NAME,
             PLUGIN_VERSION,
@@ -389,7 +364,6 @@ except ImportError:  # 直接按文件加载时
             STYLE_HINTS,
             _CATEGORY_MOOD_CACHE,
             city_or_empty,
-            dialect_for_city,
             schedule_category_mood,
         )
 
@@ -432,5 +406,9 @@ except ImportError:  # 直接按文件加载时
         )
 
 __all__ = [
-    "_now", "Comp", "logger", "AstrMessageEvent", "filter", "Context", "Star", "MessageChain", "web_request", "TextPart", "HeartflowEngine", "SegmentEngine", "importlib", "_engine_dir", "_load_engine", "evaluate_weather_alert", "parse_weather_daily", "next_check_slot", "parse_clock", "slot_key", "is_weather_query", "forecast_brief", "GiftEngine", "_pg_analyze_rows", "_pg_compose_task", "_pg_near_duplicate", "_looks_like_time_query", "_render_time_block", "_greeting_targets", "_within_minutes", "_DIARY_WRITTEN", "_DIARY_SHOW", "_diary_pick_hints", "_DIARY_DEFAULT_DIR", "_diary_resolve_dir", "_diary_parse_day", "_diary_build_prompt", "_diary_import_folder", "_diary_write", "_diary_read", "_diary_tree", "_ms_should_archive", "_ms_transcript", "_ms_build_prompt", "_ms_build_content", "_wander_assess", "_wander_ask_limit", "_wander_agree", "_wander_question", "_follow_invite", "_follow_refuse", "_wander_refuse", "_wander_follow_agree_text", "_follow_block", "_wander_offer_block", "_wander_offer_text", "_wander_pick", "_wander_plan_text", "_wander_solo_agree_text", "_wander_solo_block", "_wander_solo_refuse_text", "_wander_trip_days", "_wander_want", "MemoryHub", "render_recent_block", "first_person_experience", "attribution_leak", "leak_tokens", "strip_brushoff", "parse_relations", "_CITY_DEFAULT", "_city_detect", "_city_block", "_city_travel_block", "_city_travel_events", "_city_travel_action", "_city_travel_to_events", "_city_pick_spots", "_rank_edges", "plan_relation_edges", "ScheduleEngine", "_importlib_util", "_schedule_path", "_schedule_spec", "_schedule_module", "PLUGIN_NAME", "PLUGIN_VERSION", "DEFAULT_ADMIN", "LEGACY_DEFAULT_ADMIN", "RELATIONS", "DIALECT_SAMPLES", "CITY_DIALECT_RULES", "dialect_for_city", "city_or_empty", "DIALECT_FALLBACK_ROWS", "DIALECT_REGIONS", "SCHEDULE_VERSION", "NETWORK_RELATIONS", "MOOD_KEYS", "SICK_STATUSES", "MOOD_BASE", "STYLE_HINTS", "POS_WORDS", "NEG_WORDS", "ANGRY_WORDS", "SAD_WORDS", "AFFECTION_WORDS", "INSULT_WORDS", "INTERNAL_RELATION_NODES", "now_ts", "CN_HOLIDAYS", "SOLAR_TERMS", "day_meta", "lark_quote_kwargs", "today_str", "other_platform_bot_lines", "_CATEGORY_MOOD_CACHE", "schedule_category_mood", "weekday_cn", "clamp", "to_int", "to_float", "truncate", "md5_int", "uniq", "parse_hhmm", "minutes_now", "in_minute_range", "quiet_now", "looks_like_plain_command", "has_question", "sentiment", "_WORD_RE", "_CJK_RE", "tokens", "overlap", "json_extract_list", "json_extract", "CHAT_FORMAT_NOISE", "strip_chat_format", "clean_reply", "_PAIRS", "_STRONG", "_WEAK", "_TRIM", "_protect_mask", "_cut", "_protected_ranges", "_mask_with_placeholders", "_split_regex", "segment_text", "AI_ADMISSION_RE", "looks_like_ai_admission", "MODEL_LEAK_RE", "DEFENSIVE_REPLY_RE", "looks_like_defensive_reply", "looks_like_model_leak", "typing_delay_ms", "USAGE_PEAK_HOURS", "USAGE_DEFAULT_PRICES", "usage_is_peak", "_usage_row_ts", "_empty_bucket", "summarize_token_usage", "usage_cost", "fetch_provider_balance", "fetch_deepseek_balance", "merge_uid_alias_data", "extract_persona_name",
+    "_now", "Comp", "logger", "AstrMessageEvent", "filter", "Context", "Star", "MessageChain", "web_request", "TextPart", "SegmentEngine", "importlib", "_engine_dir", "_load_engine", "evaluate_weather_alert", "parse_weather_daily", "next_check_slot", "parse_clock", "slot_key", "is_weather_query", "forecast_brief", "GiftEngine", "_pg_analyze_rows", "_pg_compose_task", "_pg_near_duplicate", "_looks_like_time_query", "_render_time_block", "_greeting_targets", "_within_minutes", "_DIARY_WRITTEN", "_DIARY_SHOW", "_diary_pick_hints", "_DIARY_DEFAULT_DIR", "_diary_resolve_dir", "_diary_parse_day", "_diary_build_prompt", "_diary_import_folder", "_diary_write", "_diary_read", "_diary_tree", "_wander_assess", "_wander_ask_limit", "_wander_agree", "_wander_question", "_follow_invite", "_follow_refuse", "_wander_refuse", "_wander_follow_agree_text", "_follow_block", "_wander_offer_block", "_wander_offer_text", "_wander_pick", "_wander_plan_text", "_wander_solo_agree_text", "_wander_solo_block", "_wander_solo_refuse_text", "_wander_trip_days", "_wander_want", "MemoryHub", "render_recent_block", "first_person_experience", "attribution_leak", "leak_tokens", "strip_brushoff", "_CITY_DEFAULT", "_city_detect", "_city_block", "_city_travel_block", "_city_travel_events", "_city_travel_action", "_city_travel_to_events", "_city_pick_spots", "ScheduleEngine", "_importlib_util", "_schedule_path", "_schedule_spec", "_schedule_module", "PLUGIN_NAME", "PLUGIN_VERSION", "DEFAULT_ADMIN", "LEGACY_DEFAULT_ADMIN", "RELATIONS", "city_or_empty", "SCHEDULE_VERSION", "NETWORK_RELATIONS", "MOOD_KEYS", "SICK_STATUSES", "MOOD_BASE", "STYLE_HINTS", "POS_WORDS", "NEG_WORDS", "ANGRY_WORDS", "SAD_WORDS", "AFFECTION_WORDS", "INSULT_WORDS", "INTERNAL_RELATION_NODES", "now_ts", "CN_HOLIDAYS", "SOLAR_TERMS", "day_meta", "lark_quote_kwargs", "today_str", "other_platform_bot_lines", "_CATEGORY_MOOD_CACHE", "schedule_category_mood", "weekday_cn", "clamp", "to_int", "to_float", "truncate", "md5_int", "uniq", "parse_hhmm", "minutes_now", "in_minute_range", "quiet_now", "looks_like_plain_command", "has_question", "sentiment", "_WORD_RE", "_CJK_RE", "tokens", "overlap", "json_extract_list", "json_extract", "CHAT_FORMAT_NOISE", "strip_chat_format", "clean_reply", "_PAIRS", "_STRONG", "_WEAK", "_TRIM", "_protect_mask", "_cut", "_protected_ranges", "_mask_with_placeholders", "_split_regex", "segment_text", "AI_ADMISSION_RE", "looks_like_ai_admission", "MODEL_LEAK_RE", "DEFENSIVE_REPLY_RE", "looks_like_defensive_reply", "looks_like_model_leak", "typing_delay_ms", "USAGE_PEAK_HOURS", "USAGE_DEFAULT_PRICES", "usage_is_peak", "_usage_row_ts", "_empty_bucket", "summarize_token_usage", "usage_cost", "fetch_provider_balance", "fetch_deepseek_balance", "merge_uid_alias_data", "extract_persona_name",
 ]
+
+
+# 心流已移除：保留名字给旧调用方做 None 判断
+HeartflowEngine = None

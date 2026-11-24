@@ -5,6 +5,11 @@
 线上聊天只能写成「在微信/飞书上聊了几句」；称呼不许自创（如「阿明」）。
 """
 from __future__ import annotations
+
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
 from typing import Any, TYPE_CHECKING
 
 import hashlib
@@ -154,10 +159,10 @@ def _zone_for_place(place):
     """地点词 → zone（唯一实现仍在 photo_scene）；拿不到就空串。"""
     try:
         try:
-            from .photo_scene import zone_for_place as _zone
+            from .photo_scene import resolve_zone as _zone
         except ImportError:
-            from photo_scene import zone_for_place as _zone
-        return str(_zone(str(place or "")) or "")
+            from photo_scene import resolve_zone as _zone
+        return str(_zone(str(place or ""), "", "") or "")
     except Exception as exc:  # cleanup: 地点表读不到就不推 zone
         logger.debug("[narrative] zone 反推失败: %r", exc)
         return ""
@@ -224,8 +229,8 @@ def invalidate_narrative_view(plugin):
     """日程/账本/日记变化后主动丢视图缓存；下一次 narrative_view 重新建。"""
     try:
         plugin._narrative_view_cache = None
-    except Exception:  # cleanup: 极简 fake 没有 setattr 也不影响主流程
-        pass
+    except Exception as exc:  # cleanup: 极简 fake 没有 setattr 也不影响主流程
+        _note_swallowed("amo_diary_guard.invalidate_narrative_view", exc)
 
 
 def narrative_view(plugin, now=None, cache=None):
@@ -259,12 +264,23 @@ def narrative_view(plugin, now=None, cache=None):
             if fresh and isinstance(cached.get("view"), dict):
                 return cached["view"]
     view = day_view(plugin, day, now)
+    # 食物送达事实层是“视图的一部分”，日记仍只读视图，不直接读 kv。
+    if isinstance(view, dict) and day:
+        try:
+            try:
+                from .amo_food_delivery import today_facts
+            except ImportError:
+                from amo_food_delivery import today_facts
+            view = dict(view)
+            view["meal_facts"] = today_facts(plugin, day)
+        except Exception as exc:
+            _note_swallowed("amo_diary_guard.narrative_view", exc)
     if use_cache:
         try:
             plugin._narrative_view_cache = {
                 "day": day, "at": time.monotonic(), "view": view}
-        except Exception:  # cleanup: 缓存写不进去也不影响视图本身
-            pass
+        except Exception as exc:  # cleanup: 缓存写不进去也不影响视图本身
+            _note_swallowed("amo_diary_guard.narrative_view", exc)
     return view
 
 
@@ -277,8 +293,23 @@ def _view_blocks(plugin, day_text):
             from .amo_fact_timeline import read_items as _read_items
         except ImportError:
             from amo_fact_timeline import read_items as _read_items
-        return [item for item in (_read_items(plugin, day_text) or [])
-                if isinstance(item, dict)]
+        rows = []
+        for item in _read_items(plugin, day_text) or []:
+            if not isinstance(item, dict):
+                continue
+            zone = str(item.get("zone") or "")
+            place = str(item.get("place") or "")
+            if zone == "road" and place:
+                try:
+                    from .photo_scene import resolve_zone as _resolve
+                except ImportError:
+                    from photo_scene import resolve_zone as _resolve
+                fixed = str(_resolve(place, item.get("category"), zone) or "")
+                if fixed and fixed != "road":
+                    item = dict(item)
+                    item["zone"] = fixed
+            rows.append(item)
+        return rows
     except Exception as exc:  # cleanup: 读不到原块就不补类别
         logger.debug("[narrative] 日程原块读取失败: %r", exc)
         return []
@@ -372,6 +403,27 @@ def narrative_facts(view, plugin=None, now=None):
                 facts["snack"] = True
         if "约会" in text:
             facts["together"] = True
+    # 食物送达事实层：只从视图里的 meal_facts 读，不直接读 kv。
+    if day_text:
+        try:
+            for fact in (view.get("meal_facts") or ()):
+                food = str(fact.get("food") or "外卖")
+                ts = float(fact.get("ts") or 0)
+                minute = time.localtime(ts).tm_hour * 60 + time.localtime(ts).tm_min
+                band = str(fact.get("slot") or _meal_band(minute))
+                facts["meal"] = True
+                facts["meals"].append({
+                    "category": "meal",
+                    "start": _clock_of_minute(minute),
+                    "end": _clock_of_minute(minute + 40),
+                    "band": band,
+                    "minute": minute,
+                    "text": "他点了%s" % food,
+                })
+                if _is_night(minute):
+                    facts["snack"] = True
+        except Exception as exc:
+            _note_swallowed("amo_diary_guard.narrative_facts", exc)
     current = _view_current(view, moment)
     if current is not None:
         block = _block_of_event(blocks, current)
@@ -705,6 +757,7 @@ def safe_interaction_line(day="", seed=""):
             index = _dt.date.fromisoformat(text[:10]).toordinal() % len(lines)
             return lines[index]
         except (ImportError, TypeError, ValueError):  # cleanup: 日期解析失败走哈希轮换
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
             pass
     token = str(seed or day or "").encode("utf-8", "ignore")
     if token:

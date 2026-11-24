@@ -5,6 +5,11 @@
 """
 from __future__ import annotations
 
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
+
 import contextlib
 import difflib
 import re
@@ -65,12 +70,12 @@ def allow(plugin, umo, text, source=None, now=None):
         if difflib.SequenceMatcher(None, body, str(item.get("key") or "")).ratio() >= 0.75:
             try:
                 plugin.db.kv_set(key, kept)
-            except Exception:  # cleanup: 兜底/降级，保持原行为
-                pass
+            except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                _note_swallowed("amo_outbound_guard.allow", exc)
             return False
     kept.append({"key": body, "at": current, "src": src})
     try:
         plugin.db.kv_set(key, kept[-20:])
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+        _note_swallowed("amo_outbound_guard.allow", exc)
     return True

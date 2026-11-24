@@ -129,9 +129,10 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, we
     不再让调用方另算一份，日记文案也不会再写死「周一早上」。weekday 仍兼容旧调用
     （有 target_day 时以 target_day 为准）。
     """
+    # cash_cents 只为兼容旧调用方保留：钱包 2026-11-23 已退役（balance 恒 10^9 分），
+    # 余额不再参与任何判断，这里直接忽略。
     hour = int(hour)
     hunger = float(hunger)
-    cash_cents = int(cash_cents)
     if target_day is not None:
         _derived_weekday = _target_weekday(target_day)
         if _derived_weekday is not None:
@@ -168,12 +169,9 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, we
                     "category": "rest", "cost_cents": 0, "diary": "带病上一天班，回家只想躺着。"}
     if sick:
         if hour in (8, 12, 19):
-            if cash_cents >= 1000:
-                return {"action": "喝白粥、吃药休息", "place": "家", "zone": "home",
-                        "category": "life", "cost_cents": 1000,
-                        "diary": "生病了只能喝粥，好想吃火锅。"}
-            return {"action": "裹着被子躺着，没胃口", "place": "家", "zone": "home",
-                    "category": "rest", "cost_cents": 0, "diary": "生病又没钱，只能躺着。"}
+            return {"action": "喝白粥、吃药休息", "place": "家", "zone": "home",
+                    "category": "life", "cost_cents": 1000,
+                    "diary": "生病了只能喝粥，好想吃火锅。"}
         if is_workday and 7 <= hour <= 18:
             return {"action": "请假在家休息", "place": "家", "zone": "home",
                     "category": "rest", "cost_cents": 0, "diary": "今天请假，在家养病。"}
@@ -206,13 +204,13 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, we
     # 以前这条心情支写在「工作日 / 周末」分支后面，工作日和周末都被前面拦掉，永远是死代码。
     if hour == 15 and float(mood_value or 0) >= 60:
         mood_text = str(mood_word or "")
-        if "郁闷" in mood_text or "低落" in mood_text or "委屈" in mood_text:
+        if any(word in mood_text for word in ("郁闷", "低落", "委屈", "压力", "疲惫")):
             if is_workday:
                 return {"action": "在工位上发呆，手头的事一点也不想动", "place": "公司", "zone": "office",
                         "category": "rest", "cost_cents": 0, "diary": "下午情绪很低，坐在工位上发呆。"}
             return {"action": "窝着发呆，不太想动", "place": "家", "zone": "home",
                     "category": "rest", "cost_cents": 0, "diary": "下午有点丧，什么都不想做。"}
-        if "开心" in mood_text or "兴奋" in mood_text:
+        if any(word in mood_text for word in ("开心", "兴奋", "好奇")):
             if is_workday:
                 return {"action": "心情很好，偷偷摸鱼刷了会儿手机", "place": "公司", "zone": "office",
                         "category": "life", "cost_cents": 0, "diary": "下午心情不错，偷偷摸了会儿鱼。"}
@@ -252,21 +250,15 @@ def jit_plan(hour, hunger, cash_cents, sick=False, mood_word="", stock_pnl=0, we
         return {"action": "在家收拾屋子，看看剧", "place": "家", "zone": "home",
                 "category": "life", "cost_cents": 0, "diary": "周末在家，不着急。"}
     if hour in (8, 12, 19) and hunger < 80:
-        if cash_cents >= 1500:
-            if hour == 12:
-                food, cost = "楼下吃碗牛肉面", 1500
-            elif hour == 8:
-                food, cost = "买个包子和豆浆", 800
-            else:
-                food, cost = "随便吃点家常菜", 2000
-            return {"action": "正在" + food, "place": "楼下小馆", "zone": "restaurant",
-                    "category": "meal", "cost_cents": cost,
-                    "diary": "有点饿，花了 %d 块%s。" % (cost // 100, food)}
-        if cash_cents >= 500:
-            return {"action": "在吃泡面", "place": "家", "zone": "home", "category": "meal",
-                    "cost_cents": 500, "diary": "没什么钱，泡面凑合一下。"}
-        return {"action": "饿着肚子喝水", "place": "家", "zone": "home", "category": "rest",
-                "cost_cents": 0, "diary": "肚子好饿，可是连泡面都买不起了。"}
+        if hour == 12:
+            food, cost = "楼下吃碗牛肉面", 1500
+        elif hour == 8:
+            food, cost = "买个包子和豆浆", 800
+        else:
+            food, cost = "随便吃点家常菜", 2000
+        return {"action": "正在" + food, "place": "楼下小馆", "zone": "restaurant",
+                "category": "meal", "cost_cents": cost,
+                "diary": "有点饿，花了 %d 块%s。" % (cost // 100, food)}
     if hour == 15:
         # 心情支已经挪到最前面（心情优先于日历类型）；这里只剩「日历不明」时的普通下午。
         return {"action": "在忙手头的事，偶尔刷手机", "place": "", "zone": "home",

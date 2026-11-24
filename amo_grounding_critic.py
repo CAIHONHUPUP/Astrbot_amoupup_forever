@@ -13,6 +13,11 @@ FALLBACKS 一处维护），各调用方不再各认一套私有池。
 """
 from __future__ import annotations
 
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
+
 import re
 
 _PUNCT = re.compile(r"[^\w\u4e00-\u9fff]+")
@@ -168,8 +173,8 @@ def _reply_answers(user_text, reply, answered=None):
         try:
             if answered(body):
                 return True
-        except Exception:  # cleanup: 判据出错就退回 critic
-            pass
+        except Exception as exc:  # cleanup: 判据出错就退回 critic
+            _note_swallowed("amo_grounding_critic._reply_answers", exc)
         if len(_norm(user_text)) <= 5:
             return False
     return not issues(user_text, body)

@@ -7,6 +7,10 @@
 """
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger("amo.amo_share_ledger")
+
 import re
 
 try:
@@ -157,6 +161,6 @@ def prompt_line(plugin, now=None):
             line += "你现在正在吃面/吃饭：如果这条视频你已经看过，可以说“吃面差点喷出来”；否则不要提食物。"
         else:
             line += "你现在没有在吃东西：不要提吃面/吃饭，不要编食物。"
-    except Exception:  # cleanup: 读不到状态时不加吃面提示
-        pass
+    except Exception as exc:  # cleanup: 读不到状态时不加吃面提示
+        logger.debug("[amo_share_ledger.prompt_line] optional step failed: %s", exc)
     return line

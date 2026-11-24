@@ -27,6 +27,7 @@ logger = logging.getLogger("amo")
 
 import datetime as _dt
 import hashlib
+import re
 
 #: 外卖/做饭词表、餐别窗口、账本退回判断都在唯一时间线里（Phase 3），这里只转出；
 #: micro_events 仍然从 amo_fact_binder 导入 COOK_WORDS，调用方不变。
@@ -126,13 +127,13 @@ def ledger_today(plugin, now=None):
     return out
 
 
-def meal_facts(items, ledger, now=None):
+def meal_facts(items, ledger, now=None, plugin=None):
     """这一餐的事实：是不是自己做的、账上有没有外卖（都只看当前这一顿）。
 
     唯一实现在 amo_fact_timeline.meal_view：做饭/外卖先落成时间线条目，这里只做投射，
     不再自己扫一遍日程和账本（否则 binder 和时间线又是两套口径）。
     """
-    return fact_timeline.meal_view(items, ledger, now)
+    return fact_timeline.meal_view(items, ledger, now, plugin=plugin)
 
 
 #: 在家的这一小时不许出现的"出门"类词
@@ -143,12 +144,79 @@ AWAY_BAN = ("在家", "在被窝", "穿着睡衣", "在床上")
 COOK_BAN = ("外卖", "骑手", "快递小哥", "送餐", "点单")
 
 
+#: 道具/环境词 grounding（2026-11-23 23:00「盒子/在车上」）：没有事实支撑就删掉分句。
+_PROP_BOX_WORDS = ("饭盒", "外卖盒", "餐盒", "盒子", "推远")
+_PROP_ROAD_WORDS = ("在车上", "车上", "车厢", "地铁上", "公交上")
+_PROP_CLAUSE = re.compile(r"[^。！？!?；;，,\n]+[。！？!?；;，,\n]?")
+
+
+def _prop_support(plugin, now=None):
+    """当前回复能不能说盒子/在车上：只看 current_action + 今天 meal_facts。"""
+    now = now or _now()
+    action = place = zone = ""
+    try:
+        try:
+            from .amo_current_action import get_current_action
+        except ImportError:
+            from amo_current_action import get_current_action
+        data = get_current_action(plugin, now) or {}
+        action = str(data.get("action") or "")
+        place = str(data.get("place") or "")
+        zone = str(data.get("zone") or "")
+    except Exception as exc:  # cleanup: 取不到当前动作就按「无支撑」处理
+        logger.debug("[amo_fact_binder._prop_support] optional step failed: %s", exc)
+    box_ok = False
+    try:
+        items = schedule_items(plugin, now.strftime("%Y-%m-%d"))
+        facts = meal_facts(items, ledger_today(plugin, now), now, plugin=plugin)
+        box_ok = bool(facts.get("takeout") or facts.get("takeout_rows"))
+    except Exception:  # cleanup: 事实层不可用就不放开道具
+        box_ok = False
+    context = action + place
+    if any(word in context for word in ("外卖", "盒子", "饭盒", "餐盒")):
+        box_ok = True
+    road_ok = (zone == "road"
+               or any(word in context for word in ("地铁", "公交", "车上", "车厢", "路上")))
+    return box_ok, road_ok
+
+
+def ground_props(plugin, text, now=None):
+    """没有 meal_facts/current_action 支撑时，删掉「盒子/饭盒/推远/在车上」分句。"""
+    body = str(text or "")
+    if not body.strip():
+        return body
+    # 绝大多数回复不带道具词：先做纯文本短路，避免每条都读 current_action/meal_facts。
+    if not any(word in body for word in _PROP_BOX_WORDS + _PROP_ROAD_WORDS):
+        return body
+    box_ok, road_ok = _prop_support(plugin, now)
+    if box_ok and road_ok:
+        return body
+    kept = []
+    dropped = []
+    for clause in _PROP_CLAUSE.findall(body):
+        if not box_ok and any(word in clause for word in _PROP_BOX_WORDS):
+            dropped.append(clause)
+            continue
+        if not road_ok and any(word in clause for word in _PROP_ROAD_WORDS):
+            dropped.append(clause)
+            continue
+        kept.append(clause)
+    if not dropped:
+        return body
+    out = "".join(kept).strip()
+    out = re.sub(r"^[\s，。、；：,.;:!?！？~～]+", "", out)
+    out = re.sub(r"[\s，、；：,;:]+$", "", out)
+    logger.info("[amo] 道具 grounding 清理 reason=unsupported_prop original=%s cleaned=%s fallback=%s",
+                body[:80], out[:80], "drop_clause")
+    return out
+
+
 def ban_words(plugin, now=None, facts=None):
     """当前这一小时绝对不能出现的矛盾词（系统警告与重试提示共用）。"""
     now = now or _now()
     if facts is None:
         items = schedule_items(plugin, now.strftime("%Y-%m-%d"))
-        facts = meal_facts(items, ledger_today(plugin, now), now)
+        facts = meal_facts(items, ledger_today(plugin, now), now, plugin=plugin)
     zone = "home"
     try:
         try:
@@ -181,7 +249,7 @@ def warning_line(plugin, now=None, facts=None):
     now = now or _now()
     if facts is None:
         items = schedule_items(plugin, now.strftime("%Y-%m-%d"))
-        facts = meal_facts(items, ledger_today(plugin, now), now)
+        facts = meal_facts(items, ledger_today(plugin, now), now, plugin=plugin)
     place_word, done = "家", "在忙"
     try:
         try:
@@ -212,9 +280,9 @@ def facts_lines(plugin, now=None):
     items = schedule_items(plugin, day)
     minutes = now.hour * 60 + now.minute
     ledger = ledger_today(plugin, now)
-    facts = meal_facts(items, ledger, now)
+    facts = meal_facts(items, ledger, now, plugin=plugin)
     # 唯一时间线：已经发生的块 + 账单都是时间线条目（不是这里二次推的）
-    entries = fact_timeline.collect(day, now, items, ledger)
+    entries = fact_timeline.collect(day, now, items, ledger, plugin=plugin)
     done = [entry for entry in fact_timeline.sort_stable(entries)
             if entry.get("type") == "日程" and entry.get("start") is not None
             and entry["start"] <= minutes]
@@ -251,8 +319,17 @@ def facts_lines(plugin, now=None):
             lines.append("【绝对事实·吃】今天这一餐是你在家自己做饭吃的（" + (evidence or "日程里写着")
                          + "），你绝对没有点外卖，也不许说自己点了/快到了。")
     elif facts["takeout"]:
-        lines.append("【绝对事实·吃】今天你确实点过一次外卖（账单里有这笔），可以顺着说，"
-                     "金额和次数都以账单为准。")
+        food_rows = [str((row or {}).get("food") or "").strip()
+                     for row in (facts.get("takeout_rows") or ())
+                     if isinstance(row, dict)]
+        food_rows = [food for food in food_rows if food]
+        if food_rows:
+            lines.append("【绝对事实·吃】今天他给你点了%s，已经送到/吃了；"
+                         "不要再说还没吃、在等，也不要再问什么时候到。"
+                         % "、".join(food_rows))
+        else:
+            lines.append("【绝对事实·吃】今天你确实点过一次外卖（账单里有这笔），可以顺着说，"
+                         "金额和次数都以账单为准。")
 
     # 3) 今天的账单流水（最近 5 笔，条目来自时间线：方向词/已退回标记都已算好）
     rows = [entry for entry in entries if entry.get("source") in ("ledger", "date_ledger")]
@@ -468,7 +545,7 @@ def guard(reply, plugin, now=None, mode=""):
     day = now.strftime("%Y-%m-%d")
     items = schedule_items(plugin, day)
     ledger = ledger_today(plugin, now)
-    facts = meal_facts(items, ledger, now)
+    facts = meal_facts(items, ledger, now, plugin=plugin)
     sentences = _split_sentences(text)
     kept, dropped = [], []
     for sentence in sentences:

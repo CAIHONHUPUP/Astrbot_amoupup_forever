@@ -1,3 +1,8 @@
+
+import logging
+
+logger = logging.getLogger("amo.amo_state_date")
+
 # -*- coding: utf-8 -*-
 """约会/出行 mixin：跟随、回家、出行覆盖层与约会收尾。从 amo_human_state.py 按域拆出。"""
 import time
@@ -112,8 +117,8 @@ class DateStateMixin(_MixinBase):
                 stamp = time.localtime(closed)
                 if time.strftime("%Y-%m-%d", stamp) == day:
                     now_min = min(now_min, int(stamp.tm_hour) * 60 + int(stamp.tm_min))
-        except Exception:
-            pass  # cleanup：读不到 date_closed_at 就按当前时间收尾
+        except Exception as exc:
+            logger.debug("[amo_state_date.settle_date_end] optional step failed: %s", exc)
         patched, hours = [], []
         for item in items:
             row = dict(item) if isinstance(item, dict) else item

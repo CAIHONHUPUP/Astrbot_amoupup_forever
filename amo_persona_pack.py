@@ -18,6 +18,13 @@ DEFAULT_PACK_PATH = os.path.join(PACK_DIR, DEFAULT_PACK_ID + ".json")
 MAX_CORPUS = 100
 PER_SCENE = 5
 
+#: 住处规则：2026-11-24 从 amo_prompt_registry.ACTION_OWNERSHIP_RULES 迁入人设卡
+#: （原来混在「动作归属」里，但它是人设层面的稳定设定，不属于某一轮的动作规则）。
+STAY_RULE = (
+    "不管房租多高、物价多贵、多缺钱，都不许提回老家、换城市、离开这里；"
+    "只有老公明确说搬家才跟着走；缺钱就撒娇求助或说去银行贷一点。"
+)
+
 
 _DEFAULT_CACHE: dict | None = None
 STYLE_PATH = os.path.join(PACK_DIR, "style_examples.json")
@@ -112,6 +119,8 @@ def migrate(data: dict) -> dict:
     card.setdefault("registers", {})
     card.setdefault("language", {"rules": []})
     card.setdefault("forbidden", [])
+    # 旧包没有这条：补默认值，保证「住处」规则不会因为包是旧的而丢掉。
+    card.setdefault("stay_in_place", STAY_RULE)
     data.setdefault("corpus", [])
     rules = data.setdefault("rules", {})
     rules.setdefault("refusal", "按理由分档")
@@ -173,38 +182,84 @@ def card_text(pack: dict, register: str = "partner_safe") -> str:
         "【金钱观】" + str(card.get("money") or ""),
         "【公开场合】" + str(card.get("public") or ""),
         "【动作】不写动作旁白、不写括号动作；只用说出口的话表达情绪（基础人格唯一真源）。",
+        "【住处·绝不自主搬走】" + str(card.get("stay_in_place") or STAY_RULE),
         "【绝不说】" + "、".join(str(item) for item in (card.get("forbidden") or [])[:20]),
     ]
     return "\n".join(item for item in parts if item.strip())
 
 
-def retrieve(pack: dict, scene: str = "", mood: str = "", limit: int = 3) -> list[str]:
-    """按场景/情绪取 few-shot；同场景优先，mood 次之，最后补通用。"""
+#: 通用/进化语料：场景不精确匹配时按 +1 基础分补位，但最多占 3 槽中的 1 条。
+GENERIC_SCENES = ("", "general", "manual")
+
+
+def _corpus_ranked(pack: dict, scene: str = "", mood: str = "",
+                   last_used: dict | None = None) -> list[dict]:
+    """按分数排序的语料行；last_used 越大越靠后（防连续复用同一句）。"""
     rows = [row for row in ((pack or {}).get("corpus") or []) if isinstance(row, dict)]
     scene_text = str(scene or "")
     mood_text = str(mood or "")
-    scored = []
+    used = last_used if isinstance(last_used, dict) else {}
+    scored: list[dict[str, Any]] = []
     for index, row in enumerate(rows):
+        row_scene = str(row.get("scene") or "")
+        generic = row_scene in GENERIC_SCENES
         score = 0
-        if scene_text and scene_text == str(row.get("scene") or ""):
+        if generic:
+            # A1：manual/general 以前永远匹配不上；给 +1 基础分，低于精确场景 +2、高于无关 0。
+            score += 1
+        if scene_text and scene_text == row_scene:
             score += 2
         if mood_text and mood_text in str(row.get("mood") or ""):
             score += 1
-        scored.append((score, index, str(row.get("text") or "")))
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    out = [text for score, _index, text in scored if score > 0][:limit]
-    if (scene_text or mood_text) and len(out) < limit:
-        for _score, _index, text in scored:
-            if text and text not in out:
-                out.append(text)
-            if len(out) >= limit:
-                break
+        text = str(row.get("text") or "")
+        try:
+            used_at = int(used.get(text, 0) or 0)
+        except (TypeError, ValueError):
+            used_at = 0
+        scored.append({"score": score, "index": index, "text": text,
+                       "generic": generic, "scene": row_scene, "used": used_at})
+    scored.sort(key=lambda item: (-item["score"], item["used"], item["index"]))
+    return scored
+
+
+def retrieve_with_sources(pack: dict, scene: str = "", mood: str = "", limit: int = 3,
+                          last_used: dict | None = None) -> list[dict]:
+    """返回 [{text, scene, generic}]：比 retrieve 多带来源，面板预览用。
+
+    A1 配额：通用/进化语料最多占 1 个槽位，并固定放在最后一条（第 3 条）；
+    精确场景/情绪条目按分数排在前面。只有整个包连一条非通用语料都没有时，
+    才允许通用语料占满（否则会返回空）。
+    """
+    limit = max(1, int(limit or 3))
+    ranked = [item for item in _corpus_ranked(pack, scene, mood, last_used) if item["text"]]
+    specific = [item for item in ranked if not item["generic"]]
+    generic = [item for item in ranked if item["generic"]]
+    if not specific:
+        return generic[:limit]
+    out = specific[:max(0, limit - 1)]
+    if generic and len(out) < limit:
+        out.append(generic[0])
+    for item in specific:
+        if len(out) >= limit:
+            break
+        if item not in out:
+            out.append(item)
     return out[:limit]
 
 
-def prompt_block(pack: dict, scene: str = "", mood: str = "", register: str = "partner_safe") -> str:
+def retrieve(pack: dict, scene: str = "", mood: str = "", limit: int = 3,
+             last_used: dict | None = None) -> list[str]:
+    """按场景/情绪取 few-shot；精确场景优先，通用语料最多占 1 槽（固定第 3 条）。"""
+    return [item["text"] for item in retrieve_with_sources(
+        pack, scene=scene, mood=mood, limit=limit, last_used=last_used)]
+
+
+def prompt_block(pack: dict, scene: str = "", mood: str = "", register: str = "partner_safe",
+                 last_used: dict | None = None, used_out: list | None = None) -> str:
     text = card_text(pack, register)
-    samples = retrieve(pack, scene=scene, mood=mood, limit=3)
+    samples = retrieve(pack, scene=scene, mood=mood, limit=3, last_used=last_used)
     if samples:
         text += "\n【像她会说的话（只学语气，不要逐字复用）】" + " / ".join(samples)
+    if isinstance(used_out, list):
+        used_out.extend(samples)
     return text

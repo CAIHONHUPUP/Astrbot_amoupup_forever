@@ -13,7 +13,7 @@ try:  # 包模式（AstrBot 加载插件）
         NIGHT_LIFE_BANK, POSITIVE_LABELS, REST_BANK, ROAD_BANK, SAFE_EVENT, SCENIC_BANK,
         STATION_BANK, SWIM_DETAILS, TAXI_BANK, _brief_world, _mood_text, _scenic_text,
         _weather_text, clamp, date, detail_conflicts, fmt_hhmm, parse_hhmm, random, re,
-        work_bank_for,
+        resolve_zone, work_bank_for,
     )
 except ImportError:  # 直接按文件加载时（测试/模拟器）
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
@@ -23,7 +23,7 @@ except ImportError:  # 直接按文件加载时（测试/模拟器）
             NIGHT_LIFE_BANK, POSITIVE_LABELS, REST_BANK, ROAD_BANK, SAFE_EVENT, SCENIC_BANK,
             STATION_BANK, SWIM_DETAILS, TAXI_BANK, _brief_world, _mood_text, _scenic_text,
             _weather_text, clamp, date, detail_conflicts, fmt_hhmm, parse_hhmm, random, re,
-            work_bank_for,
+            resolve_zone, work_bank_for,
         )
 
 try:  # 文案池按地点选 + 地点自洽校验（2026-11-17 楼下/家 矛盾）
@@ -304,13 +304,13 @@ class ScheduleSlotsMixin:
         if yesterday.get("late_night"):
             vector["疲惫"] = max(clamp(vector["疲惫"] + 16), 68.0)
             vector["开心"] = clamp(vector["开心"] - 6)
-            vector["暴躁"] = clamp(vector["暴躁"] + 3)
+            vector["压力"] = clamp(vector["压力"] + 3)
         if health.get("sick"):
             vector["疲惫"] = clamp(vector["疲惫"] + 10)
             vector["开心"] = clamp(vector["开心"] - 5)
         if int(period.get("pain") or 0) >= 7:
             vector["疲惫"] = clamp(vector["疲惫"] + 8)
-            vector["委屈"] = clamp(vector["委屈"] + 5)
+            vector["压力"] = clamp(vector["压力"] + 5)
         prev_label = ""
         for item in items:
             hour = parse_hhmm(item.get("start")) // 60
@@ -320,7 +320,7 @@ class ScheduleSlotsMixin:
                 vector[key] = vector[key] + (MOOD_BASE[key] - vector[key]) * 0.05
             if 0 <= hour < 6:
                 vector["疲惫"] = vector["疲惫"] + 2
-                vector["平静"] = vector["平静"] + 1
+                vector["压力"] = vector["压力"] - 1
             elif 6 <= hour < 9:
                 vector["疲惫"] = vector["疲惫"] - 2
                 vector["开心"] = vector["开心"] + 1
@@ -357,17 +357,11 @@ class ScheduleSlotsMixin:
 
     @staticmethod
     def _mood_label(vector):
-        if max(vector["生气"], vector["暴躁"]) >= 58:
+        if vector["压力"] >= 58:
             return "烦躁"
-        if vector["委屈"] >= 58:
-            return "委屈"
-        if vector["郁闷"] >= 58:
-            return "低落"
         if vector["疲惫"] >= 64:
             return "疲惫"
-        if vector["焦虑"] >= 58:
-            return "焦虑"
-        if max(vector["开心"], vector["兴奋"]) >= 64:
+        if max(vector["开心"], vector["好奇"]) >= 64:
             return "开心"
         if vector["依恋"] >= 64:
             return "黏人"
@@ -375,8 +369,8 @@ class ScheduleSlotsMixin:
 
     @staticmethod
     def _mood_valence(vector):
-        positive = (vector["开心"] + vector["兴奋"] + vector["平静"] + vector["依恋"]) / 4.0
-        negative = (vector["郁闷"] + vector["疲惫"] + vector["生气"] + vector["暴躁"] + vector["委屈"] + vector["焦虑"]) / 6.0
+        positive = (vector["开心"] + vector["依恋"] + vector["亲密"] + vector["好奇"]) / 4.0
+        negative = (vector["疲惫"] + vector["压力"]) / 2.0
         return clamp(50 + (positive - negative) * 0.8)
 
     # ------------------------------------------------------------------
@@ -488,6 +482,13 @@ class ScheduleSlotsMixin:
             zone = str(item.get("zone") or "")
             place = str(item.get("place") or "")
             act = str(item.get("activity") or "")
+            if zone == "road" and place and place in act:
+                # 文案明确在说这个地点（“到了楼下小馆”）才纠偏；
+                # “下班回家 + 写字楼”这种通勤块仍按 road 对齐，保持原行为。
+                fixed_zone = resolve_zone(place, str(item.get("category") or ""), zone)
+                if fixed_zone and fixed_zone != "road":
+                    zone = fixed_zone
+                    item["zone"] = fixed_zone
             if zone == "road":
                 # 区域是“路上”，地点也统一成“路上”，别出现“地铁上 / 写字楼”并存
                 if place and place != "路上":

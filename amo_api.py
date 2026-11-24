@@ -60,17 +60,17 @@ PROFILE_TO_NETWORK = {
 }
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
+        NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
+            NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                DIALECT_REGIONS, NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
+                NETWORK_RELATIONS, PLUGIN_NAME, RELATIONS, clamp, logger, now_ts, summarize_token_usage, to_float, to_int, uniq, usage_cost, web_request,
             )
 
 
@@ -404,11 +404,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
         for key, value in (changes or {}).items():
             meta = schema.get(key)
             if not isinstance(meta, dict):
-                # 操作页的「语种」下拉不在 schema 里，单独放行（普通话/各地方言）
-                if key == "dialect_style":
-                    meta = {"type": "string", "default": ""}
-                else:
-                    continue
+                continue
             try:
                 coerced = self._coerce_config_value(meta.get("type", "string"), value)
             except Exception as exc:
@@ -654,14 +650,10 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
                 return await self.api_memory_add()
             if name in ("memory_delete", "delete_memory"):
                 return await self.api_memory_delete()
-            if name in ("mood_update", "update_mood"):
-                return await self.api_mood_update()
             if name == "schedule":
                 return await self.api_schedule()
             if name in ("scenic_kb_regen", "regen_scenic_kb"):
                 return await self.api_scenic_kb_regen()
-            if name in ("kb_regen", "regen_kb", "dialect_kb_regen"):
-                return await self.api_kb_regen()
             if name in ("schedule_regen", "regen_schedule"):
                 return await self.api_schedule_regen()
             if name in ("weather", "weather_refresh", "refresh_weather"):
@@ -692,7 +684,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
         return {
             "code": 0,
             "data": {
-                "mood": data["dominant"] + "（" + data["mood"].__str__() + "）",
+                "mood": data["dominant"] + "（" + (data.get("heart") or {}).get("mood", "") + "）",
                 "schedule": data["activity"].get("activity", ""),
                 "health": data["health"]["status"],
                 "period": data["period"]["phase"] + " 第" + str(data["period"]["day"]) + "天",
@@ -701,6 +693,7 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
                 "threshold": data["threshold"],
                 "counts": data["counts"],
                 "obs_health": data.get("obs_health") or {},
+                "guards": data.get("guards") or {},
                 "trip_settle": data.get("trip_settle") or {},
             },
         }
@@ -845,58 +838,6 @@ class ApiMixin(DiaryApiMixin, ScheduleApiMixin, TripApiMixin, WardrobeApiMixin, 
             }
         return {"code": 0, "msg": "景区知识库已就绪：" + self._scenic_kb_name()}
 
-    async def api_kb_regen(self):
-        await self._ensure_ready()
-        try:
-            data = await self._body()
-        except Exception as _amo_exc:
-            _note_swallowed("amo_api.ApiMixin.api_kb_regen", _amo_exc)
-            data = {}
-        style = str(data.get("dialect_style") or "").strip()
-        if style in DIALECT_REGIONS:
-            self.config["dialect_style"] = style
-            try:
-                if hasattr(self.config, "save_config"):
-                    self.config.save_config()
-            except Exception as _amo_exc:
-                _note_swallowed("amo_api.ApiMixin.api_kb_regen", _amo_exc)
-        style_now = self._dialect_style().strip()
-        logger.info("[amo] 重建语种: style=%s region=%s rows=%d kb=%s" % (
-            style_now, self._dialect_region(), len(self._dialect_rows()), self._dialect_kb_name()
-        ))
-        kb = await self._ensure_dialect_kb()
-        if kb is None:
-            return {
-                "code": 1,
-                "msg": "知识库创建失败：请检查是否配置了 Embedding 供应商，并查看 AstrBot 日志",
-            }
-        return {"code": 0, "msg": "知识库已就绪：" + self._dialect_kb_name()}
-
-    async def api_shop_arrival_seen(self):
-        await self._ensure_ready()
-        try:
-            try:
-                from .ecommerce_engine import EcommerceEngine
-            except ImportError:
-                from ecommerce_engine import EcommerceEngine
-            EcommerceEngine(self).mark_arrival_seen()
-            return {"code": 0}
-        except Exception as exc:
-            logger.debug("[amo] 清除到货红点失败: %s" % exc)
-            return {"code": 1}
-
-    async def api_shop_orders(self):
-        await self._ensure_ready()
-        try:
-            try:
-                from .ecommerce_engine import EcommerceEngine
-            except ImportError:
-                from ecommerce_engine import EcommerceEngine
-            return {"code": 0, "data": EcommerceEngine(self).panel_data()}
-        except Exception as exc:
-            logger.debug("[amo] 网购订单面板失败: %s" % exc)
-            return {"code": 0, "data": {"groups": {"ordered": [], "transit": [],
-                                                       "delivered": [], "returned": []}}}
 
     async def api_gift(self):
         await self._ensure_ready()

@@ -10,15 +10,25 @@ const AMO_SCHEDULE_SOURCE_LABELS = {
   llm_tool: "工具", snapshot: "快照", health_audit: "体检",
   social: "社交", travel_overlay: "旅行", travel_follow_start: "旅行",
   travel_return: "旅行", trip_leg: "旅行", self_offwork: "她说的",
+  // 2026-11-23：守护插件写日程用的 source 是 "watch"（Astrbot_amoupup_watch），
+  // 以前没词条就按兜底把英文 id 直接印在行尾，现在补成「守护」。
+  watch: "守护", self_place: "她说的",
+  trip: "旅行", trip_pool: "旅行",
+  normalize: "整理", ensure_normalize: "整理", jit_recover: "自动", regen: "自动",
+  social_migration: "社交",
 };
 // 自动生成的块是默认形态，行尾再标一个「自动」只是噪音（2026-11-23 用户要求）。
 // 只在来源非默认（聊天/过渡/面板/财务/约会…）时才显示后缀。
 const AMO_SCHEDULE_SOURCE_HIDDEN = new Set([
   "jit", "ensure", "ensure_regen", "generated", "auto",
+  // 读侧还原不出写者时给的是 "unknown"，那是「不知道谁写的」，不该当来源印出来。
+  "unknown",
 ]);
 function amoScheduleSourceLabel(source) {
   const key = String(source || "").trim().toLowerCase();
   if (!key || AMO_SCHEDULE_SOURCE_HIDDEN.has(key)) return "";
+  // 面板写日程时 source 是 panel_+动作（历史审计里还留着 panel_update 这种），统一标「面板」。
+  if (key.indexOf("panel") === 0) return "面板";
   return AMO_SCHEDULE_SOURCE_LABELS[key] || key;
 }
 window.amoScheduleSourceLabel = amoScheduleSourceLabel;

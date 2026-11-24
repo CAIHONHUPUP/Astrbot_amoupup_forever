@@ -34,12 +34,6 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from clock import now as _now  # type: ignore[no-redef]
 
-try:  # 群聊场景/双轨人设
-    from . import group_scene
-except ImportError:  # 直接按文件加载时
-    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        import group_scene  # type: ignore[no-redef]
-
 try:  # 话题锁定 / 状态衔接 / 连续对话 三段提示词
     from . import amo_message as message_blocks
 except ImportError:  # 直接按文件加载时
@@ -49,7 +43,6 @@ except ImportError:  # 直接按文件加载时
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
         AstrMessageEvent,
-        DIALECT_SAMPLES,
         STYLE_HINTS,
         TextPart,
         extract_persona_name,
@@ -63,7 +56,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
     try:
         from .amo_shared import (
             AstrMessageEvent,
-            DIALECT_SAMPLES,
             STYLE_HINTS,
             TextPart,
             extract_persona_name,
@@ -77,7 +69,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
                 AstrMessageEvent,
-                DIALECT_SAMPLES,
                 STYLE_HINTS,
                 TextPart,
                 extract_persona_name,
@@ -208,6 +199,9 @@ PHOTO_REQUEST_RULE = _prompts.render("llm.photo_request")
 
 #: 固定动作归属规则：只加一次，不随每轮变化，避免破坏 system prompt 缓存。
 ACTION_OWNERSHIP_RULES = _prompts.render("llm.action_ownership")
+
+#: 分居档居住边界（household 读不到时的兜底；正常走 amo_household.wording("boundary")）。
+APART_RESIDENCE_RULE = _prompts.render("llm.residence_apart")
 
 
 class LlmMixin(_MixinBase):
@@ -425,6 +419,16 @@ class LlmMixin(_MixinBase):
 
     async def _compose_reply(self, event, text, snap, profile, memories, memory_text, group, note=""):
         """回复组装：准备 → 系统提示词 → 提问 → 润色与守卫（三段各自可读）。"""
+        if not group:
+            # A2：他这一轮开口了，先判上一轮她那条回复的反应（正向才入池）。
+            try:
+                try:
+                    from . import amo_persona_evolve as _evolve
+                except ImportError:
+                    import amo_persona_evolve as _evolve
+                _evolve.review_pending(self, text, group=False)
+            except Exception as _amo_exc:  # cleanup: 学习失败不影响回复
+                logger.debug("[amo] 人设采集判定失败: %s", _amo_exc)
         ctx = await self._reply_prepare(event, text, snap, profile, group)
         system = await self._reply_system(ctx, event, text, snap, profile, group,
                                           memory_text, note)
@@ -526,10 +530,10 @@ class LlmMixin(_MixinBase):
         """回复组装第一步：身份/语境/近期对话/余额/沉默天数（原 _compose_reply 前 56 行）。"""
         umo = event.unified_msg_origin
         uid = self._canonical_uid(event)
-        scene = group_scene.scene_for_event(self, event) if group else "private"
+        scene = "private"
         is_owner = self._is_registered_lover(uid)
         sender_name = str(event.get_sender_name() or profile.get("name") or "群友").strip()
-        owner_name = group_scene.owner_nickname(self)
+        owner_name = ""
         name = profile.get("alias") or profile.get("name") or event.get_sender_name() or "对方"
         relation = profile.get("relation", "普通")
         persona = await self.llm.persona(umo)
@@ -613,35 +617,49 @@ class LlmMixin(_MixinBase):
         system_parts.extend(await self._reply_conditional_parts(
             ctx, event, text, snap, profile, group, memory_text))
         system_parts.append(_prompts.render("llm.rule.core"))
-        if not group:
-            # task-32：收件人锁（私聊生成层）。首句称呼只能老公/你/名字；家人只作话题。
-            system_parts.append(_prompts.render("llm.rule.addressee"))
         if note:
             # 延迟补话的说明放在系统侧，不能混进“对方刚刚说”里
             system_parts.append(_prompts.render("llm.note", note=note))
-        _boundary = ACTION_OWNERSHIP_RULES
+        # 居住边界（分居/半同居/同居各一份）+ 假拍照/发图/动作归属：都是固定块，
+        # 只加一次、不随每轮变化，不破坏 system prompt 前缀缓存。
+        # 2026-11-24：居住边界迁到 amo_household.wording("boundary")（apart 也有文案了），
+        # 这里不再拿 ACTION_OWNERSHIP_RULES 当回落。
+        _boundary = ""
         try:
             try:
                 from . import amo_household as _hh
             except ImportError:
                 import amo_household as _hh
-            _boundary = _hh.wording("boundary", plugin=self) or ACTION_OWNERSHIP_RULES
+            _boundary = _hh.wording("boundary", plugin=self)
         except Exception:
-            _boundary = ACTION_OWNERSHIP_RULES
-        system_parts.append(_boundary)
+            _boundary = ""
+        system_parts.append(_boundary or APART_RESIDENCE_RULE)
+        system_parts.append(ACTION_OWNERSHIP_RULES)
         system_parts.append(_prompts.URGE_DISCIPLINE_RULES)
         if not group:
             # 撒娇版放最后：越靠后的指令权重越高；示例只学语气。
             system_parts.append(_prompts.render("llm.rule.style"))
+            # A4：优先她自己的池（每意图最高 2 条）；空池回落固定 33 条，冷启动不空窗。
+            _style_text = ""
             try:
+                try:
+                    from .amo_persona_evolve import learned_style_block as _learned_style
+                except ImportError:
+                    from amo_persona_evolve import learned_style_block as _learned_style
+                _style_text = _learned_style(self, str(text or ""))
+            except Exception as _amo_exc:  # cleanup: 示例池缺失不影响回复
+                logger.debug("[amo] learned style skipped: %s", _amo_exc)
+                _style_text = ""
+            if not _style_text:
                 try:
                     from .amo_persona_pack import style_block as _style_block
                 except ImportError:
                     from amo_persona_pack import style_block as _style_block
-                _style_text = _style_block(str(text or ""))
-            except Exception as _amo_exc:  # cleanup: 示例池缺失不影响回复
-                logger.debug("[amo] style examples skipped: %s", _amo_exc)
-                _style_text = ""
+                try:
+                    _style_text = _style_block(str(text or ""))
+                except Exception as _amo_exc:  # cleanup: 固定池也缺失就不注入
+                    logger.debug("[amo] style examples skipped: %s", _amo_exc)
+                    _style_text = ""
             if _style_text:
                 system_parts.append(_style_text)
         system = "\n\n".join(system_parts)
@@ -651,10 +669,10 @@ class LlmMixin(_MixinBase):
         """人设包：内核/关系语气/语言规则/禁语/少量语料。"""
         try:
             try:
-                from .amo_persona_store import active_pack
+                from .amo_persona_store import active_pack, load_state, mark_used
                 from .amo_persona_pack import prompt_block
             except ImportError:
-                from amo_persona_store import active_pack
+                from amo_persona_store import active_pack, load_state, mark_used
                 from amo_persona_pack import prompt_block
             mood = ""
             try:
@@ -666,8 +684,29 @@ class LlmMixin(_MixinBase):
                 scene = str(((snap or {}).get("activity") or {}).get("zone") or "")
             except Exception:
                 scene = ""
+            try:
+                _state = load_state(self) or {}
+                last_used = dict(_state.get("last_used") or {})
+                # 基础包语料是只读的，last_used 只在有进化/池内句子时才需要落盘；
+                # 否则每条私聊都写一次 state.json（P2：避免无意义磁盘写）。
+                mutable_texts = {
+                    str(row.get("text") or "")
+                    for row in list(_state.get("corpus_evolved") or [])
+                    + list(_state.get("style_pool") or [])
+                    if isinstance(row, dict)
+                }
+            except Exception:
+                last_used = {}
+                mutable_texts = set()
+            used: list[str] = []
             block = prompt_block(active_pack(self), scene=scene, mood=mood,
-                                 register="partner_safe")
+                                 register="partner_safe", last_used=last_used,
+                                 used_out=used)
+            if used and any(text in mutable_texts for text in used):
+                try:
+                    mark_used(self, used)
+                except Exception as _amo_exc:  # cleanup: 记录 last_used 失败不影响注入
+                    logger.debug("[amo] 记录 last_used 失败: %s", _amo_exc)
             return ["【人格包】\n" + block] if block else []
         except Exception as exc:
             logger.debug("[amo] 人设包注入失败: %s", exc)
@@ -753,32 +792,8 @@ class LlmMixin(_MixinBase):
         return system_parts
 
     def _reply_group_parts(self, ctx, event, group=True):
-        # 群聊：对你说 / 插话 / 普通群聊 + 群里的人 + 怎么回 + 场景
-        umo = ctx["umo"]; uid = ctx["uid"]; scene = ctx["scene"]
-        is_owner = ctx["is_owner"]; sender_name = ctx["sender_name"]
-        owner_name = ctx["owner_name"]; name = ctx["name"]; relation = ctx["relation"]
-        system_parts = []
-        if group:
-            target = str(getattr(event, "heartflow_target", "") or "")
-            angle = str(getattr(event, "heartflow_angle", "") or "")
-            if target == "bot" or getattr(event, "heartflow_mode_hint", "") == "direct":
-                system_parts.append(_prompts.render("group.direct"))
-            elif target:
-                system_parts.append(_prompts.render("group.interject", angle=angle))
-            else:
-                system_parts.append(_prompts.render("group.general"))
-            roster_text = self._group_roster_text(
-                umo, uid, 6 if self.cfg_str("context_style", "lean").strip().lower() == "lean" else 8
-            )
-            if roster_text:
-                system_parts.append(_prompts.render("group.roster", roster_text=roster_text))
-            system_parts.append(_prompts.render(
-                "group.how_to_reply", guide=self._group_reply_guide(relation, name)))
-            system_parts.append(group_scene.prompt_block(
-                scene, sender_name, owner_name, is_owner, mentioned=(target == "bot")))
-            if target != "bot":
-                system_parts.append(_prompts.render("group.think_first"))
-        return system_parts
+        # 群聊已整体删除：只保留私聊，这里不再拼任何群场景。
+        return []
 
     async def _reply_conditional_parts(self, ctx, event, text, snap, profile, group, memory_text=""):
         # 私聊场景 + 别报日程 + 咨询/方言/情绪/冒充/识人/景区/身份/打扰/低落/关系网/记忆
@@ -786,16 +801,11 @@ class LlmMixin(_MixinBase):
         consult = ctx["consult"]
         system_parts = []
         if not group:
-            system_parts.append(group_scene.prompt_block("private"))
+            system_parts.append(_prompts.render("group.scene.private"))
         system_parts.append(_prompts.render("llm.no_schedule_dump"))
         if consult:
             system_parts.append(_prompts.render("llm.consult"))
-        if self._dialect_active():
-            style = self._dialect_style()
-            samples = DIALECT_SAMPLES.get(style, "")
-            if style and samples:
-                system_parts.append(_prompts.render("llm.dialect", style=style, samples=samples))
-        if relation == "相恋" and (snap["mood"]["暴躁"] >= 60 or snap["mood"]["生气"] >= 62):
+        if relation == "相恋" and float((snap.get("mood") or {}).get("压力") or 0) >= 60:
             system_parts.append(_prompts.render("llm.love_anger"))
         if getattr(event, "amo_impersonation", False):
             system_parts.append(_prompts.render("llm.impersonation"))
@@ -823,15 +833,6 @@ class LlmMixin(_MixinBase):
                 system_parts.append(_prompts.render("llm.disturbed_stranger"))
         if self._depressed_active(uid):
             system_parts.append(_prompts.render("llm.depressed"))
-        try:
-            dialect_context = await self._dialect_kb_context(text)
-            if dialect_context:
-                system_parts.append(_prompts.render("llm.dialect_ref", context=dialect_context))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_llm.LlmMixin._compose_reply", _amo_exc)
-        relation_network = self._relation_network_text(uid)
-        if relation_network:
-            system_parts.append(_prompts.render("llm.relation_network", text=relation_network))
         if memory_text:
             system_parts.append(_prompts.render("llm.memory", name=name, memory_text=memory_text))
         return system_parts
@@ -839,8 +840,7 @@ class LlmMixin(_MixinBase):
 
     async def _reply_postprocess(self, reply, ctx, event, text, snap, group):
         """回复组装第三步：润色 + 各道守卫（日期/拒绝/地点/消费/群聊）。"""
-        umo = ctx["umo"]; uid = ctx["uid"]; scene = ctx["scene"]
-        owner_name = ctx["owner_name"]; name = ctx["name"]; relation = ctx["relation"]
+        umo = ctx["umo"]; name = ctx["name"]; relation = ctx["relation"]
         persona = ctx["persona"]; state_text = ctx["state_text"]; tone = ctx["tone"]
         style = ctx["style"]; consult = ctx["consult"]
         cash_cents = ctx["cash_cents"]; silence_days = ctx["silence_days"]
@@ -870,11 +870,6 @@ class LlmMixin(_MixinBase):
                         _note_swallowed("amo_llm.py.553", exc)
             # 2026-11-15：嘴里说的消费必须账上查得到，编出来的直接改写
             reply = self._guard_consumption(reply)
-            if group:
-                reply, _group_changed = group_scene.guard_group_reply(reply, scene, owner_name)
-                if _group_changed:
-                    logger.info("[GROUP_GUARD] 群聊私密/超长回复已拦截重写")
-                self._maybe_group_private_tease(event, uid, text, scene)
         if reply:
             try:
                 from .amo_message import looks_like_photo_resend_request
@@ -900,43 +895,6 @@ class LlmMixin(_MixinBase):
         return reply
 
 
-    def _maybe_group_private_tease(self, event, uid, text, scene):
-        """群里体面敷衍完，私聊补一条吐槽/吃醋（10 分钟内同一群只发一次）。"""
-        try:
-            key = "group_tease:%s:%s" % (uid, scene)
-            if now_ts() - to_float(self.db.kv_get(key, 0), 0) < 600:
-                return
-            profile = self.db.get_profile(uid) or {}
-            line = ""
-            if self._is_registered_lover(uid):
-                if scene not in ("work_group", "stranger_group") and random.random() > 0.35:
-                    return
-                line = random.choice((
-                    "救命！你干嘛在群里跟我聊这个，吓死我了！我都怕群友看出来！",
-                    "刚刚在群里我都紧张死了，只能装作不认识你，哼！",
-                ))
-            else:
-                if not re.search(r"(好看|漂亮|可爱|喜欢你|心动)", str(text or "")):
-                    return
-                lovers = list(self._lover_aliases().values())
-                if not lovers:
-                    return
-                owner = self.db.get_profile(lovers[0]) or {}
-                profile = owner
-                line = "老公，刚刚群里那个谁夸我，你都不吃醋的吗？哼！"
-                key = "group_tease:owner:%s" % scene
-                if now_ts() - to_float(self.db.kv_get(key, 0), 0) < 600:
-                    return
-            umo = str(profile.get("private_umo") or "")
-            if not umo and profile.get("uid"):
-                umo = "aiocqhttp:PrivateMessage:%s" % profile.get("uid")
-            if not umo or group_scene.is_group_umo(umo):
-                return
-            self._spawn(self._send_proactive_lines(profile, umo, line))
-            self.db.kv_set(key, now_ts())
-        except Exception as exc:
-            _note_swallowed("amo_llm.LlmMixin._maybe_group_private_tease", exc)
-
     def _remember_sent_reply(self, event, text):
         """分段引擎没接手时（关掉分段 / 发送异常）的兜底记录。"""
         msg_obj = getattr(event, "message_obj", None)
@@ -957,29 +915,17 @@ class LlmMixin(_MixinBase):
             try:
                 system_prompt = str(getattr(req, "system_prompt", "") or "")
                 if "【动作归属·最高优先级】" not in system_prompt:
-                    _boundary = ACTION_OWNERSHIP_RULES
+                    _boundary = ""
                     try:
                         try:
                             from . import amo_household as _hh
                         except ImportError:
                             import amo_household as _hh
-                        _boundary = (_hh.wording("boundary", plugin=self)
-                                     or ACTION_OWNERSHIP_RULES)
+                        _boundary = _hh.wording("boundary", plugin=self)
                     except Exception:
-                        _boundary = ACTION_OWNERSHIP_RULES
-                    req.system_prompt = (system_prompt + _boundary).lstrip()
-                _commerce = (
-                    "【网购平台认知】可以自然提到拼多多（买平替/小物件）、淘宝（买衣服/退货）、"
-                    "美团（点外卖）、小红书（刷穿搭/吐槽）、闲鱼（卖闲置）；"
-                    "绝不说“打开 API / 切换 APP / 输入账号密码”这类非人类视角；"
-                    "平时抠门、买衣服优先拼多多/淘宝，不要动不动买大牌。"
-                    "半夜失眠/周末宅家/缺日用品想网购时，可以调用 online_order 下单；"
-                    "舍不得买就调用 add_to_cart 放购物车，然后在聊天里跟他抱怨贵。"
-                    "如果他说已经网购送你礼物，调用 user_gift（不扣你的钱）；"
-                    "不要自己伪造订单，也不要用 API/账号密码这种非人类说法。"
-                )
-                if "【网购平台认知】" not in system_prompt:
-                    req.system_prompt = (str(getattr(req, "system_prompt", "") or "") + _commerce).lstrip()
+                        _boundary = ""
+                    req.system_prompt = (system_prompt + (_boundary or APART_RESIDENCE_RULE)
+                                         + ACTION_OWNERSHIP_RULES).lstrip()
             except Exception as _amo_exc:
                 _note_swallowed("amo_llm.LlmMixin.on_llm_request.system", _amo_exc)
             # 只走官方推荐的 extra_user_content_parts（临时 part）注入。

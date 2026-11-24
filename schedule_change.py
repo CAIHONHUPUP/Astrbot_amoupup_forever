@@ -25,10 +25,10 @@ import re
 from typing import Any, TypedDict
 
 try:  # 纯规则模块，不依赖 AstrBot 运行时
-    from .photo_rules import EXPLICIT_PLACE_ZONES, zone_for_place
+    from .photo_rules import EXPLICIT_PLACE_ZONES, resolve_zone
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        from photo_rules import EXPLICIT_PLACE_ZONES, zone_for_place
+        from photo_rules import EXPLICIT_PLACE_ZONES, resolve_zone
 
 
 def _sync_zone(item: dict, place: str = "", category: str = "") -> dict:
@@ -49,7 +49,7 @@ def _sync_zone(item: dict, place: str = "", category: str = "") -> dict:
         item["vehicle"] = ""
         _rewrite_activity_for_zone(item)
         return item
-    zone = zone_for_place(current_place)
+    zone = resolve_zone(current_place, current_category, "")
     if not zone:
         # 聊天改日程只给 place、不给 zone 时（「我们出去吃吧」→ place=外面），
         # 用 EXPLICIT_PLACE_ZONES 纠偏。否则 zone 留着旧 home，地点会被
@@ -343,6 +343,10 @@ def _pick_target(items: list[dict[str, Any]], anchor: str, now_min: int) -> dict
             if str(item.get("category") or "") == wanted:
                 return item
         if current is not None and str(current.get("category") or "") == wanted:
+            return current
+        # 「去吃饭」但当前/后面都没有 meal 块：改当前这段，让她真的去；
+        # 睡觉中不叫醒（交给 apply_change 的 sleep 保护）。
+        if anchor == "meal" and current is not None and str(current.get("category") or "") != "sleep":
             return current
         return None
     return current

@@ -79,8 +79,8 @@ def _provider_name(provider: Any) -> str:
                 value = str(cfg.get(key) or "").strip()
                 if value:
                     return value
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+        logger.debug("[amo_tts_guard._provider_name] optional step failed: %s", exc)
     try:
         return type(provider).__name__
     except Exception:
@@ -115,8 +115,8 @@ def _owner_umo(plugin: Any) -> str:
             value = str(umo or "").strip()
             if value:
                 return value
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+        logger.debug("[amo_tts_guard._owner_umo] optional step failed: %s", exc)
     return ""
 
 
@@ -236,8 +236,8 @@ async def _record_play(plugin: Any, provider: Any, raw: str, spoken: str) -> dic
                 logger.debug("[amo] 语音媒体标记后台写入失败，改同步写: %r", exc)
                 try:
                     pending.close()
-                except Exception:  # cleanup: 兜底/降级，保持原行为
-                    pass
+                except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                    logger.debug("[amo_tts_guard._record_play] optional step failed: %s", exc)
         try:
             await remember(umo, marker)
         except Exception as exc:

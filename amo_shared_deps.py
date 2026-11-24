@@ -126,34 +126,15 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .heartflow_engine import HeartflowEngine
     from .segment_engine import SegmentEngine
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
-        from .heartflow_engine import HeartflowEngine
         from .segment_engine import SegmentEngine
     except Exception:
         try:
-            from heartflow_engine import HeartflowEngine
             from segment_engine import SegmentEngine
         except Exception:
-            HeartflowEngine = None
             SegmentEngine = None
-            try:
-                import importlib.util
-                _engine_dir = os.path.dirname(os.path.abspath(__file__))
-                def _load_engine(module_name, class_name):
-                    _spec = importlib.util.spec_from_file_location(
-                        "amo_" + module_name,
-                        os.path.join(_engine_dir, module_name + ".py"),
-                    )
-                    _module = importlib.util.module_from_spec(_spec)
-                    _spec.loader.exec_module(_module)
-                    return getattr(_module, class_name)
-                HeartflowEngine = _load_engine("heartflow_engine", "HeartflowEngine")
-                SegmentEngine = _load_engine("segment_engine", "SegmentEngine")
-            except Exception as _engine_exc:
-                logger.error("[amo] 内置心流/分段模块加载失败: %s" % _engine_exc)
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
@@ -318,49 +299,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .milestone import (
-        should_archive as _ms_should_archive,
-        idle_archive_due as _ms_idle_due,
-        transcript as _ms_transcript,
-        build_prompt as _ms_build_prompt,
-        build_content as _ms_build_content,
-    )
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    try:
-        from .milestone import (
-            should_archive as _ms_should_archive,
-            idle_archive_due as _ms_idle_due,
-            transcript as _ms_transcript,
-            build_prompt as _ms_build_prompt,
-            build_content as _ms_build_content,
-        )
-    except Exception:
-        try:
-            from milestone import (
-                should_archive as _ms_should_archive,
-                idle_archive_due as _ms_idle_due,
-                transcript as _ms_transcript,
-                build_prompt as _ms_build_prompt,
-                build_content as _ms_build_content,
-            )
-        except Exception:
-            def _ms_should_archive(*args, **kwargs):
-                return False
-
-            def _ms_idle_due(*args, **kwargs):
-                return False
-
-            def _ms_transcript(*args, **kwargs):
-                return ""
-
-            def _ms_build_prompt(*args, **kwargs):
-                return ""
-
-            def _ms_build_content(*args, **kwargs):
-                return ""
-
-
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .wander import (
         assess as _wander_assess,
         ask_limit as _wander_ask_limit,
@@ -519,18 +457,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .relation_learn import parse_relations
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    try:
-        from .relation_learn import parse_relations
-    except Exception:
-        try:
-            from relation_learn import parse_relations
-        except Exception:
-            parse_relations = None
-
-
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .city_follow import (
         DEFAULT_CITY as _CITY_DEFAULT,
         detect_city as _city_detect,
@@ -591,30 +517,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .relation_graph import rank_edges as _rank_edges
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    try:
-        from .relation_graph import rank_edges as _rank_edges
-    except Exception:
-        try:
-            from relation_graph import rank_edges as _rank_edges
-        except Exception:
-            _rank_edges = None
-
-
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
-    from .relation_sediment import plan_edges as plan_relation_edges
-else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
-    try:
-        from .relation_sediment import plan_edges as plan_relation_edges
-    except Exception:
-        try:
-            from relation_sediment import plan_edges as plan_relation_edges
-        except Exception:
-            plan_relation_edges = None
-
-
-if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .schedule_engine import ScheduleEngine
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
@@ -638,7 +540,6 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 __all__ = [
     "Comp",
     "GiftEngine",
-    "HeartflowEngine",
     "MemoryHub",
     "MessageChain",
     "ScheduleEngine",
@@ -675,16 +576,10 @@ __all__ = [
     "_greeting_targets",
     "_importlib_util",
     "_looks_like_time_query",
-    "_ms_build_content",
-    "_ms_build_prompt",
-    "_ms_idle_due",
-    "_ms_should_archive",
-    "_ms_transcript",
     "_note_swallowed",
     "_pg_analyze_rows",
     "_pg_compose_task",
     "_pg_near_duplicate",
-    "_rank_edges",
     "_render_time_block",
     "_wander_agree",
     "_wander_ask_limit",
@@ -707,16 +602,13 @@ __all__ = [
     "evaluate_weather_alert",
     "first_person_experience",
     "forecast_brief",
-    "importlib",
     "is_weather_query",
     "leak_tokens",
     "md5_int",
     "next_check_slot",
     "parse_clock",
     "parse_hhmm",
-    "parse_relations",
     "parse_weather_daily",
-    "plan_relation_edges",
     "render_recent_block",
     "slot_key",
     "strip_brushoff",

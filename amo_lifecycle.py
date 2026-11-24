@@ -39,18 +39,7 @@ class LifecycleMixin:
     async def initialize(self):
         await self._ensure_ready()
         try:
-            from .laundry_engine import register_buy_appliance
             manager = getattr(getattr(self.context, "provider_manager", None), "llm_tools", None)
-            ok = register_buy_appliance(self, manager)
-            logger.info("[amo] LLM tool buy_appliance: %s", "registered" if ok else "skipped")
-            from .ecommerce_engine import register_ecommerce_tools
-            ok2 = register_ecommerce_tools(self, manager)
-            logger.info("[amo] LLM tools online_order/add_to_cart/user_gift: %s",
-                        "registered" if ok2 else "skipped")
-            from .housing import register_buy_furniture
-            okf = register_buy_furniture(self, manager)
-            logger.info("[amo] LLM tool buy_furniture: %s",
-                        "registered" if okf else "skipped")
             from .draw_engine import register_send_photo
             ok3 = register_send_photo(self, manager)
             logger.info("[amo] LLM tool send_photo: %s", "registered" if ok3 else "skipped")
@@ -58,7 +47,7 @@ class LifecycleMixin:
             ok4 = register_schedule_tools(self, manager)
             logger.info("[amo] LLM tools schedule: %s", "registered" if ok4 else "skipped")
         except Exception as exc:
-            logger.warning("[amo] 注册 buy_appliance 工具失败: %s", exc)
+            logger.warning("[amo] 注册 LLM 工具失败: %s", exc)
         try:  # Phase 5：启动时只读巡检 kv 一次（INFO 摘要，不删任何键）
             from .amo_state_store import attach as _attach_state_store
             from .amo_state_store import should_log_health as _should_log_health

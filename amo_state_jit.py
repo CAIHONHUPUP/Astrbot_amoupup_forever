@@ -68,6 +68,10 @@ except ImportError:
         import amo_food_cost as _food_cost
 
 
+#: 重启补跑最多回补这么多小时，避免长假/长断线一次铺满日程。
+_JIT_REPLAY_MAX_HOURS = 12
+
+
 def _hour_end_ts(hour, now=None):
     """这一小时结束的时间戳（current_action 的有效期边界）。"""
     now = now or _now()
@@ -390,7 +394,7 @@ class JitStateMixin(_MixinBase):
         if last <= 0:
             return []
         gap = current - last
-        if gap < 20 * 60 or gap > 6 * 3600:
+        if gap < 20 * 60:
             return []
         try:
             last_dt = datetime.fromtimestamp(last)
@@ -403,7 +407,58 @@ class JitStateMixin(_MixinBase):
                 return []
         except Exception as exc:
             _note_swallowed("amo_human_state.py.1996", exc)
-        return self._jit_backfill_gap(now, last_dt)
+        # 只补真实 JIT 计划；旧的“一大段琐事”兜底不再自动跑，避免长断线补出巨块。
+        return self._jit_replay_hours(now, last_dt)
+
+    def _jit_replay_hours(self, now, last_dt):
+        """重启补跑：从上次心跳所在小时到当前小时，逐小时走一遍 JIT 计划。
+
+        只补时间轴，不补扣款；当前小时也补，补完 jit_tick 会因已有计划而跳过。
+        """
+        day = now.date().isoformat()
+        end_hour = int(now.hour)
+        start_hour = max(7, int(last_dt.hour), end_hour - _JIT_REPLAY_MAX_HOURS + 1)
+        rows = []
+        for hour in range(start_hour, end_hour + 1):
+            flag = "jit:%s:%02d" % (day, hour)
+            try:
+                if self.db.kv_get(flag, False):
+                    continue
+            except Exception as exc:
+                _note_swallowed("amo_state_jit.replay.flag", exc)
+            try:
+                if self._hour_has_plan(day, hour):
+                    self.db.kv_set(flag, True)
+                    continue
+            except Exception as exc:
+                _note_swallowed("amo_state_jit.replay.has_plan", exc)
+            hour_now = now.replace(hour=hour, minute=30, second=0, microsecond=0)
+            try:
+                plan, _cost, _paid = self._jit_plan_for_hour(hour_now, hour, day, charge=False)
+            except Exception as exc:
+                _note_swallowed("amo_state_jit.replay.plan", exc)
+                continue
+            item = {"start": "%02d:00" % hour,
+                    "end": "24:00" if hour == 23 else "%02d:00" % (hour + 1),
+                    "activity": plan.get("action"), "place": plan.get("place"),
+                    "zone": plan.get("zone"), "category": plan.get("category"),
+                    "source": "jit_recover", "happened": True}
+            if str(plan.get("category") or "") == "sleep" and hour == 23:
+                item["activity"] = "入睡"
+                item["open_sleep"] = True
+                try:
+                    self.db.kv_set("sleep_open", {"day": day, "start": "23:00",
+                                                  "at": now_ts()})
+                except Exception as exc:
+                    _note_swallowed("amo_state_jit.replay.sleep_open", exc)
+            committed, plan = self._jit_commit(day, hour, item, plan, 0, False)
+            if committed:
+                rows.append(item)
+            try:
+                self._jit_persist(day, hour, plan, flag, committed)
+            except Exception as exc:
+                _note_swallowed("amo_state_jit.replay.persist", exc)
+        return rows
 
     def _jit_heartbeat(self, now):
         """心跳：顺手按天打一次 kv_health INFO 摘要（只读，不删键）。"""
@@ -417,6 +472,7 @@ class JitStateMixin(_MixinBase):
         return self.recover_missed_ticks(now)
 
     def _jit_backfill_gap(self, now, last_dt):
+        """legacy：生产路径已改逐小时 replay，只有旧测试直接调。"""
         """把上次心跳到现在的空档补成一条“琐事”，补到本小时末防断层。"""
         day = now.date().isoformat()
         now_min = int(now.hour) * 60 + int(now.minute)
@@ -575,11 +631,43 @@ class JitStateMixin(_MixinBase):
                 _note_swallowed("amo_human_state.jit_tick_async.rebuild", _amo_exc)
         return self.jit_tick(now)
 
+    def _sync_action_from_schedule(self, now):
+        """日程当前块是 transit/chat/manual 时，把 current_action 拉回它，防两套状态打架。"""
+        try:
+            day = now.date().isoformat()
+            block = Timeline(self).current(day, now)
+            if not isinstance(block, dict):
+                return None
+            if str(block.get("source") or "") not in ("transit", "chat", "command", "manual"):
+                return None
+            current = self.db.kv_get("current_action", {}) or {}
+            action = str(block.get("activity") or "在忙")
+            place = str(block.get("place") or "家")
+            zone = str(block.get("zone") or "home")
+            if (str(current.get("action") or "") == action
+                    and str(current.get("place") or "") == place
+                    and str(current.get("zone") or "") == zone):
+                return None
+            end = parse_hhmm(block.get("end"))
+            until = now.timestamp() + max(60, (end - (now.hour * 60 + now.minute)) * 60)
+            setter = getattr(self.p, "set_current_action", None)
+            if callable(setter):
+                setter(action, until_ts=until, place=place, zone=zone,
+                       category=str(block.get("category") or "life"))
+            return block
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_jit.sync_action_from_schedule", _amo_exc)
+            return None
+
     def jit_tick(self, now=None):
         """到点推演一次：只决定此刻做什么，不排以后。"""
+        now = now or _now()
+        try:
+            self._sync_action_from_schedule(now)
+        except Exception as _amo_exc:
+            _note_swallowed("amo_state_jit.jit_tick.sync_action", _amo_exc)
         if not self._jit_enabled():
             return None
-        now = now or _now()
         try:
             self._jit_heartbeat(now)
         except Exception as _amo_exc:
@@ -639,7 +727,7 @@ class JitStateMixin(_MixinBase):
                 _note_swallowed("amo_human_state.jit_tick.coalesce_meal", exc)
         return item
 
-    def _jit_plan_for_hour(self, now, hour, day):
+    def _jit_plan_for_hour(self, now, hour, day, charge=True):
         # 锚点优先：这天已经定下来的待办（例如“和柳如烟逛街”）先落实成真实日程，
         # 其余空余时间继续按盲盒随机推演。
         anchor = self._todo_for_hour(day, hour)
@@ -700,7 +788,11 @@ class JitStateMixin(_MixinBase):
             except Exception:
                 mood_word = ""
         try:
-            mood_value = float(self.mood.get(mood_word) or 0)
+            try:
+                from .amo_shared import normalize_mood as _normalize_mood
+            except ImportError:
+                from amo_shared import normalize_mood as _normalize_mood
+            mood_value = float(_normalize_mood(self.mood).get(mood_word) or 0)
         except Exception:
             mood_value = 0.0
         plan = jit_plan(hour, hunger, cash, bool(health.get("sick")),
@@ -727,7 +819,7 @@ class JitStateMixin(_MixinBase):
         paid_idem = ""
         paid_instance = ""
         paid_slot = ""
-        if cost:
+        if cost and charge:
             # 本函数只做扣费，不写场景/日程块（场景由 Timeline/commit 写）。
             # 餐饮类必须走 pay_food：JIT 自己 wallet.debit 会造出 jit:<day>:<hour>
             # 这种和餐次实例无关的幂等键，导致同一顿被 JIT/微型事件各扣一次。
@@ -770,6 +862,13 @@ class JitStateMixin(_MixinBase):
             plan["_paid_idem"] = paid_idem
             plan["_paid_instance"] = paid_instance
             plan["_paid_slot"] = paid_slot
+        if not charge:
+            # 重启补跑只补时间轴，不补扣款：过去的小时不能现在再花一次钱。
+            plan["cost_cents"] = 0
+            plan.pop("_paid_idem", None)
+            plan.pop("_paid_instance", None)
+            plan.pop("_paid_slot", None)
+            return plan, 0, False
         return plan, cost, paid
 
     def _jit_commit(self, day, hour, item, plan, cost, paid):

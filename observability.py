@@ -478,8 +478,8 @@ class RedactionFilter(logging.Filter):
                 record.exc_text = redact_text(
                     record.exc_text, open_id=self.redact_open_id)
             self._fold_redacted_exception(record)
-        except Exception:  # pragma: no cover - 日志脱敏不能反过来弄挂业务  # cleanup: 兜底/降级，保持原行为
-            pass
+        except Exception as exc:  # pragma: no cover - 日志脱敏不能反过来弄挂业务  # cleanup: 兜底/降级，保持原行为
+            logger.debug("[observability.filter] optional step failed: %s", exc)
         return True
 
     def _fold_redacted_exception(self, record):
@@ -528,8 +528,8 @@ def _attach_redaction(target, filter_obj):
         if any(isinstance(item, RedactionFilter) for item in target.filters):
             return
         target.addFilter(filter_obj)
-    except Exception:  # pragma: no cover - logging 对象异常不影响启动  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as exc:  # pragma: no cover - logging 对象异常不影响启动  # cleanup: 兜底/降级，保持原行为
+        logger.debug("[observability._attach_redaction] optional step failed: %s", exc)
 
 
 def _patch_logger_add_handler(filter_obj):
@@ -542,8 +542,8 @@ def _patch_logger_add_handler(filter_obj):
     def _add_handler(self, hdlr):
         try:
             _attach_redaction(hdlr, filter_obj)
-        except Exception:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
-            pass
+        except Exception as exc:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
+            logger.debug("[observability._add_handler] optional step failed: %s", exc)
         return _ORIGINAL_ADD_HANDLER(self, hdlr)
 
     setattr(logging.Logger, "addHandler", _add_handler)
@@ -569,8 +569,8 @@ def install_log_redaction(redact_open_id=True, force=False):
             for _name, obj in list(logging.Logger.manager.loggerDict.items()):
                 if isinstance(obj, logging.Logger):
                     targets.append(obj)
-        except Exception:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
-            pass
+        except Exception as exc:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
+            logger.debug("[observability.install_log_redaction] optional step failed: %s", exc)
         # 显式点名四个插件 + AstrBot 核心 logger：即使还没建也会建出来接上，
         # 之后 LogManager.GetLogger 复用的就是同一个对象。
         for name in ("astrbot", "astrbot.api", "astrbot.plugin",
@@ -578,8 +578,8 @@ def install_log_redaction(redact_open_id=True, force=False):
                      "Astrbot_amoupup_data", "Astrbot_amoupup_photo"):
             try:
                 targets.append(logging.getLogger(name))
-            except Exception:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
-                pass
+            except Exception as exc:  # pragma: no cover  # cleanup: 兜底/降级，保持原行为
+                logger.debug("[observability.install_log_redaction] optional step failed: %s", exc)
         for logger_obj in targets:
             _attach_redaction(logger_obj, filter_obj)
             for hdlr in list(getattr(logger_obj, "handlers", ()) or ()):

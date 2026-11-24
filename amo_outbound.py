@@ -22,9 +22,12 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import logging
 import re
 import time
 from typing import Any
+
+logger = logging.getLogger("amo.outbound")
 
 #: 合法来源；缺省 fail-closed 当 push（受控），绝不默认 chat。
 SOURCES = ("chat", "proactive", "followup", "goodnight", "reminder",
@@ -99,8 +102,8 @@ def _strip_component_markers(components):
                 continue
             try:
                 comp.text = cleaned
-            except Exception:  # cleanup: 兜底/降级，保持原行为
-                pass
+            except Exception as exc:  # cleanup: 兜底/降级，保持原行为，但必须留痕
+                logger.debug("[outbound] 文本组件清洗失败: %s", exc)
         out.append(comp)
     return out
 
@@ -110,6 +113,7 @@ def _now_ts(now=None):
         try:
             return float(now)
         except (TypeError, ValueError):  # cleanup: 兜底/降级，保持原行为
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
             pass
     try:
         try:
@@ -183,8 +187,8 @@ def _append_rows(plugin, umo, entry):
         data = rows(plugin, umo)
         data.append(dict(entry))
         plugin.db.kv_set(_log_key(umo), data[-LOG_LIMIT:])
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as exc:  # cleanup: 兜底/降级，保持原行为，但必须留痕
+        logger.debug("[outbound] 写 outbound_log 失败 umo=%s: %s", umo, exc)
 
 
 def _log(plugin, umo, *, source, kind="", text="", batch="", dedupe_key="",
@@ -422,8 +426,10 @@ async def send(plugin, umo, text, *, source=None, kind="", batch_id="",
                  batch=batch_id, dedupe_key=dedupe_key, decision="drop",
                  reason=guard_reason or "semantic_guard", at=stamp)
             return False
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as _amo_exc:  # cleanup: 兜底/降级，保持原行为，但必须留痕
+        _log(plugin, umo, source=src, kind=kind, text=str(text or ""),
+             batch=batch_id, dedupe_key=dedupe_key, decision="guard_error",
+             reason="semantic_guard:%s" % type(_amo_exc).__name__, at=stamp)
     if src not in ("chat", "admin") and chat_active(umo, stamp):
         _log(plugin, umo, source=src, kind=kind, text=body, batch=batch_id,
              dedupe_key=dedupe_key, decision="defer", reason="chat_batch", at=stamp)
@@ -460,24 +466,6 @@ async def send_media(plugin, umo, components, *, event_id="", source="photo",
         return False
     src = normalize_source(source or "photo")
     stamp = _now_ts(now)
-    # task-32：图片/语音的 caption 也是出站文本，同样过收件人守卫（只改/去文字，不丢媒体）。
-    try:
-        try:
-            from .amo_addressee_guard import enforce as _addressee_enforce
-        except ImportError:
-            from amo_addressee_guard import enforce as _addressee_enforce
-        for comp in components:
-            caption = getattr(comp, "text", None)
-            if not isinstance(caption, str) or not caption.strip():
-                continue
-            fixed, _cap_reason = _addressee_enforce(plugin, umo, caption, source=src)
-            if _cap_reason:
-                try:
-                    comp.text = fixed
-                except Exception:  # cleanup: 兜底/降级，保持原行为
-                    pass
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
     dedupe = "photo:%s" % (str(event_id or "").strip() or "shot")
     if src not in ("chat", "admin") and chat_active(umo, stamp):
         _log(plugin, umo, source=src, kind=kind, text="[图片]", batch=batch_id,

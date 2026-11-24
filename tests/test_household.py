@@ -16,8 +16,67 @@ for _path in (ROOT, TESTS):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
+import astrbot_stub  # noqa: E402
+
+astrbot_stub.install()
+
 import amo_household as hh  # noqa: E402
-from fixtures import FakePlugin  # noqa: E402
+
+
+class FakeDB:
+    """字典背书的 DB 桩：household 只用到 kv 读写。"""
+
+    def __init__(self, kv=None):
+        self.data = dict(kv or {})
+        # 兼容直接摸 .kv 的写法（同一个 dict，不复制）
+        self.kv = self.data
+        self.writes = []
+
+    def kv_get(self, key, default=None):
+        return self.data.get(key, default)
+
+    def kv_set(self, key, value):
+        self.writes.append((key, value))
+        self.data[key] = value
+
+    def kv_delete(self, key):
+        self.data.pop(key, None)
+
+
+class FakeState:
+    """状态桩：household 只读/清 worldview。"""
+
+    def __init__(self, **over):
+        self.worldview = {}
+        for key, value in over.items():
+            setattr(self, key, value)
+
+
+class FakePlugin:
+    """插件桩：cfg_* / db / state 就够 household 用。"""
+
+    def __init__(self, kv=None, config=None, **cfg):
+        self.db = FakeDB(kv)
+        self.config = dict(config or {})
+        self.config.update(cfg)
+        self.plugin_dir = ROOT
+        self.state = FakeState()
+
+    def cfg(self, key, default=None):
+        return self.config.get(key, default)
+
+    def cfg_str(self, key, default=""):
+        return str(self.config.get(key, default))
+
+    def cfg_bool(self, key, default=False):
+        return bool(self.config.get(key, default))
+
+    def cfg_int(self, key, default=0):
+        return int(self.config.get(key, default))
+
+    def cfg_float(self, key, default=0.0):
+        return float(self.config.get(key, default))
+
 
 WED = "2026-11-18"   # 工作日
 SAT = "2026-11-21"   # 周六
@@ -113,9 +172,12 @@ class WordingTests(unittest.TestCase):
     def setUp(self):
         self.plugin = FakePlugin(config={"household_enabled": True})
 
-    def test_apart_has_no_override(self):
+    def test_apart_boundary_is_the_residence_rule(self):
+        # 2026-11-24 收口：分居档的居住边界从 ACTION_OWNERSHIP_RULES 迁进 wording("boundary")，
+        # 所以 apart 不再是空串；逐字节比对见 test_prompt_ownership_20261124。
+        import amo_prompt_registry as pr
         self.plugin.db.kv_set("household", {"stage": hh.STAGE_APART})
-        self.assertEqual("", hh.wording("boundary", plugin=self.plugin))
+        self.assertEqual(pr.RESIDENCE_APART_RULE, hh.wording("boundary", plugin=self.plugin))
 
     def test_together_has_boundary(self):
         self.plugin.db.kv_set("household", {"stage": hh.STAGE_TOGETHER})

@@ -26,6 +26,12 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_observability import note as _note_swallowed
 
+try:  # 道具 grounding 唯一实现（fact_binder），出站守卫经本模块转发
+    from .amo_fact_binder import ground_props  # noqa: F401  re-export
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_fact_binder import ground_props  # noqa: F401  re-export
+
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
         Comp, MessageChain, logger, now_ts, sanitize_caption, strip_tech_terms,
@@ -337,8 +343,8 @@ def sanitize_context_rows(plugin, rows):
         if demote is not None and role in ("bot", "assistant") and cleaned:
             try:
                 cleaned = demote(cleaned, plugin, scene)
-            except Exception:  # cleanup: 兜底/降级，保持原行为
-                pass
+            except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                _note_swallowed("amo_message.sanitize_context_rows", exc)
         if not cleaned.strip():
             continue
         if cleaned != content:
@@ -648,6 +654,23 @@ class MessageMixin(_MixinBase):
         except Exception as exc:
             logger.error("[amo] 心流处理失败: %s" % exc)
 
+    def _heart_avoid_decision(self):
+        """回避档阶梯：没有心/没到 shut 返回 None；否则 True=回、False=不回。"""
+        heart = getattr(self, "heart", None)
+        if heart is None:
+            return None
+        try:
+            try:
+                from .amo_heart import avoid, runtime
+            except ImportError:
+                from amo_heart import avoid, runtime
+            runtime.ensure(self)
+            allowed = avoid.decide(heart.state)
+            runtime.save(self, heart)
+            return allowed
+        except Exception:
+            return None
+
     async def _handle_private(self, event, profile):
         try:  # task-30：此刻地点/动作唯一读场景账本（含请假/出差硬约束）
             from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
@@ -656,6 +679,13 @@ class MessageMixin(_MixinBase):
         snap = _snap_with_scene(self)
         umo = event.unified_msg_origin
         uid = self._canonical_uid(event)
+        try:
+            if self._heart_avoid_decision() is False:
+                logger.info("[GATE] chat=private skip reason=heart_avoid")
+                event.stop_event()
+                return
+        except Exception as _amo_exc:
+            _note_swallowed("amo_message.HANDLE_PRIVATE.heart_avoid", _amo_exc)
         if self._recent_bot_initiated(umo):
             self._disturb_until[str(umo)] = 0
             logger.info("[amo] 主动消息后的回复，按正常聊天处理")
@@ -1061,26 +1091,6 @@ class MessageMixin(_MixinBase):
         text = (await _reply_pipeline.run(text, context))["text"]
         # 媒体占位符只用于内部记录，任何出站文本都剥掉（图仍由图片组件发）。
         text = strip_media_markers(text)
-        # task-32：收件人/角色反转唯一守卫（主动/push/延迟补话/外部插件推送都从这里出）。
-        # 11:31 真实样例的链路是 watch request_push -> push_to_owner -> 这里，source=push；
-        # 判定只在 amo_addressee_guard 一处，日志和 outbound_log 都带 source，便于追外部推送。
-        _addr_src = str(source or getattr(self, "_outbound_source", "") or "push")
-        _addr_raw = str(text or "")
-        try:
-            try:
-                from .amo_addressee_guard import enforce as _addressee_enforce
-            except ImportError:
-                from amo_addressee_guard import enforce as _addressee_enforce
-            text, _addr_reason = _addressee_enforce(self, umo, text, source=_addr_src)
-            # 只有「本来有内容、被收件人守卫整条丢弃」才在这里 return；
-            # 入口就是空串时继续往下走，交下面 chat 出口的 repair 重生成。
-            if not text and _addr_raw.strip():
-                logger.info("[amo] 收件人守卫丢弃（source=%s, reason=%s）：%s",
-                            _addr_src, _addr_reason, _addr_raw[:120])
-                return False
-        except Exception as _amo_exc:
-            _note_swallowed("amo_message._send_to_umo.addressee", _amo_exc)
-            text = _addr_raw
         _user_text = ""
         try:
             try:
@@ -1096,14 +1106,6 @@ class MessageMixin(_MixinBase):
             except Exception:
                 _user_text = ""
             text = _anti_nag(text, _user_text)
-            try:
-                try:
-                    from .amo_purchase_guard import rewrite as _purchase_guard
-                except ImportError:
-                    from amo_purchase_guard import rewrite as _purchase_guard
-                text = _purchase_guard(text, self)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_message.purchase_guard", _amo_exc)
         except Exception as _amo_exc:
             _note_swallowed("amo_message.anti_nag", _amo_exc)
         # task-15 拼装前统一校验（聊天/主动共用）：媒体标记 -> 自我复读分句 -> 当前场景冲突。
@@ -1250,6 +1252,17 @@ class MessageMixin(_MixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_message.HumanCorePlugin._send_to_umo.memory_text", _amo_exc)
         self._remember_bot_message(umo, _memory_text)
+        # A2（2026-11-24）：私聊聊天回复真正发出后，把最终文本 + 真实 scene/mood 暂存，
+        # 下一轮再按他的反应决定学不学；群聊/主动/媒体/发送失败都不会走到这里。
+        try:
+            try:
+                from . import amo_persona_evolve as _evolve
+            except ImportError:
+                import amo_persona_evolve as _evolve
+            _evolve.record_pending(self, _memory_text, umo, source=src, kind=_kind,
+                                   group=bool(group))
+        except Exception as _amo_exc:  # cleanup: 采集失败不影响发送
+            _note_swallowed("amo_message._send_to_umo.persona_pending", _amo_exc)
         return True
     async def _send_media_to_umo(self, umo, components, event_id="", source="photo",
                                   kind="photo"):

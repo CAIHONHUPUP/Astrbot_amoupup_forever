@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 """schedule_engine.py 拆分回归锁（门面 + schedule_plan/skeleton/slots/diary）。
 
-2026-11-17：schedule_engine.py 按职责拆成「数据/纯函数 + 3 个 mixin」，本文件锁住四件事：
+2026-11-24 方案 B（docs/persona_roadmap.md T3）：删掉基于 SOURCE_HASHES 的源码 sha256
+哈希锁，只留「不依赖哈希」的模块归属断言和 behavior golden（tests/golden_split.json
+只保留 behavior 段，按当前代码重新生成）。锁四件事：
 
-1. 旧 import 路径不变：schedule_engine 里原来的名字全部还在（门面 re-export），
-   阶段 0 明确删除的 friend_dinner_segments 除外；
-2. 方法源码逐字节等价：每个方法 / 模块级函数的 sha256 与拆分前的快照一致；
-3. 行为逐字节等价：纯函数的输入输出与拆分前的快照（tests/golden_split.json）一致；
+1. 旧 import 路径不变：schedule_engine 里原来的名字全部还在（门面 re-export）；
+2. 方法归属：每个业务方法都在 owner mixin 模块，门面自身不定义业务方法；
+3. 行为等价：纯函数的输入输出与 golden 一致（test_behavior_*）；
 4. 依赖单向：子模块不 import 门面；新文件都在 1500 行以内、没有裸 except: pass。
 """
 import ast
-import hashlib
-import inspect
 import json
 import os
 import sys
@@ -36,20 +35,121 @@ import schedule_slots  # noqa: E402
 with open(os.path.join(TESTS, "golden_split.json"), encoding="utf-8") as _fh:
     GOLDEN = json.load(_fh)
 
-SOURCE_HASHES = GOLDEN["source_hashes"]
 BEHAVIOR = GOLDEN["behavior"]
-LEGACY_NAMES = SOURCE_HASHES["schedule_engine.dir"]
-METHOD_HASHES = SOURCE_HASHES["schedule_engine"]
-MODULE_FN_HASHES = SOURCE_HASHES["schedule_engine.module_functions"]
 NEW_MODULES = ["schedule_plan.py", "schedule_skeleton.py", "schedule_slots.py", "schedule_diary.py"]
 MIXIN_CLASSES = [schedule_skeleton.ScheduleSkeletonMixin, schedule_slots.ScheduleSlotsMixin, schedule_diary.ScheduleDiaryMixin]
 FACADE = schedule_engine
 OWNER = {'schedule_plan': 'schedule_plan', 'schedule_skeleton': 'schedule_skeleton', 'schedule_slots': 'schedule_slots', 'schedule_diary': 'schedule_diary'}
 
+LEGACY_NAMES = (
+    "ADMIN_BANK",
+    "Any",
+    "BREAKFAST_BANK",
+    "CAR_BRANDS",
+    "CAR_POOL",
+    "CATEGORY_MOOD",
+    "CITY_POOL",
+    "COMMUTE_BANK",
+    "COMPANY_POOL",
+    "CREATIVE_BANK",
+    "DINNER_BANK",
+    "DISTRICT_MAP",
+    "HOME_LIFE_BANK",
+    "HOME_STYLES",
+    "HOTEL_BANK",
+    "INDOOR_BANK",
+    "JIT_HOURS",
+    "LUNCH_BANK",
+    "MED_BANK",
+    "MOOD_BASE",
+    "MOOD_KEYS",
+    "NEGATIVE_LABELS",
+    "NIGHT_LIFE_BANK",
+    "OCCUPATION_BANKS",
+    "OFFICE_WORK_BANK",
+    "POSITIVE_LABELS",
+    "PROVINCE_CITIES",
+    "REST_BANK",
+    "ROAD_BANK",
+    "SAFE_EVENT",
+    "SALES_BANK",
+    "SCENIC_BANK",
+    "SERVICE_BANK",
+    "STATION_BANK",
+    "STUDENT_BANK",
+    "SWIM_DETAILS",
+    "SWIM_PLACES",
+    "ScheduleEngine",
+    "TAXI_BANK",
+    "TEACHER_BANK",
+    "TECH_WORK_BANK",
+    "TRAVEL_KEYWORDS",
+    "TYPE_CHECKING",
+    "_FOOD_ACTIVITY_WORDS",
+    "_MEETING_DETAIL_WORDS",
+    "_SLEEP_ACTIVITY_WORDS",
+    "_WORK_DETAIL_WORDS",
+    "_amo_clock",
+    "_balanced",
+    "_brief_world",
+    "_city_of",
+    "_clock_now",
+    "_clock_today",
+    "_diary_material_lines",
+    "_mood_text",
+    "_note_swallowed",
+    "_place_of",
+    "_scenic_text",
+    "_strip_fences",
+    "_weather_text",
+    "_with_city",
+    "amusement_segments",
+    "annotations",
+    "asyncio",
+    "business_trip_segments",
+    "clamp",
+    "date",
+    "datetime",
+    "detail_conflicts",
+    "diary_presence_rules",
+    "fmt_hhmm",
+    "hashlib",
+    "homebody_segments",
+    "indoor_rest_segments",
+    "is_long_holiday",
+    "jit_plan",
+    "json",
+    "json_extract",
+    "logger",
+    "md5_int",
+    "occupation_kind",
+    "outing_segments",
+    "overtime_segments",
+    "parse_hhmm",
+    "period_rest_segments",
+    "pick_amusement_spot",
+    "pick_holiday_plan",
+    "random",
+    "re",
+    "scenic_segments",
+    "shopping_segments",
+    "sick_rest_segments",
+    "swim_segments",
+    "timedelta",
+    "travels_for_work",
+    "work_bank_for",
+    "workday_segments",
+)
 
-def _source_hash(obj):
-    fn = obj.__func__ if isinstance(obj, (staticmethod, classmethod)) else obj
-    return hashlib.sha256(inspect.getsource(fn).encode("utf-8")).hexdigest()
+
+def _own_methods(cls):
+    """类自己定义的方法名（不含 dunder / 继承来的）。"""
+    return {name for name, value in vars(cls).items()
+            if callable(value) and not name.startswith("__")}
+
+
+#: 归属断言用的方法清单：直接从 mixin 类定义里取，不依赖任何源码哈希。
+METHOD_NAMES = tuple(sorted(set().union(*(_own_methods(cls) for cls in MIXIN_CLASSES))))
 
 
 def _module_imports(path):
@@ -89,7 +189,6 @@ def _line_count(path):
         return sum(1 for _ in fh)
 
 
-
 class FacadeApiTests(unittest.TestCase):
     def test_facade_exports_every_legacy_name(self):
         missing = [name for name in LEGACY_NAMES if not hasattr(schedule_engine, name)]
@@ -112,36 +211,20 @@ class FacadeApiTests(unittest.TestCase):
         self.assertEqual(["ScheduleEngine"] + [cls.__name__ for cls in MIXIN_CLASSES] + ["object"], mro)
 
     def test_each_method_lives_in_its_owner_module(self):
+        # 不读源码哈希：只看每个方法对象的 __module__ 是否落在 owner mixin 里。
+        self.assertTrue(METHOD_NAMES, "没有从 mixin 取到任何方法，归属断言形同虚设")
         wrong = []
-        for name in METHOD_HASHES:
+        for name in METHOD_NAMES:
             owner = getattr(schedule_engine.ScheduleEngine, name).__module__
             if owner not in OWNER:
                 wrong.append((name, owner))
         self.assertEqual([], wrong)
+        # 反向兜底：门面自己不许定义业务方法（否则 MRO 前面的门面实现会盖住 mixin）。
+        facade_own = sorted(_own_methods(schedule_engine.ScheduleEngine))
+        self.assertEqual([], facade_own)
 
 
-class ByteEquivalenceTests(unittest.TestCase):
-    def test_method_sources_byte_identical(self):
-        # 2026-11-20：_diary_prompt 的同席人提示词改成中性规则（示例人名会被模型照抄），
-        # 哈希按新源码更新；属行为修复，不是搬家。
-        # 2026-11-21：build_skeleton 增加 schedule_block_mode 开关（现在默认开），
-        # yesterday_summary 的睡眠时长改成按时长累计（修块模式误判熬夜），哈希按新源码更新。
-        # 同日：_diary_prompt 增加「他」的称呼配置（person_ref_title），哈希按新源码更新。
-        # 2026-11-22：A1 决策，_pick_event 休息日不再自动发 friend_dinner 社交事件；
-        # 随后删除 _friend_dinner_segments 分支（build_skeleton/_rest_segments 源码变化），
-        # 哈希按新源码更新（行为变更：日程不再自动生成社交块）。
-        # 2026-11-23（阶段 0）：_pick_event 尾部注释改写（friend_dinner_segments 已删），
-        # 只有注释变化、行为零变化，哈希按新源码更新。
-        changed = [(name, _source_hash(getattr(schedule_engine.ScheduleEngine, name)), want)
-                   for name, want in METHOD_HASHES.items()
-                   if _source_hash(getattr(schedule_engine.ScheduleEngine, name)) != want]
-        self.assertEqual([], changed)
-
-    def test_module_function_sources_byte_identical(self):
-        changed = [name for name, want in MODULE_FN_HASHES.items()
-                   if _source_hash(getattr(schedule_engine, name)) != want]
-        self.assertEqual([], changed)
-
+class BehaviorTests(unittest.TestCase):
     def test_behavior_matches_pre_split_golden(self):
         combos = [(0, 0.0, 0, False, "", 0, None), (7, 0.3, 1200, False, "平静", 0, 0),
                   (9, 0.8, 50000, False, "开心", -200, 1), (12, 0.5, 9999, True, "疲惫", 300, 2),
@@ -207,4 +290,3 @@ class StructureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

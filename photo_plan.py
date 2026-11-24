@@ -43,6 +43,7 @@ try:  # 包内导入（插件运行态）
         _scene_key,
         clean_place,
         pose_text,
+        resolve_zone,
         zone_for_place,
     )
 except ImportError:  # 直接按文件加载时（单测 / work 下的工具脚本）
@@ -56,6 +57,7 @@ except ImportError:  # 直接按文件加载时（单测 / work 下的工具脚�
             _scene_key,
             clean_place,
             pose_text,
+            resolve_zone,
             zone_for_place,
         )
 
@@ -212,8 +214,17 @@ def normalize_activity(activity: Any) -> tuple[dict, list]:
     elif not zone and want:
         data["zone"] = want
         fixes.append(("", want))
+    zone = str(data.get("zone") or "").strip()
+    if zone == "road" and place:
+        # 23:00 事故读侧：旧行 place=楼下小馆、zone=road，按地点纠成 restaurant。
+        target = resolve_zone(place, data.get("category"), zone)
+        if target and target != "road":
+            fixes.append((zone, target))
+            data["zone"] = target
+            data["transit"] = ""
+            data["vehicle"] = ""
     if not data.get("zone"):
-        data["zone"] = zone_for_place(place)
+        data["zone"] = resolve_zone(place, data.get("category"), "")
     return data, fixes
 
 
@@ -315,20 +326,39 @@ def pick_pose_for_plan(plan: PhotoPlan, library: Any = None) -> tuple[Any, str]:
         getter = getattr(library, "random_pose", None)
         if callable(getter):
             pose = None
+            # 2026-11-23：聊天里点名了姿势就先 match_pose，再随机；
+            # 点名的姿势如果不符合当前 zone，仍按随机池走。
             try:
-                # 2026-11-22 task-23：按 scene_key（home_bed/home_sofa/home_bath…）
-                # 选房间池，不再用粗粒度的 base_zone="home"（否则客厅能抽到床姿）。
                 try:
-                    pose = getter(plan.scene_key or plan.base_zone, str(plan.activity or ""))
-                except TypeError:
-                    pose = getter(plan.scene_key or plan.base_zone)
-            except TypeError:
-                try:
-                    pose = getter()
-                except Exception:
-                    pose = None
+                    from .pose_library import match_pose as _match_pose, pose_fits_zone as _fits
+                except ImportError:
+                    from pose_library import match_pose as _match_pose, pose_fits_zone as _fits
+                _act = plan.activity if isinstance(plan.activity, dict) else {}
+                _text = " ".join([
+                    str(plan.scene or ""), str(plan.explicit_place or ""),
+                    str(_act.get("activity") or ""), str(_act.get("detail") or ""),
+                    str(_act.get("place") or ""),
+                ])
+                _named = _match_pose(library, _text)
+                if _named and _fits(_named, plan.scene_key or plan.base_zone):
+                    pose = _named
             except Exception:
                 pose = None
+            if pose is None:
+                try:
+                    # 2026-11-22 task-23：按 scene_key（home_bed/home_sofa/home_bath…）
+                    # 选房间池，不再用粗粒度的 base_zone="home"（否则客厅能抽到床姿）。
+                    try:
+                        pose = getter(plan.scene_key or plan.base_zone, str(plan.activity or ""))
+                    except TypeError:
+                        pose = getter(plan.scene_key or plan.base_zone)
+                except TypeError:
+                    try:
+                        pose = getter()
+                    except Exception:
+                        pose = None
+                except Exception:
+                    pose = None
             line = pose_text(pose)
             if line:
                 # 用了姿势库的姿势：姿势锁交给库里的描述，不再套规则默认英文姿势

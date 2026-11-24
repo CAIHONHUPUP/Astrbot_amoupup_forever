@@ -122,25 +122,33 @@ def zero(counts: Mapping[str, int] | None) -> bool:
 # ---------------------------------------------------------------- 基础解析
 
 
-def zone_of(place: Any, zone: Any = "") -> str:
-    """地点 → 区域。优先用块自带 zone，其次走仓库统一地点表，最后按词猜。"""
+def zone_of(place: Any, zone: Any = "", category: Any = "") -> str:
+    """地点 → 区域。具体地点 + road 时读时纠偏，其余仍优先用块自带 zone。"""
     text = str(zone or "").strip()
-    if text:
-        return text
     place_text = str(place or "").strip()
+    if text:
+        if text == "road" and place_text:
+            try:
+                from .domains.schedule.place import resolve_zone as _resolve
+            except ImportError:  # 直接按文件加载时
+                from domains.schedule.place import resolve_zone as _resolve
+            fixed = str(_resolve(place_text, category, text) or "")
+            if fixed and fixed != "road":
+                return fixed
+        return text
     if not place_text:
         return ""
-    mapper: Callable[[str], str] | None = None
+    mapper: Callable[..., str] | None = None
     try:  # 仓库的统一地点表（纯函数域）
-        from .domains.schedule.place import zone_for_place as mapper
+        from .domains.schedule.place import resolve_zone as mapper
     except ImportError:  # 直接按文件加载时
         try:
-            from domains.schedule.place import zone_for_place as mapper
+            from domains.schedule.place import resolve_zone as mapper
         except ImportError:
             mapper = None
     if mapper is not None:
         try:
-            mapped = str(mapper(place_text) or "")
+            mapped = str(mapper(place_text, category, "") or "")
         except Exception:
             mapped = ""
         if mapped:

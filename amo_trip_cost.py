@@ -13,12 +13,6 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from amo_numbers import yuan as _yuan
 
-try:  # 价目表：只读静态表（v1 默认口径，坏了就回退旧常量）
-    from . import price_book as _price_book
-except ImportError:  # 直接按文件加载时
-    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        import price_book as _price_book
-
 import logging
 import random
 
@@ -90,12 +84,8 @@ _DEFAULT_MULTIPLIER = 1.6
 
 
 def _book_multiplier(plugin):
-    """价目表版本倍率；表缺失/非法返回 0（调用方回退配置/1.6）。"""
-    try:
-        return float(_price_book.multiplier(plugin) or 0)
-    except Exception as exc:
-        logger.warning("[trip] 读价目表倍率失败，回退配置: %s", exc)
-        return 0.0
+    """物价表已退役：不再有版本倍率，返回 0 让调用方走免费/默认。"""
+    return 0.0
 
 
 def price(plugin, kind, base):
@@ -317,13 +307,8 @@ def _refund(plugin, value, idem):
 
 # ---------- 第十轮 B3：旅游日逐块结算（只结已经发生的块）----------
 def _cost_quote(kind):
-    """价签区间：默认查价目表（v1 与旧常量逐项一致）；表坏/缺就回退旧常量。"""
-    try:
-        return _price_book.quote(None, kind)
-    except Exception as exc:
-        logger.warning("[trip] 价目表不可用，回退 TRIP_COST_RANGES: %s", exc)
-        low, high = TRIP_COST_RANGES.get(kind, TRIP_COST_RANGES["daily"])
-        return {"version": "", "min_cents": low, "max_cents": high}
+    """物价表已退役：旅游不再计价。"""
+    return {"version": "", "min_cents": 0, "max_cents": 0}
 
 
 def _trip_cost(kind, trip_id, day, activity, start_text):

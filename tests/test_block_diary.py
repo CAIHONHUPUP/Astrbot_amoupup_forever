@@ -33,7 +33,7 @@ from amo_human_state import HumanState  # noqa: E402
 from amo_schedule import ScheduleMixin  # noqa: E402
 from amo_shared import today_str  # noqa: E402
 from amo_state_common import block_diary_enabled, block_id  # noqa: E402
-from amo_wallet import Wallet  # noqa: E402
+from amo_init import _NoMoney as Wallet  # noqa: E402
 
 
 def _block(start, end, activity, place, zone="home", category="rest"):
@@ -499,6 +499,15 @@ class DetailTests(BaseCase):
 
         return asyncio.run(_run())
 
+    def test_sleep_block_detail_is_skipped_not_generating(self):
+        block = _block("00:50", "01:10", "在洗漱，准备睡了", "家", "home", "sleep")
+        self.install([block])
+        first, second = self._detail("00:50", "01:10")
+        self.assertNotEqual(first["data"].get("status"), "generating")
+        self.assertTrue(first["data"].get("skipped"))
+        self.assertFalse(any(not task.done() for task in self.plugin._spawned))
+        self.assertNotEqual(second["data"].get("status"), "generating")
+
     def test_detail_ignores_old_hour_table_and_regenerates_block(self):
         # 第 1 阶段重构：详情不再 fallback 旧 schedule_diary 的 item.start 行；
         # 拿不到块日记就交给块重新生成，旧正文绝不当缓存回放。
@@ -807,75 +816,6 @@ class SleepPlaceholderTests(BaseCase):
 
 
 
-class SpendingDetailTests(BaseCase):
-    """详情「本时段消费」：窗口=块 start-end，金额分→元，只读。"""
-
-    PLUGIN = DetailPlugin
-
-    def _spend(self, at, cents, reason, idem):
-        # 钱包流水的时间戳取 clock.now_ts()：要落进块窗口，就得把时钟临时拨到消费那一刻
-        # （不能只 patch time.time，账本根本不再读它）。用完恢复原冻结点。
-        import clock as _clock
-
-        day = datetime.date.fromisoformat(self.day)
-        hour, minute = [int(x) for x in at.split(":")]
-        base = __import__("time").mktime(day.timetuple())
-        prev = _clock.frozen()
-        _clock.freeze(datetime.datetime.combine(day, datetime.time(hour, minute)))
-        try:
-            self.plugin.wallet.credit(100000, "init", "init-" + idem)
-            ok = self.plugin.wallet.debit(cents, reason, idem, category="food", item_name=reason)
-        finally:
-            if prev is None:
-                _clock.unfreeze()
-            else:
-                _clock.freeze(prev)
-        self.assertTrue(ok, reason)
-        return base
-
-    def _detail(self, start, end):
-        self.plugin.body = {"date": self.day, "start": start, "end": end}
-        return asyncio.run(self.plugin.api_schedule_detail())["data"]
-
-    def test_spending_uses_block_window_and_converts_cents(self):
-        self.set_now(19, 0)
-        block = _block("16:56", "18:26", "在商场逛街", "商场", "mall", "play")
-        self.install([block])
-        self.plugin.db.save_block_diary(self.day, block_id(self.day, block), "块日记",
-                                        start="16:56", end="18:26", place="商场",
-                                        version=0, status="valid")
-        self._spend("18:10", 2500, "外卖", "spend-1")
-        self._spend("17:40", 1500, "面条", "spend-2")
-        self._spend("15:00", 9900, "午饭", "spend-3")  # 窗口外，不能混进来
-        data = self._detail("16:56", "18:26")
-        self.assertEqual([item["reason"] for item in data["spending"]], ["面条", "外卖"])
-        self.assertEqual([item["amount_yuan"] for item in data["spending"]], [15.0, 25.0])
-        self.assertEqual(data["spending_total_yuan"], 40.0, "25.00 + 15.00，不是 2500")
-        self.assertNotIn(2500.0, [item["amount_yuan"] for item in data["spending"]])
-
-    def test_spending_only_inside_subhour_block(self):
-        self.set_now(19, 0)
-        block = _block("16:07", "16:56", "在医院排队", "医院", "hospital", "health")
-        self.install([block])
-        self.plugin.db.save_block_diary(self.day, block_id(self.day, block), "块日记",
-                                        start="16:07", end="16:56", place="医院",
-                                        version=0, status="valid")
-        self._spend("16:20", 500, "挂号", "spend-4")
-        self._spend("17:00", 700, "水果", "spend-5")
-        data = self._detail("16:07", "16:56")
-        self.assertEqual([item["reason"] for item in data["spending"]], ["挂号"])
-        self.assertEqual(data["spending_total_yuan"], 5.0)
-
-    def test_spending_empty_returns_empty_list(self):
-        self.set_now(19, 0)
-        block = _block("16:56", "18:26", "在商场逛街", "商场", "mall", "play")
-        self.install([block])
-        self.plugin.db.save_block_diary(self.day, block_id(self.day, block), "块日记",
-                                        start="16:56", end="18:26", place="商场",
-                                        version=0, status="valid")
-        data = self._detail("16:56", "18:26")
-        self.assertEqual(data["spending"], [])
-        self.assertEqual(data["spending_total_yuan"], 0.0)
 
 
 if __name__ == "__main__":

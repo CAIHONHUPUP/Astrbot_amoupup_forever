@@ -11,7 +11,6 @@ ROUTE_SPECS = (
     ("/get_status", "api_get_status", ("GET",)),
     ("/diary/tree", "api_diary_tree", ("GET", "POST",)),
     ("/diary/read", "api_diary_read", ("GET", "POST",)),
-    ("/diary/audit", "api_diary_audit", ("GET",)),
     ("/diary/write", "api_diary_write", ("POST",)),
     ("/diary/note", "api_diary_note", ("POST",)),
     ("/diary/open", "api_diary_open", ("GET", "POST",)),
@@ -55,8 +54,6 @@ ROUTE_SPECS = (
     ("/schedule/detail", "api_schedule_detail", ("GET", "POST",)),
     ("/schedule_detail", "api_schedule_detail", ("GET", "POST",)),
     ("/facts", "api_facts", ("GET",)),
-    ("/mood/update", "api_mood_update", ("GET", "POST",)),
-    ("/mood_update", "api_mood_update", ("GET", "POST",)),
     ("/schedule/regen", "api_schedule_regen", ("GET", "POST",)),
     # 日程变更 + 体检拒绝审计（只读；GET/POST 都收，POST 只是带 body 方便传 day/limit）
     ("/schedule/audit", "api_schedule_audit", ("GET", "POST")),
@@ -65,15 +62,11 @@ ROUTE_SPECS = (
     ("/schedule/block/delete", "api_schedule_block_delete", ("POST",)),
     # B3c：按审计 before 撤销/恢复，同样只收 POST
     ("/schedule/block/restore", "api_schedule_block_restore", ("POST",)),
-    ("/kb/regen", "api_kb_regen", ("GET", "POST",)),
     ("/scenic_kb/regen", "api_scenic_kb_regen", ("GET", "POST",)),
     ("/scenic_kb_regen", "api_scenic_kb_regen", ("GET", "POST",)),
-    ("/kb_regen", "api_kb_regen", ("GET", "POST",)),
     ("/schedule_regen", "api_schedule_regen", ("GET", "POST",)),
     ("/weather", "api_weather", ("GET",)),
     ("/weather/refresh", "api_weather_refresh", ("GET", "POST")),
-    ("/shop/orders", "api_shop_orders", ("GET",)),
-    ("/shop/arrival/seen", "api_shop_arrival_seen", ("POST",)),
     ("/gift", "api_gift", ("GET",)),
     ("/gift/list", "api_gift", ("GET",)),
     ("/gift/wish/approve", "api_gift_wish_approve", ("POST",)),
@@ -97,6 +90,8 @@ ROUTE_SPECS = (
     ("/persona/approve", "api_persona_approve", ("POST",)),
     ("/persona/export", "api_persona_export", ("POST",)),
     ("/persona/preview", "api_persona_preview", ("POST",)),
+    ("/persona/auto", "api_persona_auto", ("POST",)),
+    ("/persona/undo", "api_persona_undo", ("POST",)),
     ("/photo/test", "api_photo_test", ("GET", "POST",)),
     ("/photo/prompt", "api_photo_prompt", ("GET", "POST",)),
     ("/photo/prompt_saved", "api_photo_prompt_saved", ("GET", "POST",)),
@@ -134,7 +129,7 @@ ROUTE_SPECS = (
 
 
 #: 路由总数（增删接口后只改这里；quality_gate 与 tests/test_route_table 都读它）
-ROUTE_COUNT_EXPECTED = 119
+ROUTE_COUNT_EXPECTED = 114
 
 
 def build_routes(api):

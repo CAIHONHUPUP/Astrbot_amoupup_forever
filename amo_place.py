@@ -19,6 +19,8 @@ try:  # 包模式
         _PLACE_ZONE_KEEP,
         clean_place,
         normalize_place,
+        repair_zone_rows,
+        resolve_zone,
         zone_for_place,
     )
 except ImportError:  # 直接按文件加载时
@@ -30,5 +32,7 @@ except ImportError:  # 直接按文件加载时
             _PLACE_ZONE_KEEP,
             clean_place,
             normalize_place,
+            repair_zone_rows,
+            resolve_zone,
             zone_for_place,
         )

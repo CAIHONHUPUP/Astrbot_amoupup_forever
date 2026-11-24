@@ -22,11 +22,11 @@ else:
             from amo_observability import note as _note_swallowed
 
 try:
-    from .amo_shared import (MOOD_KEYS, clean_ui_value, clamp, day_meta, logger,
+    from .amo_shared import (clean_ui_value, day_meta, logger,
     today_str, web_request)
 except ImportError:
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        from amo_shared import (MOOD_KEYS, clean_ui_value, clamp, day_meta, logger,
+        from amo_shared import (clean_ui_value, day_meta, logger,
         today_str, web_request)
 
 try:  # 块级小日记：块身份 / 开关
@@ -296,14 +296,32 @@ def _detail_enqueue(plugin, day, item, items, start, end, reason="panel_get"):
             "day": day, "start": item.get("start", start), "end": end or item.get("end", ""),
             "diary": plugin._ui_gap_line(item), "archived": True, "fallback": True,
             "empty_message": "这一天的日记已经归档了，没有留下这一块的小记。"}}
+    spawned = False
+    has_spawn = False
     try:
         spawn = (getattr(plugin, "_spawn_diary_task", None)
                  or getattr(plugin.state, "_spawn_diary_task", None))
         if callable(spawn):
-            spawn(day, item, _diary_spawn_items(plugin, items),
-                  plugin.db.schedule_version(day), reason=reason)
+            has_spawn = True
+            spawned = spawn(day, item, _diary_spawn_items(plugin, items),
+                            plugin.db.schedule_version(day), reason=reason) is not None
     except Exception as _amo_exc:
         _note_swallowed("amo_api_schedule.api_schedule_detail.enqueue", _amo_exc)
+    if has_spawn and not spawned:
+        # 睡觉/发呆这类空转块不会单独生成块日记；以前这里仍回 generating，
+        # 面板就会永远显示“正在写”，刷新多少次都没有（2026-11-24 线上）。
+        try:
+            try:
+                from .schedule_content import is_informative as _informative
+            except ImportError:
+                from schedule_content import is_informative as _informative
+            if not _informative(item):
+                return {"code": 0, "data": {
+                    "day": day, "start": start, "end": end or item.get("end", ""),
+                    "diary": "", "skipped": True, "fallback": True,
+                    "empty_message": "这一块是休息/睡觉，不单独写小日记；当天大日记会带过。"}}
+        except Exception as _amo_exc:
+            _note_swallowed("amo_api_schedule.api_schedule_detail.tier", _amo_exc)
     return {"code": 0, "data": {
         "day": day, "start": start, "end": end or item.get("end", ""),
         "status": "generating",
@@ -439,25 +457,6 @@ def _schedule_audit_visible(plugin, day="", limit=20):
 
 class ScheduleApiMixin(_MixinBase):
     _status_cache: dict | None  # 与 CommandMixin 同一类型（/status 两秒缓存）
-    async def api_mood_update(self):
-        await self._ensure_ready()
-        data = await self._body()
-        incoming = data.get("mood") if isinstance(data.get("mood"), dict) else data
-        for key in MOOD_KEYS:
-            if key in incoming:
-                try:
-                    self.state.mood[key] = clamp(float(incoming[key]), 0.0, 100.0)
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_api_schedule.ScheduleApiMixin.api_mood_update", _amo_exc)
-                    continue
-        self.state.save()
-        self._status_cache = None  # 心情变了，下一次 /status 必须重算
-        try:  # task-30：mood_update 返回的快照也走场景账本（只改 activity，形状不变）
-            from .amo_state_snapshot import snapshot_with_scene as _snap_with_scene
-        except ImportError:
-            from amo_state_snapshot import snapshot_with_scene as _snap_with_scene
-        return {"code": 0, "data": _snap_with_scene(self)}
-
     def _kick_schedule_titles(self, day):
         """后台补 4 字小标题：同一日期 5 分钟最多一次，GET 不等 LLM。"""
         try:
@@ -1143,8 +1142,8 @@ class ScheduleApiMixin(_MixinBase):
         if callable(fn):
             try:
                 return fn(item)
-            except Exception:  # cleanup
-                pass
+            except Exception as exc:  # cleanup
+                logger.debug("[amo_api_schedule._gap_label] optional step failed: %s", exc)
         return "在家休息（日常发呆）"
 
     def _display_item(self, item):

@@ -1,3 +1,0 @@
-BANNED by words: 双脚交叉坐 | banned: ['脚交']
-BANNED by words: 伸腿・侧肘支撑坐 | banned: ['性感']
-BANNED by words: 正坐・撩发 | banned: ['性感', '四肢着地']

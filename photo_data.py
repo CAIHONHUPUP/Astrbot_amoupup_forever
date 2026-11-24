@@ -121,6 +121,8 @@ def _log_photo_debug(engine, activity, plan, final_prompt, pose_text=""):
         )
 
 
+#: 兼容视图：生产照片规则以 photo_rules.SCENE_RULES 为准；
+#: 这些旧表只保留给旧测试/外部导入，photo_engine 不再依赖。
 #: 户外/非居家场景的兜底姿势（姿势库那 9 个都是床上的，出门照搬会穿帮）
 OUTDOOR_POSES = {
     "road": "站在车厢里，一只手扶着头顶的扶手或吊环，身体微微侧着看镜头",

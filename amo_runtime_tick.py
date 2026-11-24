@@ -36,17 +36,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+        AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+            AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+                AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
             )
 
 
@@ -180,17 +180,6 @@ class RuntimeTickMixin(RuntimeMixinBase):
         if now_ts() - to_float(getattr(self, "_last_solo_return", 0), 0) > 120:
             self._last_solo_return = now_ts()
             self._spawn(self._maybe_solo_return())
-        # 网购订单推进：已下单 → 运输中 → 已到货（2026-11-21：以前只在聊天/面板时推进）
-        if now_ts() - to_float(getattr(self, "_last_ecom_tick", 0), 0) > 300:
-            self._last_ecom_tick = now_ts()
-            try:
-                try:
-                    from .ecommerce_engine import EcommerceEngine
-                except ImportError:
-                    from ecommerce_engine import EcommerceEngine
-                EcommerceEngine(self).tick()
-            except Exception as exc:
-                logger.debug("[amo] 网购订单推进失败: %s", exc)
         # 姿势参考图：新增种子/被删图后自动补，30 分钟最多试一次（重载也能触发）
         if (getattr(self, "pose", None) is not None
                 and now_ts() - to_float(getattr(self, "_last_pose_ref_fill", 0), 0) > 1800):
@@ -203,10 +192,7 @@ class RuntimeTickMixin(RuntimeMixinBase):
             # 2026-11-22 P0：账本 vs 账户、无原扣退款要能被发现并留痕（只读对账，不自动改库）。
             self._last_wallet_reconcile = now_ts()
             self._wallet_reconcile_check()
-        if now_ts() - to_float(getattr(self, "_last_milestone_check", 0), 0) > 300:
-            self._last_milestone_check = now_ts()
-            self._spawn(self._maybe_milestone_archive())
-        elif now_ts() - to_float(getattr(self, "_last_profile_sync", 0), 0) > 600:
+        if now_ts() - to_float(getattr(self, "_last_profile_sync", 0), 0) > 600:
             # 画像每 10 分钟对一次账，保证面板和本地不脱节
             self._last_profile_sync = now_ts()
             self._spawn(self._sync_profiles_to_data())
@@ -273,12 +259,6 @@ class RuntimeTickMixin(RuntimeMixinBase):
 
     async def _tick_social(self, umo):
         # 社交/微型事件/记忆审计这类纯副作用钩子
-        if now_ts() - to_float(getattr(self, "_last_social_check", 0), 0) > 60:
-            self._last_social_check = now_ts()
-            if getattr(self, "social_learn", None) is not None:
-                self._spawn(self.social_learn.tick(
-                    umo=umo or "",
-                    uid=str(getattr(self, "_last_uid", "") or "")))
         try:
             if getattr(self, "micro_events", None) is not None:
                 self.micro_events.lifecycle_tick()
@@ -301,6 +281,17 @@ class RuntimeTickMixin(RuntimeMixinBase):
                     self._spawn(self._audit_memories())
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin._tick.memory_audit", _amo_exc)
+        try:
+            heart = getattr(self, "heart", None)
+            if heart is not None:
+                import time as _time_h
+                elapsed = _time_h.time() - float(heart.state.get("updated") or 0)
+                if elapsed > 1800:
+                    heart.tick(elapsed / 60.0)
+                    heart.state["updated"] = _time_h.time()
+                    self.db.kv_set("heart_state", dict(heart.state))
+        except Exception as _amo_exc:
+            _note_swallowed("amo_runtime.HumanCorePlugin._tick.heart", _amo_exc)
 
     async def _tick_schedule_media(self, umo):
         try:
@@ -387,13 +378,6 @@ class RuntimeTickMixin(RuntimeMixinBase):
                 self._decay_hate_relations()
             except Exception as _amo_exc:
                 _note_swallowed("amo_runtime.HumanCorePlugin.relation_decay", _amo_exc)
-        if (self.cfg_bool("auto_relation", True)
-                and now - self._last_relation_sediment > 1800):
-            self._last_relation_sediment = now
-            try:
-                await self._sediment_relations()
-            except Exception as exc:
-                logger.debug("[amo] 关系沉淀失败: %s" % exc)
         if now - self._last_purge > 3600:
             self._last_purge = now
             try:
@@ -471,102 +455,6 @@ class RuntimeTickMixin(RuntimeMixinBase):
         except Exception as _amo_exc:
             _note_swallowed("amo_runtime.HumanCorePlugin.late_tick", _amo_exc)
 
-
-    async def _maybe_milestone_archive(self):
-        """每 N 轮私聊压成一条「里程碑」记忆；原始聊天不删，只多一条归纳。"""
-        if getattr(self, "_milestone_running", False):
-            return
-        self._milestone_running = True
-        try:
-            await self._milestone_archive_once()
-        finally:
-            self._milestone_running = False
-
-    async def _milestone_archive_once(self):
-        """真正的归档逻辑（外面包了并发锁）。"""
-        if not self.cfg_bool("milestone_enabled", True):
-            return
-        mem = self._data_mem()
-        if mem is None or not callable(getattr(mem, "messages_since", None)):
-            return
-        every = max(2, self.cfg_int("milestone_every_turns", 20))
-        min_messages = max(4, self.cfg_int("milestone_min_messages", 12))
-        try:
-            profiles = self.db.list_profiles(limit=20) or []
-        except Exception as _amo_exc:
-            _note_swallowed("amo_runtime.HumanCorePlugin._milestone_archive_once", _amo_exc)
-            profiles = []
-        for profile in profiles:
-            uid = str(profile.get("uid") or "")
-            home_umo = str(profile.get("private_umo") or "")
-            if not uid or not home_umo:
-                continue
-            if str(profile.get("relation") or "") != "相恋":
-                continue
-            key = "milestone_ts:" + uid
-            try:
-                since = to_int(self.db.kv_get(key, 0))
-            except Exception as _amo_exc:
-                _note_swallowed("amo_runtime.HumanCorePlugin._milestone_archive_once", _amo_exc)
-                since = 0
-            # 按这个人的会话取（umo），会话里双方的话都在；不能按 uid（她的行是 uid='bot'），
-            # 也不能不带范围（会把所有人的聊天拉进来）。
-            rows: list[Any] = []
-            for one_umo in self._ritual_umos(profile)[:3]:
-                try:
-                    part = await self._data_call(
-                        "messages_since", self._data_bot_id(), "", since, 200, umo=one_umo
-                    )
-                except Exception as exc:
-                    logger.debug("[amo] 里程碑取聊天失败(%s): %s" % (one_umo, exc))
-                    continue
-                rows.extend(part or [])
-            rows.sort(key=lambda r: to_int(r.get("created_at"), 0))
-            # P2：这里原来连着判了两遍
-            if not rows:
-                continue
-            if not since:
-                # 第一次只从"现在"开始记，不把全部历史一次性压成一条。
-                # 注意不能用 rows[-1]（那是本批 400 条里最旧的一条），否则会从历史开始滚。
-                try:
-                    self.db.kv_set(key, now_ts())
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_runtime.HumanCorePlugin._milestone_archive_once", _amo_exc)
-                log_event("info", "milestone.start", uid=uid)
-                continue
-            if not _ms_should_archive(rows, every, min_messages):
-                # 每 20 轮才归档的话，话少的那天一条摘要都不会有（11-08 之后
-                # conversation_summary 断了一周）。这里给一个时间兜底：
-                # 距上次归档 >= 2 小时、又攒了 >= 6 条，也压一条。
-                idle_minutes = max(30, self.cfg_int("milestone_idle_minutes", 120))
-                idle_msgs = max(4, self.cfg_int("milestone_idle_min_messages", 6))
-                if not _ms_idle_due(len(rows), since, int(now_ts()), idle_minutes, idle_msgs):
-                    continue
-            body = _ms_transcript(rows)
-            label = _now().strftime("%Y-%m-%d")
-            system = "你是长期记忆整理器。只输出一段中文总结，不要标题、不要分点、不要时间戳。"
-            prompt = _ms_build_prompt(label, body)
-            try:
-                summary = await self.llm.chat_raw(home_umo, system, prompt)
-            except Exception as exc:
-                logger.debug("[amo] 里程碑总结失败: %s" % exc)
-                summary = ""
-            summary = re.sub(r"\s+", " ", str(summary or "")).strip()
-            if summary.upper().startswith("[SKIP]") or len(summary) < 8:
-                log_event("debug", "milestone.skip", uid=uid, reason="nothing_important")
-                continue
-            content = _ms_build_content(label, summary)
-            # 里程碑是按人归纳的私聊产物，明确写进私聊域
-            written = await self._write_memory_checked(
-                uid, content, "milestone", 2, scope="private"
-            )
-            logger.info("[amo] 里程碑归档%s: %s" % ("已写入" if written else "写入失败", content[:80]))
-            if written:
-                try:
-                    last_ts = int(rows[-1].get("created_at") or now_ts())
-                    self.db.kv_set(key, max(last_ts + 1, since))
-                except Exception as _amo_exc:
-                    _note_swallowed("amo_runtime.HumanCorePlugin._milestone_archive_once", _amo_exc)
 
     async def _maybe_daily_digest(self):
         """每天上午把"昨天"的聊天压成一条长期记忆（阶段记忆）。"""
@@ -657,11 +545,17 @@ class RuntimeTickMixin(RuntimeMixinBase):
             seen_lines.add(key)
             deduped.append(row)
         messages = sorted(deduped, key=lambda r: to_int(r.get("created_at"), 0))
+        try:
+            from .amo_intimacy import is_explicit as _is_explicit
+        except ImportError:
+            from amo_intimacy import is_explicit as _is_explicit
         lines = []
         for row in messages:
             text = str(row.get("content") or "").strip().replace("\n", " ")
             if not text or str(row.get("role") or "") == "system":
                 continue
+            if _is_explicit(text):
+                continue  # 露骨对话不进每日总结/里程碑素材
             who = "我" if str(row.get("role") or "") == "bot" else "他"
             lines.append("[" + who + "] " + text[:120])
         if len(lines) < 6:
@@ -690,6 +584,13 @@ class RuntimeTickMixin(RuntimeMixinBase):
             logger.debug("[amo] 每日总结生成失败: %s" % exc)
             summary = ""
         summary = re.sub(r"\s+", " ", str(summary or "")).strip()
+        try:
+            from .amo_intimacy import is_explicit as _is_explicit
+        except ImportError:
+            from amo_intimacy import is_explicit as _is_explicit
+        if _is_explicit(summary):
+            logger.info("[amo] 每日总结含露骨内容，本次不写")
+            return False
         # 摘要也会被当记忆注入：无主语句子会被读成角色自己的经历，统一补「他」
         fixed = []
         for piece in re.split(r"(?<=[。！？!?；;])", summary):
@@ -723,12 +624,11 @@ class RuntimeTickMixin(RuntimeMixinBase):
 
 
 async def warm_up(plugin):
-    """启动后 3 秒预热：名字 / 方言库 / 场景库 / 世界观 / 日程（原 main._warm_up）。"""
+    """启动后 3 秒预热：名字 / 场景库 / 世界观 / 日程（原 main._warm_up）。"""
     try:
         await asyncio.sleep(3)
         umo = plugin._last_umo or plugin._first_private_umo()
         await plugin._sync_persona_name(umo or "")
-        await plugin._ensure_dialect_kb()
         await plugin._ensure_scenic_kb()
         await plugin.state.ensure_worldview(umo)
         await plugin.state.ensure_schedule(umo)

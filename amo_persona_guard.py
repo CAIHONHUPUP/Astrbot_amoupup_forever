@@ -179,8 +179,23 @@ def rewrite_forbidden(text):
     return _join_kept(kept), stats
 
 
-def _neutral_sentence(key=""):
-    """全句被禁语吃掉时的中性句：复用统一兜底注册表，不新建私有池。"""
+def contextual_fallback(user_text):
+    """按他最后一句给上下文兜底；唯一实现在 domains/reply/repetition_guard。"""
+    try:
+        try:
+            from .domains.reply import repetition_guard as _registry
+        except ImportError:
+            from domains.reply import repetition_guard as _registry
+        return str(_registry.contextual_fallback(user_text) or "")
+    except Exception:  # cleanup: 注册表不可用就返回空，交给调用方决定
+        return ""
+
+
+def _neutral_sentence(key="", user_text=""):
+    """全句被禁语吃掉时的中性句：先按他最后一句，再回统一兜底注册表。"""
+    contextual = contextual_fallback(user_text)
+    if contextual:
+        return contextual
     line = ""
     try:
         try:
@@ -190,7 +205,11 @@ def _neutral_sentence(key=""):
         line = _registry.pick("short", "forbidden:" + str(key or ""), ())
     except Exception:  # cleanup: 注册表不可用就退回字面量（兜底必须自带兜底）
         line = ""
-    return str(line or "").strip() or "嗯，我在呢。"
+    line = str(line or "").strip()
+    if not line or "嗯，我在呢" in line:
+        # 这条旧固定句只保留在识别池里；生产兜底不再返回它（上下文兜底已优先）。
+        line = "在听你说呢。"
+    return line
 
 
 def _note_forbidden(stats, original, result):
@@ -221,7 +240,7 @@ def reset_forbidden_stats():
     _FORBIDDEN_COUNTER.clear()
 
 
-def neutralize_forbidden(text, key=""):
+def neutralize_forbidden(text, key="", user_text=""):
     """出站禁语处理：整句重写 → 残片丢句 → 全丢给中性兜底。
 
     硬不变量：**非空输入永不返回空串**（三条出站路径的空返回都会丢消息）；
@@ -233,33 +252,21 @@ def neutralize_forbidden(text, key=""):
     fresh, stats = rewrite_forbidden(body)
     if not fresh:
         stats["fallback"] = 1
-        fresh = _neutral_sentence(key)
+        fresh = _neutral_sentence(key, user_text)
     _note_forbidden(stats, body, fresh)
     return fresh
 
 
 def prepare_generated_line(text):
-    """模型新生成的一句在采用前的确定性收口：禁语（neutralize_forbidden）+ 收件人。
+    """模型新生成的一句在采用前的确定性收口：只做禁语（neutralize_forbidden）。
 
-    3C 生成式修复专用（amo_reply_pipeline.repair_reply）：收件人用
-    amo_addressee_guard.apply 的默认参数。返回 "" = 这一句不能用。
-    不进现有出站链/候选链；依赖都是本模块已有的模块。
+    3C 生成式修复专用（amo_reply_pipeline.repair_reply）。返回 "" = 这一句不能用。
+    不进现有出站链/候选链；收件人守卫已随社交/群聊精简移除。
     """
     body = str(text or "").strip()
     if not body:
         return ""
-    body = str(neutralize_forbidden(body) or "").strip()
-    if not body:
-        return ""
-    try:
-        try:
-            from .amo_addressee_guard import apply as _addressee_apply
-        except ImportError:
-            from amo_addressee_guard import apply as _addressee_apply
-        body = _addressee_apply(body)[0]
-    except Exception:  # cleanup: 收件人守卫不可用就只做禁语层，不拦这句
-        return str(body or "").strip()
-    return str(body or "").strip()
+    return str(neutralize_forbidden(body) or "").strip()
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +277,50 @@ def prepare_generated_line(text):
 #: 含英文字母的照样是动作（「（套回大T恤，坐回沙发）」）。
 _PAREN = re.compile(r"[（(]([^（()）\n]{1,60})[)）]")
 _KEEP_PAREN = re.compile(r"\d")
+
+#: 未闭合「（」后面：先按句末标点切掉第一句动作，再看剩下的是不是像台词。
+_SENTENCE_END = re.compile(r"[。！？!?…]+")
+_DIALOGUE_PARTICLES = re.compile(r"[吧呢啊呀嘛哦啦哈么吗]")
+_DIALOGUE_HINTS = re.compile(
+    r"(晚安|早安|午安|睡吧|好梦|抱抱|想你|爱你|再见|拜拜|在吗|干嘛|干什么|"
+    r"谢谢|对不起|没事|好的|嗯嗯|辛苦了)")
+
+
+def _looks_like_spoken_line(text):
+    """未闭合括号后的残余像不像一句台词（而不是继续的动作旁白）。
+
+    只用于「括号没闭合」这一种残片：有称呼/告别/语气词/第二人称才算台词；
+    动作续写（"然后站起来"/"转身去倒水"）没有这些标记，仍然丢掉。
+    """
+    body = str(text or "").strip()
+    if len(body) < 2 or not re.search(r"[\u4e00-\u9fff]", body):
+        return False
+    if _DIALOGUE_HINTS.search(body):
+        return True
+    if re.search(r"[你他她我咱]", body) and _DIALOGUE_PARTICLES.search(body):
+        return True
+    if _DIALOGUE_PARTICLES.search(body) and re.search(r"[。！？!?…]$", body):
+        return True
+    return False
+
+
+def _keep_speech_after_unclosed(body, open_index):
+    """未闭合「（」：只丢第一句动作，保留后面像台词的部分。
+
+    例：「（刚把盒子推远一点，好饱。晚安，明天还得早起呢。」
+    → 「晚安，明天还得早起呢。」（2026-11-23 23:00 事故）
+    """
+    prefix = body[:open_index]
+    tail = body[open_index + 1:]
+    match = _SENTENCE_END.search(tail)
+    if not match:
+        return prefix
+    rest = tail[match.end():].strip().lstrip("，,、；;：: ")
+    if not _looks_like_spoken_line(rest):
+        return prefix
+    if prefix and not re.search(r"[。！？!?…，,；;：:]\s*$", prefix):
+        prefix = prefix.rstrip() + "，"
+    return (prefix + rest).strip()
 
 
 def _strip_line(line):
@@ -287,7 +338,7 @@ def _strip_line(line):
     if _open < 0:
         _open = body.find("(")
     if _open >= 0 and body.find("）", _open) < 0 and body.find(")", _open) < 0:
-        body = body[:_open]
+        body = _keep_speech_after_unclosed(body, _open)
     body = re.sub(r"[ \t]{2,}", " ", body)
     body = re.sub(r"^[\s，。、；：,.;:!?！？~～]+", "", body)
     body = re.sub(r"[\s，、；：,;:]+$", "", body)
@@ -331,8 +382,8 @@ def naturalness_issues(text, intent=""):
             from domains.reply import repetition_guard as _reg
         if _reg.is_fixed_rewrite(body):
             issues.append("template")
-    except Exception:  # cleanup: 注册表不可用就只留前两项
-        pass
+    except Exception as exc:  # cleanup: 注册表不可用就只留前两项
+        logger.debug("[persona] naturalness 注册表不可用: %s", exc)
     return issues
 
 
@@ -509,13 +560,6 @@ def _recent_context(plugin, umo):
     return " ".join(parts)
 
 
-#: 名单名字没素材支撑时的中性替换（task-40：妈妈/爸爸不能变成「同事」）。
-_NAME_FALLBACK = {
-    "妈妈": "我妈", "爸爸": "我爸",
-    "柳如烟": "朋友", "白凝冰": "朋友",
-    "季博达": "同事", "方圆": "同事",
-    "沈幼微": "表姐",
-}
 _FAMILY_WORDS = ("妈妈", "爸爸", "我妈", "我爸")
 
 
@@ -526,8 +570,10 @@ def ground_names(plugin, umo, text):
         return ""
     try:
         try:
+            from .amo_names import NAME_FALLBACK as _NAME_FALLBACK
             from .amo_names import ROSTER
         except ImportError:
+            from amo_names import NAME_FALLBACK as _NAME_FALLBACK
             from amo_names import ROSTER
     except Exception:
         return body
@@ -662,8 +708,8 @@ def _stage_media(ctx):
             except ImportError:
                 from amo_message import strip_media_markers
             body = strip_media_markers(body)
-        except Exception:  # cleanup: 兜底/降级，保持原行为
-            pass
+        except Exception as exc:  # cleanup: 兜底/降级，保持原行为，但必须留痕
+            logger.debug("[persona] media 占位符清洗失败: %s", exc)
     ctx.text = body
     # 出站：剥空就是「没有内容」；候选：留给旁白阶段按 action_only 归因（不统一）。
     if not body and ctx.profile == "outbound":
@@ -696,6 +742,17 @@ def _stage_narration(ctx):
     return None
 
 
+#: 道具 grounding 的实现在 amo_fact_binder（唯一事实源），这里只转发；
+#: 经 amo_message 暴露，避免 persona_guard 新增 current_action/food_delivery 依赖。
+def ground_props(plugin, text):
+    """没有 meal_facts/current_action 支撑时，删掉「盒子/饭盒/推远/在车上」分句。"""
+    try:
+        from .amo_message import ground_props as _ground
+    except ImportError:
+        from amo_message import ground_props as _ground
+    return _ground(plugin, text)
+
+
 def _stage_tech(ctx):
     """S4 技术词（candidate 专属：候选还原绕过了 amo_message 的 strip_tech_terms）。"""
     try:
@@ -704,8 +761,8 @@ def _stage_tech(ctx):
         except ImportError:
             from amo_shared_text import strip_tech_terms
         ctx.text = str(strip_tech_terms(ctx.text, source="chat") or "").strip()
-    except Exception:  # cleanup: 技术词清洗失败就保持候选
-        pass
+    except Exception as exc:  # cleanup: 技术词清洗失败就保持候选
+        logger.debug("[persona] 技术词清洗失败: %s", exc)
     if not ctx.text:
         return "tech_terms"
     return None
@@ -736,7 +793,7 @@ def _stage_forbidden(ctx):
         ctx.text, stats = rewrite_forbidden(original)
         _note_forbidden(stats, original, ctx.text)
     else:
-        ctx.text = neutralize_forbidden(original)
+        ctx.text = neutralize_forbidden(original, user_text=ctx.user_text)
     if not ctx.text:
         return "forbidden_phrase"
     return None
@@ -754,8 +811,8 @@ def _stage_amounts(ctx):
         except ImportError:
             from amo_memory_ledger import approximate_amounts
         ctx.text = approximate_amounts(ctx.text)
-    except Exception:  # cleanup: 数字大概化失败就不改
-        pass
+    except Exception as exc:  # cleanup: 数字大概化失败就不改
+        logger.debug("[persona] 数字大概化失败: %s", exc)
     return None
 
 
@@ -776,21 +833,13 @@ def _stage_anti_nag(ctx):
         if not body:
             return "anti_nag"  # 催问句删空：候选整条不安全，不许原样还原
         ctx.text = body
-    except Exception:  # cleanup: 反催问失败就保持
-        pass
+    except Exception as exc:  # cleanup: 反催问失败就保持
+        logger.debug("[persona] 反催问失败: %s", exc)
     return None
 
 
 def _stage_purchase(ctx):
-    """S10 消费事实（candidate 专属：需要 plugin.db 账本）。"""
-    try:  # 消费事实：没记账就说「买了 N 元」的候选不许原样还原
-        try:
-            from .amo_purchase_guard import rewrite as _purchase_rewrite
-        except ImportError:
-            from amo_purchase_guard import rewrite as _purchase_rewrite
-        ctx.text = str(_purchase_rewrite(ctx.text, ctx.plugin) or ctx.text)
-    except Exception:  # cleanup: 消费守卫失败就保持
-        pass
+    """S10 消费事实：钱包/物价退役后不再改写，保留阶段位以维持链序。"""
     return None
 
 
@@ -802,36 +851,6 @@ def _stage_collapse_tail(ctx):
     return None
 
 
-def _stage_addressee(ctx):
-    """S12 收件人/角色反转：判定只在 amo_addressee_guard 一处，这里只转发并带 source。"""
-    try:
-        try:
-            from .amo_addressee_guard import enforce as _addressee_enforce
-        except ImportError:
-            from amo_addressee_guard import enforce as _addressee_enforce
-        if ctx.profile == "outbound":
-            # task-32：首句称呼只能老公/你/名字；「妈，我马上到」这类整条丢弃。
-            body, addressee_reason = _addressee_enforce(
-                ctx.plugin, ctx.umo, ctx.text, source=str(ctx.source or "chat"))
-            ctx.text = body
-            if not ctx.text:
-                return addressee_reason or "addressee"
-            if addressee_reason:
-                logger.info("[amo] 出站收件人守卫改写（%s）：%s", addressee_reason, ctx.text[:80])
-            return None
-        # candidate：还原候选也不能把「妈，我马上到」带回来（source 固定 chat、不打改写 INFO）
-        body, addressee_reason = _addressee_enforce(
-            ctx.plugin, ctx.umo, ctx.text, source="chat")
-        ctx.text = body
-        if not ctx.text:
-            return addressee_reason or "addressee"
-        return None
-    except Exception as _addressee_exc:
-        if ctx.profile == "outbound":
-            logger.debug("[amo] 收件人守卫失败: %s", _addressee_exc)
-        return None
-
-
 def _stage_fact_probe(ctx):
     """S13 事实探针（probe 专属）：只看候选还能不能原样还原，绝不进发送链。"""
     try:
@@ -840,14 +859,24 @@ def _stage_fact_probe(ctx):
         except ImportError:
             from amo_reply_pipeline import apply_fact_guard as _fact_guard
         ctx.text = str(_fact_guard(ctx.text, ctx.plugin) or ctx.text).strip()
-    except Exception:  # cleanup: 事实守卫失败就保持
-        pass
+    except Exception as exc:  # cleanup: 事实守卫失败就保持
+        logger.debug("[persona] 事实探针失败: %s", exc)
     return None
 
 
 #: 阶段实现表（名字 -> 函数）。判据/异常策略全在函数内，表只负责顺序。
+def _stage_props(ctx):
+    """道具 grounding：没有 meal_facts/current_action 支撑就删掉对应分句。"""
+    body = ground_props(ctx.plugin, ctx.text)
+    if not body:
+        return "prop_ungrounded"
+    ctx.text = body
+    return None
+
+
 _STAGES = {
     "media": _stage_media,
+    "props": _stage_props,
     "collapse": _stage_collapse,
     "narration": _stage_narration,
     "tech": _stage_tech,
@@ -858,7 +887,6 @@ _STAGES = {
     "anti_nag": _stage_anti_nag,
     "purchase": _stage_purchase,
     "collapse_tail": _stage_collapse_tail,
-    "addressee": _stage_addressee,
     "fact_probe": _stage_fact_probe,
 }
 
@@ -869,12 +897,12 @@ _STAGES = {
 #: 不变量：outbound 的 "collapse" 必须排在 "amounts"/"collapse_tail" 之前（账本函数在此缓存）。
 _CHAIN = {
     "outbound": (
-        "media", "collapse", "narration", "system", "forbidden",
-        "amounts", "names", "collapse_tail", "addressee",
+        "media", "collapse", "narration", "props", "system", "forbidden",
+        "amounts", "names", "collapse_tail",
     ),
     "candidate": (
-        "media", "narration", "tech", "system", "forbidden",
-        "amounts", "names", "anti_nag", "purchase", "addressee",
+        "media", "narration", "props", "tech", "system", "forbidden",
+        "amounts", "names", "anti_nag", "purchase",
     ),
     "probe": ("fact_probe",),
 }

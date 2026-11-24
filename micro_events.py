@@ -215,18 +215,13 @@ POOL: tuple[dict[str, Any], ...] = (
     {"key": "sick_takeout", "band": ("noon", "evening"), "scene": "private", "cost": 2000,
      "tags": ("zone:home", "time:11:00-13:00", "time:17:00-20:00", "health:<=60"),
      "text": "没力气做饭，点了份清淡的外卖", "mood": {"委屈": 2, "懒": 3}},
-    # 日常/上下文连贯
-    {"key": "broke_water", "band": ("dawn", "morning", "forenoon", "noon", "afternoon", "evening", "night"),
-     "scene": "private", "cost": 0, "requires_broke": True,
-     "tags": ("zone:home", "time:00:00-23:59"),
-     "text": "口渴了，但连一瓶矿泉水都舍不得买", "mood": {"委屈": 5}},
 )
 
 PUBLIC_KEYS = {"subway", "breakfast", "desk_slack", "tea_time", "fat_cat",
                "fruit_tea", "sunset", "drama", "nightmare", "mall_shopping",
                "funny_video", "rain_umbrella"}
 FOOD_KEYS = {"late_snack", "takeout", "breakfast", "tea_time", "fruit_tea",
-             "colleague_lunch", "broke_water"}
+             "colleague_lunch"}
 #: 这一餐已经在家吃过了，就别再抽"做饭/外卖"这类重复的吃饭事件（2026-11-15）
 MEAL_KEYS = {"takeout", "sick_takeout", "cook_feast", "colleague_lunch", "breakfast"}
 FOOD_COOLDOWN_SECONDS = 2 * 3600
@@ -416,7 +411,11 @@ def is_quiet(hour, minute):
 def pick_event(now, cash_cents, recent_keys=(), scene="private", rng=None,
                force_social=False, last_key="", food_locked=False, snapshot=None,
                state=None, meal_done=False):
-    """按时间/场景/余额/24h 去重抽一个事件；返回 None 表示这次无事发生。"""
+    """按时间/场景/24h 去重抽一个事件；返回 None 表示这次无事发生。
+
+    cash_cents 只是为了兼容旧调用方保留：钱包 2026-11-23 已退役（balance 恒 10^9 分），
+    余额不再参与任何筛选。
+    """
     rng = rng or random
     band = band_of(now.hour)
     recent = set(recent_keys or ())
@@ -430,16 +429,12 @@ def pick_event(now, cash_cents, recent_keys=(), scene="private", rng=None,
             continue
         if scene == "group" and event["key"] not in PUBLIC_KEYS:
             continue
-        if int(event.get("cost") or 0) > int(cash_cents or 0):
-            continue
         if event["key"] in recent:
             continue
         if food_locked and event["key"] in FOOD_KEYS:
             continue
         if meal_done and event["key"] in MEAL_KEYS:
             # 日程已经写了这一餐在家做饭/吃过了，再来一次"点外卖"就是自相矛盾
-            continue
-        if event.get("requires_broke") and int(cash_cents or 0) >= 1500:
             continue
         if force_social and not event.get("social"):
             continue
@@ -495,7 +490,7 @@ class MicroEventEngine:
         try:
             items = _schedule_items(self.p, self._today(now))
             ledger = _ledger_today(self.p, now)
-            facts = _meal_facts(items, ledger, now)
+            facts = _meal_facts(items, ledger, now, plugin=self.p)
         except Exception:
             return False
         return bool(facts.get("cooked")) or _food_cost.meal_spent(self.p, now, ledger=ledger)
@@ -580,8 +575,6 @@ class MicroEventEngine:
                     self.p, item, str(event.get("text") or "生活小事"),
                     source="micro", now=now, amount=amount)
                 return bool(result.get("charged"))
-            if int(self.p.wallet.balance()) < cost:
-                return False
             idem = "micro:%s:%s" % (self._today(now), event["key"])
             paid = self.p.wallet.debit(cost, str(event.get("text") or "生活小事"), idem,
                                        category="其他", sub_category="日常",
@@ -876,10 +869,6 @@ class MicroEventEngine:
             ctx = build_state_context(self.p, now)
         except Exception:
             snapshot, ctx = {}, {}
-        try:
-            cash = int(self.p.wallet.balance())
-        except Exception:
-            cash = 0
         today = self._today(now)
         social_last = self._social_last_day()
         if not social_last:
@@ -896,19 +885,14 @@ class MicroEventEngine:
         last_key = str(last_record.get("key") or "") if isinstance(last_record, dict) else ""
         food_locked = now.timestamp() < float(self._kv_get("micro_event:food_cooldown_until", 0) or 0)
         meal_done = self._meal_done(now)
-        event = pick_event(now, cash, self._recent_keys(), scene=scene, rng=rng,
+        # cash_cents 已随钱包退役（2026-11-23），pick_event 现在忽略这个参数。
+        event = pick_event(now, 0, self._recent_keys(), scene=scene, rng=rng,
                            force_social=force_social, last_key=last_key,
                            food_locked=food_locked, snapshot=snapshot, state=ctx,
                            meal_done=meal_done)
         if event is not None and event.get("key") == "late_snack":
             event = dict(event)
-            if cash > 100000:
-                event.update(cost=5000, text="点了份烧烤当夜宵", food="烧烤", delivery=True)
-            elif cash < 10000:
-                event.update(cost=600, text="在便利店买了桶泡面当夜宵", food="泡面",
-                             mood={"委屈": 5, "满足": 3})
-            else:
-                event.update(cost=1500, food="夜宵", delivery=True)
+            event.update(cost=5000, text="点了份烧烤当夜宵", food="烧烤", delivery=True)
         if event is None:
             empty = self._empty_ticks() + 1
             self._set_empty_ticks(empty)
@@ -925,7 +909,7 @@ class MicroEventEngine:
         if event.get("social"):
             self._kv_set("micro_event:social_day", today)
         await self._write_memory(event, ctx, umo, uid)
-        self._mount_action(event, now, cash)
+        self._mount_action(event, now, 0)
         record = {"text": str(event.get("text") or ""), "ts": now.timestamp(),
                   "day": today, "key": event["key"], "mood": delta,
                   "cost": int(event.get("cost") or 0), "scene": scene}

@@ -147,6 +147,7 @@ def redact_file(path, redactor, backup_dir, dry_run=False):
             try:
                 os.remove(temp_path)
             except OSError:
+                # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
                 pass
     result["after_sha256"] = sha256_file(path)
     with open(path, "rb") as fh:

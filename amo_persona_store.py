@@ -167,6 +167,14 @@ def load_state(plugin, profile_id="") -> dict:
     state.setdefault("weights", {})
     state.setdefault("candidates", [])
     state.setdefault("snapshots", [])
+    # 2026-11-24 A 阶段：旧 state.json 没有这些字段时自动补默认（不覆盖已有值）。
+    state.setdefault("pending_review", None)
+    state.setdefault("style_pool", [])
+    state.setdefault("style_archive", [])
+    state.setdefault("last_used", {})
+    state.setdefault("used_seq", 0)
+    state.setdefault("evolve_stats", {})
+    state.setdefault("evolve_log", [])
     return state
 
 
@@ -266,3 +274,57 @@ def approve_candidate(plugin, index=0, profile_id="") -> dict:
     state["candidates"] = rows
     save_state(plugin, pid, state)
     return {"ok": True, "text": row.get("text"), "total": len(evolved)}
+
+def mark_used(plugin, texts, profile_id="") -> bool:
+    """记 last_used（语料防连续复用）；顺手给池里被抽中的句子 +1 分。"""
+    pid = str(profile_id or active_id(plugin))
+    state = load_state(plugin, pid)
+    now = int(_amo_clock.now_ts())
+    used = dict(state.get("last_used") or {})
+    wanted = {str(text or "") for text in (texts or []) if str(text or "")}
+    if not wanted:
+        return False
+    for text in wanted:
+        used[text] = now
+    if len(used) > 200:
+        for text, _at in sorted(used.items(), key=lambda item: item[1])[:len(used) - 200]:
+            used.pop(text, None)
+    state["last_used"] = used
+    try:
+        seq = int(state.get("used_seq") or 0) + 1
+    except (TypeError, ValueError):
+        seq = 1
+    state["used_seq"] = seq
+    for row in state.get("style_pool") or []:
+        if isinstance(row, dict) and str(row.get("text") or "") in wanted:
+            try:
+                row["score"] = float(row.get("score", 1.0) or 1.0) + 1.0
+            except (TypeError, ValueError):
+                row["score"] = 2.0
+            row["last_used"] = now
+            # 同一秒连续几轮也不会并列：用递增序号轮换，避免高分句霸屏。
+            row["used_seq"] = seq
+    return save_state(plugin, pid, state)
+
+
+def restore_snapshot(plugin, name="", profile_id="") -> dict:
+    """恢复到指定快照；name 为空时取最新一份。返回 {"ok", "file"}。"""
+    pid = str(profile_id or active_id(plugin))
+    state = load_state(plugin, pid)
+    snaps = [row for row in (state.get("snapshots") or []) if isinstance(row, dict)]
+    chosen = None
+    target = str(name or "")
+    if target:
+        chosen = next((row for row in reversed(snaps) if str(row.get("file") or "") == target), None)
+    elif snaps:
+        chosen = snaps[-1]
+    if not chosen:
+        return {"ok": False, "reason": "no_snapshot"}
+    folder = ensure_profile(plugin, pid)
+    path = os.path.join(folder, "snapshots", str(chosen.get("file") or ""))
+    data = _read_json(path, {})
+    if not isinstance(data, dict) or not data:
+        return {"ok": False, "reason": "snapshot_missing"}
+    if not save_state(plugin, pid, data):
+        return {"ok": False, "reason": "save_failed"}
+    return {"ok": True, "file": str(chosen.get("file") or "")}

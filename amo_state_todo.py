@@ -324,7 +324,8 @@ class ScheduleTodoMixin(_MixinBase):
                 child.update(self._row_provenance(day, {
                     "start": self._fmt_minutes(slot["start_min"]),
                     "end": self._fmt_minutes(slot["end_min"]),
-                    "activity": slot["activity"]}, prov))
+                    "activity": slot["activity"]}, prov,
+                    synthetic=bool(slot.get("synthetic"))))
                 children.append(child)
             if not children:
                 continue

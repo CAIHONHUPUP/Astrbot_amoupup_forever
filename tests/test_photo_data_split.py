@@ -17,9 +17,11 @@ def test_module_importable():
     assert photo_data.__name__ == "photo_data"
 
 def test_old_names_are_reexported():
-    for name in ("SCENE_POLICY", "SCENE_ALLOWED", "OUTDOOR_POSES", "OUTFIT_POOL",
-                 "PHOTO_INTENT_WORDS", "PHOTO_PLACE_WORDS", "scene_policy", "scene_guard",
-                 "scene_allowed_line", "home_room_for_plan", "pose_line_for", "road_ride"):
+    # 2026-11-24：SCENE_POLICY / SCENE_ALLOWED / OUTDOOR_POSES / scene_allowed_line /
+    # outdoor_pose_line 只保留在 photo_data 兼容层；photo_engine 不再 re-export。
+    for name in ("OUTFIT_POOL", "PHOTO_INTENT_WORDS", "PHOTO_PLACE_WORDS",
+                 "scene_policy", "scene_guard", "home_room_for_plan",
+                 "pose_line_for", "road_ride"):
         assert getattr(photo_engine, name) is getattr(photo_data, name), name
 
 def test_scene_policy_matches_baseline():

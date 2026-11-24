@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import filecmp
 import hashlib
 import io
 import json
 import os
 import random
+import shutil
 import tempfile
 import urllib.error
 import urllib.request
@@ -671,6 +673,81 @@ class PhotoGenerateMixin:
                 except OSError as _amo_exc:  # cleanup: 临时文件删不掉不影响导入结果
                     _note_swallowed("photo_engine.import_persona.cleanup", _amo_exc)
 
+    #: 三视图文件名里的视角词：面板存「角色正面.png」，旧模板是「amo_persona_front.png」
+    _OMNI_REF_VIEW_TOKENS = (
+        ("front", ("正面", "front")),
+        ("side", ("侧面", "side")),
+        ("full", ("全身", "full")),
+    )
+
+    def _omni_data_dir(self, omni):
+        """生图插件自己的 data_dir（它只收这个目录里的本地参考图）。"""
+        base = str(getattr(omni, "data_dir", "") or "").strip()
+        if base:
+            return os.path.abspath(base)
+        try:
+            return os.path.dirname(os.path.abspath(self.template_dir()))
+        except Exception:
+            return ""
+
+    def _ref_view_name(self, path, index):
+        """按文件名认出 front/side/full；认不出就按三视图顺序兜底。"""
+        name = os.path.basename(str(path or "")).lower()
+        for view, tokens in self._OMNI_REF_VIEW_TOKENS:
+            if any(token in name for token in tokens):
+                return view
+        views = tuple(getattr(self, "VIEWS", ()) or ())
+        return views[index] if index < len(views) else ""
+
+    def _omni_persona_refs(self, refs=None, omni=None):
+        """同步给生图插件的三视图：只给它 data_dir 里的副本，原图不动。
+
+        面板/备份把三视图放在 amo 自己的 ``outfit_refs/角色三视图``，但定格你
+        按 data_dir 校验本地图，目录外的绝对路径会被静默丢掉（自拍 0 张三视图）。
+        这里逐张复制到 ``<它的 data_dir>/amo_templates/amo_persona_<view>.png``，
+        面板路径、备份路径和删除逻辑都不变。
+        """
+        paths = [str(item) for item in (refs if refs is not None else self.persona_refs() or [])
+                 if str(item).strip()]
+        if not paths:
+            return []
+        base = self._omni_data_dir(omni)
+        if not base:
+            return []
+        target_dir = os.path.join(base, "amo_templates")
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except OSError as exc:
+            _note_swallowed("photo_engine.PhotoEngine._omni_persona_refs.mkdir", exc)
+            return []
+        copied = []
+        for index, path in enumerate(paths):
+            source = os.path.abspath(path)
+            if not os.path.isfile(source):
+                continue
+            try:
+                inside = os.path.commonpath([base, source]) == base
+            except ValueError:
+                inside = False
+            if inside:
+                copied.append(source)
+                continue
+            view = self._ref_view_name(source, index)
+            if not view:
+                continue
+            target = os.path.join(target_dir, "amo_persona_%s.png" % view)
+            try:
+                stale = (not os.path.isfile(target)
+                         or not filecmp.cmp(source, target, shallow=False))
+                if stale:
+                    shutil.copy2(source, target)
+                    if callable(getattr(self, "_ensure_png_file", None)):
+                        self._ensure_png_file(target)
+                copied.append(target)
+            except OSError as exc:
+                _note_swallowed("photo_engine.PhotoEngine._omni_persona_refs.copy", exc)
+        return copied
+
     def _sync_omni_refs(self, omni=None, refs=None):
         """把三视图同步给「我能永远定格你」。
 
@@ -691,7 +768,12 @@ class PhotoGenerateMixin:
         if not refs:
             logger.debug("[amo] 本地没有三视图，跳过同步生图插件参考图")
             return False
-        if not apply_persona_config(omni, refs, "photo_engine.PhotoEngine._sync_omni_refs"):
+        # 定格你只认 data_dir 里的本地图：把面板那份复制进去再同步（原图不动）
+        sync_refs = self._omni_persona_refs(refs, omni)
+        if not sync_refs:
+            logger.warning("[amo] 三视图复制不进生图插件 data_dir，本次不同步（自拍会缺三视图）")
+            return False
+        if not apply_persona_config(omni, sync_refs, "photo_engine.PhotoEngine._sync_omni_refs"):
             logger.debug("[amo] 生图插件没有可用的配置入口，本次只在内存里更新参考图")
             return False
         try:
@@ -699,11 +781,11 @@ class PhotoGenerateMixin:
         except Exception as exc:
             _note_swallowed("photo_engine.PhotoEngine._sync_omni_refs.verify", exc)
             accepted = []
-        if len(accepted) != len(refs):
+        if len(accepted) != len(sync_refs):
             logger.warning("[amo] 三视图同步后生图插件只认了 %d/%d 张（路径可能不在它的 data_dir 下）",
-                           len(accepted), len(refs))
+                           len(accepted), len(sync_refs))
         else:
-            logger.info("[amo] 已同步 %d 张人设参考图给生图插件", len(refs))
+            logger.info("[amo] 已同步 %d 张人设参考图给生图插件", len(sync_refs))
         return bool(accepted)
 
     async def adopt_persona(self, url, view="front"):

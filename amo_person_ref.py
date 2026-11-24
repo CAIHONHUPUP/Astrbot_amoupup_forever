@@ -97,6 +97,7 @@ def _cfg_bool(plugin, key: str, default: bool) -> bool:
         if callable(fn):
             return bool(fn(key, default))
     except Exception:  # cleanup: 读不到就用默认
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
         pass
     return default
 

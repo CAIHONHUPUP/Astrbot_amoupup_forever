@@ -472,11 +472,9 @@ GIFT_TOO_EXPENSIVE_HINT = (
     "先愣一下，然后按你俩的关系拦他：可以心疼他乱花钱（“你疯啦，这钱留着”“别乱买，我又不缺这个”），"
     "可以撒娇，也可以认真一点；重点是替他考虑，不是嫌东西不好。不要问价格、不要说教，也别假装收下。只说一两句。"
 )
-GIFT_FOOD_HINT = (
-    "【他给你买了吃的/喝的】他刚才说「{raw}」，是「{item}」。你这边吃不到他那份真的。\n"
-    "按你的规矩：不假装能吃，不说“给我留一口/下次带我去”；可以羡慕一句"
-    "（“你吃吧，替我尝一口”“我这边零食全是数据”），说完就翻篇，不追着问好不好吃。"
-    "心意收下就行，不用记成实物。只说一两句。"
+FOOD_PENDING_FAIL_HINT = (
+    "【他给你点了吃的】他刚才说「{item}」，但订单没记上。先别假装已经下单，"
+    "让他确认一下到没到；到了再吃，不要说自己已经吃到了。"
 )
 GIFT_IMPOSSIBLE_HINT = (
     "【他送了一个你拿不到的东西】他刚才说「{raw}」，说的是「{item}」。这个你收不了"
@@ -1204,9 +1202,30 @@ class GiftEngine:
             return ""
         if not self.is_owner(event) or not self._allowed_here(event):
             return ""
-        self._remember_user(
-            str(getattr(event, "unified_msg_origin", "") or ""), text,
-        )
+        umo = str(getattr(event, "unified_msg_origin", "") or "")
+        self._remember_user(umo, text)
+        # 2026-11-23：食物送达只写事实层，不写日程块。
+        try:
+            try:
+                from .amo_food_delivery import consume_arrival, arrival_hint
+            except ImportError:
+                from amo_food_delivery import consume_arrival, arrival_hint
+            fact = consume_arrival(self.plugin, umo, text)
+            if fact:
+                return arrival_hint(fact)
+        except Exception as exc:
+            logger.debug("[amo] 食物到达识别失败: %s" % exc)
+        try:
+            try:
+                from .amo_food_delivery import detect_food_order, place_order, order_hint
+            except ImportError:
+                from amo_food_delivery import detect_food_order, place_order, order_hint
+            food = detect_food_order(text)
+            if food:
+                place_order(self.plugin, umo, food, text)
+                return order_hint(food)
+        except Exception as exc:
+            logger.debug("[amo] 食物下单识别失败: %s" % exc)
         if is_gift_intent(text):
             try:
                 hint = await self._handle_gift(event, text)
@@ -1351,8 +1370,18 @@ class GiftEngine:
             return GIFT_ASK_HINT.format(raw=text[:120])
         kind = self.classify(item)
         if any(word in item for word in FOOD_WORDS):
-            logger.info("[amo] 吃的喝的按人设不假装能吃到: %s" % item)
-            return GIFT_FOOD_HINT.format(raw=text[:120], item=item)
+            logger.info("[amo] 吃的喝的记成待送达: %s" % item)
+            try:
+                try:
+                    from .amo_food_delivery import place_order, order_hint
+                except ImportError:
+                    from amo_food_delivery import place_order, order_hint
+                placed = place_order(self.plugin, umo, item, text)
+                if placed:
+                    return order_hint(item)
+                return FOOD_PENDING_FAIL_HINT.format(item=item)
+            except Exception:
+                return FOOD_PENDING_FAIL_HINT.format(item=item)
         if any(word in item for word in IMPOSSIBLE_WORDS):
             logger.info("[amo] 拿不到的东西不假装收到: %s" % item)
             return GIFT_IMPOSSIBLE_HINT.format(raw=text[:120], item=item)
@@ -1658,7 +1687,19 @@ class GiftEngine:
             return "用法：/送礼 一条围巾"
         kind = self.classify(item)
         if any(word in item for word in FOOD_WORDS):
-            return GIFT_FOOD_HINT.format(raw=item[:120], item=item)
+            try:
+                try:
+                    from .amo_food_delivery import place_order, order_hint
+                except ImportError:
+                    from amo_food_delivery import place_order, order_hint
+                placed = place_order(self.plugin,
+                                     str(getattr(event, "unified_msg_origin", "") or ""),
+                                     item, item)
+                if placed:
+                    return order_hint(item)
+                return FOOD_PENDING_FAIL_HINT.format(item=item)
+            except Exception:
+                return FOOD_PENDING_FAIL_HINT.format(item=item)
         if any(word in item for word in IMPOSSIBLE_WORDS):
             return GIFT_IMPOSSIBLE_HINT.format(raw=item[:120], item=item)
         if kind in ("vehicle", "home", "luxury") and not self.big_allowed:

@@ -23,6 +23,8 @@ try:  # 公共层：helper/常量 + 会被测试改写的模块级函数代理
         minutes_now,
         normalize_place,
         people_from_text,
+        repair_zone_rows,
+        resolve_zone,
         today_str,
     )
 except ImportError:  # 直接按文件加载时
@@ -32,6 +34,9 @@ except ImportError:  # 直接按文件加载时
             _validate_activity,
             minutes_now,
             normalize_place,
+            people_from_text,
+            repair_zone_rows,
+            resolve_zone,
             today_str,
         )
 
@@ -575,6 +580,8 @@ class ScheduleStateMixin(_MixinBase):
                 "place": "家",
                 "category": "sleep" if hour < 7 or hour >= 23 else "rest",
                 "subject": "bot",
+                # 这一小时没有真实日程、是默认补出来的：时间轴不许给它贴来源（2026-11-23）
+                "synthetic": found is None,
             }
             if found:
                 entry.update({
@@ -927,6 +934,11 @@ class ScheduleStateMixin(_MixinBase):
         if not day:
             return False
         rows = [item for item in (items or []) if isinstance(item, dict)]
+        try:
+            # 写库不变量：具体地点 + zone=road 纠正成 restaurant/office/...（只今天/未来）。
+            rows, _zone_fixed = repair_zone_rows(rows, day, today=today_str())
+        except Exception as _amo_exc:  # cleanup: 纠正失败不能挡住日程落库
+            _note_swallowed("amo_state_schedule.save_day.zone_repair", _amo_exc)
         if not isinstance(getattr(self, "schedule", None), dict):
             self.schedule = {}
         self.schedule[day] = rows
@@ -1219,8 +1231,8 @@ class ScheduleStateMixin(_MixinBase):
             except ImportError:
                 import amo_person_ref as _pr
             out = _pr.normalize_schedule(out, enabled=_pr.enabled(self.p))
-        except Exception:  # cleanup: 指代归一失败不拦日程写入
-            pass
+        except Exception as exc:  # cleanup: 指代归一失败不拦日程写入
+            _note_swallowed("amo_state_schedule._guard_activity_subjects", exc)
         return out
 
     def _constrain_scene_items(self, day, items):
@@ -1681,16 +1693,22 @@ class ScheduleStateMixin(_MixinBase):
         for row in items or []:
             if not isinstance(row, dict):
                 continue
+            place = str(row.get("place") or "")
+            category = str(row.get("category") or "")
             zone = str(row.get("zone") or "")
+            act = str(row.get("activity") or "")
+            if zone == "road" and place and place in act:
+                # 文案明确在说这个地点才纠偏；通勤块（下班回家 + 写字楼）仍按 road 对齐。
+                fixed_zone = resolve_zone(place, category, zone)
+                if fixed_zone and fixed_zone != "road":
+                    zone = fixed_zone
+                    row["zone"] = fixed_zone
             if zone not in cls._ZONE_CONFLICT:
                 continue
-            act = str(row.get("activity") or "")
             if not act:
                 continue
-            category = str(row.get("category") or "")
             start = str(row.get("start") or "")
             hour = int(start[:2]) if start[:2].isdigit() else -1
-            place = str(row.get("place") or "")
             if (zone == "road" and category == "commute" and act.startswith("到")
                     and str(row.get("source") or "") != "transit_block"
                     and str(source or "") not in _HUMAN_TEXT_SOURCES):
@@ -1790,8 +1808,8 @@ class ScheduleStateMixin(_MixinBase):
                 if self.db.kv_get(flag, False):
                     item["cost_settled"] = True
                     continue
-            except Exception:  # cleanup: KV read is best-effort
-                pass
+            except Exception as exc:  # cleanup: KV read is best-effort
+                _note_swallowed("amo_state_schedule.settle_schedule_costs", exc)
             payload = {"ok": False, "reason": "余额不足"}
             try:
                 reason = "日程消费·%s" % (item.get("activity") or "花销")
@@ -2107,6 +2125,8 @@ class ScheduleStateMixin(_MixinBase):
                 slots.append({
                     "start_min": part_start,
                     "end_min": part_end,
+                    # 没人写过这块（空档补的默认生活状态），时间轴不许给它贴来源（2026-11-23）
+                    "synthetic": True,
                     "activity": default["activity"],
                     "place": default["place"],
                     "category": default["category"],
@@ -2167,6 +2187,9 @@ class ScheduleStateMixin(_MixinBase):
                     last["current"] = last["current"] or slot["current"]
                     last["doing"] = last["doing"] or slot["doing"]
                     last["open_sleep"] = last["open_sleep"] or slot["open_sleep"]
+                    # 合并只要沾到一段空档，整段就按空档算：真块+空档拼出来的跨度
+                    # 在审计索引里查不到，会退回「当天最后写者」，给填充行贴上别人的来源（2026-11-23）
+                    last["synthetic"] = bool(last.get("synthetic")) or bool(slot.get("synthetic"))
                     continue
             merged.append(dict(slot))
         # 尾巴太碎：晚上最后一段休息/生活不足 1 小时，直接并到睡前（23:00），
@@ -2325,18 +2348,24 @@ class ScheduleStateMixin(_MixinBase):
             version = 0
         return {"index": index, "latest": latest, "version": version}
 
-    def _row_provenance(self, day, item, prov):
-        """给时间轴每一行补 source/reason/version：审计里找不到就退回当天最后一条。"""
+    def _row_provenance(self, day, item, prov, synthetic=False):
+        """给时间轴每一行补 source/reason/version。
+
+        审计里找不到就退回当天最后一条（老库没审计时的兜底）；
+        `synthetic=True` 是 `_default_slot` 补出来的空白填充行——没有任何人写过它，
+        所以既不算审计命中，也不许吃「当天最后写者」的来源（2026-11-23：
+        以前补出来的睡觉/琐事会顶着守护的 watch 标签）。
+        """
         prov = prov if isinstance(prov, dict) else {}
         index = prov.get("index") or {}
         latest = prov.get("latest")
         item = item if isinstance(item, dict) else {}
         meta = index.get((str(item.get("start") or ""), str(item.get("end") or ""),
                           str(item.get("activity") or ""))) or {}
-        source = str(meta.get("source") or "")
+        source = "" if synthetic else str(meta.get("source") or "")
         reason = str(meta.get("reason") or "")
         version = meta.get("version") or 0
-        if not source and isinstance(latest, dict):
+        if not source and not synthetic and isinstance(latest, dict):
             source = str(latest.get("source") or "")
             reason = reason or str(latest.get("reason") or "")
             version = version or latest.get("version") or 0
@@ -2346,7 +2375,8 @@ class ScheduleStateMixin(_MixinBase):
             version = 0
         if not version:
             version = int(prov.get("version") or 0)
-        return {"source": source or "unknown", "reason": reason, "version": version}
+        return {"source": "" if synthetic else (source or "unknown"),
+                "reason": reason, "version": version}
 
     def _schedule_view_items(self, day, items, now_min=None):
         """读侧统一入口：坏块降级 + 过渡全派生（schedule_engine_v2.safe_view）。
@@ -2423,7 +2453,8 @@ class ScheduleStateMixin(_MixinBase):
                     "current": bool(is_today and start <= now_min < end),
                     "doing": bool(is_today and start <= now_min < end),
                 }
-                hour.update(self._row_provenance(day, item, prov))
+                hour.update(self._row_provenance(day, item, prov,
+                                                 synthetic=bool(item.get("synthetic"))))
                 children.append(hour)
             block["date"] = day
             block["children"] = children

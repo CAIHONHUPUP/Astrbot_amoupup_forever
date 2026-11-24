@@ -465,17 +465,6 @@ def _gen_consumption(text, ctx):
     return ctx.plugin._guard_consumption(text)
 
 
-def _gen_group(text, ctx):
-    try:
-        import group_scene
-    except ImportError:  # pragma: no cover - 顶层总能导入
-        return None
-    result, changed = group_scene.guard_group_reply(text, ctx.scene, ctx.owner_name)
-    if changed:
-        logger.info("[GROUP_GUARD] 群聊私密/超长回复已拦截重写")
-    return result
-
-
 def _gen_photo_intent(text, ctx):
     return ctx.plugin._enforce_photo_intent(ctx.event, text)
 
@@ -937,6 +926,11 @@ def apply_fact_guard(text, plugin, activity=None, now=None):
                      item.get("rule"), item.get("sentence"),
                      item.get("replacement"), item.get("reason"))
     naturalized = fixed
+    if violations and (naturalized or fixed) != value:
+        logger.info(
+            "[reply_guard] intercept reason=%s original=%s cleaned=%s fallback=%s",
+            ",".join(sorted({str(item.get("rule") or "?") for item in violations})),
+            str(value or "")[:80], str(naturalized or fixed or "")[:80], "")
     tone_actions = []
     try:
         naturalized, tone_actions = naturalize_fact_rewrites(
@@ -997,9 +991,10 @@ def apply_tone_guard(text, plugin=None, umo="", record=True):
         logger.debug("[tone_guard] 守卫执行失败: %s", exc)
         return value
     for item in actions or ():
-        logger.debug("[tone_guard] %s phrase=%s reason=%s: %s -> %s",
-                     item.get("action"), item.get("phrase"), item.get("reason"),
-                     item.get("before"), item.get("after"))
+        logger.info("[tone_guard] intercept reason=%s original=%s cleaned=%s fallback=%s",
+                    item.get("reason") or item.get("action") or "tone",
+                    str(item.get("before") or "")[:80],
+                    str(item.get("after") or "")[:80], "")
     return fixed or value
 
 
@@ -1332,14 +1327,6 @@ def _restore_candidate(original, plugin=None):
     还原前先过一遍消费守卫，别为了答上问题把假消费发出去。
     """
     body = _media_clean(original)
-    try:
-        try:
-            from .amo_purchase_guard import rewrite as _purchase_guard
-        except ImportError:
-            from amo_purchase_guard import rewrite as _purchase_guard
-        body = str(_purchase_guard(body, plugin) or body).strip()
-    except Exception as exc:  # cleanup: 消费守卫失败就不额外改
-        logger.debug("[amo] 候选还原消费守卫失败: %s", exc)
     return body
 
 
@@ -1705,14 +1692,6 @@ def apply_chat_safety(text, plugin, umo="", user_text="", history_text=""):
         logger.debug("[amo] chat_safety.names 失败: %s", exc)
     try:
         try:
-            from .amo_purchase_guard import rewrite as _purchase_guard
-        except ImportError:
-            from amo_purchase_guard import rewrite as _purchase_guard
-        value = _purchase_guard(value, plugin)
-    except Exception as exc:
-        logger.debug("[amo] chat_safety.purchase 失败: %s", exc)
-    try:
-        try:
             from .amo_anti_nag import rewrite as _anti_nag
         except ImportError:
             from amo_anti_nag import rewrite as _anti_nag
@@ -1946,8 +1925,8 @@ def _send_status_dedup(text, ctx):
 #   * 只修 chat 出站：空回复 / 罐头句（固定句池造出来的模板话）/ 多池串味；
 #     非 chat 来源（主动/推送）一律不修；
 #   * 修 = 调一次 chat_raw（REPAIR_TIMEOUT 秒）；结果过
-#     amo_persona_guard.prepare_generated_line（禁语整句重写 + addressee_guard.apply
-#     默认参数），仍是空/罐头/含禁语就判失败；
+#     amo_persona_guard.prepare_generated_line（禁语整句重写），
+#     仍是空/罐头/含禁语就判失败；
 #   * 失败 fail-open 到「guarded or raw」：绝不把回复吞掉；
 #   * 一次出站最多一次模型调用（repair 内部自己判定，调用方不再预判）。
 # ---------------------------------------------------------------------------
@@ -2129,16 +2108,6 @@ def _repair_guard_reason(fresh, plugin):
     body = str(fresh or "").strip()
     if not body:
         return "empty"
-    try:
-        try:
-            from .amo_purchase_guard import rewrite as _purchase_rewrite
-        except ImportError:
-            from amo_purchase_guard import rewrite as _purchase_rewrite
-        fixed = str(_purchase_rewrite(body, plugin) or "").strip()
-        if not fixed or fixed != body:
-            return "purchase"
-    except Exception as _amo_exc:  # cleanup: 探针异常不阻断（fail-open 到原行为）
-        _note_swallowed("amo_reply_pipeline.repair.guard.purchase", _amo_exc)
     # apply_fact_guard 命中冲突时会记 _tone_pick_pending（B 方案待选）；探针不该留下
     # 这个副作用，跑完恢复原值（原来没有就清掉）。
     pending = getattr(plugin, "_tone_pick_pending", None)
@@ -2313,12 +2282,6 @@ def default_stages() -> List[Stage]:
               ctx_keys=("plugin", "snap", "activity", "his_words", "cash_cents", "hour", "silence_days")),
         Stage("generate.consumption", PHASE_GENERATE, 80, _gen_consumption, wired=False,
               target="amo_message._guard_consumption", ctx_keys=("plugin",)),
-        Stage("generate.group_guard", PHASE_GENERATE, 90, _gen_group, wired=False,
-              when=lambda ctx: bool(ctx.group), target="group_scene.guard_group_reply",
-              ctx_keys=("scene", "owner_name")),
-        Stage("generate.group_tease", PHASE_GENERATE, 95, None, wired=False, side_effect=True,
-              when=lambda ctx: bool(ctx.group),
-              target="amo_llm._maybe_group_private_tease", note="群里敷衍完私聊补一条（发消息）"),
         Stage("generate.photo_claim", PHASE_GENERATE, 98, None, wired=False, side_effect=True,
               target="draw_engine.enforce_photo_claim", note="副作用：真的补图"),
         Stage("generate.photo_intent", PHASE_GENERATE, 99, _gen_photo_intent, wired=False,

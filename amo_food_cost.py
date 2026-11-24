@@ -22,17 +22,13 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         import clock as _amo_clock
 
-try:
-    from . import price_book as _price_book
-except ImportError:
-    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        import price_book as _price_book
-
-try:  # 地点归一唯一实现（doms 纯函数，未知 zone 不回落「家」）
+try:  # 地点归一/zone 唯一实现（doms 纯函数，未知 zone 不回落「家」）
     from .domains.schedule.place import normalize_place as _normalize_place
+    from .domains.schedule.place import resolve_zone as _resolve_zone
 except ImportError:
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from domains.schedule.place import normalize_place as _normalize_place
+        from domains.schedule.place import resolve_zone as _resolve_zone
 
 logger = logging.getLogger("amo.food")
 
@@ -196,17 +192,8 @@ def sick_food_allowed(event):
 
 
 def price_for(item, city="", moment=None):
-    """item 的固定价（分）：price_book v1 的 item 行优先，其次固定兜底；绝不出随机分位。"""
-    key = item_key(item)
-    if not key:
-        return 0
-    try:
-        low, high = _price_book.price(None, "meal", item=key, city=city, moment=moment)
-        if int(low) == int(high):
-            return int(low)
-    except Exception as exc:  # 表缺失/没这个 item：用兜底价，不阻断吃饭
-        logger.debug("[amo] 价目表查不到 %r，用固定兜底: %r", key, exc)
-    return int(FIXED_ITEMS.get(key, 0))
+    """钱包/物价已退役：吃饭不再计价，统一返回 0。"""
+    return 0
 
 
 def in_night(now):
@@ -319,6 +306,10 @@ def _place_zone_of(row):
     row = row or {}
     zone = str(row.get("zone") or "").strip()
     place = str(row.get("place") or "").strip()
+    if zone == "road" and place:
+        fixed = _resolve_zone(place, str(row.get("category") or ""), zone)
+        if fixed and fixed != "road":
+            zone = fixed
     try:
         return _normalize_place(place, zone), zone
     except Exception as exc:  # 归一失败不能阻断落块
@@ -441,6 +432,15 @@ def meal_slot_at(now=None):
             day_text = day.isoformat()
             return day_text, slot, meal_instance_id(day_text, slot)
     return "", "", ""
+
+
+def _wallet_kind(wallet):
+    """钱包类型：live / stub（_NoMoney 金融退役桩）/ none。"""
+    if wallet is None:
+        return "none"
+    if wallet.__class__.__name__ == "_NoMoney":
+        return "stub"
+    return "live"
 
 
 def _wallet_ledger_rows(plugin, limit=200):
@@ -1042,9 +1042,12 @@ def late_snack_spent(plugin, now=None, hours=3):
     return False
 
 
-def pay_food(plugin, item, reason, source="meal", now=None, amount=None, idem=None,
-             allow_night=False, instance_id="", ensure_block=True, minutes=None):
+def _pay_food_impl(plugin, item, reason, source="meal", now=None, amount=None, idem=None,
+                  allow_night=False, instance_id="", ensure_block=True, minutes=None):
     """餐饮扣款唯一入口：JIT/微型事件/宵夜/日程都必须走这里。
+
+    边界（2026-11-24）：只用于**已经发生**的消费；他“下单/点外卖”走
+    amo_food_delivery.place_order 的 pending_food，不在这里落日程块。
 
     规则（2026-11-22 P0）：
     - 一天最多四顿：餐次实例 meal:<day>:<slot>（早/午/晚/宵夜，宵夜跨零点归前一天）；
@@ -1062,6 +1065,8 @@ def pay_food(plugin, item, reason, source="meal", now=None, amount=None, idem=No
     if wallet is None:
         return {"ok": False, "charged": False, "reason": "no_wallet", "amount": 0,
                 "idem": "", "instance_id": "", "slot": "", "day": "", "block_id": ""}
+    wallet_kind = _wallet_kind(wallet)
+    stub_wallet = wallet_kind == "stub"
     if (sick_status(plugin) and late_snack_hours(now)
             and not sick_food_allowed({"text": item, "food": item})):
         logger.info("[amo] 生病期间禁止宵夜/夜间加餐，跳过扣款：%s", item)
@@ -1088,8 +1093,10 @@ def pay_food(plugin, item, reason, source="meal", now=None, amount=None, idem=No
                     "idem": "", "instance_id": "", "slot": "", "day": day, "block_id": ""}
         price = int(amount if amount is not None else price_for(item))
         if price <= 0:
-            return {"ok": False, "charged": False, "reason": "no_price", "amount": 0,
-                    "idem": "", "instance_id": "", "slot": "", "day": day, "block_id": ""}
+            if not stub_wallet:
+                return {"ok": False, "charged": False, "reason": "no_price", "amount": 0,
+                        "idem": "", "instance_id": "", "slot": "", "day": day, "block_id": ""}
+            price = 0
         charge_idem = idem or food_idem(source, item, now)
         try:
             paid = bool(wallet.debit(price, str(reason or item), charge_idem,
@@ -1122,9 +1129,11 @@ def pay_food(plugin, item, reason, source="meal", now=None, amount=None, idem=No
         seq = 0
     price = int(amount if amount is not None else price_for(item))
     if price <= 0:
-        return {"ok": False, "charged": False, "reason": "no_price", "amount": 0,
-                "idem": "", "instance_id": instance, "slot": slot, "day": day,
-                "block_id": ""}
+        if not stub_wallet:
+            return {"ok": False, "charged": False, "reason": "no_price", "amount": 0,
+                    "idem": "", "instance_id": instance, "slot": slot, "day": day,
+                    "block_id": ""}
+        price = 0
     block = {}
     if ensure_block and slot:
         start_min = int(now.hour) * 60 + int(now.minute)
@@ -1174,3 +1183,18 @@ def pay_food(plugin, item, reason, source="meal", now=None, amount=None, idem=No
     return {"ok": True, "charged": True, "reason": "", "amount": price,
             "idem": charge_idem, "instance_id": instance, "slot": slot, "day": day,
             "block_id": str(block.get("block_id") or "")}
+
+
+def pay_food(plugin, item, reason, source="meal", now=None, amount=None, idem=None,
+             allow_night=False, instance_id="", ensure_block=True, minutes=None):
+    """公开门面：实际逻辑在 _pay_food_impl；返回里带 wallet=live/stub/none。
+
+    stub = 金融系统已退役（_NoMoney）：仍保留吃饭块，但账本没有真实流水。
+    """
+    result = _pay_food_impl(
+        plugin, item, reason, source=source, now=now, amount=amount, idem=idem,
+        allow_night=allow_night, instance_id=instance_id,
+        ensure_block=ensure_block, minutes=minutes)
+    if isinstance(result, dict):
+        result.setdefault("wallet", _wallet_kind(getattr(plugin, "wallet", None)))
+    return result

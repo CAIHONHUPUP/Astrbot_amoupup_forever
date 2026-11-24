@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """日程/天气/消费的 LLM 工具：只执行模型的选择，不替模型做决定。"""
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger("amo.amo_schedule_tools")
 from typing import TYPE_CHECKING, Any
 
 import json
@@ -141,8 +145,8 @@ def make_continue_schedule_tool(plugin):
                 "activity": str((item or {}).get("activity") or ""),
                 "reason": str(reason or ""),
             })
-        except Exception:  # cleanup: best-effort, continue anyway
-            pass
+        except Exception as exc:  # cleanup: best-effort, continue anyway
+            logger.debug("[amo_schedule_tools.continue_current_schedule] optional step failed: %s", exc)
         return json.dumps({"ok": True, "continued": True, "reason": str(reason or "")},
                           ensure_ascii=False)
     return continue_current_schedule

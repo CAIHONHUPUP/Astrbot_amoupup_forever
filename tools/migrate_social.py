@@ -257,6 +257,7 @@ def main(argv=None):
                 mirror = store.all_schedules()
                 store.kv_set("schedule", mirror)
             except Exception:
+                # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
                 pass
             _audit(store, day, rows, new_rows, version)
             # 只失效「被迁移的块」的日记；没改的块日记保持有效。

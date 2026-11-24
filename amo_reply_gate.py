@@ -4,6 +4,15 @@
 只做打分与阈值计算，不碰数据库、不发消息。
 """
 from __future__ import annotations
+
+try:  # 旧十维快照只读兼容
+    try:
+        from .amo_shared import normalize_mood
+    except ImportError:
+        from amo_shared import normalize_mood
+except Exception:
+    def normalize_mood(mood):
+        return dict(mood or {})
 from typing import TYPE_CHECKING
 
 import random
@@ -114,9 +123,9 @@ class ReplyGate:
         else:
             activity_delta = 12
 
-        mood = snap["mood"]
-        positive = (mood["开心"] + mood["兴奋"] + mood["平静"] + mood["依恋"]) / 4.0
-        negative = (mood["郁闷"] + mood["疲惫"] + mood["生气"] + mood["委屈"] + mood["焦虑"]) / 5.0
+        mood = normalize_mood(snap.get("mood") or {})
+        positive = (mood["开心"] + mood["依恋"] + mood["亲密"] + mood["好奇"]) / 4.0
+        negative = (mood["疲惫"] + mood["压力"]) / 2.0
         mood_score = clamp(50 + (positive - negative) * 0.8)
         mood_delta = (50 - mood_score) * 0.25
 
@@ -219,10 +228,10 @@ class ReplyGate:
         probability *= {
             "月经期": 0.80, "黄体期": 0.90, "排卵期": 1.05,
         }.get(snap["period"]["phase"], 1.0)
-        mood = snap["mood"]
-        if mood["生气"] > 60:
+        mood = normalize_mood(snap.get("mood") or {})
+        if mood["压力"] > 60:
             probability *= 0.70
-        if mood["郁闷"] > 60:
+        if mood["开心"] < 35:
             probability *= 0.80
         if mood["开心"] > 65:
             probability *= 1.05
@@ -248,11 +257,10 @@ def _gate_willingness(self, umo, snap, profile):
     mood = snap["mood"]
     willingness = 50.0
     willingness += (mood["开心"] - 50) * 0.30
-    willingness += (mood["兴奋"] - 50) * 0.22
-    willingness += (mood["平静"] - 50) * 0.10
+    willingness += (mood["好奇"] - 50) * 0.22
+    willingness -= (mood["压力"] - 50) * 0.10
     willingness -= (mood["疲惫"] - 50) * 0.35
-    willingness -= (mood["郁闷"] - 50) * 0.28
-    willingness -= (mood["生气"] - 50) * 0.22
+    willingness -= (mood["压力"] - 50) * 0.28
     willingness += (mood["依恋"] - 50) * 0.15
     relation = profile.get("relation", "普通")
     willingness += {"相恋": 22, "熟识": 10, "抵触": -30, "仇恨": -55}.get(relation, 0)

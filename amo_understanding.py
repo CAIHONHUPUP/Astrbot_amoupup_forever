@@ -8,6 +8,10 @@
 """
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger("amo.amo_understanding")
+
 import re
 
 _QUESTION = re.compile(r"[?？]|吗|什么|哪|怎么|为什么|多少|谁|几")
@@ -90,8 +94,8 @@ async def build_smart(plugin, text, umo="", recent=""):
                 if data.get(key):
                     card[key] = str(data[key])[:20]
             card["confidence"] = 0.9
-    except Exception:  # cleanup: 模型兜底失败回退规则卡
-        pass
+    except Exception as exc:  # cleanup: 模型兜底失败回退规则卡
+        logger.debug("[amo_understanding.build_smart] optional step failed: %s", exc)
     return card
 
 

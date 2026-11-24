@@ -121,7 +121,6 @@ LEGACY_PREFIX_DOMAINS = (
     ("sleep_", "health"),
     ("unwell_", "health"),
     ("expense_", "ledger"),
-    ("ecommerce_", "ledger"),
     ("house_", "ledger"),
     ("housing", "ledger"),
     ("gift_", "ledger"),

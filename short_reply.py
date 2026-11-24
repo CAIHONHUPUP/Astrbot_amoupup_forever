@@ -8,6 +8,15 @@
 纯函数，方便单测；不碰模型、不碰数据库。
 """
 from __future__ import annotations
+
+try:  # 旧十维快照只读兼容
+    try:
+        from .amo_shared import normalize_mood
+    except ImportError:
+        from amo_shared import normalize_mood
+except Exception:
+    def normalize_mood(mood):
+        return dict(mood or {})
 from typing import TYPE_CHECKING
 
 import re
@@ -26,7 +35,7 @@ _CURT = {"嗯", "哦", "行", "好", "好的", "随便", "嗯嗯", "哦哦", "�
 
 def _mood(snap):
     try:
-        return (snap or {}).get("mood") or {}
+        return normalize_mood((snap or {}).get("mood") or {})
     except Exception:
         return {}
 
@@ -54,7 +63,7 @@ def state_binding(snap):
     mood = _mood(snap)
     if _num(mood.get("疲惫")) >= 60:
         return _prompts.render("short.state.tired")
-    if _num(mood.get("生气")) >= 60 or _num(mood.get("暴躁")) >= 60:
+    if _num(mood.get("压力")) >= 60:
         return _prompts.render("short.state.angry")
     if _num(mood.get("开心")) >= 60:
         return _prompts.render("short.state.happy")

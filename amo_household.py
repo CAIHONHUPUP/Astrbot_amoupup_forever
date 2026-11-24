@@ -19,6 +19,11 @@
 """
 from __future__ import annotations
 
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
+
 import re
 from dataclasses import dataclass
 from datetime import date as _date
@@ -83,6 +88,7 @@ def _cfg_bool(plugin, key: str, default: bool) -> bool:
         if callable(fn):
             return bool(fn(key, default))
     except Exception:  # cleanup: 读不到就用默认
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
         pass
     return default
 
@@ -93,6 +99,7 @@ def _cfg_str(plugin, key: str, default: str) -> str:
         if callable(fn):
             return str(fn(key, default))
     except Exception:  # cleanup: 读不到就用默认
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
         pass
     return default
 
@@ -103,6 +110,7 @@ def _cfg_int(plugin, key: str, default: int) -> int:
         if callable(fn):
             return int(fn(key, default))
     except Exception:  # cleanup: 读不到就用默认
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
         pass
     try:
         return int(_cfg_str(plugin, key, str(default)) or default)
@@ -179,8 +187,8 @@ def save(plugin, data) -> dict:
     data = normalize(data)
     try:
         plugin.db.kv_set("household", data)
-    except Exception:  # cleanup: 读不到就用默认
-        pass
+    except Exception as exc:  # cleanup: 读不到就用默认
+        _note_swallowed("amo_household.save", exc)
     return data
 
 
@@ -225,8 +233,8 @@ def set_away(plugin, away: bool, reason: str = "", days: int = 0) -> dict:
     data = {"away": bool(away), "reason": str(reason or ""), "since": now, "until": until}
     try:
         plugin.db.kv_set("partner_away", data)
-    except Exception:  # cleanup: 写不进去就返回内存结果
-        pass
+    except Exception as exc:  # cleanup: 写不进去就返回内存结果
+        _note_swallowed("amo_household.set_away", exc)
     return data
 
 
@@ -262,17 +270,28 @@ def _weekday(day) -> int:
 def zone_of(place, zone="") -> str:
     """地点 -> zone；优先复用 photo_rules 的唯一实现。"""
     raw = str(zone or "").strip()
-    if raw:
-        return raw
     text = str(place or "").strip()
+    if raw:
+        if raw == "road" and text:
+            try:
+                try:
+                    from .photo_rules import resolve_zone
+                except ImportError:
+                    from photo_rules import resolve_zone
+                fixed = str(resolve_zone(text, "", raw) or "")
+                if fixed and fixed != "road":
+                    return fixed
+            except Exception:
+                return raw
+        return raw
     if not text:
         return HOME_ZONE
     try:
         try:
-            from .photo_rules import zone_for_place
+            from .photo_rules import resolve_zone
         except ImportError:
-            from photo_rules import zone_for_place
-        return str(zone_for_place(text) or HOME_ZONE)
+            from photo_rules import resolve_zone
+        return str(resolve_zone(text, "", HOME_ZONE) or HOME_ZONE)
     except Exception:
         return HOME_ZONE if any(w in text for w in ("家", "卧室", "客厅", "床", "厨房", "出租屋")) else ""
 
@@ -370,16 +389,35 @@ def scene_at(plugin, day, start, end, place, *, zone="", activity="",
                  PRESENCE_ALONE, False, partner_place, "未知档位")
 
 
-def scene_now(plugin, now=None) -> Scene:
-    """此刻的在场判定；聊天/主动消息用。"""
+def _ledger_now(plugin, now=None) -> dict:
+    """此刻的场景账本记录（唯一 owner）；读不到或空档返回 {}。"""
     try:
         try:
-            from .amo_current_action import get_current_action
+            from .amo_scene_ledger import QUALITY_UNKNOWN as _unknown
+            from .amo_scene_ledger import scene_at as _ledger_at
         except ImportError:
-            from amo_current_action import get_current_action
-        current = get_current_action(plugin, now) or {}
-    except Exception:
-        current = {}
+            from amo_scene_ledger import QUALITY_UNKNOWN as _unknown
+            from amo_scene_ledger import scene_at as _ledger_at
+        record = _ledger_at(plugin, now)
+    except Exception as exc:  # cleanup: 账本读不到就回落旧链路
+        _note_swallowed("amo_household.scene_now.ledger", exc)
+        return {}
+    if not isinstance(record, dict):
+        return {}
+    if not (str(record.get("place") or "") or str(record.get("zone") or "")):
+        return {}
+    if str(record.get("quality") or "") == _unknown:
+        return {}
+    return record
+
+
+def scene_now(plugin, now=None) -> Scene:
+    """此刻的在场判定；聊天/主动消息用。
+
+    2026-11-24 收口：场景账本 amo_scene_ledger.scene_at() 是唯一 owner
+    （带病假/事假/出差/约会硬约束，地点会被钳到允许集合）；账本读不到或空档时
+    才回落 amo_current_action.get_current_action()。
+    """
     day = ""
     start = "00:00"
     end = "23:59"
@@ -388,26 +426,43 @@ def scene_now(plugin, now=None) -> Scene:
             day = now.date().isoformat()
             start = "%02d:%02d" % (now.hour, now.minute)
             end = "%02d:%02d" % ((now.hour + 1) % 24, now.minute)
-    except Exception:  # cleanup: 读不到就用默认
-        pass
+    except Exception as exc:  # cleanup: 读不到就用默认
+        _note_swallowed("amo_household.scene_now", exc)
     if not day:
         try:
             from .amo_shared import today_str
         except ImportError:
             from amo_shared import today_str
         day = today_str()
-    together = False
-    try:
+    record = _ledger_now(plugin, now)
+    if record:
+        place = str(record.get("place") or "")
+        zone = str(record.get("zone") or "")
+        activity = str(record.get("activity") or "")
+        together = bool(record.get("together"))
+    else:
         try:
-            from . import amo_date_session as _ds
-        except ImportError:
-            import amo_date_session as _ds
-        together = bool(_ds.together(plugin, now))
-    except Exception:
+            try:
+                from .amo_current_action import get_current_action
+            except ImportError:
+                from amo_current_action import get_current_action
+            current = get_current_action(plugin, now) or {}
+        except Exception:
+            current = {}
+        place = str(current.get("place") or "家")
+        zone = str(current.get("zone") or "")
+        activity = str(current.get("action") or "")
         together = False
-    return scene_at(plugin, day, start, end, current.get("place") or "家",
-                    zone=current.get("zone") or "", activity=current.get("action") or "",
-                    together_hint=together)
+        try:
+            try:
+                from . import amo_date_session as _ds
+            except ImportError:
+                import amo_date_session as _ds
+            together = bool(_ds.together(plugin, now))
+        except Exception:
+            together = False
+    return scene_at(plugin, day, start, end, place or "家",
+                    zone=zone, activity=activity, together_hint=together)
 
 
 # ---------------------------------------------------------------- 过夜计数
@@ -480,13 +535,13 @@ def transition(plugin, to_stage: str, *, force=False, reason="", source="command
     # 世界观缓存失效：内存 + kv 一起清，否则 ensure_worldview 会拿旧内存继续用。
     try:
         plugin.db.kv_delete("worldview")
-    except Exception:  # cleanup: 读不到就用默认
-        pass
+    except Exception as exc:  # cleanup: 读不到就用默认
+        _note_swallowed("amo_household.transition", exc)
     try:
         if getattr(plugin, "state", None) is not None:
             plugin.state.worldview = {}
-    except Exception:  # cleanup: 清不掉就等 7 天自然过期
-        pass
+    except Exception as exc:  # cleanup: 清不掉就等 7 天自然过期
+        _note_swallowed("amo_household.transition", exc)
     return True, "已切换为%s" % STAGE_LABELS.get(to_stage, to_stage)
 
 
@@ -505,23 +560,43 @@ async def transition_async(plugin, to_stage: str, *, force=False, reason="",
         uid = str(getattr(plugin, "_last_uid", "") or "")
         if uid:
             await plugin._write_memory_checked(uid, "【居住】" + text, kind="fact", tier=1)
-    except Exception:  # cleanup: 读不到就用默认
-        pass
+    except Exception as exc:  # cleanup: 读不到就用默认
+        _note_swallowed("amo_household.transition_async", exc)
     return True, msg
 
 
 # ---------------------------------------------------------------- 文案
 
 
-def wording(key: str, scene: Scene | None = None, plugin=None) -> str:
-    """按档位给 override；apart 一律返回空串，调用方回落到旧文案。"""
-    if scene is None:
-        if plugin is None:
-            return ""
-        scene = scene_now(plugin)
-    stage = scene.stage
-    if stage == STAGE_APART:
+def _apart_wording(key: str) -> str:
+    """分居档文案：2026-11-24 起居住边界也在这里（其余键仍回落到调用方旧文案）。"""
+    if key != "boundary":
         return ""
+    try:
+        try:
+            from .amo_prompt_registry import RESIDENCE_APART_RULE
+        except ImportError:
+            from amo_prompt_registry import RESIDENCE_APART_RULE
+        return RESIDENCE_APART_RULE
+    except Exception as exc:  # cleanup: 取不到就回落旧文案
+        _note_swallowed("amo_household.wording.apart", exc)
+        return ""
+
+
+def wording(key: str, scene: Scene | None = None, plugin=None) -> str:
+    """按档位给 override；apart 的居住边界也由这里给，其余键回落到旧文案。
+
+    只认档位：给了 scene 就用它的档位，否则用 stage_of(plugin)。system prompt 固定块
+    不能每轮再算一遍 scene_now（缓存约束见 amo_llm.py 里 ACTION_OWNERSHIP_RULES 的注释）。
+    """
+    if scene is not None:
+        stage = scene.stage
+    elif plugin is not None:
+        stage = stage_of(plugin)
+    else:
+        return ""
+    if stage == STAGE_APART:
+        return _apart_wording(key)
 
     _title = "老公"
     if plugin is not None:

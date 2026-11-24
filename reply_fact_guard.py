@@ -37,35 +37,24 @@ import re
 
 try:  # 包模式优先，按文件直接加载时退回绝对导入
     from .clock import now as _clock_now
-    from .place_guard import TARGET_WORD, allowed_groups, match_location, spoken_place
+    from .place_guard import (
+        EXTRA_ALLOWED, EXTRA_TARGET, EXTRA_WORDS,
+        TARGET_WORD, allowed_groups, match_location, spoken_place,
+    )
     from .photo_scene import zone_of
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from clock import now as _clock_now
-        from place_guard import TARGET_WORD, allowed_groups, match_location, spoken_place
+        from place_guard import (
+            EXTRA_ALLOWED, EXTRA_TARGET, EXTRA_WORDS,
+            TARGET_WORD, allowed_groups, match_location, spoken_place,
+        )
         from photo_scene import zone_of
 
-#: place_guard.GROUPS 没收录、但聊天里很常见的口语地点（只补，不改原表）
-_EXTRA_WORDS = {
-    "楼下": "home",
-    "楼上": "home",
-    "门口": "home",
-    "阳台上": "home",
-}
-
-#: place_guard.ALLOWED_GROUPS 没收的 zone（医院/学校/健身房/交通）在这里补上，
-#: 只影响本守卫，不改 place_guard 自己的表。
-_EXTRA_ALLOWED = {
-    "hospital": frozenset({"hospital"}),
-    "school": frozenset({"school"}),
-    "gym": frozenset({"gym"}),
-    "street": frozenset({"street", "transit"}),
-    # zone=transit 与 road 等价：地铁/公交/车里都算在路上
-    "transit": frozenset({"transit", "street"}),
-}
-
-#: place_guard.TARGET_WORD 没收的 zone 改口词（只影响本守卫）
-_EXTRA_TARGET = {"transit": "路上"}
+#: 口语补表统一由 place_guard 提供，这里只保留旧名字给本模块内部用。
+_EXTRA_WORDS = EXTRA_WORDS
+_EXTRA_ALLOWED = EXTRA_ALLOWED
+_EXTRA_TARGET = EXTRA_TARGET
 
 #: 这些词说明说的是以后/愿望，不是「此刻在哪」
 _FUTURE = (

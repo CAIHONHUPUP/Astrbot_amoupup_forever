@@ -2,6 +2,19 @@
 """ProactiveMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger("amo.amo_proactive")
+
+try:  # 旧十维快照只读兼容
+    try:
+        from .amo_shared import normalize_mood
+    except ImportError:
+        from amo_shared import normalize_mood
+except Exception:
+    def normalize_mood(mood):
+        return dict(mood or {})
+
 import threading
 from typing import Any, TYPE_CHECKING
 
@@ -217,8 +230,8 @@ def release_schedule_reminder(db, day, key, token=""):
         if not token or (isinstance(current, dict)
                          and str(current.get("token") or "") == str(token)):
             db.kv_set(claim_key, {})
-    except Exception:  # cleanup: 释放失败最多等 TTL 过期
-        pass
+    except Exception as exc:  # cleanup: 释放失败最多等 TTL 过期
+        logger.debug("[amo_proactive.release_schedule_reminder] optional step failed: %s", exc)
 
 
 def schedule_reminder_fact(db, now=None, day="", min_minutes=SCHEDULE_REMIND_MIN_MINUTES,
@@ -244,8 +257,8 @@ def schedule_reminder_fact(db, now=None, day="", min_minutes=SCHEDULE_REMIND_MIN
         try:
             if db.kv_get("schedule_reminded:%s:%s" % (day, key), False):
                 continue
-        except Exception:  # cleanup: 读不到已提醒标记按未提醒
-            pass
+        except Exception as exc:  # cleanup: 读不到已提醒标记按未提醒
+            logger.debug("[amo_proactive.schedule_reminder_fact] optional step failed: %s", exc)
         candidates.append((start, {
             "day": day, "key": key, "version": _schedule_version(db, day),
             "time": str(row.get("start") or ""), "place": str(row.get("place") or ""),
@@ -303,6 +316,7 @@ def schedule_fact_current(db, fact, now=None, late_window=True):
                             now_minute - start, str(fact.get("event") or "")[:30])
                 return False
     except (TypeError, ValueError):  # cleanup: 兜底/降级，保持原行为
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
         pass
     return True
 
@@ -606,7 +620,13 @@ def forced_reason(snap, balance_ratio=None, silence=0.0):
     分享欲回到普通概率 + 30 分钟空闲口径。
     """
     mood = (snap or {}).get("mood") or {}
-    if float(mood.get("委屈") or 0) >= 85 or float(mood.get("郁闷") or 0) >= 90:
+    stress = max(float(mood.get("压力") or 0), float(mood.get("委屈") or 0),
+                 float(mood.get("郁闷") or 0), float(mood.get("焦虑") or 0))
+    # 用下标而不是 .get：上面刚判过 "开心" in mood，取值一定存在；
+    # .get 在 mypy 里是 Any|None，float() 会因为 None 报 arg-type。
+    joy = (float(mood["开心"]) if "开心" in mood
+           else 100.0 - float(mood.get("郁闷") or 0))
+    if stress >= 85 or joy <= 10:
         return "你现在情绪很崩，一个人很难受，特别想找老公。"
     health = (snap or {}).get("health") or {}
     if health.get("sick") and severity_rank(health.get("severity")) >= 3:
@@ -1495,12 +1515,16 @@ class ProactiveMixin(_MixinBase):
 
     def _choose_proactive_kind(self, profile, snap, category=""):
         relation = profile.get("relation", "普通")
-        mood = snap["mood"]
+        mood = snap.get("mood") or {}
+        stress = max(float(mood.get("压力") or 0), float(mood.get("委屈") or 0),
+                     float(mood.get("郁闷") or 0), float(mood.get("焦虑") or 0))
+        joy = (float(mood["开心"]) if "开心" in mood
+               else 100.0 - float(mood.get("郁闷") or 0))
         painful = (
             snap["health"]["sick"]
             or snap["period"]["pain"] >= 6
-            or mood["委屈"] >= 60
-            or mood["郁闷"] >= 65
+            or stress >= 60
+            or joy <= 35
         )
         health = snap.get("health") or {}
         if (relation == "相恋" and health.get("sick")
@@ -1556,11 +1580,7 @@ class ProactiveMixin(_MixinBase):
             umo = str(umo or "")
             if not umo or umo in items:
                 return
-            try:
-                from .group_scene import proactive_allowed
-            except ImportError:
-                from group_scene import proactive_allowed
-            if not proactive_allowed(self, umo):
+            if ":GroupMessage:" in umo:
                 return
             if not force and self._recent_bot_initiated(umo, 3600):
                 return
@@ -1769,14 +1789,6 @@ class ProactiveMixin(_MixinBase):
         # Phase 6：这道守卫走 amo_reply_pipeline 的 proactive_pre 阶段（仍在切句之前）。
         context = _reply_pipeline.context_for_proactive(self, target_umo, profile)
         raw = str((await _reply_pipeline.run(raw, context))["text"] or "").strip()
-        try:
-            try:
-                from .amo_purchase_guard import rewrite as _purchase_guard
-            except ImportError:
-                from amo_purchase_guard import rewrite as _purchase_guard
-            raw = _purchase_guard(raw, self)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_proactive.purchase_guard", _amo_exc)
         try:
             try:
                 from .amo_companion_guard import rewrite as _companion_guard
@@ -2090,6 +2102,22 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         kind = str(self._choose_proactive_kind(profile, snap, category) or "greet")
     except Exception:  # cleanup: 选不到按问候
         kind = "greet"
+    # 鱼之心：主动开口前先读她此刻的心（档位/心情/倾向），不是只看十维标题。
+    heart = None
+    heart_joy = None
+    try:
+        try:
+            from .amo_heart import runtime as _heart_runtime
+        except ImportError:
+            from amo_heart import runtime as _heart_runtime
+        heart = _heart_runtime.ensure(self)
+    except Exception:
+        heart = None
+    if heart is not None:
+        try:
+            heart_joy = float(heart.state.get("joy") or 0)
+        except (TypeError, ValueError):
+            heart_joy = None
     # 日程提醒：挑一条即将开始的日程；挑不到就退回普通问候，别硬编日程。
     schedule_fact = {}
     if kind == "schedule_reminder":
@@ -2099,12 +2127,8 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     target_umo = self._pick_proactive_umo(profile)
     if not target_umo:
         return
-    try:
-        from .group_scene import proactive_allowed
-    except ImportError:
-        from group_scene import proactive_allowed
-    if not proactive_allowed(self, target_umo):
-        logger.info("[amo] 主动消息：目标群是工作群/陌生群，取消发送")
+    if ":GroupMessage:" in str(target_umo):
+        logger.info("[amo] 主动消息：群聊已删除，取消发送")
         self.db.kv_set(slot_key, True)
         return
     # 晚安保底：23:00 起、你安静 5 分钟后发；00:30 截止；说过就跳过
@@ -2194,7 +2218,7 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
         if self.db.kv_get(roll_key, False):
             return
         self.db.kv_set(roll_key, True)
-        happy = float((snap.get("mood") or {}).get("开心") or 0)
+        happy = heart_joy if heart_joy is not None else float((snap.get("mood") or {}).get("开心") or 0)
         prob = greet_probability(happy)
         if not _roll_probability(prob):
             logger.info("[amo] 主动消息：掷骰没中（kind=%s 开心=%.0f 概率=%d%%）", kind, happy, prob)
@@ -2222,6 +2246,13 @@ async def _proactive_one(self, profile, snap, now, quiet, night):
     except Exception:  # cleanup: 微事件读不到按空
         micro = ""
     extra = []
+    if heart is not None:
+        try:
+            _heart_block = _heart_runtime.prompt_block(self)
+            if _heart_block:
+                extra.append(_heart_block)
+        except Exception as exc:
+            _note_swallowed("amo_proactive._proactive_one", exc)
     if forced:
         extra.append("【必须主动】" + forced)
     if held:

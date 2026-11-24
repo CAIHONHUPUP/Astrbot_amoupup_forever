@@ -36,8 +36,21 @@ __all__ = [
     "fixed_rewrite_bodies", "is_fixed_rewrite", "is_fixed_fragment",
     "is_multi_pool", "substantive_reply", "prefer_substantive_candidate",
     "compare_body", "reference", "dedup_sentences", "dedup_or_fallback",
-    "emotion_hint", "pick_variant", "reset",
+    "emotion_hint", "pick_variant", "reset", "contextual_fallback",
 ]
+
+
+def contextual_fallback(user_text):
+    """整条回复被守卫吃掉时，按他最后一句给一句人话；没有匹配返回空串。
+
+    唯一实现：segment_engine / persona_guard 都只转发这里，避免两套兜底。
+    """
+    text = str(user_text or "")
+    if "晚安" in text:
+        return "抱抱，睡吧。"
+    if "在吗" in text or "干嘛" in text or "干什么" in text:
+        return "我在呢。"
+    return ""
 
 #: 只和最近几条 bot 消息比对
 DEDUP_WINDOW = 5
@@ -64,6 +77,8 @@ FALLBACKS: dict[str, tuple[str, ...]] = {
                 "我还在外面呢，晚点就回去"),
     "status_repeat": ("还是老样子。",),
     # -- 整条复读 / 模型泄漏：short 只做识别（产出已停）；leak 是唯一仍在产出的池 --
+    # 「嗯，我在呢。」仅识别，不产出：留在池里只用于识别旧兜底；
+    # persona_guard 的生产兜底已改为 contextual_fallback，不再返回这一句。
     "short": (
         "嗯，我在呢。",
         "在听你说呢。",

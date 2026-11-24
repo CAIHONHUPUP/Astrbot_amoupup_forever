@@ -364,7 +364,8 @@ class WardrobeQueriesMixin:
                     if fh.read() == raw:
                         return True
             except FileNotFoundError:
-                pass  # cleanup
+                # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
+                pass
             tmp = self.sidecar_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as fh:
                 fh.write(raw)

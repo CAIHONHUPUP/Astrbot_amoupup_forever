@@ -1,8 +1,0 @@
-# B3 门禁与四件套（2026-11-23）
-
-删除 persona/grounding 的 safe_reply 及私有池；llm_service 两次复检失败改为一次 repair_reply（失败保留首版原文）；
-holdout_adversarial 的 share_continuation 与 share_sim 改用 repair；架构白名单登记 amo_llm_service → amo_reply_pipeline。
-
-- 门禁 exit 0（962.2s）：6447 passed / 0 failed / 7 skipped / 293 subtests；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
-- 四件套：daily 50/50、614/614；share 500/100%（damaged 0、persistent 0）；remind 240/240；adversarial 39/39（share_continuation 5/5）；imm 11 passed
-- 回放：narration_after 0、fixed 23、persistent 4（待真模型重写）

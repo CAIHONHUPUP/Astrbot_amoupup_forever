@@ -530,8 +530,8 @@ class PhotoShareMixin:
                 except ImportError:
                     from amo_message import strip_media_markers as _strip
                 caption_text = _strip(caption_text)
-            except Exception:  # cleanup: 兜底/降级，保持原行为
-                pass
+            except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                _note_swallowed("photo_share._transport", exc)
             if caption_text:
                 try:
                     from astrbot.api.message_components import Plain

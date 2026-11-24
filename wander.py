@@ -6,6 +6,15 @@
 
 from __future__ import annotations
 
+try:  # 旧十维快照只读兼容
+    try:
+        from .amo_shared import normalize_mood
+    except ImportError:
+        from amo_shared import normalize_mood
+except Exception:
+    def normalize_mood(mood):
+        return dict(mood or {})
+
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_observability import note as _note_swallowed
@@ -61,17 +70,14 @@ def detect_refusal(text) -> bool:
 
 def assess(mood, health=None) -> tuple:
     """(低落, 劳累)：只看十维心情和身体状态，不做语义猜测。"""
-    mood = mood or {}
+    mood = normalize_mood(mood or {})
     try:
         tired = float(mood.get("疲惫", 0) or 0) >= 55
     except Exception as _amo_exc:
         _note_swallowed("wander.assess", _amo_exc)
         tired = False
     try:
-        low = (
-            float(mood.get("郁闷", 0) or 0) + float(mood.get("委屈", 0) or 0)
-            + float(mood.get("焦虑", 0) or 0)
-        ) >= 60 or float(mood.get("开心", 0) or 0) <= 20
+        low = float(mood.get("压力", 0) or 0) >= 60 or float(mood.get("开心", 0) or 0) <= 20
     except Exception as _amo_exc:
         _note_swallowed("wander.assess", _amo_exc)
         low = False

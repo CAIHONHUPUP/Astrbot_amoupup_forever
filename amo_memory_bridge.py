@@ -182,6 +182,13 @@ class BridgeMixin(_MixinBase):
     async def _write_memory_checked(self, uid, content, kind="fact", tier=1,
                                     scope="private", group_id="", subject="user", platform=""):
         """写一条记忆并返回是否真的成功；subject=user/bot 区分主体。"""
+        try:
+            from .amo_intimacy import is_explicit as _is_explicit
+        except ImportError:
+            from amo_intimacy import is_explicit as _is_explicit
+        if str(kind or "") in ("daily_digest", "milestone", "summary") and _is_explicit(content):
+            logger.info("[amo] 露骨内容不进日记/里程碑/总结记忆")
+            return False
         # 群聊隔离：群友闲聊不进长期记忆，只有老公在群里说的话才允许记。
         _is_owner = getattr(self, "_is_registered_lover", None)
         if (scope == "group" or group_id) and not (_is_owner(uid) if callable(_is_owner) else False):

@@ -26,24 +26,21 @@ try:  # 包模式（AstrBot 正常加载 / 单测按包导入）
     from .amo_init import InitMixin
     from .amo_lifecycle import LifecycleMixin
     from .clock import configure as _clock_configure, current_name as _clock_name
-    from .amo_shared import Context, GiftEngine, HeartflowEngine, SegmentEngine, Star, _now, clamp, has_question, logger, looks_like_plain_command, now_ts, overlap, quiet_now, sentiment, to_float, to_int, today_str, tokens, truncate, web_request
+    from .amo_shared import Context, GiftEngine, SegmentEngine, Star, _now, clamp, has_question, logger, looks_like_plain_command, now_ts, overlap, quiet_now, sentiment, to_float, to_int, today_str, tokens, truncate, web_request
     from .amo_db import AmoDB
     from .amo_human_state import HumanState
     from .amo_hunger import HungerEngine
     from .amo_llm_service import LLMService
-    from .amo_wallet import Wallet
     from .draw_engine import DrawEngine
     from .photo_engine import PhotoEngine
     from .wardrobe import Wardrobe
     from .amo_events import EventBus, ScheduleChanged
     from .pose_library import PoseLibrary
-    from .social_learn_engine import SocialLearnEngine
     from .housing import Housing
     from .micro_events import MicroEventEngine
     from .amo_reply_gate import ReplyGate
     from .amo_routes import WebRouteMixin, WRITE_ROUTES, align_handler_module_paths as _align_handler_module_paths
     from .amo_observability import note as _note_swallowed
-    from .amo_social_bridge import handshake as _watch_handshake
 except ImportError:  # 按文件直接加载（顶层 sys.path 模式）
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from amo_api import ApiMixin
@@ -64,24 +61,21 @@ except ImportError:  # 按文件直接加载（顶层 sys.path 模式）
         from amo_init import InitMixin
         from amo_lifecycle import LifecycleMixin
         from clock import configure as _clock_configure, current_name as _clock_name
-        from amo_shared import Context, GiftEngine, HeartflowEngine, SegmentEngine, Star, _now, clamp, has_question, logger, looks_like_plain_command, now_ts, overlap, quiet_now, sentiment, to_float, to_int, today_str, tokens, truncate, web_request
+        from amo_shared import Context, GiftEngine, SegmentEngine, Star, _now, clamp, has_question, logger, looks_like_plain_command, now_ts, overlap, quiet_now, sentiment, to_float, to_int, today_str, tokens, truncate, web_request
         from amo_db import AmoDB
         from amo_human_state import HumanState
         from amo_hunger import HungerEngine
         from amo_llm_service import LLMService
-        from amo_wallet import Wallet
         from draw_engine import DrawEngine
         from photo_engine import PhotoEngine
         from wardrobe import Wardrobe
         from amo_events import EventBus, ScheduleChanged
         from pose_library import PoseLibrary
-        from social_learn_engine import SocialLearnEngine
         from housing import Housing
         from micro_events import MicroEventEngine
         from amo_reply_gate import ReplyGate
         from amo_routes import WebRouteMixin, WRITE_ROUTES, align_handler_module_paths as _align_handler_module_paths
         from amo_observability import note as _note_swallowed
-        from amo_social_bridge import handshake as _watch_handshake
 
 
 # 这些名字是 main.py 的装配入口，也是外部 import 的稳定出口
@@ -98,7 +92,6 @@ __all__ = [
     "HandshakeMixin",
     "InitMixin",
     "LifecycleMixin",
-    "HeartflowEngine",
     "Housing",
     "HumanState",
     "HungerEngine",
@@ -116,13 +109,11 @@ __all__ = [
     "ScheduleChanged",
     "ScheduleMixin",
     "SegmentEngine",
-    "SocialLearnEngine",
     "SocialMixin",
     "Star",
     "TravelMixin",
     "UsageMixin",
     "WRITE_ROUTES",
-    "Wallet",
     "Wardrobe",
     "WebRouteMixin",
     "_align_handler_module_paths",
@@ -130,7 +121,6 @@ __all__ = [
     "_clock_name",
     "_note_swallowed",
     "_now",
-    "_watch_handshake",
     "clamp",
     "has_question",
     "logger",
@@ -146,3 +136,7 @@ __all__ = [
     "truncate",
     "web_request",
 ]
+
+
+# 心流已移除：保留名字给旧调用方做 None 判断
+HeartflowEngine = None

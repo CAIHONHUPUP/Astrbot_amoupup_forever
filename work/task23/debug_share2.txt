@@ -1,4 +1,0 @@
-ok False send_calls [False]
-log: [amo] 照片耗时 0.0s（生成+本地化，自拍）
-
-ledger []

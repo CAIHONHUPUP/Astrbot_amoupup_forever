@@ -1,3 +1,8 @@
+
+import logging
+
+logger = logging.getLogger("amo.amo_state_diary")
+
 # -*- coding: utf-8 -*-
 """小日记 mixin：整点小日记生成/缓存/失效重算、当前活动汇总。从 amo_human_state.py 按域拆出。"""
 import hashlib
@@ -829,8 +834,8 @@ class DiaryStateMixin(_MixinBase):
         data[key] = int(data.get(key) or 0) + 1
         try:
             self.db.kv_set("diary_rewrites", data)
-        except Exception:
-            pass  # cleanup：重写预算记不上就放行
+        except Exception as exc:
+            logger.debug("[amo_state_diary._bump_diary_rewrite] optional step failed: %s", exc)
         return data[key]
 
     def _diary_cached_reply(self, day, start, item, version, force, facts, record):
@@ -1393,8 +1398,8 @@ def diary_live_mood(plugin, event=None):
             value = str(dominant() or "").strip()
             if value:
                 return value
-        except Exception:  # cleanup: 心情读不到不算错
-            pass
+        except Exception as exc:  # cleanup: 心情读不到不算错
+            logger.debug("[amo_state_diary.diary_live_mood] optional step failed: %s", exc)
     return "平静"
 
 

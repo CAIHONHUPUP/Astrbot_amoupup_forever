@@ -43,6 +43,16 @@ def clean_voice_text(text, limit: int = 600) -> str:
     """TTS 前去掉 Markdown 标记，避免把星号/井号也念出来；过长时按句截断。"""
     if looks_like_action_only(text):   # 整条都是动作：没有可念的台词
         return ""
+    # 未闭合「（」与聊天共用同一套“丢动作、留台词”规则；闭合括号仍走 split_actions。
+    try:
+        try:
+            from .amo_persona_guard import has_orphan_paren, strip_action_narration
+        except ImportError:
+            from amo_persona_guard import has_orphan_paren, strip_action_narration
+        if has_orphan_paren(text):
+            text = strip_action_narration(text)
+    except Exception:  # cleanup: 守卫不可用时保持原文本，语音不因它失败
+        text = str(text or "")
     value, _actions = split_actions(text)   # 动作/旁白不念出来
     value = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", value)
     value = re.sub(r"[*_#>~]+", "", value)

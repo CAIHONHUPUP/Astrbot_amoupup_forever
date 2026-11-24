@@ -16,7 +16,11 @@
 """
 from __future__ import annotations
 
+import logging
+from datetime import date
 from typing import Any
+
+logger = logging.getLogger("amo.place")
 
 #: 桌面投影/旧数据一律洗成「家」；通勤/就医/酒店等真实场景保留。
 PLACE_WHITELIST = frozenset({
@@ -115,12 +119,122 @@ PLACE_ZONE_RULES = (
 )
 
 
-def zone_for_place(place: Any) -> str:
-    """地点词 → zone；顺序从最具体到最泛，街/路兜底。"""
+#: 交通工具词：只有 place 本身是交通工具时才是 road（「地铁站」仍归 station）。
+_TRANSIT_VEHICLE_WORDS = (
+    "地铁", "公交", "大巴", "巴士", "车厢", "车上", "车里",
+    "出租车", "网约车", "打车",
+)
+#: 口语餐饮地点：PLACE_ZONE_RULES 里只有「餐厅/饭馆/饭店/食堂」，这里补小馆/粉店/面馆/馆子。
+_RESTAURANT_PLACE_WORDS = (
+    "小馆", "馆子", "粉店", "面馆", "小吃", "烧烤", "火锅", "咖啡",
+)
+#: 具体地点认不出时按 category 兜底；这些值都不是 road（road 只由交通工具/通勤触发）。
+_CATEGORY_ZONE_FALLBACK = {
+    "meal": "restaurant",
+    "work": "office",
+    "study": "office",
+    "sleep": "home",
+    "rest": "home",
+    "play": "street",
+    "social": "street",
+    "life": "street",
+}
+#: 整词就是路上/路边的，才允许 road；「幸福路小区」这种带具体名字的不算。
+_ROAD_EXACT_TEXTS = frozenset(("路", "路上", "路边", "外面"))
+
+
+def resolve_zone(place, category="", fallback="") -> str:
+    """地点 + 类别 → 唯一 zone；有具体地点时绝不返回 road（2026-11-23 23:00 事故）。
+
+    规则顺序：
+    1. 交通工具/路上词 → road（唯二允许 road 的地点来源）；
+    2. 具体地点词 → PLACE_ZONE_RULES（餐厅/小馆等在规则表之后补充）；
+    3. category=commute 且目的地认不出 → road（通勤途中）；
+    4. 认不出的具体地点按 category 给非 road 兜底；
+    5. 调用方 fallback 只在非 road 时采用。
+
+    这样 resolve_zone("楼下小馆", "meal") 稳定返回 restaurant，不会因为
+    旧 zone=road 或 stage 回落把餐厅写成路上。
+    """
     text = clean_place(place)
+    cat = str(category or "").strip().lower()
+    fb = str(fallback or "").strip().lower()
+    if fb in ("transit", "commute", "路上"):
+        fb = "road"
     if not text:
-        return ""
+        # 地点为空：只有通勤/调用方明确给 road 时才允许 road。
+        if cat == "commute":
+            return "road"
+        return fb
+    if text in _ROAD_EXACT_TEXTS:
+        return "road"
+    # 先认具体地点（医院/景区/家/酒店/公司/商场/餐厅/车站），
+    # 再补口语餐饮词，最后才看「街/路/交通工具」这些泛地点。
     for words, zone in PLACE_ZONE_RULES:
+        if zone in ("street", "road"):
+            continue
         if any(word in text for word in words):
             return zone
+    if any(word in text for word in _RESTAURANT_PLACE_WORDS):
+        return "restaurant"
+    if "街" in text:
+        return "street"
+    if any(word in text for word in _TRANSIT_VEHICLE_WORDS):
+        return "road"
+    if cat == "commute":
+        return "road"
+    if cat in _CATEGORY_ZONE_FALLBACK:
+        return _CATEGORY_ZONE_FALLBACK[cat]
+    if fb and fb != "road":
+        return fb
     return ""
+
+
+def repair_zone_rows(items, day, today="") -> tuple[list, list]:
+    """写库前不变量：具体地点 + zone=road → 纠正成 resolve_zone 的结果。
+
+    只修今天和未来（历史日记不回写）。返回 (rows, changes)，changes 供调用方打日志。
+    """
+    rows = list(items or [])
+    day_text = str(day or "")[:10]
+    if not day_text:
+        return rows, []
+    today_text = str(today or date.today().isoformat())[:10]
+    if day_text < today_text:
+        return rows, []
+    fixed_rows: list = []
+    changes: list = []
+    for row in rows:
+        if not isinstance(row, dict):
+            fixed_rows.append(row)
+            continue
+        place = str(row.get("place") or "").strip()
+        zone = str(row.get("zone") or "").strip().lower()
+        if not place or zone != "road":
+            fixed_rows.append(row)
+            continue
+        target = resolve_zone(place, row.get("category"), "")
+        if not target or target == "road" or target == zone:
+            fixed_rows.append(row)
+            continue
+        new_row = dict(row)
+        new_row["zone"] = target
+        fixed_rows.append(new_row)
+        changes.append({
+            "place": place,
+            "category": str(row.get("category") or ""),
+            "activity": str(row.get("activity") or ""),
+            "old": zone,
+            "new": target,
+        })
+    for change in changes:
+        logger.warning(
+            "[amo] 日程地点/zone 不一致已纠正 day=%s %s→%s place=%s category=%s activity=%s",
+            day_text, change["old"], change["new"], change["place"],
+            change["category"] or "-", change["activity"][:40] or "-")
+    return fixed_rows, changes
+
+
+def zone_for_place(place: Any) -> str:
+    """地点词 → zone（兼容旧入口）：统一转发 resolve_zone，不再维护第二套规则。"""
+    return resolve_zone(place, "", "")

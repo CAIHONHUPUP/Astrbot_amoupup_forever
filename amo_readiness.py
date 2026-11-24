@@ -16,7 +16,6 @@ try:
         HumanState,
         HungerEngine,
         _note_swallowed,
-        _watch_handshake as _watch_handshake_probe,
         logger,
     )
 except ImportError:  # 直接按文件加载时
@@ -25,7 +24,6 @@ except ImportError:  # 直接按文件加载时
             HumanState,
             HungerEngine,
             _note_swallowed,
-            _watch_handshake as _watch_handshake_probe,
             logger,
         )
 
@@ -87,7 +85,6 @@ class ReadinessMixin:
             except Exception as _amo_exc:
                 _note_swallowed("main.HumanCorePlugin._ensure_ready.web_retry", _amo_exc)
             self._spawn(self._log_omni_handshake())
-            self._spawn(self._watch_handshake())
             self._loop_task = self._spawn(self._background_loop())
             self._spawn(self._warm_up())
 
@@ -126,20 +123,6 @@ class ReadinessMixin:
                 len(nodes), ("，模型 " + model) if model else ""))
         except Exception as exc:
             logger.debug("[amo] 生图插件握手检查失败: %s" % exc)
-
-    async def _watch_handshake(self):
-        """和「我能永远守护你」（Astrbot_amoupup_watch）握一次手。
-
-        只做发现 + describe()：没装 / 停用 / 加载失败 / 版本不匹配都只记日志，
-        不影响聊天。社会逻辑全在 watch 自己的插件里，amo 一行都不碰。
-        """
-        try:
-            info = await _watch_handshake_probe(self)
-        except Exception as exc:
-            _note_swallowed("main.HumanCorePlugin._watch_handshake", exc)
-            return None
-        self.watch_info = info
-        return info
 
     def _on_schedule_changed(self, event):
         """日程事件订阅者：日记失效/取消 + 穿搭失效 + 生图刷新日志。"""

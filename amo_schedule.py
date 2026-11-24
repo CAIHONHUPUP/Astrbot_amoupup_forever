@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """ScheduleMixin：从 main.py 拆出的 mixin，由 HumanCorePlugin 组合使用。"""
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger("amo.amo_schedule")
 from typing import Any, TYPE_CHECKING
 
 try:  # Phase 11：统一时钟（不再裸调系统时钟）
@@ -545,8 +549,8 @@ def _block_key_of(plugin, day_text, item):
             value = str(getter(day_text, item) or "")
             if value:
                 return value
-        except Exception:  # cleanup: 日记容错
-            pass
+        except Exception as exc:  # cleanup: 日记容错
+            logger.debug("[amo_schedule._block_key_of] optional step failed: %s", exc)
     try:
         return str(block_id(day_text, item) or "")
     except Exception:  # cleanup: 日记容错
@@ -685,8 +689,8 @@ async def _seed_day_digest(plugin, day):
     try:
         if str(plugin.db.kv_get("day_digest:" + day_text, "") or "").strip():
             return
-    except Exception:  # cleanup: 日记容错
-        pass
+    except Exception as exc:  # cleanup: 日记容错
+        logger.debug("[amo_schedule._seed_day_digest] optional step failed: %s", exc)
     try:
         lines = await _diary_day_fact_lines(plugin, day)
     except Exception as exc:
@@ -788,10 +792,6 @@ class ScheduleMixin(_MixinBase):
         except Exception:  # cleanup: 日记容错
             current: dict[str, Any] = {}
         try:
-            cash = int(self.state.p.wallet.balance())
-        except Exception:  # cleanup: 日记容错
-            cash = 0
-        try:
             mood = self.state.mood_words()
         except Exception:  # cleanup: 日记容错
             mood = ""
@@ -810,11 +810,11 @@ class ScheduleMixin(_MixinBase):
             "{\"tool\":\"keep_schedule\",\"reason\":\"...\"}。"
         )
         prompt = (
-            "你此刻：%s（%s），心情：%s，余额：%.2f 元。\n"
+            "你此刻：%s（%s），心情：%s。\n"
             "他提议把日程改成：%s（%s，%s）。\n"
-            "结合你的疲惫、心情、余额和想不想去，自主决定同意还是拒绝。"
+            "结合你的疲惫、心情和想不想去，自主决定同意还是拒绝。"
         ) % (current.get("activity") or "休息", current.get("place") or "",
-             mood, cash / 100.0, proposal["activity"], proposal["place"],
+             mood, proposal["activity"], proposal["place"],
              proposal["category"])
         try:
             raw = await llm.chat_raw(
@@ -1597,6 +1597,7 @@ class ScheduleMixin(_MixinBase):
                 with open(path, encoding="utf-8") as fh:
                     return fh.read()
             except (OSError, UnicodeDecodeError):  # cleanup: 读不到旧正文就当没有
+                # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
                 pass
         try:
             if callable(_diary_read):
@@ -1634,8 +1635,8 @@ class ScheduleMixin(_MixinBase):
         data[key] = int(data.get(key) or 0) + 1
         try:
             self.db.kv_set("diary_rewrites", data)
-        except Exception:  # cleanup: 日记容错
-            pass  # cleanup: 预算记不上就放行，不能因为记账失败把日记卡死
+        except Exception as exc:  # cleanup: 日记容错
+            logger.debug("[amo_schedule._bump_daily_diary_rewrite] optional step failed: %s", exc)
         return data[key]
 
     def _day_digest(self, day_text):
@@ -1854,6 +1855,10 @@ class ScheduleMixin(_MixinBase):
             return []
         # 日记是她的私人视角，之后还会进记忆：群里的对话、别人的对话都不该写进来
         rows = _private_rows(rows)
+        try:
+            from .amo_intimacy import is_explicit as _is_explicit
+        except ImportError:
+            from amo_intimacy import is_explicit as _is_explicit
         lines = []
         for row in rows:
             timestamp = _row_timestamp(row)
@@ -1862,6 +1867,8 @@ class ScheduleMixin(_MixinBase):
             text = str(row.get("content") or "").strip().replace("\n", " ")
             if not text or str(row.get("role") or "") == "system":
                 continue
+            if _is_explicit(text):
+                continue  # 露骨对话不进日记
             who = "我" if str(row.get("role") or "") == "bot" else (str(row.get("name") or "") or "他")
             lines.append(who + "：" + text[:200])
         return lines

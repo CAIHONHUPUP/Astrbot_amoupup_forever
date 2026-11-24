@@ -12,6 +12,12 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         import clock as _amo_clock
 
+try:  # 先贬后夸识别（纯函数，独立模块）
+    from .amo_intimacy import has_explicit_change_request, is_contrast_praise
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from amo_intimacy import has_explicit_change_request, is_contrast_praise
+
 import json
 import os
 import random
@@ -340,9 +346,17 @@ def classify_sleep_item(name):
         return "top"
     return ""
 def is_pajama_change_request(text):
-    """他嫌睡衣不好看/让换一套时返回 True（只认和睡衣一起出现的说法）。"""
+    """他嫌睡衣不好看/让换一套时返回 True（只认和睡衣一起出现的说法）。
+
+    2026-11-23：先贬后夸（“睡衣丑但是穿在你身上好看”）不算换睡衣；
+    除非他明说“换一套/换件/换衣服”。
+    """
     text = str(text or "")
     if not any(word in text for word in ("睡衣", "睡裙", "睡裤", "睡袍", "居家服")):
+        return False
+    if has_explicit_change_request(text):
+        return True
+    if is_contrast_praise(text):
         return False
     return any(word in text for word in ("不好看", "难看", "换", "不喜欢", "丑"))
 OUTFIT_CHANGE_WORDS = ("换一套", "换套", "换装", "换衣服", "换件", "换一下",
@@ -350,12 +364,19 @@ OUTFIT_CHANGE_WORDS = ("换一套", "换套", "换装", "换衣服", "换件", "
 OUTFIT_CONTEXT_WORDS = ("衣服", "穿搭", "睡衣", "睡裙", "睡裤", "睡袍", "外套",
                         "裙子", "裤子", "上衣", "这件", "这套", "这身")
 def is_outfit_change_request(text):
-    """他是不是在说换一套/换装（不认换手机、换话题这种）。"""
+    """他是不是在说换一套/换装（不认换手机、换话题这种）。
+
+    2026-11-23：先贬后夸不算换装；只有明说换才照换。
+    """
     text = str(text or "")
     if not text:
         return False
     if "换装" in text:
         return True
+    if has_explicit_change_request(text):
+        return True
+    if is_contrast_praise(text):
+        return False
     if not any(word in text for word in OUTFIT_CONTEXT_WORDS):
         return False
     return any(word in text for word in OUTFIT_CHANGE_WORDS)

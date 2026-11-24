@@ -27,17 +27,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+        AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+            AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                AstrMessageEvent, Comp, DIALECT_SAMPLES, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _ms_build_content, _ms_build_prompt, _ms_idle_due, _ms_should_archive, _ms_transcript, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
+                AstrMessageEvent, Comp, SCHEDULE_VERSION, STYLE_HINTS, _DIARY_SHOW, _DIARY_WRITTEN, _city_block, _city_pick_spots, _city_travel_block, _diary_pick_hints, _now, attribution_leak, filter, first_person_experience, is_weather_query, leak_tokens, logger, looks_like_ai_admission, looks_like_defensive_reply, looks_like_model_leak, now_ts, render_recent_block, sanitize_caption, strip_tech_terms, strip_brushoff, strip_chat_format, to_float, to_int, today_str, truncate,
             )
 
 
@@ -233,8 +233,10 @@ class RuntimeReplyMixin(RuntimeMixinBase):
                     event, text, quote_id if quote_enabled else None
                 ):
                     result.chain = []
+                    self._record_persona_pending(event, text)
                     return
                 self._remember_sent_reply(event, text)
+                self._record_persona_pending(event, text)
                 return
             backup = list(result.chain)
             try:
@@ -250,9 +252,21 @@ class RuntimeReplyMixin(RuntimeMixinBase):
             if not handled:
                 result.chain = backup
                 self._remember_sent_reply(event, text)
+            self._record_persona_pending(event, text)
             return
         except Exception as exc:
             logger.debug("[amo] 结果装饰失败: %s" % exc)
+
+    def _record_persona_pending(self, event, text):
+        """A2：聊天回复交给发送链后，暂存她这句 + 真实 scene/mood，下一轮判反应。"""
+        try:
+            try:
+                from . import amo_persona_evolve as _evolve
+            except ImportError:
+                import amo_persona_evolve as _evolve
+            _evolve.record_chat_success(self, event, text)
+        except Exception as _amo_exc:  # cleanup: 采集失败不影响发送
+            _note_swallowed("amo_runtime_reply.persona_pending", _amo_exc)
 
     def _sanitize_command_result(self, result):
         """命令返回也要过人话出口（task-26）：命中技术词的行删掉，全命中就不发。

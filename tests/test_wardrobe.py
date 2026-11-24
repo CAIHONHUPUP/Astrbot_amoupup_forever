@@ -717,6 +717,7 @@ class ChatContextTests(unittest.TestCase):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         source = ""
         for name in ("amo_runtime.py", "amo_runtime_context.py",
+                     "amo_runtime_context_extra.py",
                      "amo_runtime_reply.py", "amo_runtime_tick.py"):
             with open(os.path.join(root, name), encoding="utf-8") as fh:
                 source += fh.read() + "\n"

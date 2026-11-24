@@ -12,8 +12,7 @@ ATTENDANCE_BONUS_CENTS = 20000  # 全勤奖约 200 元
 SICK_SYSTEM = (
     "你是角色的决策器。只输出一个 JSON 对象，不要解释，不要 markdown。\n"
     "可用工具：\n"
-    "1) take_sick_leave(reason)：今天请假。扣当天工资约 300 元，并失去全勤奖约 200 元；"
-    "可以在家喝白粥、吃药休息。\n"
+    "1) take_sick_leave(reason)：今天请假。可以在家喝白粥、吃药休息。\n"
     "2) go_to_work_sick(reason)：带病上班。今天照常挤地铁去公司，工位上会很难受。\n"
     "必须二选一，输出格式：{\"tool\":\"take_sick_leave\",\"reason\":\"...\"} "
     "或 {\"tool\":\"go_to_work_sick\",\"reason\":\"...\"}。"
@@ -32,17 +31,20 @@ def _safety_line():
 
 
 def build_prompt(status, balance_cents, weekday_label="星期一", reason="发烧"):
-    balance = int(balance_cents or 0) / 100.0
+    """拼请假 / 带病上班的二选一提示词。
+
+    balance_cents 只为兼容旧调用方保留（amo_human_state 仍按位置传 4 个参数）；
+    钱包 2026-11-23 已退役，余额不再参与判断。
+    """
     return (
         "【绝对事实】\n"
         "今天是%s，工作日。你现在%s，很难受。\n"
-        "如果请假：扣今天工资约 300 元，并失去全勤奖约 200 元；"
-        "你当前总余额是 %.2f 元；不上班可以在家休息。\n"
+        "如果请假：可以在家喝白粥、吃药好好休息。\n"
         "如果去上班：要挤地铁，会很累，到了公司也只能昏昏沉沉撑着。\n"
-        "请按你自己的性格和经济压力选一个，只输出 JSON。\n"
+        "请按你自己的性格和身体的难受程度选一个，只输出 JSON。\n"
         "（病情备注：%s）\n"
         "%s"
-    ) % (weekday_label, status or "生病", balance, reason or "不舒服", _safety_line())
+    ) % (weekday_label, status or "生病", reason or "不舒服", _safety_line())
 
 
 def _extract_json(raw):

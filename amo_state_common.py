@@ -32,6 +32,8 @@ try:  # Phase 11：地点归一唯一实现在 amo_place，zone 门面也走这�
         _PLACE_ALIASES,
         _PLACE_ZONE_KEEP,
         normalize_place,
+        repair_zone_rows,
+        resolve_zone,
         zone_for_place,
     )
 except ImportError:  # 直接按文件加载时
@@ -41,6 +43,8 @@ except ImportError:  # 直接按文件加载时
             _PLACE_ALIASES,
             _PLACE_ZONE_KEEP,
             normalize_place,
+            repair_zone_rows,
+            resolve_zone,
             zone_for_place,
         )
 

@@ -131,8 +131,8 @@ def finish_date_now(plugin, now=None, reason="user_done"):
             else:
                 state.commit_schedule_change(day, patched, old_items=current,
                                              source="date", reason="约会结束截断")
-    except Exception:
-        pass  # cleanup：日程截断失败不阻断收尾状态
+    except Exception as exc:
+        logger.debug("[amo_date_context.finish_date_now] optional step failed: %s", exc)
     # task-30：收尾事实的地点从场景账本取，不能硬说「现在你在家」——约会结束她可能
     # 直接回公司/医院，旧文案会在 21:00 写一句和日程冲突的「你在家」。
     _after_place = ""
@@ -252,8 +252,8 @@ def prompt_block(plugin, now=None):
                 words = str(plugin.state.mood_words() or "").strip()
                 if words:
                     state_line = (state_line + "；" + words) if state_line else words
-            except Exception:  # cleanup: 情绪词拿不到就不写状态，不影响开场
-                pass
+            except Exception as exc:  # cleanup: 情绪词拿不到就不写状态，不影响开场
+                logger.debug("[amo_date_context.prompt_block] optional step failed: %s", exc)
         return _prompts.render("date.active", line=line, scene=scene, meet=meet,
                                meet_title=meet_title, outfit=outfit, state_line=state_line)
     if _ds.paused(plugin, now):

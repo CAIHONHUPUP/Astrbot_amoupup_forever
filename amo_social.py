@@ -40,17 +40,17 @@ else:  # 运行时：包模式优先，按文件直接加载时退回绝对导�
 
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入
     from .amo_shared import (
-        AstrMessageEvent, Comp, _rank_edges, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, parse_relations, plan_relation_edges, sentiment, to_float, to_int, truncate,
+        AstrMessageEvent, Comp, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, sentiment, to_float, to_int, truncate,
     )
 else:  # 运行时：包模式优先，按文件直接加载时退回绝对导入
     try:
         from .amo_shared import (
-            AstrMessageEvent, Comp, _rank_edges, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, parse_relations, plan_relation_edges, sentiment, to_float, to_int, truncate,
+            AstrMessageEvent, Comp, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, sentiment, to_float, to_int, truncate,
         )
     except ImportError:  # 直接按文件加载时
         if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
             from amo_shared import (
-                AstrMessageEvent, Comp, _rank_edges, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, parse_relations, plan_relation_edges, sentiment, to_float, to_int, truncate,
+                AstrMessageEvent, Comp, clamp, lark_quote_kwargs, logger, merge_uid_alias_data, now_ts, sentiment, to_float, to_int, truncate,
             )
 
 
@@ -234,11 +234,6 @@ class SocialMixin(_MixinBase):
             note_user_rest(self, text)
         except Exception as exc:
             logger.debug("[amo] 休息标记失败: %s" % exc)
-        if self.cfg_bool("auto_relation", True):
-            try:
-                await self._learn_relations(event, text, uid)
-            except Exception as exc:
-                logger.debug("[amo] 关系自动识别失败: %s" % exc)
         # 上下文先进内存；本地 messages 表不再缓存原始聊天，长期记录交给记忆终端
         self._ctx_remember(umo, uid, name, "user", text)
         try:
@@ -680,114 +675,7 @@ class SocialMixin(_MixinBase):
         LarkMessageEvent._amo_quote_guard = True
         logger.info("[amo] 飞书引用守卫已安装：私聊不引用，群聊按概率")
 
-    async def _learn_relations(self, event, text, uid):
-        """从对话里认关系：他说「小明是我同事」就记一条边。
 
-        只认明确陈述 + 能在画像里唯一定位到人；管理员手动设过的不覆盖。
-        """
-        if parse_relations is None or not text or not uid:
-            return
-        try:
-            pairs = parse_relations(text)
-        except Exception as _amo_exc:
-            _note_swallowed("amo_social.HumanCorePlugin._learn_relations", _amo_exc)
-            return
-        if not pairs:
-            return
-        name_map: dict[Any, Any] = {}
-        try:
-            for item in self.db.list_profiles(limit=500):
-                for key in ("name", "alias"):
-                    raw = str(item.get(key) or "").strip()
-                    if not raw:
-                        continue
-                    for piece in re.split(r"[;；,，、/|]", raw):
-                        name = piece.strip()
-                        if len(name) >= 2:
-                            name_map.setdefault(name, set()).add(str(item.get("uid") or ""))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_social.HumanCorePlugin._learn_relations", _amo_exc)
-            return
-        try:
-            existing = {}
-            for edge in self.db.list_relations():
-                pair = tuple(sorted([str(edge.get("a_uid") or ""), str(edge.get("b_uid") or "")]))
-                existing[pair] = str(edge.get("note") or "")
-        except Exception as _amo_exc:
-            _note_swallowed("amo_social.HumanCorePlugin._learn_relations", _amo_exc)
-            existing = {}
-        for who, relation, evidence in pairs:
-            targets = [item for item in name_map.get(who, set()) if item and item != str(uid)]
-            if len(targets) != 1:
-                continue
-            target = targets[0]
-            pair = tuple(sorted([str(uid), target]))
-            old_note = existing.get(pair, "")
-            if old_note and not old_note.startswith("对话："):
-                # 管理员手动设过的关系，不拿聊天内容覆盖
-                continue
-            note = "对话：" + truncate(evidence, 24)
-            try:
-                if not self.db.upsert_relation(uid, target, relation, note):
-                    continue
-                log_event("debug", "social.relation.auto", uid=uid, relation=relation, target_uid=target)
-                await self._push_relation_to_data(uid, target, relation, note)
-            except Exception as exc:
-                logger.debug("[amo] 自动关系写入失败: %s" % exc)
-
-    def _relation_network_text(self, uid):
-        """给当前用户生成两跳内的关系网摘要；只读。
-
-        「陌生人」只在面板图谱里出现，不进提示词——不然每句都带一串「小明和小满是陌生人」。
-        """
-        try:
-            edges = [edge for edge in self.db.list_relations()
-                     if str(edge.get("relation") or "") != "陌生人"]
-        except Exception as _amo_exc:
-            _note_swallowed("amo_social.HumanCorePlugin._relation_network_text", _amo_exc)
-            return ""
-        uid = str(uid or "")
-        if not edges:
-            return ""
-        names = {}
-        try:
-            for item in self.db.list_profiles(limit=500):
-                names[str(item.get("uid"))] = item.get("alias") or item.get("name") or str(item.get("uid"))
-        except Exception as _amo_exc:
-            _note_swallowed("amo_social.HumanCorePlugin._relation_network_text", _amo_exc)
-        names["bot"] = str(getattr(self, "bot_name", "") or "你")
-        picked = []
-        if _rank_edges is not None:
-            try:
-                # 图小的时候放宽到三跳，图大了只走两跳，避免噪声和 token 膨胀
-                hops = 3 if len(edges) <= 40 else 2
-                picked = _rank_edges(edges, uid, 12, hops)
-            except Exception as _amo_exc:
-                _note_swallowed("amo_social.HumanCorePlugin._relation_network_text", _amo_exc)
-                picked = []
-        if not picked:
-            direct = []
-            neighbors = set()
-            for edge in edges:
-                a, b = str(edge.get("a_uid")), str(edge.get("b_uid"))
-                if uid in (a, b):
-                    direct.append(edge)
-                    neighbors.add(b if a == uid else a)
-            second = []
-            for edge in edges:
-                if edge in direct:
-                    continue
-                a, b = str(edge.get("a_uid")), str(edge.get("b_uid"))
-                if a in neighbors or b in neighbors:
-                    second.append(edge)
-            picked = (direct + second)[:12]
-        lines = []
-        for edge in picked[:12]:
-            a, b = str(edge.get("a_uid")), str(edge.get("b_uid"))
-            na = names.get(a, a)
-            nb = names.get(b, b)
-            lines.append("%s和%s是%s" % (na, nb, edge.get("relation", "朋友")))
-        return "\n".join(lines)
 
     def _disturb_category(self, snap):
         category = (snap.get("activity") or {}).get("category", "")
@@ -894,72 +782,6 @@ class SocialMixin(_MixinBase):
         threshold = max(1, self.cfg_int("disturb_reply_threshold", 3))
         return self._disturb_pressure(umo, uid, text, group=group) >= threshold
 
-    async def _sediment_relations(self):
-        """按真实互动量沉淀关系网：聊得多就是熟人/朋友，并让 bot 通过你认识你的人。
-
-        只补两类 note（算法见 relation_sediment.py）：
-        1. bot ↔ 用户（全部历史累计）：聊过一句 / 只在人物列表里 → 陌生人；
-           ≥15 条且跨 ≥2 天 → 熟人；≥60 条且跨 ≥7 天 → 朋友；
-        2. 两跳推断：bot↔用户已是熟/朋友，而用户↔A 有非仇人边 → bot↔A 记「朋友」，
-           note「推断：经X认识」，每人最多 5 条。
-        管理员手设的关系（note 不带「自动：」「推断：」）永远不覆盖；
-        家人/恋人/仇人不改；自动边只升不降。
-        """
-        if plan_relation_edges is None:
-            return
-        # 0 = 统计全部历史：老用户、只聊过一两句的人也要进关系网
-        days = max(0, int(self.cfg_int("relation_sediment_days", 0)))
-        try:
-            stats = self.db.interaction_stats(days)
-        except Exception as exc:
-            logger.debug("[amo] 互动统计失败: %s" % exc)
-            return
-        if self.cfg_bool("relation_stranger_edges", True):
-            seen = {str(row.get("uid") or "") for row in stats}
-            try:
-                # 只出现在人物列表、从没聊过天的人，也记成「陌生人」进图；
-                # 觉得面板边太多就把 relation_stranger_edges 关掉，只记聊过天的人
-                for item in self.db.list_profiles(limit=1000):
-                    uid = str(item.get("uid") or "")
-                    if uid and uid not in seen:
-                        stats.append({"uid": uid, "c": 0, "f": 0, "l": 0})
-                        seen.add(uid)
-            except Exception as exc:
-                logger.debug("[amo] 读取人物列表失败: %s" % exc)
-        if not stats:
-            return
-
-        names = {}
-        try:
-            for item in self.db.list_profiles(limit=500):
-                names[str(item.get("uid"))] = str(item.get("alias") or item.get("name") or "")
-        except Exception as _amo_exc:
-            _note_swallowed("amo_social.HumanCorePlugin._sediment_relations", _amo_exc)
-            names = {}
-
-        existing = {}
-        try:
-            for edge in self.db.list_relations():
-                pair = tuple(sorted([str(edge.get("a_uid") or ""), str(edge.get("b_uid") or "")]))
-                existing[pair] = (str(edge.get("relation") or ""), str(edge.get("note") or ""))
-        except Exception as exc:
-            logger.debug("[amo] 读取关系网失败: %s" % exc)
-            return
-
-        infer_limit = max(1, min(10, int(self.cfg_int("relation_infer_per_user", 5))))
-        try:
-            plan = plan_relation_edges(stats, existing, names, infer_limit)
-        except Exception as exc:
-            logger.debug("[amo] 关系沉淀计算失败: %s" % exc)
-            return
-        # 一次最多写 300 条，人物很多时分成几轮补齐，别把 tick 卡太久
-        for a_uid, b_uid, relation, note in plan[:300]:
-            try:
-                if not self.db.upsert_relation(a_uid, b_uid, relation, note):
-                    continue
-                await self._push_relation_to_data(a_uid, b_uid, relation, note)
-            except Exception as exc:
-                logger.debug("[amo] 关系沉淀写入失败: %s" % exc)
 
     def _decay_hate_relations(self):
         try:

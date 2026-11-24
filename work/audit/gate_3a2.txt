@@ -1,8 +1,0 @@
-# 3a-2 门禁与四件套（2026-11-23）
-
-改动：amo_outbound.send 删除与 amo_persona_guard.prepare_outbound 重复的收件人守卫块（净删 16 行）。
-verify：work/audit/_scratch/verify_3a2.json
-
-- 门禁 exit 0（896.8s）：6358 passed / 0 failed / 7 skipped / 264 subtests；mypy 0/265；pyflakes clean(221)；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
-- 四件套：daily 614/614；share 500/100%（damaged 0、persistent 0）；remind 240/240（leaked 0）；adversarial 39/39；回放 184 exit 0（fixed 25、persistent 2、旁白 0）
-- 归因：outbound_log 的 decision/reason/source 与改动前逐字段一致（logprobe 6 场景差分），reason 仍为 addressee_role_reversal:妈 等

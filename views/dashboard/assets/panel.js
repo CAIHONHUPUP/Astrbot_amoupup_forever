@@ -1,10 +1,11 @@
 /* 面板渲染与交互：从 index.html 内联脚本抽出；通信层在 assets/api-client.js（window.PanelApi）。 */
     const MOOD_KEYS = ["开心", "平静", "郁闷", "生气", "暴躁", "委屈", "疲惫", "焦虑", "兴奋", "依恋"];
-    const MOOD_COLORS = {
-      "开心": "#0ea5e9", "平静": "#0ea5e9", "郁闷": "#0ea5e9", "生气": "#0ea5e9",
-      "暴躁": "#0ea5e9", "委屈": "#0ea5e9", "疲惫": "#0ea5e9", "焦虑": "#0ea5e9",
-      "兴奋": "#0ea5e9", "依恋": "#0ea5e9"
+    const HEART_KEYS = ["joy", "curiosity", "reflection", "duty", "social", "fatigue", "intimacy", "stress", "attachment"];
+    const HEART_LABELS = {
+      joy: "开心", curiosity: "好奇", reflection: "反思", duty: "责任", social: "社交",
+      fatigue: "疲惫", intimacy: "亲密", stress: "压力", attachment: "依恋"
     };
+    function moodLabel(key) { return HEART_LABELS[key] || key; }
     let lastData = null;
     const THEME_KEY = "amo_panel_theme";
 
@@ -50,9 +51,17 @@
       const dialectHint = document.getElementById("dialectHint");
       if (dialectHint) dialectHint.textContent = "当前语种词条：" + (data.dialect_count || statusConfig.dialect_count || 0) + " 条";
       document.getElementById("dominant").textContent = data.dominant || "—";
-      document.getElementById("moodScore").textContent = data.mood_score ? Math.round(data.mood_score) : "--";
+      const scoreEl = document.getElementById("moodScore");
+      const heartDimsForScore = (data.heart && data.heart.dims) || {};
+      const hasHeartForScore = Object.keys(heartDimsForScore).length > 0;
+      const moodScore = hasHeartForScore ? heartValence(heartDimsForScore) : Number(data.mood_score || 0);
+      scoreEl.textContent = moodScore ? Math.round(moodScore) : "--";
+      scoreEl.title = hasHeartForScore ? "九维合成的心情指数（不是九维均分）" : "旧心情分";
 
-      const mood = data.mood || {};
+      const heartDims = (data.heart && data.heart.dims) || {};
+      const hasHeart = Object.keys(heartDims).length > 0;
+      const mood = hasHeart ? heartDims : (data.mood || {});
+      const moodKeys = hasHeart ? HEART_KEYS : MOOD_KEYS;
       const activityNow = data.activity || {};
       const placeNow = activityNow.place || (data.worldview && data.worldview.city) || "家";
       const actNow = activityNow.activity || "待着";
@@ -60,7 +69,7 @@
       document.getElementById("moodNarration").textContent = data.mood_narration || "今天的心情有点说不清。";
       document.getElementById("moodAttribution").textContent =
         data.mood_attribution ? "【近期情绪归因】" + data.mood_attribution : "";
-      const coreKeys = pickCoreKeys(mood);
+      const coreKeys = hasHeart ? moodKeys.slice() : pickCoreKeys(mood);
       const bars = document.getElementById("moodBars");
       bars.textContent = "";
       coreKeys.forEach((key) => {
@@ -68,7 +77,7 @@
         const row = document.createElement("div");
         row.className = "bar-row";
         const name = document.createElement("span");
-        name.textContent = key;
+        name.textContent = moodLabel(key);
         const track = document.createElement("div");
         track.className = "track";
         const fill = document.createElement("span");
@@ -90,7 +99,7 @@
       });
       drawRadar(mood, coreKeys);
       drawTrend(data.mood_history || []);
-      applyMoodTheme(mood);
+      applyMoodTheme(mood, hasHeart);
 
       const period = data.period || {};
       const periodEmoji = period.phase && period.phase !== "非生理期" ? " 🩸" : "";
@@ -673,27 +682,46 @@
       }
     }
 
-    function pickCoreKeys(mood) {
-      return MOOD_KEYS.slice().sort((a, b) => {
+    function heartValence(dims) {
+      const delta = (key, base) => Number((dims || {})[key] ?? base) - base;
+      const raw = 50
+        + delta("joy", 50) * 0.6
+        + delta("attachment", 45) * 0.25
+        + delta("intimacy", 40) * 0.25
+        + delta("curiosity", 55) * 0.15
+        - delta("stress", 15) * 0.5
+        - delta("fatigue", 20) * 0.4;
+      return Math.max(0, Math.min(100, raw));
+    }
+
+    function pickCoreKeys(mood, keys = MOOD_KEYS) {
+      return keys.slice().sort((a, b) => {
         const dv = Number(mood[b] || 0) - Number(mood[a] || 0);
-        return dv || MOOD_KEYS.indexOf(a) - MOOD_KEYS.indexOf(b);
+        return dv || keys.indexOf(a) - keys.indexOf(b);
       }).slice(0, 6);
     }
 
     function emotionText(key, value) {
       const v = Number(value || 0);
+      if (HEART_LABELS[key]) return emotionText(HEART_LABELS[key], v);
       if (key === "开心") return v >= 80 ? "满脸笑意，想转圈圈" : (v >= 40 ? "心情不错" : "有点提不起劲");
       if (key === "委屈") return v >= 60 ? "呜呜呜想哭" : (v >= 20 ? "眼眶有点红，想求抱抱" : "还算平静");
       if (key === "生气") return v >= 60 ? "气鼓鼓，想摔手机" : (v >= 20 ? "嘟着嘴，不想理人" : "没在生气");
       if (key === "依恋") return v >= 60 ? "像块小年糕一样黏人" : (v >= 30 ? "有点想他" : "各自忙");
       if (key === "疲惫") return v >= 60 ? "累到不想说话" : (v >= 30 ? "有点乏" : "精神还不错");
       if (key === "平静") return v >= 60 ? "心里还算安稳" : (v >= 30 ? "有点起伏" : "静不下来");
-      if (key === "兴奋") return v >= 60 ? "眼睛发亮" : "没什么波动";
+      if (key === "兴奋" || key === "好奇") return v >= 60 ? "眼睛发亮，想知道更多" : "没什么波动";
+      if (key === "反思") return v >= 60 ? "在认真想事情" : "脑子比较松";
+      if (key === "责任") return v >= 60 ? "把事放在心上" : "先顾自己";
+      if (key === "社交") return v >= 60 ? "想找人说话" : "想安静待着";
+      if (key === "亲密") return v >= 60 ? "想贴近他" : "保持一点距离";
+      if (key === "压力") return v >= 60 ? "绷得有点紧" : "还算松快";
       return v >= 60 ? "情绪很满" : (v >= 30 ? "有一点" : "淡淡的");
     }
 
     function barColor(key, value) {
       const v = Number(value || 0);
+      if (HEART_LABELS[key]) return barColor(HEART_LABELS[key], v);
       if (key === "开心" || key === "兴奋" || key === "平静" || key === "依恋") {
         return v >= 60 ? "linear-gradient(90deg,#fb7185,#fbbf24)" : "linear-gradient(90deg,#38bdf8,#f9a8d4)";
       }
@@ -701,13 +729,17 @@
       return "linear-gradient(90deg,#60a5fa,#818cf8)";
     }
 
-    function applyMoodTheme(mood) {
+    function applyMoodTheme(mood, hasHeart = false) {
       const shell = document.querySelector(".status-shell");
       if (!shell) return;
       shell.classList.remove("mood-warm", "mood-cold", "mood-anger", "mood-extreme");
-      const happy = Math.max(Number(mood["开心"] || 0), Number(mood["兴奋"] || 0), Number(mood["平静"] || 0));
-      const sad = Math.max(Number(mood["疲惫"] || 0), Number(mood["委屈"] || 0), Number(mood["郁闷"] || 0));
-      const anger = Math.max(Number(mood["生气"] || 0), Number(mood["暴躁"] || 0));
+      const happy = hasHeart
+        ? Math.max(Number(mood["joy"] || 0), 100 - Number(mood["stress"] || 0))
+        : Math.max(Number(mood["开心"] || 0), Number(mood["兴奋"] || 0), Number(mood["平静"] || 0));
+      const sad = hasHeart
+        ? Math.max(Number(mood["fatigue"] || 0), Number(mood["stress"] || 0))
+        : Math.max(Number(mood["疲惫"] || 0), Number(mood["委屈"] || 0), Number(mood["郁闷"] || 0));
+      const anger = hasHeart ? 0 : Math.max(Number(mood["生气"] || 0), Number(mood["暴躁"] || 0));
       shell.classList.add(happy >= sad ? "mood-warm" : "mood-cold");
       if (anger >= 70) shell.classList.add("mood-anger");
       if (sad > 80 || anger > 80 || happy > 90) shell.classList.add("mood-extreme");
@@ -726,6 +758,12 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, size, 100);
       const points = (history || []).slice(-7).map((row) => Math.max(0, Math.min(100, Number(row.score || 0))));
+      if (points.length >= 2 && points.every((value) => Math.abs(value - points[0]) < 0.5)) {
+        ctx.fillStyle = "rgba(120,120,140,.6)";
+        ctx.font = "11px sans-serif";
+        ctx.fillText("最近 7 天心情平稳", 6, 54);
+        return;
+      }
       if (points.length < 2) {
         ctx.fillStyle = "rgba(120,120,140,.6)";
         ctx.font = "11px sans-serif";
@@ -809,7 +847,7 @@
       for (let i = 0; i < count; i += 1) {
         const x = cx + Math.cos(angle(i)) * (radius + 20);
         const y = cy + Math.sin(angle(i)) * (radius + 20);
-        ctx.fillText(keys[i], x, y);
+        ctx.fillText(moodLabel(keys[i]), x, y);
       }
 
       const points = keys.map((key, i) => {
@@ -861,6 +899,10 @@
     // 刷新天气是副作用（请求和风 + 可能调心情），走写路由 /weather/refresh（只收 POST）；
     // 读缓存用 /weather 或 /weather/brief，都是 GET。
     document.getElementById("btnWeather").addEventListener("click", (e) => action("weather/refresh", e.currentTarget));
+    // 九维/日程只在有事件或 tick 时变；面板主动每 60 秒拉一次，别只靠手点刷新。
+    setInterval(() => {
+      if (!document.hidden) load().catch(() => {});
+    }, 60000);
     document.getElementById("btnSchedule").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
@@ -1080,53 +1122,16 @@
     document.getElementById("periodCard").addEventListener("click", () => openSettingsFor("period"));
     document.getElementById("healthCard").addEventListener("click", () => openSettingsFor("sick"));
 
-    function openMoodEditor() {
-      const mood = (lastData && lastData.mood) || {};
-      const box = document.getElementById("moodEditor");
-      box.textContent = "";
-      MOOD_KEYS.forEach((key) => {
-        const row = document.createElement("div");
-        row.className = "mood-edit-row";
-        const name = document.createElement("span");
-        name.textContent = key;
-        const input = document.createElement("input");
-        input.type = "range";
-        input.min = "0"; input.max = "100"; input.step = "1";
-        input.value = String(Math.round(Number(mood[key] || 0)));
-        input.dataset.mood = key;
-        const num = document.createElement("span");
-        num.className = "num";
-        num.textContent = input.value;
-        input.addEventListener("input", () => { num.textContent = input.value; });
-        row.appendChild(name); row.appendChild(input); row.appendChild(num);
-        box.appendChild(row);
-      });
-      document.getElementById("moodModal").hidden = false;
-    }
-
-    document.getElementById("radar").addEventListener("click", openMoodEditor);
-    document.getElementById("btnMoodClose").addEventListener("click", () => {
-      document.getElementById("moodModal").hidden = true;
-    });
-    document.getElementById("moodModal").addEventListener("click", (event) => {
-      if (event.target === event.currentTarget) event.currentTarget.hidden = true;
-    });
-    document.getElementById("btnMoodSave").addEventListener("click", async () => {
-      const mood = {};
-      document.querySelectorAll("[data-mood]").forEach((input) => {
-        mood[input.dataset.mood] = Number(input.value);
-      });
-      try {
-        await call("mood_update", { mood });
-        toast("心情已更新");
-        document.getElementById("moodModal").hidden = true;
-        await load();
-      } catch (error) {
-        toast("保存失败：" + (error.message || error), true);
-      }
+    document.getElementById("radar").addEventListener("click", () => {
+      toast("九维心由系统自动更新，不需要手改");
     });
 
-    window.addEventListener("resize", () => { if (lastData) drawRadar(lastData.mood || {}); });
+    window.addEventListener("resize", () => {
+      if (!lastData) return;
+      const hd = (lastData.heart && lastData.heart.dims) || {};
+      if (Object.keys(hd).length) drawRadar(hd, HEART_KEYS);
+      else drawRadar(lastData.mood || {});
+    });
 
     function listFrom(res) {
       if (Array.isArray(res)) return res;
@@ -2019,6 +2024,39 @@
         note.textContent = pose.note;
         left.appendChild(note);
       }
+      const tags = document.createElement("div");
+      tags.className = "sub";
+      tags.style.cssText = "margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap";
+      if (poseDraft) {
+        const usage = document.createElement("select");
+        usage.className = "input";
+        usage.style.cssText = "width:auto;padding:2px 6px;font-size:12px";
+        [["selfie", "自拍"], ["couple", "合拍"], ["both", "都行"]].forEach(([value, label]) => {
+          const opt = document.createElement("option");
+          opt.value = value; opt.textContent = "用途：" + label;
+          opt.selected = (pose.usage || "selfie") === value;
+          usage.appendChild(opt);
+        });
+        usage.addEventListener("change", () => { pose.usage = usage.value; });
+        const camera = document.createElement("select");
+        camera.className = "input";
+        camera.style.cssText = "width:auto;padding:2px 6px;font-size:12px";
+        [["selfie", "自拍"], ["void", "虚空"]].forEach(([value, label]) => {
+          const opt = document.createElement("option");
+          opt.value = value; opt.textContent = "相机：" + label;
+          opt.selected = (pose.camera || "selfie") === value;
+          camera.appendChild(opt);
+        });
+        camera.addEventListener("change", () => { pose.camera = camera.value; });
+        const foot = document.createElement("span");
+        foot.textContent = "拍脚：" + (pose.foot ? "是（只读）" : "否（只读）");
+        tags.appendChild(usage); tags.appendChild(camera); tags.appendChild(foot);
+      } else {
+        tags.textContent = "用途：" + (pose.usage || "selfie")
+          + " · 相机：" + (pose.camera || "selfie")
+          + (pose.foot ? " · 拍脚" : "");
+      }
+      left.appendChild(tags);
       row.appendChild(left);
       if (poseDraft) {
         const del = document.createElement("button");
@@ -2090,7 +2128,13 @@
       if (!poseDraft) return;
       try {
         const res = await call("poses/save", {
-          poses: poseDraft.map((pose) => ({ name: pose.name, note: pose.note })),
+          poses: poseDraft.map((pose) => ({
+            name: pose.name, note: pose.note,
+            usage: pose.usage || "selfie",
+            camera: pose.camera || "selfie",
+            foot: !!pose.foot,
+            user_added: true,
+          })),
         });
         toast((res && res.msg) || "已保存");
         poseDraft = null;
@@ -2116,7 +2160,10 @@
         toast("已经有「" + name + "」这个姿势了", true);
         return;
       }
-      poseDraft.push({ id: "new-" + Date.now(), name: name, note: note, has_ref: false });
+      poseDraft.push({
+        id: "new-" + Date.now(), name: name, note: note, has_ref: false,
+        usage: "selfie", camera: "selfie", foot: false, user_added: true,
+      });
       if (nameInput) nameInput.value = "";
       if (noteInput) noteInput.value = "";
       renderPoses();

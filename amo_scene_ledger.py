@@ -186,6 +186,14 @@ def _kv_set(plugin, key, value):
 
 def normalize_zone(zone, place=""):
     text = str(zone or "").strip()
+    if text == "road" and str(place or "").strip():
+        try:
+            from .photo_scene import resolve_zone as _resolve_zone
+        except ImportError:
+            from photo_scene import resolve_zone as _resolve_zone
+        fixed = str(_resolve_zone(place, "", text) or "")
+        if fixed and fixed != "road":
+            return fixed
     if text in _ZONE_ALIASES:
         return _ZONE_ALIASES[text]
     if text.startswith("home"):
@@ -198,17 +206,17 @@ def normalize_zone(zone, place=""):
         return text
     zone_fn: Callable[[Any], str] | None = None
     try:
-        from .photo_scene import zone_for_place as _zone_for_place
+        from .photo_scene import resolve_zone as _zone_for_place
         zone_fn = _zone_for_place
     except ImportError:
         try:
-            from photo_scene import zone_for_place as _zone_for_place
+            from photo_scene import resolve_zone as _zone_for_place
             zone_fn = _zone_for_place
         except Exception:
             zone_fn = None
     if zone_fn is not None and place:
         try:
-            value = str(zone_fn(place) or "")
+            value = str(zone_fn(place, "", "") or "")
             return _ZONE_ALIASES.get(value, value)
         except Exception:
             return ""
@@ -241,8 +249,8 @@ def _leave_marker(plugin, day):
     if callable(keys):
         try:
             return bool(list(keys(prefix=prefix, limit=5) or []))
-        except Exception:  # cleanup: 兜底/降级，保持原行为
-            pass
+        except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+            _note_swallowed("amo_scene_ledger._leave_marker", exc)
     for key in ("leave:%s" % day, "leave_day:%s" % day, "day_leave:%s" % day):
         if _kv_get(plugin, key):
             return True
@@ -379,8 +387,8 @@ def _audit(plugin, entry, throttle=False):
             return False
         try:
             plugin._scene_ledger_audit_at = current
-        except Exception:  # cleanup: 兜底/降级，保持原行为
-            pass
+        except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+            _note_swallowed("amo_scene_ledger._audit", exc)
     rows = _kv_get(plugin, AUDIT_KEY, [])
     if not isinstance(rows, list):
         rows = []

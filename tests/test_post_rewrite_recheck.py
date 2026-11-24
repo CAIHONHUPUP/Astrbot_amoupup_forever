@@ -129,7 +129,6 @@ class GuardOrderContractTests(unittest.TestCase):
         # 1b-1：三层候选优先已收敛；旧的裸还原层不得再出现（否则会和 recover 打架）。
         self.assertNotIn("_prefer_answered_candidate", body)
         for earlier in ("value = fix_identity(sanitize_extreme(value))",
-                        "_purchase_guard(value, plugin)",
                         "_state_rewrite(value, plugin, _context",
                         "_question_answer("):
             with self.subTest(earlier=earlier):
@@ -173,7 +172,7 @@ class GuardOrderContractTests(unittest.TestCase):
                       rewrite_body)
         # M1：validate 收敛成 _CHAINS["assembly"] 薄壳；顺序由阶段表锁，复检仍是 judge。
         self.assertEqual(SC._CHAINS["assembly"], (
-            "media", "clause_dedupe", "scene", "empty_scene", "addressee",
+            "media", "clause_dedupe", "scene", "empty_scene",
             "judge", "complete_answer", "recover", "ensure_where"))
         validate_body = _body(source, "def validate_reply_assembly(", "def _turn_registered(")
         self.assertIn('_run_assembly([body], ctx, "assembly")', validate_body)

@@ -57,7 +57,9 @@ def is_informative(row: Mapping[str, Any]) -> bool:
 
 
 def _zone(row: Mapping[str, Any]) -> str:
-    return str(row.get("zone") or "") or engine.zone_of(str(row.get("place") or ""))
+    return engine.zone_of(str(row.get("place") or ""),
+                          str(row.get("zone") or ""),
+                          str(row.get("category") or ""))
 
 
 def is_idle(row: Mapping[str, Any]) -> bool:

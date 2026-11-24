@@ -62,6 +62,7 @@ def main(argv) -> int:
     try:  # 输出统一 UTF-8，父进程 gate 按 UTF-8 解码时不会出现 U+FFFD
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
         pass
     output = run_mypy()
     parsed = parse(output)

@@ -20,6 +20,11 @@
   这里只是把它登记成一项迁移，不删这个键。
 """
 from __future__ import annotations
+
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
 from typing import Any, TYPE_CHECKING
 
 import hashlib
@@ -128,8 +133,8 @@ def backup_database(db, from_version=0, to_version=LATEST_VERSION,
     if integrity.lower() != "ok":
         try:
             os.remove(dest)
-        except OSError:  # cleanup 半成品备份删不掉也必须继续抛错
-            pass
+        except OSError as exc:  # cleanup 半成品备份删不掉也必须继续抛错
+            _note_swallowed("amo_db_schema.backup_database", exc)
         raise RuntimeError("热备文件完整性校验失败：%s" % (integrity or "unknown"))
     manifest = {
         "schema": BACKUP_SCHEMA,
@@ -491,8 +496,8 @@ def _migration_event_id(db):
     except Exception:
         try:
             conn.rollback()
-        except Exception:  # cleanup 回滚失败也不能盖住原始异常
-            pass
+        except Exception as exc:  # cleanup 回滚失败也不能盖住原始异常
+            _note_swallowed("amo_db_schema._migration_event_id", exc)
         raise
     if backfilled or rewritten or ledger_column or kv_days:
         logger.info("[amo] event_id 迁移：日程补 id %d 条、kv 快照重建 %d 天，"
@@ -516,8 +521,8 @@ def _migration_block_diary_event_id(db):
     except Exception:
         try:
             conn.rollback()
-        except Exception:  # cleanup 回滚失败也不能盖住原始异常
-            pass
+        except Exception as exc:  # cleanup 回滚失败也不能盖住原始异常
+            _note_swallowed("amo_db_schema._migration_block_diary_event_id", exc)
         raise
     if added or filled:
         logger.info("[amo] block_diary event_id：补列=%s，回填 %d 行", added, filled)
@@ -537,8 +542,8 @@ def _migration_ledger_event_ids(db):
     except Exception:
         try:
             conn.rollback()
-        except Exception:  # cleanup 回滚失败也不能盖住原始异常
-            pass
+        except Exception as exc:  # cleanup 回滚失败也不能盖住原始异常
+            _note_swallowed("amo_db_schema._migration_ledger_event_ids", exc)
         raise
     if filled:
         logger.info("[amo] 旧账 event_id 回填：%d 条（只认 block:<id>）", filled)

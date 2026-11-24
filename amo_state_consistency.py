@@ -12,6 +12,11 @@
 """
 from __future__ import annotations
 
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
+
 import logging
 import re
 from dataclasses import dataclass, field
@@ -410,8 +415,8 @@ def _scene_place(plugin):
         place = str((_scene_at(plugin) or {}).get("place") or "").strip()
         if place:
             return place
-    except Exception:  # cleanup: 场景账本不可用退回活动快照
-        pass
+    except Exception as exc:  # cleanup: 场景账本不可用退回活动快照
+        logger.debug("[state] 场景账本读取失败，退回活动快照: %s", exc)
     try:
         return str((plugin.state.current_activity() or {}).get("place") or "").strip()
     except Exception:
@@ -455,8 +460,8 @@ def _turn_ask(umo, fallback_text):
             if entry and entry[0] == _active.get(key):
                 # 本轮已登记：他这一轮没问句就是没问句，绝不回退到上一轮的旧文本。
                 return str(entry[1] or "").strip()
-        except Exception:  # cleanup: 取不到就退回传入文本
-            pass
+        except Exception as exc:  # cleanup: 取不到就退回传入文本
+            logger.debug("[state] 本轮用户文本读取失败: %s", exc)
     return _last_user_line(fallback_text)
 
 
@@ -592,8 +597,8 @@ def _attach_last_line(body, context, plugin):
             return catch
         if text and _guard.is_multi_pool(text):
             return text
-    except Exception:  # cleanup: 判据不可用就按原流程
-        pass
+    except Exception as exc:  # cleanup: 判据不可用就按原流程
+        _note_swallowed("amo_state_consistency._attach_last_line", exc)
     if demand == "laugh" and text and re.search(r"笑|哈哈", text):
         # 正文已经在笑：不再追加「哈哈哈，笑死我了」
         return text
@@ -972,8 +977,8 @@ def _stage_media(ctx):
         except ImportError:
             from amo_message import strip_media_markers as _strip_media
         body = _strip_media(body)
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as exc:  # cleanup: 兜底/降级，保持原行为，但必须留痕
+        logger.debug("[state] media 占位符清洗失败: %s", exc)
     if not body.strip():
         body = ""
     ctx.text = body
@@ -1013,34 +1018,6 @@ def _stage_empty_scene(ctx):
         # B2：没有 chat 出口 repair 的调用（主动推送/独立调用，本轮没登记候选）
         # 绝不发空 —— 用删句前的正文兜底（原文就是复读，但比一条空消息好）。
         ctx.text = ctx.before_dedup
-    return None
-
-
-def _stage_addressee(ctx):
-    """S5 收件人/角色反转守卫：判定只在 amo_addressee_guard 一处实现。"""
-    if not ctx.text.strip():
-        # B2：删空后没有正文可判收件人，空串直接交出口（不在这里误记「丢弃」）。
-        return None
-    try:
-        try:
-            from .amo_addressee_guard import enforce as _addressee_enforce
-        except ImportError:
-            from amo_addressee_guard import enforce as _addressee_enforce
-        guarded, addressee_reason = _addressee_enforce(
-            ctx.plugin, ctx.umo, ctx.text, source="assembly")
-        if not guarded:
-            logger.info("[state] 收件人守卫丢弃（%s）：%s",
-                        addressee_reason, str(ctx.text or "")[:80])
-            # 收件人丢弃是安全终判：不拿 repair 句/短句池顶回来（顶回来等于绕过
-            # 收件人守卫），chat 交出口，非 chat 用此刻场景的状态句保非空。
-            ctx.text = ""
-            if not _turn_registered(ctx.umo):
-                ctx.text = _where_answer_sentence(ctx.plugin)
-        elif addressee_reason:
-            logger.info("[state] 收件人守卫改写（%s）：%s", addressee_reason, guarded[:80])
-            ctx.text = guarded
-    except Exception as exc:  # cleanup: 守卫失败不挡正常聊天
-        logger.debug("[state] 收件人守卫失败: %s", exc)
     return None
 
 
@@ -1152,7 +1129,6 @@ _STAGES = {
     "clause_dedupe": _stage_clause_dedupe,
     "scene": _stage_scene,
     "empty_scene": _stage_empty_scene,
-    "addressee": _stage_addressee,
     "judge": _stage_judge,
     "complete_answer": _stage_complete_answer,
     "recover": _stage_recover,
@@ -1168,7 +1144,7 @@ _STAGES = {
 #: 不注册进 amo_reply_pipeline.PIPELINE：golden 顺序锁死，M1 不占全局 stage 位。
 _CHAINS = {
     "assembly": (
-        "media", "clause_dedupe", "scene", "empty_scene", "addressee",
+        "media", "clause_dedupe", "scene", "empty_scene",
         "judge", "complete_answer", "recover", "ensure_where",
     ),
     "segments": (
@@ -1262,8 +1238,8 @@ def _turn_repaired(umo):
         entry = _repaired.get(key)
         if entry and entry[0] == _active.get(key):
             return str(entry[1] or "").strip()
-    except Exception:  # cleanup: 取不到修复句就按没有处理（退回既有空串语义）
-        pass
+    except Exception as exc:  # cleanup: 取不到修复句就按没有处理（退回既有空串语义）
+        logger.debug("[state] 读取本轮修复句失败: %s", exc)
     return ""
 
 

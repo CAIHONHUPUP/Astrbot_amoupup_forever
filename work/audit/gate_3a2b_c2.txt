@@ -1,9 +1,0 @@
-# 3a-2b / C2+C3 门禁与四件套（2026-11-23）
-
-改动：出站地点守卫收敛到 reply_fact_guard；删除 place_guard.rewrite_reply 及 4 类调用/包装/登记，
-测试与 reverse_checks/run_daily 两处配套同步（14+5 文件）。
-
-- 门禁 exit 0（895.7s）：6358 passed / 0 failed / 7 skipped / 264 subtests；mypy 0/265；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
-- 四件套：daily 614/614（报告 02:52:00 新鲜）、share 500/100%（damaged 0、persistent 0）、remind 240/240（leaked 0）、adversarial 39/39、回放 exit 0（fixed 25、persistent 2、旁白 0）
-- 与 3a-2b1 逐项一致：删 A 后没有新增地点泄漏/损坏
-- 已知缺口（B 既有，非本次引入）："他说我在商场呢" 会丢「他说」→ "我在公司呢"；单独开 followup

@@ -30,6 +30,11 @@ meal_band / meal_entries / meal_view。
 _filter_window_facts / _slot_window 都转发到这里，旧调用方与输出保持不变。
 """
 from __future__ import annotations
+
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
 from typing import Any, TYPE_CHECKING, cast
 
 try:  # Phase 11：统一时钟（不再裸调系统时钟）
@@ -996,7 +1001,7 @@ def validate(text, pool=None):
 
 # ---------------- 同步合成（binder / 测试用） ----------------
 
-def collect(day, now=None, items=None, ledger=None):
+def collect(day, now=None, items=None, ledger=None, plugin=None):
     """同步合成一天到 now 为止的条目（日程/活动/作息/账单；不读插件）。"""
     now = now or _amo_clock.now()
     day_text = day_text_of(day) or now.date().isoformat()
@@ -1014,6 +1019,9 @@ def collect(day, now=None, items=None, ledger=None):
     entries += activity_entries(items, now, day_text)
     entries += routine_entries(items, day_text)
     entries += ledger_entries(ledger, day_text, day_start, day_end, None)
+    if plugin is not None:
+        # 食物送达事实层也进同一条时间线，不再只活在 meal_view。
+        entries += meal_entries(items, ledger, now, day=day_text, plugin=plugin)
     return entries
 
 
@@ -1765,7 +1773,7 @@ def meal_band(now=None):
     return ""
 
 
-def meal_entries(items, ledger, now=None, day=""):
+def meal_entries(items, ledger, now=None, day="", plugin=None):
     """这一餐的事实：日程是不是自己做的、账上有没有外卖（都只看当前这一顿）。"""
     now = now or _amo_clock.now()
     band = meal_band(now)
@@ -1805,13 +1813,31 @@ def meal_entries(items, ledger, now=None, day=""):
                                   start=minutes_of(clock_of_ts(ts)),
                                   time=clock_of_ts(ts), category="做饭",
                                   reason=reason, raw=row))
+    # 食物送达事实层：不写日程块，但这一餐确实吃了（2026-11-23）
+    if plugin is not None:
+        try:
+            try:
+                from .amo_food_delivery import today_facts
+            except ImportError:
+                from amo_food_delivery import today_facts
+            for fact in today_facts(plugin, day):
+                if not isinstance(fact, dict) or str(fact.get("slot") or "") != band:
+                    continue
+                ts = float(fact.get("ts") or 0)
+                food = str(fact.get("food") or "外卖")
+                out.append(make_entry(day, "meal_fact", "外卖", "他点了%s" % food,
+                                      start=minutes_of(clock_of_ts(ts)),
+                                      time=clock_of_ts(ts), category="外卖",
+                                      reason="他点的%s" % food, raw=fact))
+        except Exception as exc:
+            _note_swallowed("amo_fact_timeline.meal_entries", exc)
     return out
 
 
-def meal_view(items, ledger, now=None):
+def meal_view(items, ledger, now=None, plugin=None):
     """binder 要的餐别结论：cooked / takeout / 证据原文（全部来自 meal_entries）。"""
     now = now or _amo_clock.now()
-    entries = meal_entries(items, ledger, now)
+    entries = meal_entries(items, ledger, now, day=now.strftime("%Y-%m-%d"), plugin=plugin)
     cooked_items = [item["raw"] for item in entries
                     if item.get("category") == "做饭" and item.get("source") == "meal_block"]
     cooked_rows = [item["raw"] for item in entries
@@ -1896,8 +1922,8 @@ def _label_anchor(day, now):
     try:
         if day != now.date():
             return _dt.datetime.combine(day, _dt.time(12, 0))
-    except Exception:  # cleanup: 日记容错
-        pass
+    except Exception as exc:  # cleanup: 日记容错
+        _note_swallowed("amo_fact_timeline._label_anchor", exc)
     return now
 
 

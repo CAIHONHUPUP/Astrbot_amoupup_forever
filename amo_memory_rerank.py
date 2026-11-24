@@ -65,6 +65,7 @@ def parse_ids(text: str, valid: Sequence[int], limit: int) -> List[int]:
             if isinstance(payload, dict) and isinstance(payload.get("ids"), list):
                 _take(payload["ids"])
     except (ValueError, TypeError):  # cleanup: JSON 解析失败就走下面的数字兜底
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
         pass
     if not picked:
         _take(re.findall(r"-?\d+", body))

@@ -17,6 +17,11 @@
 """
 from __future__ import annotations
 
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
+
 import logging
 import re
 
@@ -357,8 +362,8 @@ def _candidate_unsafe(plugin, safe, probe, user_text=""):
         stripped = "".join(_strip_role_reversal(item) for item in _sentences(safe))
         if safe and not _filled(stripped):
             return True
-    except Exception:  # cleanup: 判据不可用就按守卫形态判
-        pass
+    except Exception as exc:  # cleanup: 判据不可用就按守卫形态判
+        _note_swallowed("amo_rewrite_safety._candidate_unsafe", exc)
 
     # 地点冲突：不管他有没有问地点，候选里的地点断言都必须和此刻场景一致。
     # task-40 第一版只在 _ASK_PLACE 时检查，结果非问句轮把「商场/公司」候选整条
@@ -397,8 +402,8 @@ def _fresh_question(umo, user_text=""):
             fresh = str(_turn_question(key) or "").strip()
             if fresh:
                 return fresh
-        except Exception:  # cleanup: 取不到就退回传入文本
-            pass
+        except Exception as exc:  # cleanup: 取不到就退回传入文本
+            _note_swallowed("amo_rewrite_safety._fresh_question", exc)
     return str(user_text or "").strip()
 
 

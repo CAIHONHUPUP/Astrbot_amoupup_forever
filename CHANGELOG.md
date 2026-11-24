@@ -1,3 +1,11 @@
+## 8.0.0（2026-11-24 清钱 + 场景/居住单一源）
+
+- **清钱**：钱包 11-23 退役后，钱痕迹从提示词/判定里彻底清掉——删掉日程提议的「余额：%.2f 元」、病假决策的「扣工资 300 元 / 全勤奖 200 元 / 余额」、约会分支的【财务语境】，以及 `jit_plan` / `micro_events` / `refusal` 里靠 10^9 永远走不到的穷分支（函数签名保留、参数忽略）；那条「连矿泉水都舍不得买」的死事件整条删除。`_NoMoney` 加注释：balance 只作兼容，禁止再进提示词。
+- **居住/在场单一源**：`amo_household.scene_now()` 先读 `amo_scene_ledger.scene_at()`（病假/事假/出差/约会硬约束都在那），读不到才回落 `current_action`；`wording()` 改用 `stage_of()`，不再每轮算 `scene_now`（1780µs → 1.3µs，kv 读 14 → 1 次）。病假日的日程还写着「公司」时，聊天/日记/面板现在一致说「家」。
+- **提示词按 owner 归位**：`ACTION_OWNERSHIP_RULES` 拆三份——分居档居住边界 → `wording("boundary")`（apart 也有文案了）、拍照执行者 → `PHOTO_REQUEST_RULE`、住处·绝不搬走 → 人设卡 `card.stay_in_place`；其余（假拍照红线/发图策略/动作归属）留在原处。新增 `tests/golden/ownership_golden.json` 逐字节锁零漂移。
+- **测试**：归档的 `amo_household` 30 条用例搬回（自带最小 fake，不引 fixtures）；事实契约表加 `scene` / `residence` 两行；跨模块探针加「病假日：账本=家 / 在场=家 / 同居·在家」。全量 **454 passed / 44 subtests**。
+- **门禁修绿**：`quality_gate.py` 三处与仓库现状脱节（静默 except 的 4 个文件预算没登记、strict mypy 基线被写成 0、`work/` 仿真树已移除还硬断言）全部修掉，gate **14 步全绿**；strict mypy **43 → 0**（32 处是 mixin 宿主成员的类型声明，其余为等价改写），基线同步降到 0。
+
 ## 7.6.5（2026-11-23 生成式修复正式版）
 
 - **固定句产出清零**：问题模板/动作台词/状态重复句/原文兜底 → 删空交出口 repair；两个 `safe_reply` 删除；句池只留识别，不再产出。

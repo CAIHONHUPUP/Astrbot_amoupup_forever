@@ -68,6 +68,24 @@ TARGET_WORD = {
     "station": "车站",
 }
 
+#: reply_fact_guard 的口语补表唯一来源（只补主表，不改主表本身）。
+EXTRA_WORDS = {
+    "楼下": "home",
+    "楼上": "home",
+    "门口": "home",
+    "阳台上": "home",
+}
+#: 主表 ALLOWED_GROUPS 没收录、但聊天里会出现的 zone。
+EXTRA_ALLOWED = {
+    "hospital": frozenset({"hospital"}),
+    "school": frozenset({"school"}),
+    "gym": frozenset({"gym"}),
+    "street": frozenset({"street", "transit"}),
+    "transit": frozenset({"transit", "street"}),
+}
+#: 主表 TARGET_WORD 没收录的改口词。
+EXTRA_TARGET = {"transit": "路上"}
+
 #: 「大家 / 人家 / 老家」里的「家」不是在说她自己
 _NOISE = ("大家", "人家", "国家", "专家", "画家", "科学家", "商家", "店家",
           "一家", "老家", "家族", "顾家")

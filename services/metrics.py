@@ -76,6 +76,7 @@ def _clock_now(now=None):
         try:
             return _dt.datetime.fromtimestamp(float(now))
         except (TypeError, ValueError):  # cleanup: 兜底/降级，保持原行为
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
             pass
     try:
         try:

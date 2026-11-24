@@ -1,4 +1,9 @@
 
+import logging
+
+logger = logging.getLogger("amo.amo_llm_service")
+
+
 from typing import TYPE_CHECKING
 # -*- coding: utf-8 -*-
 """模型调用层：人格读取、对话、主动消息、回复组装。"""
@@ -82,13 +87,6 @@ async def _proactive_context_block(self, umo, profile, system):
                            + "\n（这些是过去的记忆，不是今天刚发生的新鲜事；"
                              "里程碑/总结里的旧事不要当话题复述，尤其别重复已经讲过的笑话/事件。）")
     try:
-        relation_network = self.p._relation_network_text(str(profile.get("uid") or ""))
-    except Exception as _amo_exc:
-        _note_swallowed("amo_llm_service.LLMService.gen_proactive", _amo_exc)
-        relation_network = ""
-    if relation_network:
-        system = system + "\n【关系网】\n" + relation_network
-    try:
         trip = self.p.db.kv_get("wander_trip", {}) or {}
         if (
             isinstance(trip, dict) and trip.get("city") and not trip.get("announced")
@@ -132,11 +130,6 @@ def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_h
         except Exception as _amo_exc:
             _note_swallowed("amo_llm_service.LLMService.gen_proactive.build_task", _amo_exc)
             event_text = ""
-    try:
-        dialect_enabled = bool(self.p._dialect_active())
-    except Exception as _amo_exc:
-        _note_swallowed("amo_llm_service.LLMService.gen_proactive.build_task", _amo_exc)
-        dialect_enabled = False
     fact = schedule if isinstance(schedule, dict) else {}
     return _pg_compose_task(
         kind=kind,
@@ -147,8 +140,6 @@ def _proactive_task(self, kind, name, snap, facts, analysis, window, duplicate_h
         recent_bot_texts=analysis["recent_bot_texts"],
         interesting_event=event_text,
         duplicate_hint=duplicate_hint,
-        dialect_style=self.p.cfg_str("dialect_style", ""),
-        dialect_enabled=dialect_enabled,
         # 日程提醒把事实原样交给 compose_task，模型不用猜时间/地点/事件。
         schedule_time=str(fact.get("time") or fact.get("start") or ""),
         schedule_place=str(fact.get("place") or ""),
@@ -303,10 +294,8 @@ class LLMService:
             "4. 保留原句的情绪强度和态度：原句在生气/烦躁/怼人，就继续带着这个情绪，最多缓和一点；\n"
             "5. 情绪有惯性，前后一致；\n"
             "6. 默认 1-2 句，能一句说清就一句；咨询/步骤最多 3 句，先给结论；\n"
-            "7. 长度接近原句，不扩写；\n"
-            "8. 收件人锁：第一句称呼只能用「老公」「你」或他的名字，不许用妈/爸/婆婆/阿姨/朋友/同事"
-            "等其他人称开头；家人朋友只能当话题，不许替老公回他们的话，也不许切成用户第一人称视角。"
-            + ("\n9. 这是咨询/步骤类：用角色口吻简短回答，不要客服腔。" if consult else "")
+            "7. 长度接近原句，不扩写；"
+            + ("\n8. 这是咨询/步骤类：用角色口吻简短回答，不要客服腔。" if consult else "")
         )
         result = await self.chat(umo, system, prompt, limit=self.p.cfg_int("max_reply_chars", 220))
         if not result:
@@ -340,8 +329,8 @@ class LLMService:
                     found = list(_grounding_issues(user_text, value) or [])
                     try:
                         found.extend(_persona_issues(user_text, value, self_texts) or [])
-                    except Exception:  # cleanup: 兜底/降级，保持原行为
-                        pass
+                    except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+                        logger.debug("[amo_llm_service._issues_of] optional step failed: %s", exc)
                     return found
 
                 _miss = _issues_of(result)
@@ -480,18 +469,6 @@ class LLMService:
             "身边小事里写的是谁就是谁：写的是同事就写同事，不要换成名单里的名字；"
             "没写名字就用「同事/朋友」，不要自己加名字。"
         )
-        # task-32：收件人锁（主动消息生成层）。11:31 真实 P0 是外部 watch 推送，
-        # 但陪伴自己的主动消息也必须先锁收件人：只有老公，妈/爸/朋友只作话题。
-        try:
-            try:
-                from . import amo_prompt_registry as _prompt_registry
-            except ImportError:
-                import amo_prompt_registry as _prompt_registry
-            _addressee_block = _prompt_registry.render("llm.rule.addressee")
-            if _addressee_block:
-                system = system + "\n" + _addressee_block
-        except Exception as _amo_exc:
-            _note_swallowed("amo_llm_service.gen_proactive.addressee", _amo_exc)
         try:
             from .amo_immersion_guard import prompt_block as _immersion_block
         except ImportError:
@@ -503,8 +480,8 @@ class LLMService:
             except ImportError:
                 from amo_names import ROLE_LINE as _role_line
             system = system + "\n" + _role_line
-        except Exception:  # cleanup: 人物关系表读不到就不加
-            pass
+        except Exception as exc:  # cleanup: 人物关系表读不到就不加
+            _note_swallowed("amo_llm_service.gen_proactive", exc)
         try:
             from .amo_date_context import prompt_block as _date_prompt_block
             _date_text = _date_prompt_block(self.p)

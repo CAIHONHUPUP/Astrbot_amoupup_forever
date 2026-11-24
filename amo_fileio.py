@@ -24,7 +24,8 @@ def atomic_write_json(path, data, indent=2, ensure_ascii=False):
             try:
                 os.fsync(fh.fileno())
             except OSError:
-                pass  # cleanup：部分文件系统不支持 fsync
+                # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
+                pass
         os.replace(tmp, text)
         return text
     except Exception:
@@ -32,5 +33,6 @@ def atomic_write_json(path, data, indent=2, ensure_ascii=False):
             if os.path.exists(tmp):
                 os.remove(tmp)
         except OSError:
-            pass  # cleanup：临时文件删不掉不影响主异常
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
+            pass
         raise

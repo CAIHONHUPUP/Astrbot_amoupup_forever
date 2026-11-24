@@ -14,6 +14,11 @@ token 这类后台词，只要被召回就会再次进私聊。
 """
 from __future__ import annotations
 
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
+
 import logging
 import re
 from dataclasses import asdict, dataclass, field
@@ -373,8 +378,8 @@ class FactLedger:
     def save(self):
         try:
             self.plugin.db.kv_set(LEDGER_KEY % self.uid, list(self.load())[-MAX_ENTRIES:])
-        except Exception:  # cleanup: 兜底/降级，保持原行为
-            pass
+        except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+            _note_swallowed("amo_memory_ledger.save", exc)
 
     def next_id(self):
         rows = self.load()

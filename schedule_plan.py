@@ -26,6 +26,12 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from domains.schedule import plan_text as _plan_text
 
+try:  # 地点 → zone 唯一派生（给 schedule_slots 的写侧对齐复用）
+    from .domains.schedule.place import resolve_zone
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from domains.schedule.place import resolve_zone
+
 try:  # 纯内核：JIT 到点计划（域内只用标准库）
     from .domains.schedule.jit_plan import (
         _BAD_WEATHER_WORDS,
@@ -73,24 +79,24 @@ try:
         pick_amusement_spot,
         pick_holiday_plan,
     )
-    from .schedule_segments import (
+    from .domains.schedule.segments import (
         amusement_segments,
         homebody_segments,
         shopping_segments,
     )
-    from .schedule_scenic import scenic_segments
-    from .schedule_day_segments import (
+    from .domains.schedule.scenic import scenic_segments
+    from .domains.schedule.day_segments import (
         indoor_rest_segments,
         outing_segments,
         workday_segments,
     )
-    from .schedule_rest_segments import (
+    from .domains.schedule.rest_segments import (
         business_trip_segments,
         overtime_segments,
         period_rest_segments,
         sick_rest_segments,
     )
-    from .schedule_swim import swim_segments
+    from .domains.schedule.swim import swim_segments
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from schedule_holiday import (
@@ -98,24 +104,24 @@ except ImportError:  # 直接按文件加载时
             pick_amusement_spot,
             pick_holiday_plan,
         )
-        from schedule_segments import (
+        from domains.schedule.segments import (
             amusement_segments,
             homebody_segments,
             shopping_segments,
         )
-        from schedule_scenic import scenic_segments
-        from schedule_day_segments import (
+        from domains.schedule.scenic import scenic_segments
+        from domains.schedule.day_segments import (
             indoor_rest_segments,
             outing_segments,
             workday_segments,
         )
-        from schedule_rest_segments import (
+        from domains.schedule.rest_segments import (
             business_trip_segments,
             overtime_segments,
             period_rest_segments,
             sick_rest_segments,
         )
-        from schedule_swim import swim_segments
+        from domains.schedule.swim import swim_segments
 
 # 统一时区：日程的 generated_at / 跨天日期按配置时区算，不吃服务器本地时区。
 if TYPE_CHECKING:  # 只给类型检查看：包内相对导入

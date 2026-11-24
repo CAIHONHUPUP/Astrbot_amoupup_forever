@@ -26,6 +26,9 @@ RUNTIME_SKIP_DIRS = {".git", "__pycache__", "dist", ".pytest_cache", ".mypy_cach
 RUNTIME_SKIP_FILES = {".coveragerc", "mypy.ini", "requirements-dev.txt", "run_tests.py",
                       ".coverage", "mypy.ini"}
 SKIP_SUFFIX = (".pyc", ".pyo", ".log", ".db", ".db-wal", ".db-shm", ".sqlite")
+#: 带日期的备份/临时库副本（如 amo_forever.db.bak-cleanfake-20261120-232833）。
+#: 这类名字不以 .db 结尾，后缀匹配不到，所以另外用「包含式」标记拦掉：真库备份不许进发布包。
+SKIP_INFIX = (".db.bak", ".sqlite.bak")
 
 #: 隐私：人物三视图与姿势/穿搭参考图绝不进任何发布包（2026-11-22 用户明确要求）。
 #: 本地保留文件供拍照参考；包里只发代码，缺参考图由 photo_engine 自动降级。
@@ -60,7 +63,10 @@ def _is_sensitive(rel):
 
 
 SOURCE_SKIP_DIRS = {".git", "__pycache__", "dist", ".pytest_cache", ".mypy_cache",
-                    "_test_tmp", ".test-tmp", "_scratch"}
+                    "_test_tmp", ".test-tmp", "_scratch",
+                    # work/ 是审计/仿真/旧代码快照（含真库备份与生产文件副本），只本地用：
+                    # 安装包从来不含它，源码包也不再带（2026-11-23）。
+                    "work"}
 
 
 def project_name():
@@ -80,7 +86,7 @@ def _walk(skip_dirs, skip_files):
         for name in sorted(files):
             if name in skip_files:
                 continue
-            if name.endswith(SKIP_SUFFIX):
+            if name.endswith(SKIP_SUFFIX) or any(mark in name for mark in SKIP_INFIX):
                 continue
             path = os.path.join(base, name)
             rel = os.path.relpath(path, ROOT).replace(os.sep, "/")

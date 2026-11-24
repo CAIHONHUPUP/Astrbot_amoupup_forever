@@ -19,6 +19,12 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         import clock as _amo_clock
 
+try:  # 地点 → zone 唯一派生（photo_rules 只是 domains/schedule/place 的门面）
+    from .photo_rules import resolve_zone
+except ImportError:  # 直接按文件加载时
+    if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
+        from photo_rules import resolve_zone
+
 import datetime as _dt
 
 PRIORITY = ("micro", "jit", "schedule", "fallback")
@@ -79,13 +85,9 @@ def _schedule_action(plugin):
     return dict(data) if isinstance(data, dict) else {}
 
 
-def _zone_of(place):
+def _zone_of(place, category=""):
     try:
-        try:
-            from .photo_rules import zone_for_place
-        except ImportError:
-            from photo_rules import zone_for_place
-        return str(zone_for_place(place) or "home")
+        return str(resolve_zone(place, category, "home") or "home")
     except Exception:
         return "home"
 
@@ -107,7 +109,13 @@ def get_current_action(plugin, now=None):
             data, source = sched, str(sched.get("_source") or "schedule")
     action = str(data.get("action") or data.get("activity") or "").strip()
     place = str(data.get("place") or "家").strip() or "家"
-    zone = str(data.get("zone") or "").strip() or _zone_of(place)
+    category = str(data.get("category") or "life")
+    zone = str(data.get("zone") or "").strip()
+    if zone == "road":
+        # 读时纠偏：旧行/外部写入把具体地点写成 road 时，不让 guard/照片跟着错。
+        zone = str(resolve_zone(place, category, zone) or zone)
+    elif not zone:
+        zone = _zone_of(place, category)
     try:
         until = float(data.get("until") or 0)
     except Exception:
@@ -116,7 +124,7 @@ def get_current_action(plugin, now=None):
         "action": action or "休息",
         "place": place,
         "zone": zone,
-        "category": str(data.get("category") or "life"),
+        "category": category,
         "until": until,
         "source": source or "fallback",
         "raw": data,
@@ -137,7 +145,7 @@ def set_action(plugin, action, until_ts=0, place="家", zone="", category="life"
     """
     value = str(action or "").strip()
     place = str(place or "家").strip() or "家"
-    zone = str(zone or "").strip() or _zone_of(place)
+    zone = str(zone or "").strip() or _zone_of(place, category)
     category = str(category or "life") or "life"
     scene = {}
     # task-30：current_action 是「此刻」的第二事实源，写之前必须过场景账本写入唯一入口

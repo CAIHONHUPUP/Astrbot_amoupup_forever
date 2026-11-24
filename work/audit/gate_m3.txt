@@ -1,9 +1,0 @@
-# M3 门禁与四件套（2026-11-23）
-
-删空壳：_safe_short_reply、amo_repetition_guard 门面、repetition_guard.sentence/short_fallback、
-short_reply.guard 恒等壳与 generate.short_reply Stage；新增 test_stage_shells_removed 反向守卫；
-golden 同步去掉 short_reply 阶段（有意结构变化）。
-
-- 门禁 exit 0（955.7s）：6451 passed / 0 failed / 7 skipped / 293 subtests；mypy 0/264（少一个模块）；pyflakes clean；silent 0/58；schema 277；routes 119；unittest ok；freeze 0
-- 四件套与 m2 逐项零差异：daily 50/50、614/614；share 500/100%（d0/p0）；remind 240/240；adversarial 39/39；replay narr0/p4（预期）
-- 保留 question_guard.answer：仍是「答到点上」的唯一判定入口，不是可内联的薄壳

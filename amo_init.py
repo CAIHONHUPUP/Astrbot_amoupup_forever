@@ -32,12 +32,6 @@ except ImportError:  # 直接按文件加载时
         from amo_db import AmoDB
 
 try:
-    from .amo_wallet import Wallet
-except ImportError:  # 直接按文件加载时
-    if not TYPE_CHECKING:
-        from amo_wallet import Wallet
-
-try:
     from .wardrobe import Wardrobe
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:
@@ -54,12 +48,6 @@ try:
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:
         from amo_llm_service import LLMService
-
-try:
-    from .social_learn_engine import SocialLearnEngine
-except ImportError:  # 直接按文件加载时
-    if not TYPE_CHECKING:
-        from social_learn_engine import SocialLearnEngine
 
 try:
     from .micro_events import MicroEventEngine
@@ -108,6 +96,38 @@ try:
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:
         from amo_observability import note as _note_swallowed
+
+
+class _NoMoney:
+    """钱包已退役：不记账、不扣款、余额不参与判断（保留属性名给未删的调用点）。"""
+
+    # 兼容说明（2026-11-24 收口）：balance / balance_cents / total_assets 只为旧调用点
+    # 保留属性名，恒返回 10^9 分；禁止再把它们写进任何提示词或决策分支，
+    # 新增代码不要再读余额——读到的永远是常量，只会制造走不到的死分支。
+
+    def __init__(self, db=None):
+        self.db = db
+
+    def ensure_schema(self):
+        return None
+
+    def balance(self, *args, **kwargs):
+        return 10 ** 9
+
+    def balance_cents(self, *args, **kwargs):
+        return 10 ** 9
+
+    def total_assets(self, *args, **kwargs):
+        return 10 ** 9
+
+    def debit(self, *args, **kwargs):
+        return True
+
+    def credit(self, *args, **kwargs):
+        return True
+
+    def ledger(self, *args, **kwargs):
+        return []
 
 
 class InitMixin:
@@ -168,7 +188,7 @@ class InitMixin:
         """db / 钱包 / 各引擎（原 __init__ 中段）。"""
         self.db = AmoDB(self.plugin_dir)
         # 钱包：amo 是资产权威，金融插件只读余额 / 调 credit、debit（不做 UI）
-        self.wallet = Wallet(self.db)
+        self.wallet = _NoMoney(self.db)
         self.wardrobe = None
         if Wardrobe is not None:
             try:
@@ -182,15 +202,12 @@ class InitMixin:
             except Exception as exc:
                 logger.warning("[amo] 姿势库初始化失败: %s" % exc)
         self.state: Any = None
-        self.watch_info = None
         self.llm = LLMService(self)
-        self.social_learn = None
-        if SocialLearnEngine is not None:
-            try:
-                self.social_learn = SocialLearnEngine(self)
-                logger.info("[amo] 社会见闻引擎已加载（12:30 / 20:00 各刷一次）")
-            except Exception as exc:
-                logger.warning("[amo] 社会见闻引擎初始化失败: %s" % exc)
+        try:
+            from .amo_heart import HeartEngine
+        except ImportError:
+            from amo_heart import HeartEngine
+        self.heart = HeartEngine()
         self.micro_events = None
         if MicroEventEngine is not None:
             try:
@@ -259,6 +276,15 @@ class InitMixin:
                 self.segment_engine = SegmentEngine(self.context, seg_config, plugin=self)
         except Exception as exc:
             logger.error("[amo] 心流/分段引擎初始化失败: %s" % exc)
+        # 第 1 刀：缺模块/缺守卫必须显式报错，不再静默降级（2026-11-23 收件人守卫事故）。
+        try:
+            try:
+                from .amo_guard_health import assert_guards
+            except ImportError:
+                from amo_guard_health import assert_guards
+            assert_guards(self)
+        except Exception as exc:
+            logger.error("[amo] 守卫健康检查自身失败: %s" % exc)
 
     def _init_runtime(self):
         """引用守卫 / 运行标记 / 计数器（原 __init__ 后半段）。"""

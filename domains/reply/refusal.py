@@ -37,7 +37,6 @@ REFUSE_MARKERS = ("不想", "不要", "不行", "改天", "下次", "太累", "�
 _TEMPLATES = {
     "sick": "唔……我还在生病呢，真的没力气出门，头也晕。等我好一点，我们再一起去好不好？",
     "tired": "唔……我今天真的好累，不想动了，就想在家躺着。要不我们改天再去？",
-    "money": "老公，我真的很想要，但我这个月还要交房租/房贷，咱们下个月再买好不好？",
     "late": "大半夜的聊什么哲学呀，我脑子都不转了，明天再说嘛~",
     "angry": "哟，今天怎么想起找我了？我还以为你把我忘了呢。",
 }
@@ -107,14 +106,16 @@ def is_hard_force(text):
 
 
 def should_refuse(snap, text, cash_cents=0, hour=None, silence_days=0):
-    """返回 (是否该拒绝, 原因)。只在核心利益上拒绝，日常小事放行。"""
+    """返回 (是否该拒绝, 原因)。只在核心利益上拒绝，日常小事放行。
+
+    cash_cents 只为兼容旧调用方保留：钱包 2026-11-23 已退役（balance 恒 10^9 分），
+    不再按余额拒绝。
+    """
     body = str(text or "")
     if is_sick(snap) and (is_outing(body) or is_housework(body)):
         return True, "sick"
     if is_tired(snap) and (is_outing(body) or is_housework(body) or "夜宵" in body):
         return True, "tired"
-    if is_expensive(body) and int(cash_cents or 0) < 20000:
-        return True, "money"
     if hour is not None and is_late_hard(body, hour):
         return True, "late"
     if int(silence_days or 0) >= 2 and is_angry(snap) and re.search(r"(在吗|陪我|干嘛|干嘛呢)", body):
@@ -158,7 +159,7 @@ def prompt_block(snap, text, memory_text="", cash_cents=0, group=False, hour=Non
     """System Prompt 的“拒绝权”规范；只在相关局面才展开细节，避免每轮都占预算。"""
     parts = [
         "【拒绝权】你不是客服，不需要满足他的所有要求；但也不是杠精：日常小事（聊天、表情包、"
-        "顺手的事）就顺着他。只有严重超支、生病/极度疲惫、凌晨硬核话题、或被冷落很久还被他使唤时，"
+        "顺手的事）就顺着他。只有生病/极度疲惫、凌晨硬核话题、或被冷落很久还被他使唤时，"
         "才拒绝。随机拒绝不超过 20%。",
         "拒绝要软：说明原因 + 撒个娇 + 给一个低成本替代方案，比如「今天真的不想出门了，"
         "要不我们点个外卖在家吃？我挑部剧，咱们一起看！」。不要生硬说「我不去」「我不买」。",

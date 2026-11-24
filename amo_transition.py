@@ -14,6 +14,11 @@
 - 「刚下车/到楼下了」→ 立刻截断当前块、写下一块并推进状态。
 """
 from __future__ import annotations
+
+try:  # 吞异常留痕（2026-11-24）
+    from .amo_observability import note as _note_swallowed
+except ImportError:
+    from amo_observability import note as _note_swallowed
 from typing import TYPE_CHECKING, Any
 
 try:  # Phase 11：统一时钟（不再裸调系统时钟）
@@ -23,11 +28,11 @@ except ImportError:  # 直接按文件加载时
         import clock as _amo_clock
 
 try:  # Phase 11：地点门面 + 分钟时钟统一实现
-    from .amo_place import zone_for_place
+    from .amo_place import repair_zone_rows, resolve_zone, zone_for_place
     from .amo_numbers import clock_after as _clock
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        from amo_place import zone_for_place
+        from amo_place import repair_zone_rows, resolve_zone, zone_for_place
         from amo_numbers import clock_after as _clock
 
 import asyncio
@@ -73,7 +78,10 @@ KIND_TERMINAL = {
 #: 文本意图（用户说 / 她自己说都要能启动过渡）
 INTENT_PATTERNS = (
     ("bath", ("洗澡", "洗个澡", "冲个凉", "去洗")),
-    ("sleep", ("睡觉", "去睡", "该睡了", "躺下睡")),
+    # 2026-11-24：裸「睡觉」会把「那我摸着睡觉」误判成去洗漱。
+    # 只认明确要睡/已睡的说法；「睡觉吧」这种陪睡语气不再单独起过渡。
+    ("sleep", ("去睡", "该睡了", "要睡了", "准备睡", "先睡",
+               "睡觉了", "睡了", "躺下睡", "晚安")),
     ("meal", ("去吃饭", "吃个饭", "我去吃饭", "点外卖吃")),
     ("errand", ("倒垃圾", "扔垃圾", "去倒垃圾", "拿快递", "取快递", "下楼买", "取外卖")),
     ("shopping", ("逛街", "买东西", "去商场")),
@@ -145,6 +153,18 @@ def maybe_start_from_text(plugin, text, now=None, source="user"):
     if not intent:
         return None
     now = _now(now)
+    if intent["kind"] == "sleep":
+        # 已经睡着/在床上时，不再插一条「在洗漱」过渡（2026-11-24 线上：
+        # 「那我摸着睡觉」把 00:50 拆成洗漱 20 分钟 + 到达块 5 分钟）。
+        try:
+            current = plugin.state.current_activity() or {}
+        except Exception:
+            current = {}
+        _activity = str(current.get("activity") or current.get("action") or "")
+        _category = str(current.get("category") or "")
+        if _category == "sleep" or any(word in _activity for word in ("睡", "床", "被窝")):
+            logger.info("[amo] 已在睡眠/床上，不启动 sleep 过渡：%s", str(text or "")[:40])
+            return None
     current_data = _kv_get(plugin, STATE_KEY, {}) or {}
     if isinstance(current_data, dict) and current_data.get("steps"):
         stage = stage_at(current_data, now)
@@ -369,7 +389,10 @@ def stage_at(transition, now=None):
                 "remaining": max(0, int(round(cursor + length - elapsed))),
                 "remaining_total": remaining_total, "arrived": False,
                 "activity": step.get("action") or step.get("name") or "",
-                "place": step.get("place") or HOME, "zone": step.get("zone") or "home",
+                "place": step.get("place") or HOME,
+                "zone": resolve_zone(step.get("place") or HOME,
+                                     data.get("category") or data.get("kind") or "",
+                                     step.get("zone") or "home"),
                 "name": step.get("name") or "", "kind": data.get("kind") or "commute",
                 "from": data.get("from") or HOME, "to": data.get("to") or "",
             }
@@ -378,7 +401,9 @@ def stage_at(transition, now=None):
         "index": len(steps), "step": steps[-1], "elapsed": elapsed, "remaining": 0,
         "remaining_total": 0, "arrived": True,
         "activity": _arrival_activity(data.get("to") or "", data.get("activity") or ""),
-        "place": data.get("to") or "", "zone": zone_for_place(data.get("to") or "") or "road",
+        "place": data.get("to") or "",
+        "zone": resolve_zone(data.get("to") or "",
+                             data.get("category") or data.get("kind") or "", ""),
         "name": "到达", "kind": data.get("kind") or "commute",
         "from": data.get("from") or HOME, "to": data.get("to") or "",
     }
@@ -439,6 +464,26 @@ WORK_START_HOUR = 9
 WORK_END_HOUR = 18
 #: 过渡状态存活期 = 计划分钟数 + 宽限；超过当作废，不再往日程里补旧计划。
 TRANSITION_TTL_GRACE = 10
+#: 同一 to+kind 的过渡去重窗口：只按当前过渡 + 相邻 15 分钟，不按全天同地点。
+TRANSITION_DEDUPE_MINUTES = 15
+#: 最后一步已经在「离开」的口径：到了这种步骤后不能再补写「到达同一地点」。
+_LEAVE_STEP_WORDS = ("准备走", "准备离开", "离开", "走了", "回家", "结账",
+                     "办完了", "吃完了", "逛完了")
+
+
+def _is_leaving_step(step):
+    """这一步是不是已经在离开/收尾（「吃完在结账，准备走」）。"""
+    text = str((step or {}).get("action") or "") + str((step or {}).get("name") or "")
+    if not text:
+        return False
+    if "还没" in text or "没吃完" in text or "没逛完" in text:
+        return False
+    return any(word in text for word in _LEAVE_STEP_WORDS)
+
+
+def _is_leaving_row(row):
+    return isinstance(row, dict) and _is_leaving_step({
+        "action": row.get("activity"), "name": row.get("detail")})
 
 
 def _office_place(place):
@@ -491,7 +536,7 @@ def _hard_constraint_block(plugin, to_place, now=None):
     kind = str((cons or {}).get("kind") or "")
     if not kind:
         return ""
-    zone = str(zone_for_place(place) or "")
+    zone = str(resolve_zone(place, "", "") or "")
     allowed_zones = cons.get("allowed_zones")
     if allowed_zones is not None and zone and zone not in allowed_zones:
         return kind
@@ -534,12 +579,37 @@ def start(plugin, kind, to_place="", activity="", category="", minutes=None,
     if isinstance(current_data, dict) and current_data.get("steps"):
         stage = stage_at(current_data, now)
         if stage and not stage.get("arrived"):
+            if (str(current_data.get("kind") or "") == kind
+                    and str(current_data.get("to") or "") == to_place):
+                logger.warning(
+                    "[amo] 过渡去重：同一 to+kind 已在执行，忽略新过渡 kind=%s to=%s "
+                    "original=%s cleaned=%s fallback=none",
+                    kind, to_place, stage.get("activity") or "-",
+                    current_data.get("activity") or "-")
+                return None
             history = list(current_data.get("queued") or [])
             history.append({"kind": kind, "to": to_place, "queued_at": _amo_clock.now_ts()})
             current_data["queued"] = history[-5:]
             _kv_set(plugin, STATE_KEY, current_data)
             logger.info("[amo] 过渡冲突：%s 优先，新的 %s→%s 排队", stage.get("activity"), kind, to_place)
             return None
+    # 刚刚完成过同一 to+kind（相邻 15 分钟）：不再重复启动，避免「离开小馆又到达小馆」。
+    _last = _kv_get(plugin, "transit:last", {}) or {}
+    try:
+        _last_at = float(_last.get("at") or 0)
+        if (isinstance(_last, dict) and to_place
+                and str(_last.get("to") or "") == to_place
+                and str(_last.get("kind") or "") == kind
+                and now.timestamp() - _last_at <= TRANSITION_DEDUPE_MINUTES * 60):
+            logger.warning(
+                "[amo] 过渡去重：%d 分钟内刚完成过同一 to+kind，忽略新过渡 kind=%s to=%s "
+                "original=%s cleaned=%s fallback=none",
+                TRANSITION_DEDUPE_MINUTES, kind, to_place,
+                _last.get("fact") or "-", "-")
+            return None
+    except (TypeError, ValueError):
+        # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
+        pass
     if not from_place:
         try:
             from_place = str((state.current_activity() or {}).get("place") or "") if state else ""
@@ -590,20 +660,55 @@ def _state_items(plugin, day):
         return []
 
 
+def _sync_current_action(plugin, items, now=None):
+    """过渡写块后同步 current_action，避免日程在吃饭、聊天还说在忙。"""
+    now = now or _amo_clock.now()
+    minute = now.hour * 60 + now.minute
+    for item in items or ():
+        if not isinstance(item, dict):
+            continue
+        begin = _minute(item.get("start"))
+        end = _minute(item.get("end"))
+        if begin is None or end is None or not (begin <= minute < end):
+            continue
+        setter = getattr(plugin, "set_current_action", None)
+        if not callable(setter):
+            return None
+        try:
+            setter(str(item.get("activity") or "在忙"),
+                   until_ts=now.timestamp() + max(60, (end - minute) * 60),
+                   place=str(item.get("place") or "家"),
+                   zone=str(item.get("zone") or "home"),
+                   category=str(item.get("category") or "life"))
+        except Exception as exc:
+            logger.debug("[amo] 过渡同步 current_action 失败: %s", exc)
+        return item
+    return None
+
+
 def _commit(plugin, day, items, old_items):
     state = getattr(plugin, "state", None)
+    result = None
+    try:
+        # 写库前不变量：具体地点 + road 纠正（只今天/未来），warning 由 helper 打。
+        today = _amo_clock.now().strftime("%Y-%m-%d")
+        items, _zone_fixed = repair_zone_rows(items, day, today=today)
+    except Exception as _amo_exc:  # cleanup: 纠正失败不能挡住过渡写库
+        logger.debug("[amo] 过渡分块 zone 纠正失败: %s", _amo_exc)
     try:
         apply = getattr(state, "apply_schedule", None)
         if callable(apply):
             # 过渡分块也走写入网关：锁内读当前块 → 交回唯一提交入口（审计带 transit）。
-            return apply(day, lambda current: list(items), source="transit",
-                         reason="过渡分块")
-        if state is not None and callable(getattr(state, "commit_schedule_change", None)):
-            return Timeline(plugin).save(day, items, old_items=old_items,
-                                         source="transit", reason="过渡分块")
+            result = apply(day, lambda current: list(items), source="transit",
+                           reason="过渡分块")
+        elif state is not None and callable(getattr(state, "commit_schedule_change", None)):
+            result = Timeline(plugin).save(day, items, old_items=old_items,
+                                           source="transit", reason="过渡分块")
     except Exception as exc:
         logger.debug("[amo] 过渡分块落库失败: %s", exc)
-    return None
+    if result:
+        _sync_current_action(plugin, items)
+    return result
 
 
 
@@ -708,7 +813,11 @@ def _ensure_blocks(plugin, data, now, readonly=False):
         added.append({
             "start": start_text, "end": end_text,
             "activity": step.get("action") or step.get("name"),
-            "place": step.get("place") or HOME, "zone": step.get("zone") or "home",
+            "place": step.get("place") or HOME,
+            "zone": resolve_zone(
+                step.get("place") or HOME,
+                "commute" if data.get("kind") == "commute" else str(data.get("kind") or "life"),
+                step.get("zone") or "home"),
             "category": "commute" if data.get("kind") == "commute" else str(data.get("kind") or "life"),
             "source": "transit", "step": index, "transit_kind": data.get("kind"),
             "happened": True,
@@ -792,13 +901,31 @@ def finish(plugin, transition=None, stage=None, now=None):
     stage = stage or stage_at(data, now) or {}
     day = now.strftime("%Y-%m-%d") if now else ""
     to_place = str(data.get("to") or "")
+    category = str(data.get("category") or data.get("kind") or "life")
+    kind = str(data.get("kind") or "commute")
     elapsed = int(round(float(stage.get("elapsed") or data.get("minutes") or 0)))
+    last_step = (data.get("steps") or [{}])[-1]
+    if (_is_leaving_step(last_step)
+            and str((last_step or {}).get("place") or "") == to_place):
+        # 最后一步已经「吃完结账准备走」：不能再补一条「到了同一家小馆」的到达块。
+        fact = (("吃完从%s出来，准备回去。" % to_place) if kind == "meal"
+                else ("从%s出来，准备回去。" % to_place))
+        logger.warning(
+            "[amo] 到达块跳过 reason=leaving_step original=%s cleaned=%s fallback=%s kind=%s",
+            str((last_step or {}).get("action") or last_step or "-")[:80],
+            "不写到达块", fact[:80], kind)
+        _kv_set(plugin, STATE_KEY, {})
+        _kv_set(plugin, "activity_now", {})
+        _kv_set(plugin, "transit:last", {
+            "to": to_place, "kind": kind, "elapsed": elapsed,
+            "fact": fact, "at": float(now.timestamp()) if now else _amo_clock.now_ts()})
+        return fact
     item = {
         "start": now.strftime("%H:%M") if now else "", "end": "",
         "activity": stage.get("activity") or _arrival_activity(to_place),
         "place": to_place or (stage.get("place") or HOME),
-        "zone": zone_for_place(to_place) or (stage.get("zone") or "home"),
-        "category": str(data.get("category") or data.get("kind") or "life"),
+        "zone": resolve_zone(to_place, category, ""),
+        "category": category,
         "source": "transit", "step": "arrive", "happened": True,
     }
     # 先定好 end 再落库：以前先写 end="" 的到达块、再改内存对象不提交，
@@ -817,7 +944,8 @@ def finish(plugin, transition=None, stage=None, now=None):
             # 还没开始的过渡块会被到达块取代（时间连续、不重叠）
             kept = [row for row in items
                     if not (str(row.get("source") or "") == "transit"
-                            and str(row.get("start") or "") >= now_text)]
+                            and str(row.get("start") or "") >= now_text
+                            and not _is_leaving_row(row))]
             if item.get("end"):
                 # 到达块不能越过紧随其后的块：取两者更早者，保证首尾相接/0 重叠。
                 _next_start = min(
@@ -838,10 +966,11 @@ def finish(plugin, transition=None, stage=None, now=None):
         duration = max(15, int(data.get("then_minutes") or (180 if _chain == "shopping" else 120)))
         follow_start = arrive_end
         follow_end = (now + _dt.timedelta(minutes=5 + duration)).strftime("%H:%M")
+        follow_category = "play" if _chain == "shopping" else "work"
         follow = {"start": follow_start, "end": follow_end, "activity": activity_text,
                   "place": to_place,
-                  "zone": zone_for_place(to_place) or "home",
-                  "category": "play" if _chain == "shopping" else "work",
+                  "zone": resolve_zone(to_place, follow_category, ""),
+                  "category": follow_category,
                   "source": "activity", "step": "activity", "happened": True}
         try:
             items2 = _state_items(plugin, day)
@@ -864,8 +993,9 @@ def finish(plugin, transition=None, stage=None, now=None):
         fact = str(_scene_guard_text(plugin, fact, now) or fact)
     except Exception as _amo_exc:
         logger.debug("[amo] 到达事实场景守卫失败: %s", _amo_exc)
-    _kv_set(plugin, "transit:last", {"to": to_place, "elapsed": elapsed,
-                                     "fact": fact, "at": _amo_clock.now_ts()})
+    _kv_set(plugin, "transit:last", {"to": to_place, "kind": kind,
+                                     "elapsed": elapsed, "fact": fact,
+                                     "at": float(now.timestamp()) if now else _amo_clock.now_ts()})
     try:
         writer = getattr(plugin, "_data_call", None)
         spawn = getattr(plugin, "_spawn", None)
@@ -1115,7 +1245,7 @@ def resolve_new_overlaps(new_items):
 
 def _place_zone(place):
     try:
-        return str(zone_for_place(place) or "")
+        return str(resolve_zone(place, "", "") or "")
     except Exception:
         return ""
 
@@ -1417,8 +1547,8 @@ def write_activity_memory(plugin, rows, now=None):
                 logger.warning("[amo] 活动记忆入队失败（不影响活动收尾）: %s", exc)
                 try:
                     coro.close()
-                except Exception:  # cleanup
-                    pass
+                except Exception as exc:  # cleanup
+                    _note_swallowed("amo_transition.write_activity_memory", exc)
                 continue
         else:
             try:
@@ -1426,8 +1556,8 @@ def write_activity_memory(plugin, rows, now=None):
             except Exception:
                 try:
                     coro.close()
-                except Exception:  # cleanup
-                    pass
+                except Exception as exc:  # cleanup
+                    _note_swallowed("amo_transition.write_activity_memory", exc)
         written.append(text)
         logger.info("[amo] 活动写进长期记忆（idem=%s）：%s", idem, text)
     if written:
@@ -1521,8 +1651,15 @@ def guard_road_home(plugin, text, now=None):
     try:
         transition = current(plugin, now)
         stage = stage_at(transition, now) if transition else None
-        if stage and not stage.get("arrived") and str(stage.get("zone") or "") == "road":
-            on_road = True
+        if stage and not stage.get("arrived"):
+            # 读时纠偏：旧行/旧过渡里的 zone 可能被写成 road，但地点其实是小馆/粉店。
+            # 只有 resolve_zone 算出来的有效 zone 真的是 road 才拦「到家了」。
+            place = str(stage.get("place") or "").strip()
+            category = str((transition or {}).get("category")
+                           or (transition or {}).get("kind") or "")
+            zone = resolve_zone(place, category, str(stage.get("zone") or ""))
+            if zone == "road":
+                on_road = True
     except Exception as exc:
         logger.debug("[amo] 路上守卫读过渡失败: %s", exc)
     state = getattr(plugin, "state", None)
@@ -1535,7 +1672,8 @@ def guard_road_home(plugin, text, now=None):
         if isinstance(current_activity, dict):
             place = str(current_activity.get("place") or "").strip()
             zone = str(current_activity.get("zone") or "").strip() or _place_zone(place)
-            if zone == "road" or place == "路上":
+            category = str(current_activity.get("category") or "").strip()
+            if resolve_zone(place, category, zone) == "road":
                 on_road = True
     if not on_road:
         return value
@@ -1546,7 +1684,9 @@ def guard_road_home(plugin, text, now=None):
             changed = True
     if changed:
         value = re.sub(r"(，\s*还在车上)+$", "", value).rstrip("，")
-        logger.info("[amo] 路上终态守卫 -> %s", value[:60])
+        logger.warning(
+            "[amo] 路上终态守卫 reason=road_home original=%s cleaned=%s fallback=%s",
+            text[:80], value[:80], "还在车上")
     return value
 
 def guard_terminal(plugin, text, now=None):
@@ -1573,7 +1713,9 @@ def guard_terminal(plugin, text, now=None):
             value = value.replace(old, new)
             changed = True
     if changed:
-        logger.info("[amo] 过渡期终态守卫 -> %s", value[:60])
+        logger.warning(
+            "[amo] 过渡期终态守卫 reason=terminal original=%s cleaned=%s fallback=%s",
+            str(text or "")[:80], value[:80], "还在路上")
     return guard_road_home(plugin, value, now)
 
 

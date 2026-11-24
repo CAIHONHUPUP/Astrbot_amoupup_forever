@@ -88,6 +88,7 @@ def _now(now=None):
         try:
             return float(now)
         except (TypeError, ValueError):  # cleanup: 兜底/降级，保持原行为
+            # intentional: 配置/旧值/可选依赖/清理失败按默认值处理
             pass
     try:
         return float(_amo_clock.now_ts())
@@ -393,8 +394,8 @@ def _remember(plugin, umo, entry):
         if callable(spawn):
             spawn(coro)
             return True
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+        _note_swallowed("amo_media._remember", exc)
     try:
         import asyncio
 
@@ -403,8 +404,8 @@ def _remember(plugin, umo, entry):
     except Exception:
         try:
             coro.close()
-        except Exception:  # cleanup: 兜底/降级，保持原行为
-            pass
+        except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+            _note_swallowed("amo_media._remember", exc)
         return False
 
 
@@ -711,8 +712,8 @@ def _failure_lines():
             from photo_share import PHOTO_FAILURE_LINES
         if PHOTO_FAILURE_LINES:
             return list(PHOTO_FAILURE_LINES)
-    except Exception:  # cleanup: 兜底/降级，保持原行为
-        pass
+    except Exception as exc:  # cleanup: 兜底/降级，保持原行为
+        logger.debug("[amo_media._failure_lines] optional step failed: %s", exc)
     return list(_DEFAULT_FAILURE_LINES)
 
 

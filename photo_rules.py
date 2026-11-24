@@ -13,16 +13,19 @@
   import 不断。
 
 老代码里的 ``SCENE_POLICY`` / ``SCENE_ALLOWED`` / ``OUTDOOR_POSES`` 仍保留在
-``photo_engine`` 作为兼容视图，新链路全部走这张表。
+``photo_data`` 作为兼容视图（旧测试/外部导入）；``photo_engine`` 已不再依赖，
+新链路全部走这张表。
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
 try:  # Phase 11：地点规则/纯函数唯一实现在 domains/schedule/place.py（经 amo_place 门面转出）
-    from .amo_place import PLACE_ZONE_RULES, clean_place, zone_for_place  # noqa: F401  re-export
+    from .amo_place import (  # noqa: F401  re-export
+        PLACE_ZONE_RULES, clean_place, resolve_zone, zone_for_place)
 except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
-        from amo_place import PLACE_ZONE_RULES, clean_place, zone_for_place  # noqa: F401  re-export
+        from amo_place import (  # noqa: F401  re-export
+            PLACE_ZONE_RULES, clean_place, resolve_zone, zone_for_place)
 
 try:  # 配置化：英文场景/姿势锁在 infra/config/photo_prompt_en.json
     from .infra.config import load_config

@@ -6,6 +6,10 @@
 """
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger("amo.amo_rest")
+
 import re
 
 try:
@@ -49,8 +53,8 @@ def note_user_rest(plugin, text):
     try:
         if float(db.kv_get(KEY, 0) or 0) > now:
             db.kv_set(KEY, 0)
-    except Exception:  # cleanup: 读不到标记不算错，下一句会重设
-        pass
+    except Exception as exc:  # cleanup: 读不到标记不算错，下一句会重设
+        logger.debug("[amo_rest.note_user_rest] optional step failed: %s", exc)
 
 
 def resting_now(plugin):
