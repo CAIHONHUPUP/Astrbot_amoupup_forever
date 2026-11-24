@@ -28,7 +28,8 @@ except ImportError:
     from amo_observability import note as _note_swallowed
 
 #: _conf_schema.json 的键数；新增/删除配置键时同步这里和 test_config_model.py
-SCHEMA_KEY_COUNT_EXPECTED = 246
+#: 246 -> 247：2026-11-24 新增 persona_action_narration（动作描写开关，默认关）
+SCHEMA_KEY_COUNT_EXPECTED = 247
 
 
 def check_schema():

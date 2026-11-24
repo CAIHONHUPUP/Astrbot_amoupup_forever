@@ -711,6 +711,50 @@ def fact_guard_context(plugin, activity=None, now=None):
     return context
 
 
+#: 括号动作（与 amo_persona_guard 同一形状：单行、成对、不超过 60 字）
+_PAREN_ACTION_RE = re.compile(r"[（(]([^（()）\n]{1,60})[)）]")
+
+
+def drop_conflicting_actions(text, plugin, activity=None, now=None):
+    """保留括号动作时，动作本身也要过事实守卫：跟日程/状态冲突就把那句动作丢掉。
+
+    2026-11-24：开关 persona_action_narration 打开后动作会真的发出去。事实守卫按小句
+    判定，「（在商场逛着）我在公司呢」里的括号小句不算她的自述（_self_claim 看不到
+    主语/方位介词），地点写错在动作里就会漏网。这里只做一件事：动作和事实打架时
+    宁可不发动作——事实永远以主句为准，动作只是装饰。
+    """
+    value = str(text or "")
+    if not value or ("（" not in value and "(" not in value):
+        return value
+    try:
+        context = fact_guard_context(plugin, activity, now)
+    except Exception as exc:  # cleanup: 上下文读不到就不动动作
+        logger.debug("[reply_guard] 动作事实校验读不到上下文: %s", exc)
+        return value
+    try:
+        try:
+            from . import reply_fact_guard as _guard
+        except ImportError:
+            import reply_fact_guard as _guard
+    except Exception as exc:  # cleanup: 守卫模块缺失就不动动作
+        logger.debug("[reply_guard] 动作事实校验缺模块: %s", exc)
+        return value
+
+    def _keep(match):
+        body = str(match.group(1) or "")
+        try:
+            fixed, violations = _guard.guard(body, context)
+        except Exception as exc:  # cleanup: 单句校验失败就保留原样（不拦发送）
+            logger.debug("[reply_guard] 动作单句校验失败: %s", exc)
+            return match.group(0)
+        if violations or str(fixed) != body:
+            logger.info("[reply_guard] 动作与事实冲突，丢弃动作: %s", body[:40])
+            return ""
+        return match.group(0)
+
+    return _PAREN_ACTION_RE.sub(_keep, value)
+
+
 
 # ---------------------------------------------------------------------------
 # 事实守卫「改口」自然度（N2）：固定句 -> 语气池

@@ -70,13 +70,22 @@ else:  # 运行时用 object：协议里的声明不能进 MRO，否则会挡掉
     _MixinBase = object
 
 
-def _strip_action_narration(text):
+def _strip_action_narration(text, keep_action=False):
     """发送出口用的薄封装：函数内条件导入会被 mypy 推断成 object。"""
     try:
         from .amo_persona_guard import strip_action_narration as _fn
     except ImportError:  # 直接按文件加载时
         from amo_persona_guard import strip_action_narration as _fn
-    return _fn(text)
+    return _fn(text, keep_action=keep_action)
+
+
+def _allow_action_narration(plugin):
+    """配置 persona_action_narration：允许她带一句很短的括号动作。"""
+    try:
+        from .amo_persona_guard import action_narration_enabled as _fn
+    except ImportError:  # 直接按文件加载时
+        from amo_persona_guard import action_narration_enabled as _fn
+    return bool(_fn(plugin))
 
 
 def _has_orphan_paren(text):
@@ -1148,8 +1157,17 @@ class MessageMixin(_MixinBase):
         # 归一化前移：旁白剥离是语义操作，分段是结构操作。必须先剥再分段，
         # 否则模型写成跨行的括号动作会被分段器劈成两半（2026-11-22 线上
         # 「嘴角一下翘起来）我也想你了…」）。
+        _keep_action = False
         try:
-            text = _strip_action_narration(text)
+            _keep_action = _allow_action_narration(self)
+        except Exception as _amo_exc:  # cleanup: 开关读不到按关处理
+            _note_swallowed("amo_message._send_to_umo.action_switch", _amo_exc)
+            _keep_action = False
+        try:
+            text = _strip_action_narration(text, keep_action=_keep_action)
+            if _keep_action:
+                # 动作也要过事实守卫：和日程/状态冲突就把动作丢掉，事实只认主句
+                text = _reply_pipeline.drop_conflicting_actions(text, self)
         except Exception as _amo_exc:
             _note_swallowed("amo_message._send_to_umo.action_narration", _amo_exc)
         if not text:

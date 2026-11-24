@@ -11,6 +11,11 @@ import json
 import os
 from typing import Any
 
+try:  # 动作文案唯一来源（开关关闭/打开各只有一种说法）
+    from . import amo_narration_policy as _narration
+except ImportError:  # 直接按文件加载时
+    import amo_narration_policy as _narration
+
 PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "persona_packs")
 SCHEMA_VERSION = 1
 DEFAULT_PACK_ID = "gentle-playful"
@@ -168,11 +173,12 @@ def validate(pack: dict) -> None:
         raise ValueError("forbidden 必须是数组")
 
 
-def card_text(pack: dict, register: str = "partner_safe") -> str:
+def card_text(pack: dict, register: str = "partner_safe", allow_action: bool = False) -> str:
     card = (pack or {}).get("card") or {}
     address = card.get("address") or {}
     registers = card.get("registers") or {}
     language = card.get("language") or {}
+    action_line = _narration.pick(_narration.CARD_FORBID, _narration.CARD_ALLOW, allow_action)
     parts = [
         "【人设内核】" + str(card.get("core") or ""),
         "【称呼】他叫你「%s」；你自称「%s」" % (address.get("user") or "老公",
@@ -181,7 +187,7 @@ def card_text(pack: dict, register: str = "partner_safe") -> str:
         "【语言】" + "；".join(str(item) for item in (language.get("rules") or [])),
         "【金钱观】" + str(card.get("money") or ""),
         "【公开场合】" + str(card.get("public") or ""),
-        "【动作】不写动作旁白、不写括号动作；只用说出口的话表达情绪（基础人格唯一真源）。",
+        "【动作】" + action_line,
         "【住处·绝不自主搬走】" + str(card.get("stay_in_place") or STAY_RULE),
         "【绝不说】" + "、".join(str(item) for item in (card.get("forbidden") or [])[:20]),
     ]
@@ -255,8 +261,9 @@ def retrieve(pack: dict, scene: str = "", mood: str = "", limit: int = 3,
 
 
 def prompt_block(pack: dict, scene: str = "", mood: str = "", register: str = "partner_safe",
-                 last_used: dict | None = None, used_out: list | None = None) -> str:
-    text = card_text(pack, register)
+                 last_used: dict | None = None, used_out: list | None = None,
+                 allow_action: bool = False) -> str:
+    text = card_text(pack, register, allow_action=allow_action)
     samples = retrieve(pack, scene=scene, mood=mood, limit=3, last_used=last_used)
     if samples:
         text += "\n【像她会说的话（只学语气，不要逐字复用）】" + " / ".join(samples)

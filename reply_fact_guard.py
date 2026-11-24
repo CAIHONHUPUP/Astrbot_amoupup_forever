@@ -39,7 +39,7 @@ try:  # 包模式优先，按文件直接加载时退回绝对导入
     from .clock import now as _clock_now
     from .place_guard import (
         EXTRA_ALLOWED, EXTRA_TARGET, EXTRA_WORDS,
-        TARGET_WORD, allowed_groups, match_location, spoken_place,
+        TARGET_WORD, allowed_groups, match_location, spoken_place, word_allowed,
     )
     from .photo_scene import zone_of
 except ImportError:  # 直接按文件加载时
@@ -47,7 +47,7 @@ except ImportError:  # 直接按文件加载时
         from clock import now as _clock_now
         from place_guard import (
             EXTRA_ALLOWED, EXTRA_TARGET, EXTRA_WORDS,
-            TARGET_WORD, allowed_groups, match_location, spoken_place,
+            TARGET_WORD, allowed_groups, match_location, spoken_place, word_allowed,
         )
         from photo_scene import zone_of
 
@@ -393,16 +393,46 @@ def _place_quantifier_variants(target, tail):
     ))
 
 
+def _place_noun_variants(lead, tail, target):
+    """「食堂的菜一般般」→「菜一般般」：名词短语只摘掉地点词，不塌成「在公司呢」。
+
+    线上事故（2026-11-24 13:22）：地点误判把「食堂的菜一般般」整句收成
+    「在公司呢」，出来是「我吃着呢，在公司呢，倒是吃上了」——「倒是」失去
+    了对比对象，整句不成话。名词短语（地点词 + 的 + 东西/评价）只要保留下半句。
+    """
+    rest = str(tail or "")
+    if rest.startswith("的"):
+        rest = rest[1:]
+    rest = rest.strip("，,、 ")
+    if not rest:
+        return _place_empty_tail_variants("我" if "我" in str(lead or "") else "", target)
+    return _unique((
+        rest,
+        "这儿的" + rest,
+        "这边的" + rest,
+        "这里的" + rest,
+    ))
+
+
 def _place_drop_variants(lead, tail, target):
     """结构不适合直接塞地点：删掉地点短语，只保留原意（宁可不说地点）。"""
-    base = (lead + tail).strip("，,、 ")
+    clean_lead = str(lead or "").rstrip()
+    # 「在楼下随便吃了点」删掉「楼下」后不能留孤零零的「在随便吃了点」
+    for mark in ("在", "从", "到", "往", "朝"):
+        if clean_lead.endswith(mark):
+            clean_lead = clean_lead[:-1].rstrip("，,、 ")
+            break
+    body = str(tail or "")
+    if body.startswith("的"):  # 「商场里的菜一般般」：名词短语保留下半句
+        return _place_noun_variants(clean_lead, body, target)
+    base = (clean_lead + body).strip("，,、 ")
     if not base:
         return _place_empty_tail_variants("", target)
-    here = ("这边" + tail) if tail else ""
-    rest = ("这会儿" + tail) if tail else ""
-    mine = ("我这儿" + tail) if tail else ""
-    ending = (tail + "呢") if tail and tail[-1] not in "呢啊呀了吧哦嘛" else ""
-    now = ("现在" + tail) if tail else ""
+    here = ("这边" + body) if body else ""
+    rest = ("这会儿" + body) if body else ""
+    mine = ("我这儿" + body) if body else ""
+    ending = (body + "呢") if body and body[-1] not in "呢啊呀了吧哦嘛" else ""
+    now = ("现在" + body) if body else ""
     return _unique((base, here, rest, mine, ending, now))
 
 
@@ -430,6 +460,8 @@ def _whole_transit_sentence(sentence, ctx):
     zone = zone_of(activity) or ""
     allowed = allowed_groups(activity) or _EXTRA_ALLOWED.get(zone)
     if not allowed or group in allowed:
+        return None
+    if word_allowed(word, group, zone):
         return None
     if not any(marker in sentence for marker in _TRANSIT_PROGRESS):
         return None
@@ -460,6 +492,13 @@ def _place_rule(clause, ctx):
     zone = zone_of(activity) or ""
     allowed = allowed_groups(activity) or _EXTRA_ALLOWED.get(zone)
     if not allowed or group in allowed:
+        return clause, []
+    if word_allowed(word, group, zone):
+        # 公司食堂/单位食堂属于公司：从属地点不算说错地方（2026-11-24 线上事故）
+        return clause, []
+    act_text = str(activity.get("activity") or "") + str(activity.get("place") or "")
+    if word and word in act_text:
+        # 日程原文里就写着这个词（「在公司食堂吃午饭」），不是她编的地点
         return clause, []
     if not _claimish(clause, word):
         return clause, []
@@ -529,6 +568,10 @@ def _place_rule(clause, ctx):
     # 4) 地点词前面不是「在」：不硬拼语法，删掉地点短语
     if lead and not lead.endswith("在"):
         variants = _place_drop_variants(lead, tail, target)
+    elif tail.startswith("的"):
+        # 「食堂的菜一般般」是名词短语，不是「我在家呢」那种纯地点声明：
+        # 只摘掉地点词，保留下半句（否则「倒是吃上了」失去对比对象）
+        variants = _place_noun_variants(lead, tail, target)
     elif not tail or tail[0] in "呢啊呀了吧哦嘛了的":
         variants = _place_empty_tail_variants("我" if "我" in lead else "", target)
     elif tail.startswith(_QUANTIFIER_TAILS) and not tail.startswith("一起"):

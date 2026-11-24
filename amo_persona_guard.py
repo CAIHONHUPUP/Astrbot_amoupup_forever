@@ -278,6 +278,34 @@ def prepare_generated_line(text):
 _PAREN = re.compile(r"[（(]([^（()）\n]{1,60})[)）]")
 _KEEP_PAREN = re.compile(r"\d")
 
+#: 开关 persona_action_narration 打开时：允许「一条很短的括号动作」跟着台词一起发。
+#: 超过这个长度、跨行、或者整条只有动作，仍然按原来的规矩剥掉/丢弃——
+#: 2026-11-22 的老问题是「56.5% 的消息带旁白、45.4% 的分段只有动作」，开关不能把它放回来。
+MAX_INLINE_ACTION_CHARS = 16
+
+
+def action_narration_enabled(plugin=None):
+    """配置开关 persona_action_narration（默认关=全部剥掉）。口径统一在 amo_narration_policy。"""
+    try:
+        try:
+            from .amo_narration_policy import enabled as _enabled
+        except ImportError:  # 直接按文件加载时
+            from amo_narration_policy import enabled as _enabled
+        return bool(_enabled(plugin))
+    except Exception as exc:  # cleanup: 配置读不到按关处理（零行为变化）
+        logger.debug("[persona] 动作开关读取失败: %s", exc)
+        return False
+
+
+def _is_inline_action(body):
+    """一句够短、单行、不带数字的括号动作（数字括号留给日期/价格，另有规则）。"""
+    text = str(body or "").strip()
+    if not text or len(text) > MAX_INLINE_ACTION_CHARS:
+        return False
+    if _KEEP_PAREN.search(text):
+        return False
+    return "（" not in text and "）" not in text and "(" not in text and ")" not in text
+
 #: 未闭合「（」后面：先按句末标点切掉第一句动作，再看剩下的是不是像台词。
 _SENTENCE_END = re.compile(r"[。！？!?…]+")
 _DIALOGUE_PARTICLES = re.compile(r"[吧呢啊呀嘛哦啦哈么吗]")
@@ -323,9 +351,13 @@ def _keep_speech_after_unclosed(body, open_index):
     return (prefix + rest).strip()
 
 
-def _strip_line(line):
+def _strip_line(line, keep_action=False):
     def _replace(match):
-        return match.group(0) if _KEEP_PAREN.search(match.group(1)) else ""
+        if _KEEP_PAREN.search(match.group(1)):
+            return match.group(0)
+        if keep_action and _is_inline_action(match.group(1)):
+            return match.group(0)
+        return ""
 
     body = _PAREN.sub(_replace, str(line or ""))
     # 分段器/模型可能把「（动作）」劈成两半：只剩全角闭括号的片段要丢到
@@ -345,14 +377,25 @@ def _strip_line(line):
     return body.strip()
 
 
-def strip_action_narration(text):
-    """剥掉括号动作旁白；整条只有动作时返回空串（不发）。"""
+def strip_action_narration(text, keep_action=False):
+    """剥掉括号动作旁白；整条只有动作时返回空串（不发）。
+
+    keep_action=True（配置 persona_action_narration 打开）时保留**一句很短的
+    行内动作**；整条只有动作仍然返回空串，未闭合的残括号仍然剥掉。
+    """
     lines = []
     for line in str(text or "").splitlines():
-        cleaned = _strip_line(line)
+        cleaned = _strip_line(line, keep_action=keep_action)
         if cleaned:
             lines.append(cleaned)
-    return "\n".join(lines).strip()
+    body = "\n".join(lines).strip()
+    if body and not _PAREN.sub("", body).strip():
+        # 只剩括号：动作整条不发；但「（11月24日）」这种数字括号改前是会发的，保持原样
+        numeric_only = all(
+            _KEEP_PAREN.search(match.group(1)) for match in _PAREN.finditer(body))
+        if not numeric_only:
+            return ""
+    return body
 
 
 _JUDGMENT_FINAL = re.compile(r"(够了|行了|就这样|随你|可以了|别说了)[。！!？?…]*$")
@@ -733,8 +776,9 @@ def _stage_collapse(ctx):
 
 
 def _stage_narration(ctx):
-    """S3 动作旁白：整条只有旁白就丢，行内旁白剥掉。"""
-    stripped = strip_action_narration(ctx.text)
+    """S3 动作旁白：整条只有旁白就丢，行内旁白剥掉（开关打开时留一句短动作）。"""
+    allow = action_narration_enabled(ctx.plugin)
+    stripped = strip_action_narration(ctx.text, keep_action=allow)
     if not stripped:
         return "action_only"
     if stripped != ctx.text:
@@ -958,6 +1002,7 @@ def guard_candidate(plugin, umo, text, user_text=""):
 __all__ = [
     "FORBIDDEN_PHRASES", "forbidden_hits", "rewrite_forbidden", "neutralize_forbidden",
     "forbidden_stats", "reset_forbidden_stats", "prepare_generated_line", "strip_action_narration",
+    "action_narration_enabled", "MAX_INLINE_ACTION_CHARS",
     "has_action_narration", "has_orphan_paren", "action_only", "action_ratio",
     "naturalness_issues", "note_naturalness", "naturalness_stats",
     "self_recent_texts", "self_recent_block", "denial_of_self_issue",

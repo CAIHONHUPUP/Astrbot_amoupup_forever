@@ -79,9 +79,9 @@ def is_curt(text):
     return bool(raw.strip()) and body == "" and any(ch in raw for ch in "。.!！?？…")
 
 
-def prompt_block(snap=None, user_text=""):
+def prompt_block(snap=None, user_text="", allow_action=False):
     """System Prompt 的“聊天行为规范”短回复段。"""
-    parts = [RULES]
+    parts = [_prompts.render("short.rules", allow_action=allow_action)]
     binding = state_binding(snap)
     if binding:
         parts.append(binding)

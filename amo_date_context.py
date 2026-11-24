@@ -19,6 +19,19 @@ except ImportError:  # 直接按文件加载时
 
 logger = logging.getLogger("amo")
 
+
+def _narration_on(plugin) -> bool:
+    """动作描写开关（persona_action_narration，默认关）。"""
+    try:
+        try:
+            from . import amo_narration_policy as _policy
+        except ImportError:
+            import amo_narration_policy as _policy
+        return bool(_policy.enabled(plugin))
+    except Exception as exc:  # cleanup: 读不到按关处理
+        logger.debug("[amo_date_context] 动作开关读取失败: %s", exc)
+        return False
+
 try:
     from .clock import now as _clock_now
 except ImportError:
@@ -255,7 +268,8 @@ def prompt_block(plugin, now=None):
             except Exception as exc:  # cleanup: 情绪词拿不到就不写状态，不影响开场
                 logger.debug("[amo_date_context.prompt_block] optional step failed: %s", exc)
         return _prompts.render("date.active", line=line, scene=scene, meet=meet,
-                               meet_title=meet_title, outfit=outfit, state_line=state_line)
+                               meet_title=meet_title, outfit=outfit, state_line=state_line,
+                               allow_action=_narration_on(plugin))
     if _ds.paused(plugin, now):
         return _prompts.render("date.pause")
     ending = _ds.ending(plugin, now)

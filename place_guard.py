@@ -69,10 +69,10 @@ TARGET_WORD = {
 }
 
 #: reply_fact_guard 的口语补表唯一来源（只补主表，不改主表本身）。
+#: 「楼下/楼上/门口」是相对方位词：公司楼下、家门口、商场楼下都成立，
+#: 写死成 home 会在办公室说「在楼下随便吃了点」时被误判成说错地方
+#: （2026-11-24 线上：这句被改成「在随便吃了点」）。它们不进表 = 不参与地点判定。
 EXTRA_WORDS = {
-    "楼下": "home",
-    "楼上": "home",
-    "门口": "home",
     "阳台上": "home",
 }
 #: 主表 ALLOWED_GROUPS 没收录、但聊天里会出现的 zone。
@@ -85,6 +85,14 @@ EXTRA_ALLOWED = {
 }
 #: 主表 TARGET_WORD 没收录的改口词。
 EXTRA_TARGET = {"transit": "路上"}
+
+#: 从属地点：这些词的主表分组是 restaurant，但此刻就在她所在的地方里面/旁边。
+#: 2026-11-24 线上：13:22 日程「吃午饭·公司附近」（zone=office），她说
+#: 「我吃着呢，食堂的菜一般般」，出站守卫把「食堂」当成说错地方，整句改成
+#: 「在公司呢」，句子直接不成话。公司食堂属于公司，不算地点冲突。
+NESTED_WORDS = {
+    "office": frozenset(("食堂", "公司食堂", "单位食堂")),
+}
 
 #: 「大家 / 人家 / 老家」里的「家」不是在说她自己
 _NOISE = ("大家", "人家", "国家", "专家", "画家", "科学家", "商家", "店家",
@@ -127,6 +135,21 @@ def allowed_groups(activity):
     return ALLOWED_GROUPS.get(zone)
 
 
+def word_allowed(word, group, zone):
+    """这个词此刻算不算「她所在的地方」。
+
+    判定顺序：主表分组 -> 从属地点（公司食堂）。相对方位词（楼下/楼上/门口）
+    根本不进地点词表，所以走不到这里；判断不了 zone 时一律放行。
+    """
+    zone_text = str(zone or "")
+    allowed = ALLOWED_GROUPS.get(zone_text) or EXTRA_ALLOWED.get(zone_text)
+    if not allowed:
+        return True
+    if group in allowed:
+        return True
+    return str(word or "") in NESTED_WORDS.get(zone_text, frozenset())
+
+
 def conflicting_place(text, activity):
     """他这句话是不是说她在一个和日程对不上的地方。
 
@@ -142,7 +165,7 @@ def conflicting_place(text, activity):
         if not found:
             continue
         group, word = found
-        if group in allowed:
+        if word_allowed(word, group, zone_of(activity)):
             continue
         if word in act_text:
             continue

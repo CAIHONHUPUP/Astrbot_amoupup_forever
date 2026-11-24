@@ -34,6 +34,19 @@ except ImportError:  # 直接按文件加载时
     if not TYPE_CHECKING:  # mypy: 回退分支不参与类型检查
         from clock import now as _now  # type: ignore[no-redef]
 
+
+def _narration_on(plugin) -> bool:
+    """动作描写开关（persona_action_narration，默认关）：提示词与出站共用同一个口径。"""
+    try:
+        try:
+            from . import amo_narration_policy as _policy
+        except ImportError:
+            import amo_narration_policy as _policy
+        return bool(_policy.enabled(plugin))
+    except Exception as exc:  # cleanup: 读不到按关处理
+        logger.debug("[amo] 动作开关读取失败: %s", exc)
+        return False
+
 try:  # 话题锁定 / 状态衔接 / 连续对话 三段提示词
     from . import amo_message as message_blocks
 except ImportError:  # 直接按文件加载时
@@ -616,7 +629,8 @@ class LlmMixin(_MixinBase):
             system_parts.extend(self._reply_group_parts(ctx, event, group))
         system_parts.extend(await self._reply_conditional_parts(
             ctx, event, text, snap, profile, group, memory_text))
-        system_parts.append(_prompts.render("llm.rule.core"))
+        _allow_action = _narration_on(self)
+        system_parts.append(_prompts.render("llm.rule.core", allow_action=_allow_action))
         if note:
             # 延迟补话的说明放在系统侧，不能混进“对方刚刚说”里
             system_parts.append(_prompts.render("llm.note", note=note))
@@ -638,7 +652,7 @@ class LlmMixin(_MixinBase):
         system_parts.append(_prompts.URGE_DISCIPLINE_RULES)
         if not group:
             # 撒娇版放最后：越靠后的指令权重越高；示例只学语气。
-            system_parts.append(_prompts.render("llm.rule.style"))
+            system_parts.append(_prompts.render("llm.rule.style", allow_action=_allow_action))
             # A4：优先她自己的池（每意图最高 2 条）；空池回落固定 33 条，冷启动不空窗。
             _style_text = ""
             try:
@@ -701,7 +715,7 @@ class LlmMixin(_MixinBase):
             used: list[str] = []
             block = prompt_block(active_pack(self), scene=scene, mood=mood,
                                  register="partner_safe", last_used=last_used,
-                                 used_out=used)
+                                 used_out=used, allow_action=_narration_on(self))
             if used and any(text in mutable_texts for text in used):
                 try:
                     mark_used(self, used)
@@ -759,7 +773,7 @@ class LlmMixin(_MixinBase):
             *self._persona_pack_blocks(ctx, snap),
             refusal.prompt_block(snap, text, memory_text, cash_cents, group,
                                    _now().hour, silence_days, last_refusal, coax),
-            short_reply.prompt_block(snap, text),
+            short_reply.prompt_block(snap, text, allow_action=_narration_on(self)),
             _prompts.render("llm.catch_answer"),
             *message_blocks.dialogue_guard_blocks(snap, asked_activity),
         ]
