@@ -131,7 +131,7 @@ ROUTE_SPECS = (
 
 
 #: 路由总数（增删接口后只改这里；quality_gate 与 tests/test_route_table 都读它）
-ROUTE_COUNT_EXPECTED = 114
+ROUTE_COUNT_EXPECTED = 116
 
 
 def build_routes(api):
