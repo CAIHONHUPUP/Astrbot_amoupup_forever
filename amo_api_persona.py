@@ -19,6 +19,7 @@ class PersonaApiMixin:
     if TYPE_CHECKING:
         _body: Any
         config: Any
+        cfg_bool: Any
 
     def _persona_status(self):
         active = _store.active_id(self)
